@@ -1,0 +1,190 @@
+using System;
+using System.IO;
+using System.Reflection;
+using UnityEngine;
+
+namespace Companions;
+
+[Serializable]
+public class SpeechConfig
+{
+	public string[] Action;
+
+	public string[] Gather;
+
+	public string[] Forage;
+
+	public string[] Combat;
+
+	public string[] Follow;
+
+	public string[] Hungry;
+
+	public string[] Repair;
+
+	public string[] Overweight;
+
+	public string[] Smelt;
+
+	public string[] Idle;
+
+	public string[] Hunt;
+
+	public string[] Farm;
+
+	public string[] Fish;
+
+	public string[] Cook;
+
+	public string[] NoBed;
+
+	private static SpeechConfig _instance;
+
+	public static SpeechConfig Instance
+	{
+		get
+		{
+			if (_instance == null)
+			{
+				Load();
+			}
+			return _instance;
+		}
+	}
+
+	public static void Load()
+	{
+		string directoryName = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+		string text = "English";
+		try
+		{
+			if (Localization.instance != null)
+			{
+				text = Localization.instance.GetSelectedLanguage();
+			}
+		}
+		catch
+		{
+		}
+		string path = Path.Combine(directoryName, "Translations", "speech", text + ".json");
+		if (TryLoadFrom(path))
+		{
+			return;
+		}
+		string text2 = Path.Combine(directoryName, "speech.json");
+		if (TryLoadFrom(text2))
+		{
+			return;
+		}
+		_instance = Defaults();
+		try
+		{
+			string contents = JsonUtility.ToJson(_instance, prettyPrint: true);
+			File.WriteAllText(text2, contents);
+			CompanionsPlugin.Log.LogInfo("[Speech] Created default " + text2);
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Speech] Failed to write defaults to " + text2 + ": " + ex.Message);
+		}
+	}
+
+	public static void Reload()
+	{
+		_instance = null;
+		Load();
+	}
+
+	private static bool TryLoadFrom(string path)
+	{
+		if (!File.Exists(path))
+		{
+			return false;
+		}
+		try
+		{
+			string json = File.ReadAllText(path);
+			_instance = JsonUtility.FromJson<SpeechConfig>(json);
+			CompanionsPlugin.Log.LogInfo("[Speech] Loaded " + path);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Speech] Failed to parse " + path + ": " + ex.Message);
+			return false;
+		}
+	}
+
+	private static SpeechConfig Defaults()
+	{
+		SpeechConfig speechConfig = new SpeechConfig();
+		speechConfig.Action = new string[13]
+		{
+			"By your word!", "So it shall be.", "The gods guide my hand.", "Aye, consider it done!", "I heed your call.", "As you command.", "On it!", "Right away.", "You have my word.", "It shall be done.",
+			"Say no more.", "I understand.", "Leave it to me."
+		};
+		speechConfig.Gather = new string[14]
+		{
+			"The land provides, if you know where to look.", "Good timber here.", "Odin's bounty is plentiful.", "I'll strip this land bare if I must.", "These arms were made for more than swinging axes... but it'll do.", "The earth yields its riches.", "There's good stone over here.", "Another tree falls!", "The veins run deep in this rock.", "My arms grow stronger with each swing.",
+			"This ore looks promising.", "Plenty of materials nearby.", "A fine haul so far.", "The ground gives up its treasures."
+		};
+		speechConfig.Forage = new string[12]
+		{
+			"The meadows offer their gifts.", "Freya's garden blooms well here.", "Even warriors must forage.", "Ripe for the picking.", "The wild provides for those who seek.", "Fresh berries here!", "Mushrooms, growing in the shade.", "Nature hides her bounty well.", "A good harvest from the wilds.", "The forest floor is rich with life.",
+			"These will make a fine stew.", "Plenty to gather in these parts."
+		};
+		speechConfig.Combat = new string[17]
+		{
+			"For Odin!", "Taste my steel!", "To Valhalla!", "Stand and fight!", "Skål! Come meet your end!", "They shall not pass!", "By Thor's hammer!", "You picked the wrong fight!", "Face me, coward!", "I'll send you to Hel!",
+			"My blade thirsts!", "Come then! I am ready!", "Your end is here!", "Fight me if you dare!", "Another one falls!", "Is that all you've got?", "The Valkyries watch!"
+		};
+		speechConfig.Follow = new string[15]
+		{
+			"Lead on, I am your shield.", "Where the path takes us, I follow.", "A fine day to wander the wilds.", "My blade is yours to command.", "The road calls to us.", "I walk beside you, friend.", "Wherever you go, I go.", "Right behind you.", "The journey continues.", "I've got your back.",
+			"What lies ahead, I wonder?", "Onward!", "Stay close, the wilds are dangerous.", "A good pace. I can keep up.", "Which way now?"
+		};
+		speechConfig.Hungry = new string[12]
+		{
+			"My belly roars like a troll...", "Even Fenrir ate better than this.", "A warrior fights on mead and meat, not empty guts.", "I'd trade my axe for a leg of boar right now.", "The hunger gnaws at my strength...", "I could eat an entire neck right now.", "My stomach is as empty as Ginnungagap.", "Got anything to eat?", "I'm starving here...", "A warrior without food is no warrior at all.",
+			"Please, some food before I collapse.", "I'm running on fumes here."
+		};
+		speechConfig.Repair = new string[11]
+		{
+			"This blade has seen better days.", "My armor holds by thread and prayer.", "A dull edge brings a swift death.", "The smithy calls to my gear.", "Even the gods mend their weapons.", "My equipment needs attention.", "This won't hold much longer.", "A few more hits and this breaks.", "I should find a workbench soon.", "My gear is wearing thin.",
+			"A warrior must maintain their tools."
+		};
+		speechConfig.Overweight = new string[10] { "By Odin's beard, my back is breaking!", "I carry the weight of Jotunheim on my shoulders...", "Not even Thor could haul this much further!", "My legs buckle beneath this burden!", "We must lighten this load before I collapse.", "I can barely move with all this weight!", "This is too much to carry!", "I'm overloaded!", "My pack is fit to burst!", "I need to put some of this down." };
+		speechConfig.Smelt = new string[13]
+		{
+			"The forge fire burns bright.", "Good ore makes good steel.", "The bellows sing their song.", "Another ingot for the hoard.", "Dwarven work, this smelting.", "The flames hunger for more.", "Feeding the furnace.", "The kiln roars with life.", "More coal for the fire.", "Molten metal, a beautiful sight.",
+			"The smelter works well today.", "Iron from ore, steel from iron.", "Keeping the fires stoked."
+		};
+		speechConfig.Idle = new string[16]
+		{
+			"The winds whisper of adventure...", "Skål!", "A calm before the storm, perhaps.", "I could use a horn of mead.", "I sense something stirring in the mist.", "What tales will they sing of us, I wonder?", "Nice place we've got here.", "The fire crackles nicely.", "A moment of peace... rare in these lands.", "Hmm, wonder what's for dinner.",
+			"The world is quiet for now.", "Just enjoying the view.", "I could get used to this.", "Not a bad spot to rest.", "A fine hall you've built.", "Waiting for your command."
+		};
+		speechConfig.Hunt = new string[12]
+		{
+			"I see prey nearby.", "The hunt begins!", "Stay quiet... I'm stalking.", "Fresh meat for the pot!", "Got one in my sights.", "A clean shot, that's all I need.", "The wilds provide for the patient hunter.", "Tracking prey through the brush.", "Dinner's not going to catch itself.", "Easy now... nice and steady...",
+			"Eikthyr would be proud.", "The hunt is on!"
+		};
+		speechConfig.Farm = new string[12]
+		{
+			"The soil is good here.", "Time to tend the crops.", "Seeds in the ground, hope in the heart.", "A good harvest takes patience.", "The crops are coming in nicely.", "Working the fields.", "Freya blesses this soil.", "Planting for the future.", "Almost ready to harvest.", "Farm work is honest work.",
+			"Another row planted.", "The garden grows well."
+		};
+		speechConfig.Fish = new string[12]
+		{
+			"The water looks promising.", "Casting my line...", "Patience is a fisherman's greatest virtue.", "I feel a nibble!", "A fine catch!", "The fish are biting today.", "Nothing yet... but I'll wait.", "Come on, take the bait...", "Fishing is peaceful work.", "One more cast ought to do it.",
+			"The river provides.", "Fresh fish for supper!"
+		};
+		speechConfig.Cook = new string[12]
+		{
+			"Something tasty is brewing!", "The cauldron bubbles nicely.", "A good meal lifts any warrior's spirits.", "Almost ready to serve.", "Cooking up a feast!", "The kitchen is my battlefield today.", "Mmm, smells delicious.", "Stirring the pot...", "A pinch of this, a dash of that.", "Mead's fermenting nicely.",
+			"Food for the weary!", "This recipe never fails."
+		};
+		speechConfig.NoBed = new string[5] { "I've got no bed to call my own.", "Wish I had a bed around here.", "Every bed nearby is already taken.", "I'll sleep on the ground again, I suppose.", "A place to rest my head would be nice." };
+		return speechConfig;
+	}
+}

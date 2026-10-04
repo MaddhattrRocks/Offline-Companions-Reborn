@@ -1,0 +1,1380 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
+
+namespace Companions;
+
+public class CompanionRest : MonoBehaviour
+{
+	private static readonly List<CompanionRest> _instances = new List<CompanionRest>();
+
+	private static readonly MethodInfo _bedGetOwnerMethod = AccessTools.Method(typeof(Bed), "GetOwner");
+
+	private ZNetView _nview;
+
+	private Character _character;
+
+	private CompanionAI _ai;
+
+	private CompanionStamina _stamina;
+
+	private ZSyncAnimation _zanim;
+
+	private CompanionSetup _setup;
+
+	private Rigidbody _body;
+
+	private bool _isSitting;
+
+	private float _checkTimer;
+
+	private float _healTimer;
+
+	private GameObject _fireTarget;
+
+	private bool _navigating;
+
+	private Vector3 _navTarget;
+
+	private float _navTimeout;
+
+	private static readonly HashSet<int> _claimedBeds = new HashSet<int>();
+
+	internal static readonly Dictionary<int, string> _bedClaimNames = new Dictionary<int, string>();
+
+	internal static readonly int MHR_BedClaimNameHash = "HC_BedClaimName".GetStableHashCode();
+
+	internal static readonly int MHR_BedClaimIdHash = "HC_BedClaimId".GetStableHashCode();
+
+	private Bed _claimedBed;
+
+	private float _bedClaimScanTimer;
+
+	private bool _needsBed;
+
+	private bool _isAutoSleep;
+
+	private float _autoSleepScanTimer;
+
+	private float _mhrNoAutoSleepUntil;
+
+	private bool _mhrStayAwake;
+
+	private const float CheckInterval = 1f;
+
+	private const float HealInterval = 0.5f;
+
+	private const float DirectedMaxDist = 50f;
+
+	private const int FireScanBufferSize = 48;
+
+	private const float AutoSleepBedRange = 20f;
+
+	private const float AutoSleepScanInterval = 5f;
+
+	private readonly Collider[] _fireScanBuffer = new Collider[48];
+
+	private readonly HashSet<int> _seenFireIds = new HashSet<int>();
+
+	private bool _isDirected;
+
+	private bool _isSleeping;
+
+	private Bed _bedTarget;
+
+	private float _directedRestTimer;
+
+	internal static IReadOnlyList<CompanionRest> Instances => _instances;
+
+	private static float HealRate => ModConfig.RestHealRate.Value;
+
+	private static float PlayerRange => ModConfig.RestPlayerRange.Value;
+
+	private static float FireRange => ModConfig.RestFireRange.Value;
+
+	private static float DirectedSitTimeout => ModConfig.RestDirectedTimeout.Value;
+
+	private bool HasPlayerAnims
+	{
+		get
+		{
+			if (_setup != null)
+			{
+				return _setup.CanWearArmor();
+			}
+			return false;
+		}
+	}
+
+	public bool IsResting
+	{
+		get
+		{
+			if (!_isSitting)
+			{
+				return _isSleeping;
+			}
+			return true;
+		}
+	}
+
+	public bool IsSleeping => _isSleeping;
+
+	public bool IsNavigating => _navigating;
+
+	public Vector3 NavTarget => _navTarget;
+
+	public bool IsDirectedResting
+	{
+		get
+		{
+			if (_isDirected)
+			{
+				if (!_isSitting)
+				{
+					return _isSleeping;
+				}
+				return true;
+			}
+			return false;
+		}
+	}
+
+	public void CancelDirected()
+	{
+		if (_isDirected || _isSitting || _isSleeping || _navigating)
+		{
+			StopAll();
+		}
+	}
+
+	internal static bool MHR_LocalPlayerInBed()
+	{
+		Player localPlayer = Player.m_localPlayer;
+		if (localPlayer == null)
+		{
+			return false;
+		}
+		return localPlayer.InBed();
+	}
+
+	internal bool MHR_WantsBedNow()
+	{
+		if (!_isSleeping && !(_nview == null) && _nview.IsOwner() && ModConfig.SleepWhenPlayerSleeps.Value)
+		{
+			return MHR_BedInRange();
+		}
+		return false;
+	}
+
+	internal static void MHR_ClearStayAwakeAll()
+	{
+		for (int i = 0; i < _instances.Count; i++)
+		{
+			CompanionRest companionRest = _instances[i];
+			if (!(companionRest == null))
+			{
+				companionRest._mhrStayAwake = false;
+			}
+		}
+	}
+
+	internal void MHR_SuppressAutoSleep(float seconds)
+	{
+		_mhrNoAutoSleepUntil = Time.time + seconds;
+	}
+
+	internal static long GetBedOwnerSafe(Bed bed)
+	{
+		if ((object)bed == null)
+		{
+			return 0L;
+		}
+		if ((object)_bedGetOwnerMethod == null)
+		{
+			return 0L;
+		}
+		try
+		{
+			return (long)_bedGetOwnerMethod.Invoke(bed, null);
+		}
+		catch (Exception)
+		{
+			return 0L;
+		}
+	}
+
+	internal static string MHR_GetBedClaimName(Bed bed)
+	{
+		if (!(bed == null))
+		{
+			ZNetView component = bed.GetComponent<ZNetView>();
+			if (!(component == null))
+			{
+				ZDO zDO = component.GetZDO();
+				if (zDO != null)
+				{
+					string text = zDO.GetString(MHR_BedClaimNameHash);
+					if (!string.IsNullOrEmpty(text))
+					{
+						return text;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	public void ArriveAtNavTarget()
+	{
+		if (_navigating)
+		{
+			_navigating = false;
+			CompanionsPlugin.Log.LogDebug($"[Rest] Arrived at nav target — bed={_bedTarget != null}, fire={_fireTarget != null}");
+			if (_bedTarget != null)
+			{
+				FinalizeSleep();
+			}
+			else if (_fireTarget != null)
+			{
+				StartSitting(_fireTarget);
+			}
+		}
+	}
+
+	internal static void MHR_StayAwakeForRecall(CompanionSetup setup)
+	{
+		if (!(setup == null))
+		{
+			CompanionRest component = setup.GetComponent<CompanionRest>();
+			if (!(component == null))
+			{
+				component._mhrStayAwake = true;
+				CompanionsPlugin.Log.LogInfo("[Rest] Recalled - staying awake until you next go to bed");
+			}
+		}
+	}
+
+	public void DirectSit(GameObject fire)
+	{
+		if (fire == null)
+		{
+			return;
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] DirectSit called — sitting={_isSitting}, sleeping={_isSleeping}, " + $"directed={_isDirected}, navigating={_navigating}, fire=\"{fire.name}\"");
+		if ((_isSitting || _navigating) && _isDirected)
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] DirectSit TOGGLE OFF — calling StopAll");
+			StopAll();
+			return;
+		}
+		if (_isSitting || _isSleeping || _navigating)
+		{
+			StopAll();
+		}
+		_isDirected = true;
+		_fireTarget = fire;
+		_directedRestTimer = DirectedSitTimeout;
+		float num = Vector3.Distance(base.transform.position, fire.transform.position);
+		if (num < 3f)
+		{
+			StartSitting(fire);
+			return;
+		}
+		_navigating = true;
+		_navTarget = fire.transform.position;
+		_navTimeout = 15f;
+		if (_ai != null)
+		{
+			_ai.SetFollowTarget(null);
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] Navigating to fire — dist={num:F1}m, timeout=15s");
+	}
+
+	public bool DirectSleep(Bed bed)
+	{
+		if (bed == null)
+		{
+			return true;
+		}
+		if (GetBedOwnerSafe(bed) != 0)
+		{
+			return false;
+		}
+		if (!(_claimedBed == bed))
+		{
+			if (_claimedBeds.Contains(bed.GetInstanceID()))
+			{
+				return false;
+			}
+			ClaimBed(bed);
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] DirectSleep called — sleeping={_isSleeping}, sitting={_isSitting}, " + $"directed={_isDirected}, navigating={_navigating}, bed=\"{bed.name}\" myPos={base.transform.position:F2}");
+		if (_isSleeping || _navigating)
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] DirectSleep TOGGLE OFF — calling StopAll");
+			StopAll();
+			return true;
+		}
+		BeginSleep(bed, isAuto: false);
+		return true;
+	}
+
+	private void Awake()
+	{
+		_nview = GetComponent<ZNetView>();
+		_character = GetComponent<Character>();
+		_ai = GetComponent<CompanionAI>();
+		_stamina = GetComponent<CompanionStamina>();
+		_zanim = GetComponent<ZSyncAnimation>();
+		_setup = GetComponent<CompanionSetup>();
+		_body = GetComponent<Rigidbody>();
+	}
+
+	private void OnEnable()
+	{
+		if (!_instances.Contains(this))
+		{
+			_instances.Add(this);
+		}
+	}
+
+	private void OnDisable()
+	{
+		_instances.Remove(this);
+	}
+
+	private void Update()
+	{
+		if (_nview == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
+		{
+			return;
+		}
+		if (_navigating)
+		{
+			UpdateNavigation();
+			return;
+		}
+		if (_isSleeping)
+		{
+			UpdateSleeping();
+			return;
+		}
+		if (_isSitting)
+		{
+			UpdateSitting();
+			return;
+		}
+		_checkTimer -= Time.deltaTime;
+		if (!(_checkTimer > 0f))
+		{
+			_checkTimer = 1f;
+			TryStartSitting();
+			TryAutoSleep();
+			_bedClaimScanTimer -= Time.deltaTime;
+			if (_bedClaimScanTimer <= 0f)
+			{
+				_bedClaimScanTimer = 30f;
+				TryClaimBedIfNeeded();
+			}
+		}
+	}
+
+	private void UpdateNavigation()
+	{
+		if (MHR_Mover.KeepAlive(this))
+		{
+			_navTimeout = Mathf.Max(_navTimeout, 6f);
+		}
+		_navTimeout -= Time.deltaTime;
+		if (_navTimeout <= 0f)
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] Navigation timed out — cancelling");
+			CancelNavigation();
+		}
+		else if (_bedTarget == null && _fireTarget == null)
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] Navigation target destroyed — cancelling");
+			CancelNavigation();
+		}
+	}
+
+	private void UpdateSleeping()
+	{
+		if (_isAutoSleep && EnvMan.instance != null && !EnvMan.IsNight() && !MHR_LocalPlayerInBed())
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] Auto-sleep — day started, waking up");
+			_isAutoSleep = false;
+			_isDirected = false;
+			StopSleeping();
+			return;
+		}
+		if (HasEnemyNearby())
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] UpdateSleeping — enemy nearby, waking up!");
+			_isAutoSleep = false;
+			_isDirected = false;
+			StopSleeping();
+			return;
+		}
+		if (_bedTarget == null || !_bedTarget)
+		{
+			CompanionsPlugin.Log.LogDebug("[Rest] UpdateSleeping — bed destroyed/null, waking up!");
+			_isAutoSleep = false;
+			_isDirected = false;
+			StopSleeping();
+			return;
+		}
+		Transform transform = ((_bedTarget.m_spawnPoint != null) ? _bedTarget.m_spawnPoint : _bedTarget.transform);
+		base.transform.position = transform.position;
+		base.transform.rotation = transform.rotation;
+		if (_body != null)
+		{
+			_body.position = transform.position;
+			_body.velocity = Vector3.zero;
+		}
+		_healTimer -= Time.deltaTime;
+		if (_healTimer <= 0f)
+		{
+			_healTimer = 0.5f;
+			float maxHealth = _character.GetMaxHealth();
+			float health = _character.GetHealth();
+			if (health < maxHealth)
+			{
+				_character.Heal(HealRate * 0.5f);
+			}
+		}
+	}
+
+	private void UpdateSitting()
+	{
+		bool flag = false;
+		if (_fireTarget == null || !_fireTarget)
+		{
+			flag = true;
+		}
+		else
+		{
+			Fireplace component = _fireTarget.GetComponent<Fireplace>();
+			if (component != null && !component.IsBurning())
+			{
+				flag = true;
+			}
+		}
+		if (HasEnemyNearby())
+		{
+			flag = true;
+		}
+		if (_isDirected && !flag)
+		{
+			_directedRestTimer -= Time.deltaTime;
+			if (_directedRestTimer <= 0f)
+			{
+				CompanionsPlugin.Log.LogDebug("[Rest] Directed sit timed out — stopping");
+				flag = true;
+			}
+			else
+			{
+				Player localPlayer = Player.m_localPlayer;
+				if (localPlayer != null)
+				{
+					float num = Vector3.Distance(base.transform.position, localPlayer.transform.position);
+					if (num > 50f)
+					{
+						CompanionsPlugin.Log.LogDebug($"[Rest] Directed sit — player too far ({num:F1}m > {50f}m), stopping");
+						flag = true;
+					}
+				}
+			}
+		}
+		if (!_isDirected && !flag)
+		{
+			Player localPlayer2 = Player.m_localPlayer;
+			if (localPlayer2 == null)
+			{
+				flag = true;
+			}
+			else
+			{
+				if ((_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault() != 0)
+				{
+					flag = true;
+				}
+				if (Player.LastEmote == null || !Player.LastEmote.Equals("sit", StringComparison.OrdinalIgnoreCase) || (DateTime.Now - Player.LastEmoteTime).TotalSeconds > 30.0)
+				{
+					flag = true;
+				}
+				if (!flag)
+				{
+					float num2 = Vector3.Distance(base.transform.position, localPlayer2.transform.position);
+					if (num2 > PlayerRange * 1.5f)
+					{
+						flag = true;
+					}
+				}
+			}
+		}
+		if (flag)
+		{
+			StopSitting();
+			return;
+		}
+		_healTimer -= Time.deltaTime;
+		if (_healTimer <= 0f)
+		{
+			_healTimer = 0.5f;
+			float maxHealth = _character.GetMaxHealth();
+			float health = _character.GetHealth();
+			if (health < maxHealth)
+			{
+				_character.Heal(HealRate * 0.5f);
+			}
+		}
+	}
+
+	private void TryStartSitting()
+	{
+		Player localPlayer = Player.m_localPlayer;
+		if (localPlayer == null)
+		{
+			return;
+		}
+		ZDO zDO = _nview.GetZDO();
+		if (zDO == null || zDO.GetInt(CompanionSetup.ActionModeHash) != 0 || Player.LastEmote == null || !Player.LastEmote.Equals("sit", StringComparison.OrdinalIgnoreCase) || (DateTime.Now - Player.LastEmoteTime).TotalSeconds > 30.0)
+		{
+			return;
+		}
+		float num = Vector3.Distance(base.transform.position, localPlayer.transform.position);
+		if (!(num > PlayerRange))
+		{
+			GameObject gameObject = FindNearbyFire();
+			if (!(gameObject == null) && !HasEnemyNearby())
+			{
+				StartSitting(gameObject);
+			}
+		}
+	}
+
+	private void TryAutoSleep()
+	{
+		if (MHR_ToolKeeper.IsBusy(this))
+		{
+			return;
+		}
+		bool flag = default(bool);
+		if (ModConfig.SleepWhenPlayerSleeps.Value && MHR_LocalPlayerInBed())
+		{
+			flag = true;
+			_mhrStayAwake = false;
+		}
+		else if (Time.time < _mhrNoAutoSleepUntil || _mhrStayAwake || !ModConfig.SleepAtNight.Value || EnvMan.instance == null || !EnvMan.IsNight())
+		{
+			return;
+		}
+		ZDO zDO = _nview?.GetZDO();
+		if (zDO == null || HasEnemyNearby())
+		{
+			return;
+		}
+		if (!flag)
+		{
+			_autoSleepScanTimer -= 1f;
+			if (_autoSleepScanTimer > 0f)
+			{
+				return;
+			}
+			_autoSleepScanTimer = 5f;
+		}
+		if (!(_claimedBed != null))
+		{
+			TryClaimBedIfNeeded();
+		}
+		Bed claimedBed = _claimedBed;
+		if (claimedBed == null)
+		{
+			_needsBed = true;
+			return;
+		}
+		_needsBed = false;
+		if (MHR_BedInRange())
+		{
+			CompanionsPlugin.Log.LogInfo(flag ? "[Rest] Going to bed: you went to bed" : "[Rest] Going to bed: it's night and the bed is in range");
+			CompanionsPlugin.Log.LogDebug($"[Rest] Auto-sleep — night detected, bed=\"{claimedBed.name}\" at {claimedBed.transform.position:F1}");
+			BeginSleep(claimedBed, isAuto: true);
+		}
+	}
+
+	public void TryClaimBedIfNeeded()
+	{
+		if (_claimedBed != null)
+		{
+			if (GetBedOwnerSafe(_claimedBed) == 0)
+			{
+				string value = MHR_MyName();
+				_bedClaimNames[_claimedBed.GetInstanceID()] = value;
+				MHR_SetBedClaim(_claimedBed, value, MHR_MyId());
+				return;
+			}
+			ReleaseClaimedBed();
+			if (_nview != null)
+			{
+				_nview.GetZDO()?.Set(CompanionSetup.HasHomeBedHash, value: false);
+			}
+		}
+		else if (_nview != null)
+		{
+			ZDO zDO = _nview.GetZDO();
+			if (zDO != null && zDO.GetBool(CompanionSetup.HasHomeBedHash))
+			{
+				Vector3 vec = zDO.GetVec3(CompanionSetup.HomeBedPosHash, Vector3.zero);
+				Bed bed = FindAnyBedNear(vec, 2f);
+				if (!(bed == null) && GetBedOwnerSafe(bed) == 0 && !MHR_BedClaimedByOther(bed))
+				{
+					_claimedBed = bed;
+					_claimedBeds.Add(bed.GetInstanceID());
+					string value = MHR_MyName();
+					_bedClaimNames[bed.GetInstanceID()] = value;
+					MHR_SetBedClaim(bed, value, MHR_MyId());
+					CompanionsPlugin.Log.LogInfo($"[Rest] Re-linked to its claimed bed as \"{value}\"");
+					return;
+				}
+				zDO.Set(CompanionSetup.HasHomeBedHash, value: false);
+			}
+		}
+		if (!(_setup != null))
+		{
+			return;
+		}
+		Vector3 anchor;
+		float radius;
+		if (_setup.HasHomePosition())
+		{
+			anchor = _setup.GetHomePosition();
+			radius = _setup.GetHomeRadius();
+		}
+		else
+		{
+			anchor = base.transform.position;
+			radius = 20f;
+			if (!HasOwnerBedNearby(anchor, radius))
+			{
+				return;
+			}
+		}
+		Bed bed2 = FindUnclaimedBedNear(anchor, radius);
+		if (!(bed2 == null))
+		{
+			ClaimBed(bed2);
+		}
+	}
+
+	private void OnDestroy()
+	{
+		_instances.Remove(this);
+		if (_stamina != null)
+		{
+			_stamina.IsResting = false;
+		}
+		if (_isSleeping)
+		{
+			if (_bedTarget != null)
+			{
+				_claimedBeds.Remove(_bedTarget.GetInstanceID());
+			}
+			if (_nview != null && _nview.GetZDO() != null)
+			{
+				_nview.GetZDO().Set(ZDOVars.s_inBed, value: false);
+			}
+		}
+	}
+
+	private GameObject FindNearbyFire()
+	{
+		Vector3 position = base.transform.position;
+		float num = FireRange * FireRange;
+		int num2 = Physics.OverlapSphereNonAlloc(position, FireRange, _fireScanBuffer);
+		Collider[] fireScanBuffer = _fireScanBuffer;
+		int num3 = num2;
+		if (num3 > 48)
+		{
+			num3 = 48;
+		}
+		_seenFireIds.Clear();
+		GameObject result = null;
+		float num4 = float.MaxValue;
+		for (int i = 0; i < num3; i++)
+		{
+			Collider collider = fireScanBuffer[i];
+			if (collider == null)
+			{
+				continue;
+			}
+			Fireplace componentInParent = collider.GetComponentInParent<Fireplace>();
+			if (componentInParent != null && componentInParent.IsBurning())
+			{
+				if (_seenFireIds.Add(componentInParent.GetInstanceID()))
+				{
+					float sqrMagnitude = (componentInParent.transform.position - position).sqrMagnitude;
+					if (sqrMagnitude < num && sqrMagnitude < num4)
+					{
+						result = componentInParent.gameObject;
+						num4 = sqrMagnitude;
+					}
+				}
+				continue;
+			}
+			EffectArea componentInParent2 = collider.GetComponentInParent<EffectArea>();
+			if (componentInParent2 != null && (componentInParent2.m_type & EffectArea.Type.Heat) != EffectArea.Type.None && _seenFireIds.Add(componentInParent2.GetInstanceID()))
+			{
+				float sqrMagnitude2 = (componentInParent2.transform.position - position).sqrMagnitude;
+				if (sqrMagnitude2 < num && sqrMagnitude2 < num4)
+				{
+					result = componentInParent2.gameObject;
+					num4 = sqrMagnitude2;
+				}
+			}
+		}
+		return result;
+	}
+
+	private bool HasEnemyNearby()
+	{
+		if (_character == null)
+		{
+			return false;
+		}
+		foreach (Character allCharacter in Character.GetAllCharacters())
+		{
+			if (!(allCharacter == null) && !(allCharacter.GetHealth() <= 0f))
+			{
+				float num = Vector3.Distance(base.transform.position, allCharacter.transform.position);
+				if (!(num > 15f) && BaseAI.IsEnemy(_character, allCharacter))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private void StartSitting(GameObject fire)
+	{
+		_isSitting = true;
+		_fireTarget = fire;
+		_healTimer = 0f;
+		CompanionsPlugin.Log.LogDebug("[Rest] Sitting near fire \"" + fire.name + "\" — starting heal + stamina regen " + $"pos={base.transform.position:F2}");
+		if (_ai != null)
+		{
+			_ai.SetFollowTarget(null);
+			_ai.FreezeTimer = 0.5f;
+		}
+		Vector3 vector = fire.transform.position - base.transform.position;
+		vector.y = 0f;
+		if (vector.sqrMagnitude > 0.01f)
+		{
+			base.transform.rotation = Quaternion.LookRotation(vector.normalized);
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] StartSitting anim — HasPlayerAnims={HasPlayerAnims} " + $"canWearArmor={_setup?.CanWearArmor()} zanim={_zanim != null}");
+		if (_zanim != null && HasPlayerAnims)
+		{
+			_zanim.SetTrigger("emote_sit");
+			_zanim.SetBool("emote_sit", value: true);
+		}
+		if (_stamina != null)
+		{
+			_stamina.IsResting = true;
+		}
+		CompanionRestedBuff component = GetComponent<CompanionRestedBuff>();
+		if (component != null)
+		{
+			component.StartResting();
+		}
+	}
+
+	private void StopAll()
+	{
+		CompanionsPlugin.Log.LogDebug($"[Rest] StopAll — sitting={_isSitting}, sleeping={_isSleeping}, " + $"directed={_isDirected}, autoSleep={_isAutoSleep}, navigating={_navigating}, pos={base.transform.position:F2}");
+		_isAutoSleep = false;
+		bool navigating = _navigating;
+		_navigating = false;
+		if (_isSitting)
+		{
+			StopSitting();
+		}
+		if (_isSleeping)
+		{
+			StopSleeping();
+		}
+		_isDirected = false;
+		if (!navigating || _isSitting || _isSleeping)
+		{
+			return;
+		}
+		_fireTarget = null;
+		_bedTarget = null;
+		if (_ai != null)
+		{
+			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
+			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
+			if (valueOrDefault == 4)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPoint();
+			}
+			else if (flag)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPointAt(_setup.GetHomePosition());
+			}
+			else if (Player.m_localPlayer != null)
+			{
+				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			}
+		}
+	}
+
+	private void ClaimBed(Bed bed)
+	{
+		ReleaseClaimedBed();
+		_claimedBed = bed;
+		_claimedBeds.Add(bed.GetInstanceID());
+		string value = MHR_MyName();
+		_bedClaimNames[bed.GetInstanceID()] = value;
+		MHR_SetBedClaim(bed, value, MHR_MyId());
+		if (_nview != null)
+		{
+			ZDO zDO = _nview.GetZDO();
+			if (zDO != null)
+			{
+				zDO.Set(CompanionSetup.HomeBedPosHash, bed.transform.position);
+				zDO.Set(CompanionSetup.HasHomeBedHash, value: true);
+			}
+		}
+		CompanionsPlugin.Log.LogInfo($"[Rest] Claimed bed \"{bed.name}\" as standing home bed");
+	}
+
+	private void BeginSleep(Bed bed, bool isAuto)
+	{
+		if (_isSitting || _isSleeping || _navigating)
+		{
+			StopAll();
+		}
+		_isDirected = !isAuto;
+		_isAutoSleep = isAuto;
+		_bedTarget = bed;
+		_healTimer = 0f;
+		Vector3 position = bed.transform.position;
+		if (bed.m_spawnPoint != null)
+		{
+			position = bed.m_spawnPoint.position;
+		}
+		float num = Vector3.Distance(base.transform.position, position);
+		if (num < 3f)
+		{
+			FinalizeSleep();
+			return;
+		}
+		_navigating = true;
+		_navTarget = position;
+		_navTimeout = 20f;
+		if (_ai != null)
+		{
+			_ai.SetFollowTarget(null);
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] Navigating to bed — dist={num:F1}m, auto={isAuto}");
+	}
+
+	internal bool MHR_BedInRange()
+	{
+		if (!(_claimedBed == null))
+		{
+			return Vector3.Distance(base.transform.position, _claimedBed.transform.position) <= ModConfig.BedRange.Value;
+		}
+		return false;
+	}
+
+	internal static bool MHR_ShouldPauseWork(Component c)
+	{
+		if (!MHR_ToolKeeper.IsBusy(c))
+		{
+			if (!(c == null))
+			{
+				CompanionRest component = c.GetComponent<CompanionRest>();
+				if (!(component == null))
+				{
+					if (component._isSleeping)
+					{
+						goto IL_0041;
+					}
+					if (component._navigating)
+					{
+						return component._bedTarget != null;
+					}
+				}
+			}
+			return false;
+		}
+		goto IL_0041;
+		IL_0041:
+		return true;
+	}
+
+	public bool NeedsBed()
+	{
+		return _needsBed;
+	}
+
+	private void FinalizeSleep()
+	{
+		_isSleeping = true;
+		if (_bedTarget != null)
+		{
+			_claimedBeds.Add(_bedTarget.GetInstanceID());
+			if (_nview != null)
+			{
+				ZDO zDO = _nview.GetZDO();
+				if (zDO != null)
+				{
+					zDO.Set(CompanionSetup.HomeBedPosHash, _bedTarget.transform.position);
+					zDO.Set(CompanionSetup.HasHomeBedHash, value: true);
+				}
+			}
+		}
+		Transform transform = ((_bedTarget.m_spawnPoint != null) ? _bedTarget.m_spawnPoint : _bedTarget.transform);
+		base.transform.position = transform.position;
+		base.transform.rotation = transform.rotation;
+		if (_body != null)
+		{
+			_body.position = transform.position;
+			_body.velocity = Vector3.zero;
+			_body.useGravity = false;
+			_body.isKinematic = true;
+		}
+		CompanionsPlugin.Log.LogDebug($"[Rest] FinalizeSleep anim — HasPlayerAnims={HasPlayerAnims} " + $"canWearArmor={_setup?.CanWearArmor()} zanim={_zanim != null}");
+		if (_zanim != null && HasPlayerAnims)
+		{
+			_zanim.SetBool("attach_bed", value: true);
+		}
+		if (_nview?.GetZDO() != null)
+		{
+			_nview.GetZDO().Set(ZDOVars.s_inBed, value: true);
+		}
+		if (_stamina != null)
+		{
+			_stamina.IsResting = true;
+		}
+		if (_setup != null)
+		{
+		}
+		MHR_SetBedCollisionIgnored(_bedTarget, ignore: true);
+		CompanionsPlugin.Log.LogDebug($"[Rest] FinalizeSleep — positioned at {transform.position:F2}");
+	}
+
+	private void CancelNavigation()
+	{
+		_navigating = false;
+		_isDirected = false;
+		_bedTarget = null;
+		_fireTarget = null;
+		if (!(_ai == null))
+		{
+			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
+			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
+			if (valueOrDefault == 4)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPoint();
+			}
+			else if (flag)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPointAt(_setup.GetHomePosition());
+			}
+			else if (Player.m_localPlayer != null)
+			{
+				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			}
+		}
+	}
+
+	private void MHR_SetBedCollisionIgnored(Bed bed, bool ignore)
+	{
+		if (bed == null)
+		{
+			return;
+		}
+		CapsuleCollider component = GetComponent<CapsuleCollider>();
+		if (component == null)
+		{
+			return;
+		}
+		Collider[] componentsInChildren = bed.GetComponentsInChildren<Collider>();
+		if (componentsInChildren == null)
+		{
+			return;
+		}
+		foreach (Collider collider in componentsInChildren)
+		{
+			if (!(collider == null))
+			{
+				Physics.IgnoreCollision(component, collider, ignore);
+			}
+		}
+		CompanionsPlugin.Log.LogDebug(string.Format("[Rest] Bed collisions {0} ({1} bed collider(s))", ignore ? "ignored while sleeping" : "restored", componentsInChildren.Length));
+	}
+
+	private void StopSitting()
+	{
+		_isSitting = false;
+		_fireTarget = null;
+		_isDirected = false;
+		CompanionsPlugin.Log.LogDebug("[Rest] Stopped sitting — resuming normal behavior");
+		if (_zanim != null && HasPlayerAnims)
+		{
+			_zanim.SetTrigger("emote_stop");
+			_zanim.SetBool("emote_sit", value: false);
+		}
+		if (_stamina != null)
+		{
+			_stamina.IsResting = false;
+		}
+		CompanionRestedBuff component = GetComponent<CompanionRestedBuff>();
+		if (component != null)
+		{
+			component.StopResting();
+		}
+		if (!(_ai == null))
+		{
+			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
+			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
+			if (valueOrDefault == 4)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPoint();
+			}
+			else if (flag)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPointAt(_setup.GetHomePosition());
+			}
+			else if (Player.m_localPlayer != null)
+			{
+				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			}
+		}
+	}
+
+	private void StopSleeping()
+	{
+		Bed bedTarget = _bedTarget;
+		MHR_StandUpFromBed(bedTarget);
+		MHR_SetBedCollisionIgnored(bedTarget, ignore: false);
+		_isSleeping = false;
+		_isAutoSleep = false;
+		_bedTarget = null;
+		CompanionsPlugin.Log.LogDebug("[Rest] Stopped sleeping — resuming normal behavior");
+		if (_zanim != null && HasPlayerAnims)
+		{
+			_zanim.SetBool("attach_bed", value: false);
+		}
+		if (_nview?.GetZDO() != null)
+		{
+			_nview.GetZDO().Set(ZDOVars.s_inBed, value: false);
+		}
+		if (_body != null)
+		{
+			_body.isKinematic = false;
+			_body.useGravity = true;
+			_body.velocity = Vector3.zero;
+			if (bedTarget != null)
+			{
+				_body.position = base.transform.position;
+			}
+		}
+		if (_stamina != null)
+		{
+			_stamina.IsResting = false;
+		}
+		CompanionRestedBuff component = GetComponent<CompanionRestedBuff>();
+		if (component != null)
+		{
+			component.ApplyRestedBuff();
+		}
+		if (!(_ai == null))
+		{
+			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
+			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
+			if (valueOrDefault == 4)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPoint();
+			}
+			else if (flag)
+			{
+				_ai.SetFollowTarget(null);
+				_ai.SetPatrolPointAt(_setup.GetHomePosition());
+			}
+			else if (Player.m_localPlayer != null)
+			{
+				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			}
+		}
+	}
+
+	internal void MHR_StandUpFromBed(Bed bed)
+	{
+		if (_isSleeping && !(bed == null))
+		{
+			Transform spawnPoint = bed.m_spawnPoint;
+			if (spawnPoint == null)
+			{
+				spawnPoint = bed.transform;
+			}
+			base.transform.position = spawnPoint.TransformPoint(new Vector3(0f, 0.5f, 0f));
+			Rigidbody component = GetComponent<Rigidbody>();
+			if (!(component == null))
+			{
+				component.velocity = Vector3.zero;
+				component.position = base.transform.position;
+			}
+			CompanionsPlugin.Log.LogDebug("[Rest] Got up at the bed's sleeping spot");
+		}
+	}
+
+	private Bed FindNearbyBed()
+	{
+		Collider[] array = Physics.OverlapSphere(base.transform.position, 20f);
+		Bed result = null;
+		float num = float.MaxValue;
+		HashSet<int> hashSet = new HashSet<int>();
+		Collider[] array2 = array;
+		foreach (Collider collider in array2)
+		{
+			if (collider == null)
+			{
+				continue;
+			}
+			Bed componentInParent = collider.GetComponentInParent<Bed>();
+			if (componentInParent == null || GetBedOwnerSafe(componentInParent) != 0)
+			{
+				continue;
+			}
+			int instanceID = componentInParent.GetInstanceID();
+			if (hashSet.Add(instanceID) && (!_claimedBeds.Contains(instanceID) || (!(_bedTarget == null) && _bedTarget.GetInstanceID() == instanceID)))
+			{
+				float num2 = Vector3.Distance(base.transform.position, componentInParent.transform.position);
+				if (num2 < num)
+				{
+					num = num2;
+					result = componentInParent;
+				}
+			}
+		}
+		return result;
+	}
+
+	private Bed FindAnyBedNear(Vector3 anchor, float radius)
+	{
+		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Bed result = null;
+		float num = float.MaxValue;
+		foreach (Collider collider in array)
+		{
+			if (collider == null)
+			{
+				continue;
+			}
+			Bed componentInParent = collider.GetComponentInParent<Bed>();
+			if (!(componentInParent == null))
+			{
+				float num2 = Vector3.Distance(anchor, componentInParent.transform.position);
+				if (num2 < num)
+				{
+					num = num2;
+					result = componentInParent;
+				}
+			}
+		}
+		return result;
+	}
+
+	private Bed FindUnclaimedBedNear(Vector3 anchor, float radius)
+	{
+		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Bed result = null;
+		float num = float.MaxValue;
+		int i = 0;
+		HashSet<int> hashSet = new HashSet<int>();
+		for (; i < array.Length; i++)
+		{
+			Collider collider = array[i];
+			if (collider == null)
+			{
+				continue;
+			}
+			Bed componentInParent = collider.GetComponentInParent<Bed>();
+			if (componentInParent == null || GetBedOwnerSafe(componentInParent) != 0)
+			{
+				continue;
+			}
+			int instanceID = componentInParent.GetInstanceID();
+			if (hashSet.Add(instanceID) && !_claimedBeds.Contains(instanceID) && !MHR_BedClaimedByOther(componentInParent))
+			{
+				if (MHR_BedIsMine(componentInParent))
+				{
+					return componentInParent;
+				}
+				float num2 = Vector3.Distance(anchor, componentInParent.transform.position);
+				if (num2 < num)
+				{
+					num = num2;
+					result = componentInParent;
+				}
+			}
+		}
+		return result;
+	}
+
+	internal bool MHR_BedClaimedByOther(Bed bed)
+	{
+		if (string.IsNullOrEmpty(MHR_GetBedClaimId(bed)) && MHR_GetBedClaimName(bed) == null)
+		{
+			return false;
+		}
+		return !MHR_BedIsMine(bed);
+	}
+
+	internal bool MHR_BedIsMine(Bed bed)
+	{
+		string text = MHR_GetBedClaimId(bed);
+		if (!string.IsNullOrEmpty(text))
+		{
+			string text2 = MHR_MyId();
+			if (!string.IsNullOrEmpty(text2))
+			{
+				return text == text2;
+			}
+		}
+		else
+		{
+			text = MHR_GetBedClaimName(bed);
+			if (text != null)
+			{
+				return text == MHR_MyName();
+			}
+		}
+		return false;
+	}
+
+	private bool HasOwnerBedNearby(Vector3 anchor, float radius)
+	{
+		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		foreach (Collider collider in array)
+		{
+			if (!(collider == null))
+			{
+				Bed componentInParent = collider.GetComponentInParent<Bed>();
+				if (!(componentInParent == null) && GetBedOwnerSafe(componentInParent) != 0)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	internal void MHR_ReleaseBedForDespawn()
+	{
+		ReleaseClaimedBed();
+		if (!(_nview == null))
+		{
+			_nview.GetZDO()?.Set(CompanionSetup.HasHomeBedHash, value: false);
+		}
+		CompanionsPlugin.Log.LogInfo("[Rest] Despawn: released the companion's bed");
+	}
+
+	private void ReleaseClaimedBed()
+	{
+		if (!(_claimedBed == null))
+		{
+			if (MHR_BedIsMine(_claimedBed))
+			{
+				MHR_SetBedClaim(_claimedBed, "", "");
+			}
+			_claimedBeds.Remove(_claimedBed.GetInstanceID());
+			_bedClaimNames.Remove(_claimedBed.GetInstanceID());
+			_claimedBed = null;
+		}
+	}
+
+	internal static void MHR_SetBedClaim(Bed bed, string name, string id)
+	{
+		if (name == null)
+		{
+			name = "";
+		}
+		if (id == null)
+		{
+			id = "";
+		}
+		if (bed == null)
+		{
+			return;
+		}
+		ZNetView component = bed.GetComponent<ZNetView>();
+		if (component == null)
+		{
+			return;
+		}
+		ZDO zDO = component.GetZDO();
+		if (zDO != null && (zDO.GetString(MHR_BedClaimNameHash) != name || zDO.GetString(MHR_BedClaimIdHash) != id))
+		{
+			if (!component.IsOwner())
+			{
+				component.ClaimOwnership();
+			}
+			zDO.Set(MHR_BedClaimNameHash, name);
+			zDO.Set(MHR_BedClaimIdHash, id);
+			CompanionsPlugin.Log.LogInfo($"[Rest] Bed claim saved on the bed: \"{name}\" (ID {id})");
+		}
+	}
+
+	internal string MHR_MyName()
+	{
+		CompanionInteract component = GetComponent<CompanionInteract>();
+		if ((object)component == null)
+		{
+			return "Companion";
+		}
+		return component.GetCompanionName();
+	}
+
+	internal static string MHR_GetBedClaimId(Bed bed)
+	{
+		if (!(bed == null))
+		{
+			ZNetView component = bed.GetComponent<ZNetView>();
+			if (!(component == null))
+			{
+				ZDO zDO = component.GetZDO();
+				if (zDO != null)
+				{
+					return zDO.GetString(MHR_BedClaimIdHash);
+				}
+			}
+		}
+		return "";
+	}
+
+	internal string MHR_MyId()
+	{
+		CompanionSetup setup = _setup;
+		if ((object)setup == null)
+		{
+			return "";
+		}
+		return setup.MHR_EnsureCompanionId();
+	}
+}

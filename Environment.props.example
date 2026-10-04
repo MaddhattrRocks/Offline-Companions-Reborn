@@ -1,0 +1,17 @@
+<!-- Copy this file to Environment.props (same folder) and set your paths.
+     Environment.props is ignored by git, so your local paths stay on your PC. -->
+<Project>
+  <PropertyGroup>
+    <!-- Your Valheim install folder. -->
+    <ValheimDir>C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
+
+    <!-- Uncomment to override where the game / BepInEx DLLs are read from
+         (defaults: $(ValheimDir)\valheim_Data\Managed and $(ValheimDir)\BepInEx\core). -->
+    <!-- <ManagedDir>$(ValheimDir)\valheim_Data\Managed</ManagedDir> -->
+    <!-- <BepInExCoreDir>$(ValheimDir)\BepInEx\core</BepInExCoreDir> -->
+
+    <!-- Uncomment to copy Companions.dll into your plugins folder after every build.
+         For an r2modman/Thunderstore profile, point this at that profile's BepInEx\plugins folder. -->
+    <!-- <DeployDir>$(ValheimDir)\BepInEx\plugins\Maddhattr-Offline_Companions_Reborn</DeployDir> -->
+  </PropertyGroup>
+</Project>

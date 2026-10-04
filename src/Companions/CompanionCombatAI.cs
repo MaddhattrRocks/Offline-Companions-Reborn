@@ -1,0 +1,727 @@
+using UnityEngine;
+
+namespace Companions;
+
+public class CompanionCombatAI : MonoBehaviour
+{
+	private const float AlertRange = 9999f;
+
+	private const float InterceptTimeMin = 0f;
+
+	private const float InterceptTimeMax = 4f;
+
+	private const float CircleTargetInterval = 3f;
+
+	private const float CircleTargetDuration = 1f;
+
+	private const float CircleTargetDistance = 4f;
+
+	private const float UpdateWeaponInterval = 1f;
+
+	private const float GiveUpTime = 30f;
+
+	private const float UpdateTargetIntervalNear = 2f;
+
+	private const float UpdateTargetIntervalFar = 6f;
+
+	private const float UnableToAttackDuration = 15f;
+
+	private const float RangedAttackRange = 30f;
+
+	private const float RangedStandoff = 20f;
+
+	private const float RangedFleeRadius = 10f;
+
+	private CompanionAI _ai;
+
+	private Character _character;
+
+	private Humanoid _humanoid;
+
+	private CompanionSetup _setup;
+
+	private Character _targetCreature;
+
+	private StaticTarget _targetStatic;
+
+	private Vector3 _lastKnownTargetPos;
+
+	private bool _beenAtLastPos;
+
+	private float _timeSinceAttacking;
+
+	private float _timeSinceSensedTarget;
+
+	private float _updateTargetTimer;
+
+	private float _updateWeaponTimer;
+
+	private float _interceptTime;
+
+	private float _pauseTimer;
+
+	private float _unableToAttackTargetTimer;
+
+	private float _weaponSwitchCooldown;
+
+	private bool _engaged;
+
+	private Character _recallIgnored;
+
+	private float _recallTimer;
+
+	private const float RecallDuration = 8f;
+
+	private int _stance;
+
+	private float _blockHoldTimer;
+
+	private float _enemySwingTimer;
+
+	private const float ParryDelay = 0.2f;
+
+	private int _parryAttackCount;
+
+	private float _parryGraceTimer;
+
+	private float _logTimer;
+
+	private const float LogInterval = 3f;
+
+	private const float WeaponSwitchCooldown = 4f;
+
+	internal bool IsEngaged => _engaged;
+
+	internal bool HuntMode { get; set; }
+
+	internal bool IsRecalled => _recallTimer > 0f;
+
+	internal Character TargetCreature => _targetCreature;
+
+	internal void Engage(Character target)
+	{
+		if (!(target == null) && !(target.GetHealth() <= 0f))
+		{
+			_stance = _setup?.GetCombatStance() ?? 0;
+			if (_stance != 1)
+			{
+				_targetCreature = target;
+				_targetStatic = null;
+				_lastKnownTargetPos = target.transform.position;
+				_beenAtLastPos = false;
+				_timeSinceAttacking = 0f;
+				_timeSinceSensedTarget = 0f;
+				_updateTargetTimer = 0f;
+				_updateWeaponTimer = 0f;
+				_weaponSwitchCooldown = 0f;
+				_pauseTimer = Random.Range(0f, 3f);
+				_interceptTime = Random.Range(0f, 4f);
+				_unableToAttackTargetTimer = 0f;
+				_parryAttackCount = 0;
+				_engaged = true;
+				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} (routes through normal SelectBestAttack/shield/flee logic)");
+				_ai.SetAlerted(alert: true);
+			}
+		}
+	}
+
+	internal bool UpdateCombat(float dt)
+	{
+		if (WaterSafety.ShouldAvoidChase(_humanoid, _targetCreature))
+		{
+			return false;
+		}
+		if (!_engaged)
+		{
+			return false;
+		}
+		if (_humanoid == null)
+		{
+			return false;
+		}
+		_stance = _setup?.GetCombatStance() ?? 0;
+		if (_stance == 1)
+		{
+			Disengage();
+			return false;
+		}
+		UpdateTarget(dt, out var canHearTarget, out var canSeeTarget);
+		if (_targetCreature == null && _targetStatic == null)
+		{
+			Disengage();
+			return false;
+		}
+		_ai.m_targetCreature = _targetCreature;
+		_ai.m_targetStatic = _targetStatic;
+		UpdateBlocking(dt);
+		float healthPercentage = _character.GetHealthPercentage();
+		if (healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
+		{
+			Player localPlayer = Player.m_localPlayer;
+			if (localPlayer != null)
+			{
+				CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\"");
+				TryEquipShield();
+				if (_ai.FleeFrom(dt, _targetCreature.transform.position))
+				{
+					return true;
+				}
+				CompanionsPlugin.Log.LogInfo("[Flee] could not create distance (blocked/cornered) -> defending itself this tick, will keep trying to flee");
+			}
+		}
+		_logTimer += dt;
+		if (_logTimer >= 3f)
+		{
+			_logTimer = 0f;
+			string text = ((_targetCreature != null) ? _targetCreature.m_name : "static");
+			float num = ((_targetCreature != null) ? Vector3.Distance(base.transform.position, _targetCreature.transform.position) : (-1f));
+			string text2 = _humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "none";
+		}
+		bool blocking = ReflectionHelper.GetBlocking(_character);
+		bool flag = _stance == 0 || _stance == 3;
+		if (_targetCreature != null && !blocking && _parryAttackCount <= 0 && !HuntMode && !flag)
+		{
+			_pauseTimer += dt;
+			if (_pauseTimer > 3f)
+			{
+				if (_pauseTimer > 4f)
+				{
+					_pauseTimer = Random.Range(0f, 0.3f);
+				}
+				_ai.RandomMovementAroundPoint(dt, _targetCreature.transform.position, 4f, _ai.IsAlerted());
+				return true;
+			}
+		}
+		ItemDrop.ItemData itemData = SelectBestAttack(dt);
+		float num2 = ((itemData != null && itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) ? 0.5f : 0f);
+		bool flag2 = itemData != null && Time.time - itemData.m_lastAttackTime > itemData.m_shared.m_aiAttackInterval + num2;
+		float value = ModConfig.AttackCooldown.Value;
+		bool flag3 = _character.GetTimeSinceLastAttack() >= value;
+		bool flag4 = _parryAttackCount > 0;
+		bool flag5 = itemData != null && !_ai.IsTakingOff() && (flag4 || (flag2 && flag3));
+		if (!_ai.IsCharging() && (_targetStatic != null || _targetCreature != null) && itemData != null && flag5 && !_character.InAttack() && itemData.m_shared.m_attack != null && !itemData.m_shared.m_attack.IsDone() && !string.IsNullOrEmpty(itemData.m_shared.m_attack.m_chargeAnimationBool))
+		{
+			_ai.ChargeStart(itemData.m_shared.m_attack.m_chargeAnimationBool);
+		}
+		bool flag6 = ((itemData == null) ? (_stance == 2) : ((itemData.m_shared.m_aiAttackRange > 10f || itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) ? true : false));
+		if (_targetCreature != null && itemData != null && !flag5 && !_character.InAttack() && !flag6 && !HuntMode && !flag)
+		{
+			Vector3 position = _targetCreature.transform.position;
+			_ai.RandomMovementAroundPoint(dt, position, (_ai.m_randomMoveRange > 0f) ? _ai.m_randomMoveRange : 5f, _ai.IsAlerted());
+			return true;
+		}
+		if ((_targetStatic == null && _targetCreature == null) || itemData == null)
+		{
+			_ai.ChargeStop();
+			Disengage();
+			return false;
+		}
+		if (itemData.m_shared.m_aiTargetType == ItemDrop.ItemData.AiTarget.Enemy)
+		{
+			if (_targetCreature != null)
+			{
+				if (canHearTarget || canSeeTarget)
+				{
+					_beenAtLastPos = false;
+					_lastKnownTargetPos = _targetCreature.transform.position;
+					float num3 = Vector3.Distance(_lastKnownTargetPos, base.transform.position) - _targetCreature.GetRadius();
+					float num4 = 9999f * _targetCreature.GetStealthFactor();
+					if (canSeeTarget && num3 < num4)
+					{
+						_ai.SetAlerted(alert: true);
+					}
+					bool flag7 = flag6;
+					float num5 = ((HuntMode || flag7) ? 30f : itemData.m_shared.m_aiAttackRange);
+					bool flag8 = num3 < num5;
+					float dist = ((HuntMode || flag7) ? 20f : 0f);
+					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!(HuntMode || flag7) && itemData.m_shared.m_aiAttackRangeMin < 0f);
+					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
+					{
+						_ai.FleeFrom(dt, _targetCreature.transform.position);
+					}
+					else if (flag7 && flag8 && canSeeTarget && _ai.IsAlerted() && !flag9)
+					{
+						_ai.RandomMovementAroundPoint(dt, _targetCreature.transform.position, 20f, run: true);
+					}
+					else if (flag9)
+					{
+						Vector3 velocity = _targetCreature.GetVelocity();
+						Vector3 vector = velocity * _interceptTime;
+						Vector3 lastKnownTargetPos = _lastKnownTargetPos;
+						if (num3 > vector.magnitude / 4f)
+						{
+							lastKnownTargetPos += velocity * _interceptTime;
+						}
+						_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: true);
+						if (_timeSinceAttacking > 15f)
+						{
+							_unableToAttackTargetTimer = 15f;
+						}
+					}
+					else
+					{
+						_ai.StopMoving();
+					}
+					if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
+					{
+						_ai.LookAtPoint(_targetCreature.GetTopPoint());
+						if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, itemData.m_shared.m_aiAttackMaxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
+						{
+							_parryAttackCount--;
+						}
+					}
+				}
+				else
+				{
+					_ai.ChargeStop();
+					float dist2 = (flag6 ? 20f : 0f);
+					if (_beenAtLastPos)
+					{
+						_ai.RandomMovement(dt, _lastKnownTargetPos);
+						if (_timeSinceAttacking > 15f)
+						{
+							_unableToAttackTargetTimer = 15f;
+						}
+					}
+					else if (_ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: true))
+					{
+						_beenAtLastPos = true;
+					}
+				}
+			}
+		}
+		else if (itemData.m_shared.m_aiTargetType == ItemDrop.ItemData.AiTarget.FriendHurt || itemData.m_shared.m_aiTargetType == ItemDrop.ItemData.AiTarget.Friend)
+		{
+			Character character = ((itemData.m_shared.m_aiTargetType == ItemDrop.ItemData.AiTarget.FriendHurt) ? _ai.HaveHurtFriendInRange(_ai.m_viewRange) : _ai.HaveFriendInRange(_ai.m_viewRange));
+			if (character != null)
+			{
+				float num6 = Vector3.Distance(character.transform.position, base.transform.position);
+				if (num6 < itemData.m_shared.m_aiAttackRange)
+				{
+					if (flag5)
+					{
+						_ai.StopMoving();
+						_ai.LookAtPoint(character.transform.position);
+						DoAttack(character);
+					}
+					else
+					{
+						_ai.RandomMovement(dt, character.transform.position);
+					}
+				}
+				else
+				{
+					_ai.MoveToPoint(dt, character.transform.position, 0f, run: true);
+				}
+			}
+			else
+			{
+				_ai.RandomMovement(dt, base.transform.position);
+			}
+		}
+		return true;
+	}
+
+	internal void OnDamaged(Character attacker)
+	{
+		if (!(attacker == null) && (!attacker.IsPlayer() || !_character.IsTamed()))
+		{
+			if (_recallTimer > 0f)
+			{
+				ClearRecall();
+			}
+			if (_recallIgnored != null && attacker == _recallIgnored)
+			{
+				_recallIgnored = null;
+			}
+			if (_engaged && (_targetCreature == null || _targetCreature.GetHealth() <= 0f))
+			{
+				_targetCreature = attacker;
+				_lastKnownTargetPos = attacker.transform.position;
+				_beenAtLastPos = false;
+				_targetStatic = null;
+				_timeSinceSensedTarget = 0f;
+			}
+		}
+	}
+
+	private void Awake()
+	{
+		_ai = GetComponent<CompanionAI>();
+		_character = GetComponent<Character>();
+		_humanoid = GetComponent<Humanoid>();
+		_setup = GetComponent<CompanionSetup>();
+	}
+
+	internal void Disengage()
+	{
+		if (_engaged)
+		{
+			string text = ((_targetCreature != null) ? _targetCreature.m_name : "none");
+			_targetCreature = null;
+			_targetStatic = null;
+			_engaged = false;
+			_ai.m_targetCreature = null;
+			_ai.m_targetStatic = null;
+			_ai.SetAlerted(alert: false);
+			_ai.StopMoving();
+			_ai.ChargeStop();
+			ClearBlock();
+			_parryAttackCount = 0;
+			HuntMode = false;
+		}
+	}
+
+	private void ClearBlock()
+	{
+		_enemySwingTimer = 0f;
+		if (ReflectionHelper.GetBlocking(_character))
+		{
+			ReflectionHelper.TrySetBlocking(_character, value: false);
+		}
+		_blockHoldTimer = 0f;
+	}
+
+	internal void Recall()
+	{
+		_recallIgnored = _targetCreature;
+		_recallTimer = 8f;
+		if (_engaged)
+		{
+			Disengage();
+			return;
+		}
+		_targetCreature = null;
+		_targetStatic = null;
+		_ai.m_targetCreature = null;
+		_ai.m_targetStatic = null;
+		_ai.SetAlerted(alert: false);
+	}
+
+	internal void ClearRecall()
+	{
+		_recallTimer = 0f;
+		_recallIgnored = null;
+	}
+
+	private void UpdateTarget(float dt, out bool canHearTarget, out bool canSeeTarget)
+	{
+		_unableToAttackTargetTimer -= dt;
+		_updateTargetTimer -= dt;
+		if (_recallTimer > 0f)
+		{
+			_recallTimer -= dt;
+		}
+		if (_updateTargetTimer <= 0f && !_character.InAttack())
+		{
+			bool flag = Player.IsPlayerInRange(base.transform.position, 50f);
+			_updateTargetTimer = (flag ? 2f : 6f);
+			Character character = _ai.FindNearbyEnemy();
+			if (character != null && IsPassiveAnimal(character))
+			{
+				character = null;
+			}
+			if (_recallIgnored != null)
+			{
+				if (!_recallIgnored || _recallIgnored.GetHealth() <= 0f)
+				{
+					_recallIgnored = null;
+				}
+				else if (character == _recallIgnored)
+				{
+					character = null;
+				}
+				else if (character != null)
+				{
+					_recallIgnored = null;
+				}
+			}
+			if (character != null)
+			{
+				_ = _targetCreature != character;
+				_targetCreature = character;
+				_targetStatic = null;
+			}
+		}
+		if (_targetCreature != null && _character.IsTamed())
+		{
+			bool flag2 = false;
+			Vector3 b;
+			if (_ai.GetPatrolPoint(out var point))
+			{
+				b = point;
+				flag2 = true;
+			}
+			else
+			{
+				GameObject followTarget = _ai.GetFollowTarget();
+				if (followTarget != null)
+				{
+					b = followTarget.transform.position;
+					flag2 = true;
+				}
+				else
+				{
+					b = Vector3.zero;
+				}
+			}
+			if (flag2)
+			{
+				float num = Vector3.Distance(_targetCreature.transform.position, b);
+				if (num > 9999f)
+				{
+					_targetCreature = null;
+				}
+			}
+		}
+		if (_targetCreature != null)
+		{
+			ZNetView component = _targetCreature.GetComponent<ZNetView>();
+			if (component != null && !component.IsValid())
+			{
+				_targetCreature = null;
+			}
+			else if (_targetCreature.GetHealth() <= 0f)
+			{
+				_targetCreature = null;
+			}
+			else if (!HuntMode && !_ai.IsEnemy(_targetCreature))
+			{
+				_targetCreature = null;
+			}
+		}
+		canHearTarget = false;
+		canSeeTarget = false;
+		if (_targetCreature != null)
+		{
+			canHearTarget = _ai.CanHearTarget(_targetCreature);
+			canSeeTarget = _ai.CanSeeTarget(_targetCreature);
+			if (canSeeTarget | canHearTarget)
+			{
+				_timeSinceSensedTarget = 0f;
+			}
+		}
+		_timeSinceSensedTarget += dt;
+		if (_ai.IsAlerted() || _targetCreature != null)
+		{
+			_timeSinceAttacking += dt;
+			float num2 = 60f;
+			if (_timeSinceSensedTarget > 30f || _timeSinceAttacking > num2)
+			{
+				_ai.SetAlerted(alert: false);
+				_targetCreature = null;
+				_targetStatic = null;
+				_timeSinceAttacking = 0f;
+				_updateTargetTimer = 5f;
+			}
+		}
+	}
+
+	private void UpdateBlocking(float dt)
+	{
+		if (_targetCreature == null || _character.InAttack() || _character.IsStaggering() || _parryAttackCount > 0)
+		{
+			ClearBlock();
+			return;
+		}
+		bool flag = false;
+		foreach (Character allCharacter in Character.GetAllCharacters())
+		{
+			if (!(allCharacter == null) && !(allCharacter.GetHealth() <= 0f) && BaseAI.IsEnemy(_character, allCharacter))
+			{
+				float num = Vector3.Distance(base.transform.position, allCharacter.transform.position);
+				if (num < 8f && allCharacter.InAttack())
+				{
+					flag = true;
+					_ai.LookAtPoint(allCharacter.GetTopPoint());
+					break;
+				}
+			}
+		}
+		if (flag)
+		{
+			_enemySwingTimer += dt;
+			if (_enemySwingTimer >= 0.2f)
+			{
+				ReflectionHelper.TrySetBlocking(_character, value: true);
+				ReflectionHelper.TrySetBlockTimer(_humanoid, 0f);
+				_blockHoldTimer = 0.2f;
+			}
+			return;
+		}
+		if (_blockHoldTimer > 0f)
+		{
+			_blockHoldTimer -= dt;
+			ReflectionHelper.TrySetBlocking(_character, value: true);
+			_enemySwingTimer = 0f;
+			return;
+		}
+		if (_blockHoldTimer < 0f)
+		{
+			_parryGraceTimer = 0.15f;
+		}
+		if (_parryGraceTimer > 0f)
+		{
+			_parryGraceTimer -= dt;
+			if (_targetCreature != null && _targetCreature.IsStaggering())
+			{
+				_parryAttackCount = 2;
+				_parryGraceTimer = 0f;
+			}
+		}
+		ClearBlock();
+	}
+
+	private bool TryEquipShield()
+	{
+		ItemDrop.ItemData itemData = ShieldLogic.SelectShield(_humanoid, _humanoid.GetComponent<Character>());
+		if (itemData == null)
+		{
+			return false;
+		}
+		_humanoid.EquipItem(itemData);
+		return true;
+	}
+
+	private ItemDrop.ItemData SelectBestAttack(float dt)
+	{
+		if (_targetCreature != null || _targetStatic != null)
+		{
+			_updateWeaponTimer -= dt;
+			if (_weaponSwitchCooldown > 0f)
+			{
+				_weaponSwitchCooldown -= dt;
+			}
+			if (_updateWeaponTimer <= 0f && !_character.InAttack() && _weaponSwitchCooldown <= 0f)
+			{
+				_updateWeaponTimer = 1f;
+				if (!TorchOpener.TrySelect(_humanoid, _targetCreature, _stance, HuntMode))
+				{
+					string text = _humanoid.GetCurrentWeapon()?.m_shared?.m_name;
+					bool flag = false;
+					ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
+					if (_stance == 2 || HuntMode)
+					{
+						if (currentWeapon == null || currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow)
+						{
+							_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend, out var friend);
+							_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend, friend);
+							if (!TryForceRangedWeapon())
+							{
+								TryForceMeleeWeapon();
+							}
+							flag = true;
+						}
+					}
+					else if (!HuntMode && _stance == 3)
+					{
+						if (currentWeapon == null || (currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.OneHandedWeapon && currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.TwoHandedWeapon && currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft) || currentWeapon.GetDamage().m_pickaxe != 0f || !(GetCombatDamage(currentWeapon) > 0f))
+						{
+							_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend2, out var friend2);
+							_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend2, friend2);
+							TryForceMeleeWeapon();
+							flag = true;
+						}
+					}
+					else
+					{
+						_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend3, out var friend3);
+						_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend3, friend3);
+					}
+					TryEquipShield();
+					string text2 = _humanoid.GetCurrentWeapon()?.m_shared?.m_name;
+					if (text2 != text || flag)
+					{
+						_weaponSwitchCooldown = 4f;
+					}
+				}
+			}
+		}
+		return _humanoid.GetCurrentWeapon();
+	}
+
+	private bool DoAttack(Character target)
+	{
+		ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
+		if (currentWeapon == null)
+		{
+			return false;
+		}
+		if (!_ai.CanUseAttack(currentWeapon))
+		{
+			return false;
+		}
+		Attack attack = currentWeapon.m_shared?.m_attack;
+		bool flag = false;
+		if (attack != null && attack.m_bowDraw)
+		{
+			flag = true;
+			attack.m_bowDraw = false;
+		}
+		bool flag2 = _character.StartAttack(target, charge: false);
+		if (flag && attack != null)
+		{
+			attack.m_bowDraw = true;
+		}
+		if (flag2)
+		{
+			_timeSinceAttacking = 0f;
+		}
+		return flag2;
+	}
+
+	private static bool IsPassiveAnimal(Character c)
+	{
+		return MHR_Threat.IsPassive(c);
+	}
+
+	private bool TryForceRangedWeapon()
+	{
+		ItemDrop.ItemData itemData = WeaponLogic.FindReadyBow(_humanoid, _targetCreature);
+		if (itemData != null)
+		{
+			_humanoid.EquipItem(itemData);
+			return true;
+		}
+		return false;
+	}
+
+	private bool TryForceMeleeWeapon()
+	{
+		Inventory inventory = _humanoid.GetInventory();
+		if (inventory == null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData itemData = null;
+		float num = -1f;
+		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
+		{
+			if (!allItem.IsEquipable() || allItem.m_shared.m_aiAttackRange > 10f)
+			{
+				continue;
+			}
+			ItemDrop.ItemData.ItemType itemType = allItem.m_shared.m_itemType;
+			if ((itemType == ItemDrop.ItemData.ItemType.OneHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft) && !(allItem.GetDamage().m_pickaxe > 0f) && (!(allItem.GetDamage().m_chop > 0f) || allItem.GetDamage().m_slash != 0f || allItem.GetDamage().m_blunt != 0f || allItem.GetDamage().m_pierce != 0f) && itemType != ItemDrop.ItemData.ItemType.Tool && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)))
+			{
+				float combatDamage = GetCombatDamage(allItem);
+				if (combatDamage > num)
+				{
+					num = combatDamage;
+					itemData = allItem;
+				}
+			}
+		}
+		if (itemData != null)
+		{
+			_humanoid.EquipItem(itemData);
+			return true;
+		}
+		return false;
+	}
+
+	private static float GetCombatDamage(ItemDrop.ItemData item)
+	{
+		return WeaponLogic.Score(item, null);
+	}
+}

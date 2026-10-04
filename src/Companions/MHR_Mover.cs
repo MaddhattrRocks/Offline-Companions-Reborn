@@ -1,0 +1,925 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using HarmonyLib;
+
+namespace Companions
+{
+    // ---- 1.4.74: one movement layer. Trips, repairs and bed go through here (follow and jobs move over in later builds). ----
+    // Follows the real path corner by corner, re-plans every second, walks/jogs/runs by distance, plans around water it
+    // can't swim, jumps narrow streams, opens doors on the way (and closes them behind), and when stuck works through:
+    // open a door -> step back on a diagonal -> hop toward the next corner -> detour -> give up (callers decide what next).
+    public static class MHR_Mover
+    {
+        class S
+        {
+            public Vector3 Goal, Dest; public float Dist; public string Tag = "";
+            public readonly List<Vector3> Path = new List<Vector3>();
+            public int Corner; public float NextPlan; public bool PathOk, Partial;
+            public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
+            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
+            public bool HasDetour; public Vector3 Detour; public float DetourUntil;
+            public bool GaveUp; public float GaveUpAt;
+            public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek;
+            public Door RouteDoor; public Vector3 RouteDoorSpot;
+            public bool WaitStamina, TooTired; public float NeedStamina, WaitStart, NoWaitUntil;
+            public float MainBest; public int Passes; public Vector3 Shore; public bool HasShore; public float NextShore;
+            public bool Walking, NewLeg;
+        }
+        class Opened { public Door Door; public float At; }
+
+        static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
+        static readonly Dictionary<int, List<Opened>> s_opened = new Dictionary<int, List<Opened>>();
+        static readonly List<Vector3> s_tmp = new List<Vector3>();
+        static readonly List<Piece> s_pieces = new List<Piece>();
+        static readonly Collider[] s_cols = new Collider[16];
+        static int s_mask = -1;
+        static float s_nextErr;
+
+        public const float StillTime = 2.5f, NoProgressTime = 8f;
+
+        static int Mask()
+        {
+            if (s_mask == -1) s_mask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
+            return s_mask;
+        }
+        static S Get(Component c)
+        {
+            if (c == null) return null;
+            S s;
+            if (!s_s.TryGetValue(c.gameObject.GetInstanceID(), out s)) { s = new S(); s_s[c.gameObject.GetInstanceID()] = s; }
+            return s;
+        }
+        static S Peek(Component c)
+        {
+            S s;
+            return c != null && s_s.TryGetValue(c.gameObject.GetInstanceID(), out s) ? s : null;
+        }
+        static void Dbg(string msg) { if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug(msg); }
+        public static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
+        static float Flat(Vector3 a, Vector3 b) { return new Vector2(a.x - b.x, a.z - b.z).magnitude; }
+
+        // ---------- queries for the callers ----------
+        public static bool OwnsMovement(Component c) { S s = Peek(c); return s != null && Time.time - s.LastGo < 0.3f; }
+        public static bool GaveUp(CompanionAI ai) { S s = Peek(ai); return s != null && s.GaveUp; }
+        public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
+        public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
+        // CompanionRest keeps its bed trip alive while we're still getting somewhere
+        public static bool KeepAlive(Component c)
+        {
+            S s = Peek(c);
+            return s != null && !s.GaveUp && Time.time - s.LastGo < 0.5f && Time.time - s.ProgressTime < 10f;
+        }
+        public static void Release(CompanionAI ai)
+        {
+            S s = Peek(ai);
+            if (s == null) return;
+            s.LastGo = 0f; s.GaveUp = false; s.Path.Clear(); s.HasDetour = false; s.RouteDoor = null;
+            Character c = ai.GetComponent<Character>();
+            if (c != null && s.Walking) { c.SetWalk(false); s.Walking = false; }
+        }
+
+        // ---------- main entry ----------
+        // Returns true once within 'dist' (flat) and on the same level (within 1.5m up/down).
+        public static bool Go(CompanionAI ai, float dt, Vector3 goal, float dist, bool allowRun, string tag)
+        {
+            if (ai == null) return false;
+            try { return GoInner(ai, goal, dist, allowRun, tag ?? ""); }
+            catch (Exception e)
+            {
+                if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
+                return false;
+            }
+        }
+
+        static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag)
+        {
+            float now = Time.time;
+            S s = Get(ai);
+            Character c = ai.GetComponent<Character>();
+            Vector3 pos = ai.transform.position;
+            float shift = Vector3.Distance(goal, s.Goal);
+            bool fresh = shift > 4f || now - s.LastGo > 2f || s.Tag != tag;
+            if (s.GaveUp && now - s.GaveUpAt > 15f) fresh = true;   // try again after a while
+            if (fresh) Reset(s, goal, pos, now, tag);
+            else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
+            s.LastGo = now; s.Goal = goal; s.Dist = dist;
+
+            // arrived: within reach on the same level (not standing under it on the floor below)
+            if (Flat(pos, goal) <= dist && Mathf.Abs(pos.y - goal.y) <= 1.5f) { Halt(ai, c, s); return true; }
+            if (s.GaveUp) { Halt(ai, c, s); return false; }
+            if (c == null || c.InAttack()) return false;
+
+            // steering target: a detour point, the door we're routing through, or the path
+            if (now >= s.NextPlan || s.Path.Count == 0) Plan(ai, c, s, pos, now);
+            AdvanceCorner(s, pos);
+            float remain = Remaining(s, pos);
+            if (s.NewLeg) { s.NewLeg = false; s.Best = remain; }
+            if (remain < s.Best - 0.75f) { s.Best = remain; s.ProgressTime = now; }
+            if (!s.HasDetour && s.RouteDoor == null && remain < s.MainBest - 1.5f) { s.MainBest = remain; s.Ladder = 0; s.Passes = 0; }
+            if (Vector3.Distance(pos, s.Anchor) > 0.6f) { s.Anchor = pos; s.AnchorTime = now; }
+
+            Log(s, pos, remain, now, c);
+
+            // a sidestep / hop in progress
+            if (now < s.StepUntil) { Steer(ai, c, s, s.StepDir, s.StepRun, false); return false; }
+
+            // waiting on the bank until there's stamina for the swim
+            if (s.WaitStamina)
+            {
+                if (Stamina(ai) >= s.NeedStamina) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 30f; s.NextPlan = 0f; Dbg("[Move|" + tag + "] rested enough to swim across"); }
+                else if (now - s.WaitStart > 40f) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 60f; Dbg("[Move|" + tag + "] waited long enough - swimming across"); }
+                else { Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; return false; }
+            }
+
+            if (s.HasDetour && (Flat(pos, s.Detour) < 1.0f || now > s.DetourUntil)) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
+            if (s.RouteDoor != null)
+            {
+                if (!DoorClosed(s.RouteDoor)) { s.RouteDoor = null; Plan(ai, c, s, pos, now); }
+                else if (MHR_Nav.DoorDist(pos, s.RouteDoor.transform.position) <= 2.2f)
+                {
+                    // open it, then walk through to the far side before asking for a new route
+                    Vector3 dp = s.RouteDoor.transform.position, across = dp - s.RouteDoorSpot; across.y = 0f;
+                    OpenDoor(ai, c, s.RouteDoor, tag);
+                    if (across.sqrMagnitude > 0.01f) { s.HasDetour = true; s.Detour = dp + across.normalized * 1.8f; s.DetourUntil = now + 5f; }
+                    s.RouteDoor = null; s.NextPlan = 0f; Halt(ai, c, s);
+                    return false;
+                }
+            }
+            Vector3 target = NextCorner(s, pos);
+
+            // swimming: head for the bank that's closest to where we're going, unless the path already knows the way
+            if (c.IsSwimming() && (!s.PathOk || s.Partial))
+            {
+                if (now >= s.NextShore) { s.NextShore = now + 0.5f; Vector3 sh; s.HasShore = FindShore(c, pos, goal, out sh); s.Shore = sh; }
+                if (s.HasShore) target = s.Shore;
+            }
+
+            // a closed door right ahead: open it before walking into it
+            if (now >= s.NextDoorPeek) { s.NextDoorPeek = now + 0.4f; Door ahead = DoorAhead(pos, target); if (ahead != null) { OpenDoor(ai, c, ahead, tag); Halt(ai, c, s); return false; } }
+
+            Vector3 dir = target - pos; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) { Halt(ai, c, s); return false; }
+            dir.Normalize();
+
+            // water on the next stretch: jump narrow streams, take a running leap into wide water
+            if (!c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && now >= s.NextWaterPeek)
+            {
+                s.NextWaterPeek = now + 0.2f;
+                if (TryWaterJump(ai, c, s, pos, dir, now, tag)) return false;
+            }
+
+            float runDist = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
+            bool run = allowRun && runDist > 0f && remain > runDist;
+            bool walk = remain < 2.5f;
+            Steer(ai, c, s, dir, run, walk);
+
+            // stuck?
+            float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
+            if (still >= StillTime || noCloser >= NoProgressTime) Unstick(ai, c, s, pos, target, now, tag, still, noCloser);
+            return false;
+        }
+
+        static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
+        {
+            s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
+            s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+            s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false;
+            s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
+            s.NextDoorSearch = 0f; s.NextLog = now + 1f;
+        }
+
+        static void Halt(CompanionAI ai, Character c, S s)
+        {
+            ai.StopMoving();
+            if (c != null && s.Walking) { c.SetWalk(false); s.Walking = false; }
+        }
+
+        static void Steer(CompanionAI ai, Character c, S s, Vector3 dir, bool run, bool walk)
+        {
+            if (walk != s.Walking) { c.SetWalk(walk); s.Walking = walk; }
+            ai.MoveTowards(dir, run && !walk);
+        }
+
+        // ---------- path ----------
+        static void Plan(CompanionAI ai, Character c, S s, Vector3 pos, float now)
+        {
+            s.NextPlan = now + 1f;
+            s.Path.Clear(); s.Corner = 0;
+            Vector3 goal = s.HasDetour ? s.Detour : s.RouteDoor != null ? s.RouteDoorSpot : s.Goal;
+            if (Vector3.Distance(goal, s.Dest) > 1.5f) { s.NewLeg = true; s.ProgressTime = now; }   // new leg: measure progress from here
+            s.Dest = goal;
+            bool ok = GetPath(pos, goal, s.Path, Pathfinding.AgentType.Humanoid, false);
+            if (!ok || s.Path.Count == 0)
+            {
+                s.PathOk = false; s.Partial = true; s.Path.Clear(); s.Path.Add(goal);
+            }
+            else
+            {
+                s.PathOk = true;
+                Vector3 end = s.Path[s.Path.Count - 1];
+                s.Partial = Flat(end, goal) > 1.5f || Mathf.Abs(end.y - goal.y) > 2.2f;
+                // tired: a swim longer than the stamina allows -> a dry route, or wait on the bank
+                s.TooTired = false;
+                if (!c.IsSwimming())
+                {
+                    float swim = MHR_Water.SwimMeters(c, pos, s.Path, 60f);
+                    if (swim > 0.5f)
+                    {
+                        float need = MHR_Water.SwimStamina(c, swim) * 1.25f + 5f;
+                        float max = MaxStamina(ai);
+                        if (max > 0f) need = Mathf.Min(need, max * 0.9f);
+                        if (now >= s.NoWaitUntil && Stamina(ai) < need)
+                        {
+                            s_tmp.Clear();
+                            if (GetPath(pos, goal, s_tmp, Pathfinding.AgentType.HumanoidAvoidWater, true))
+                            {
+                                s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false;
+                                if (now >= s.NextLog) Dbg("[Move|" + s.Tag + "] too tired to swim " + swim.ToString("F0") + "m - going around the water");
+                            }
+                            else { s.TooTired = true; s.NeedStamina = need; }   // stops at the water's edge (see TryWaterJump)
+                        }
+                    }
+                }
+            }
+            // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
+            if (s.Partial && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
+            {
+                s.NextDoorSearch = now + 4f;
+                Vector3 spot; Door d = RouteDoor(pos, goal, out spot);
+                if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; Dbg("[Move|" + s.Tag + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
+            }
+        }
+
+        static bool GetPath(Vector3 from, Vector3 to, List<Vector3> path, Pathfinding.AgentType agent, bool requireFull)
+        {
+            path.Clear();
+            return Pathfinding.instance != null && Pathfinding.instance.GetPath(from, to, path, agent, requireFull, true, false) && path.Count > 0;
+        }
+
+        static void AdvanceCorner(S s, Vector3 pos)
+        {
+            while (s.Corner < s.Path.Count - 1)
+            {
+                Vector3 p = s.Path[s.Corner];
+                if (Flat(pos, p) < 0.6f && Mathf.Abs(pos.y - p.y) < 1.6f) s.Corner++;
+                else break;
+            }
+        }
+        static Vector3 NextCorner(S s, Vector3 pos)
+        {
+            if (s.Path.Count == 0) return s.Dest;
+            int i = Mathf.Clamp(s.Corner, 0, s.Path.Count - 1);
+            // last corner of a partial path reached: keep pressing toward where we're going
+            if (i == s.Path.Count - 1 && Flat(pos, s.Path[i]) < 0.8f) return s.Dest;
+            return s.Path[i];
+        }
+        static float Remaining(S s, Vector3 pos)
+        {
+            if (s.Path.Count == 0) return Vector3.Distance(pos, s.Dest);
+            float d = 0f; Vector3 prev = pos;
+            for (int i = Mathf.Clamp(s.Corner, 0, s.Path.Count - 1); i < s.Path.Count; i++) { d += Vector3.Distance(prev, s.Path[i]); prev = s.Path[i]; }
+            if (s.Partial) d += Vector3.Distance(prev, s.Dest);
+            return d;
+        }
+
+        // ---------- stuck ladder ----------
+        static void Unstick(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 target, float now, string tag, float still, float noCloser)
+        {
+            string why = still >= StillTime ? "standing still " + still.ToString("F0") + "s" : "no closer for " + noCloser.ToString("F0") + "s";
+            s.AnchorTime = now; s.Anchor = pos;
+            s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
+            int step = s.Ladder++;
+            Vector3 dir = target - pos; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
+            dir.Normalize();
+            switch (step)
+            {
+                case 0:
+                    {
+                        Door d = DoorNear(pos, 2.6f);
+                        if (d != null) { OpenDoor(ai, c, d, tag); s.NextPlan = now + 0.6f; return; }
+                        Sidestep(ai, c, s, pos, dir, now, tag, why, true);
+                        return;
+                    }
+                case 1: Hop(ai, c, s, pos, dir, now, tag, why); return;
+                case 2: Sidestep(ai, c, s, pos, dir, now, tag, why, false); return;
+                case 3: Hop(ai, c, s, pos, dir, now, tag, why); return;
+                case 4:
+                    {
+                        // after two full rounds of this without getting any closer, stop
+                        if (++s.Passes > 2) { s.Ladder = 99; Unstick(ai, c, s, pos, target, now, tag, still, noCloser); return; }
+                        Vector3 det;
+                        if (FindDetour(pos, s.Goal, dir, out det)) { s.HasDetour = true; s.Detour = det; s.DetourUntil = now + 6f; s.NextPlan = 0f; Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - trying another way via " + Fmt(det)); return; }
+                        Hop(ai, c, s, pos, dir, now, tag, why);
+                        return;
+                    }
+                case 5: Hop(ai, c, s, pos, dir, now, tag, why); s.Ladder = s.Passes >= 2 ? 6 : 0; return;
+                default:
+                    s.GaveUp = true; s.GaveUpAt = now;
+                    Halt(ai, c, s);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
+                    return;
+            }
+        }
+
+        static void Sidestep(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why, bool leftFirst)
+        {
+            Vector3 back = -dir;
+            Vector3 left = Quaternion.Euler(0f, -45f, 0f) * back, right = Quaternion.Euler(0f, 45f, 0f) * back;
+            Vector3 a = leftFirst ? left : right, b = leftFirst ? right : left;
+            Vector3 pick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, back) ? back : Quaternion.Euler(0f, 90f, 0f) * dir;
+            s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
+            Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
+        }
+
+        static void Hop(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why)
+        {
+            if (c.IsSwimming() || !c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            ai.transform.rotation = Quaternion.LookRotation(dir);
+            c.Jump(false);
+            Rigidbody rb = ai.GetComponent<Rigidbody>();
+            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.velocity = v; }
+            s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
+            Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - jumping toward " + Fmt(pos + dir * 2f));
+        }
+
+        static bool Clear(Vector3 pos, Vector3 dir)
+        {
+            Vector3 from = pos + Vector3.up * 0.5f;
+            if (Physics.Raycast(from, dir, 1.5f, Mask())) return false;
+            // something to stand on and no drop into deep water
+            Vector3 p = pos + dir * 1.5f;
+            RaycastHit hit;
+            if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) return false;
+            return MHR_Water.DepthAt(hit.point) < 1.0f;
+        }
+
+        static bool FindDetour(Vector3 pos, Vector3 goal, Vector3 dir, out Vector3 det)
+        {
+            det = Vector3.zero;
+            Vector3 side = Vector3.Cross(Vector3.up, dir).normalized;
+            for (int i = 0; i < 4; i++)
+            {
+                float off = (i < 2 ? 4f : 7f) * (i % 2 == 0 ? 1f : -1f);
+                Vector3 p = pos + side * off - dir * 1.5f;
+                s_tmp.Clear();
+                if (!GetPath(pos, p, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
+                det = s_tmp[s_tmp.Count - 1];
+                if (Flat(det, pos) < 2f) continue;
+                return true;
+            }
+            return false;
+        }
+
+        // ---------- water ----------
+        static bool TryWaterJump(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag)
+        {
+            float lim = MHR_Water.SwimLimit(c);
+            float waterAt = -1f, landAt = -1f;
+            for (float d = 0.5f; d <= 6.0f; d += 0.5f)
+            {
+                Vector3 p = pos + dir * d;
+                float depth = MHR_Water.DepthAt(p);
+                if (waterAt < 0f) { if (depth > lim) waterAt = d; else if (d > 1.5f) return false; }
+                else if (depth < 0.3f) { landAt = d; break; }
+            }
+            if (waterAt < 0f) return false;
+            if (landAt > 0f && landAt - waterAt <= 3.0f && landAt <= 4.5f)
+            {
+                // a stream we can clear: jump it and stay dry
+                Leap(ai, c, dir, 6.5f);
+                s.NextJump = now + 1.5f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                Dbg("[Move|" + tag + "] jumping the stream at " + Fmt(pos + dir * waterAt));
+                return true;
+            }
+            if (s.TooTired && waterAt <= 1.5f)
+            {
+                s.WaitStamina = true; s.WaitStart = now; Halt(ai, c, s);
+                Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
+                return true;
+            }
+            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina)
+            {
+                // wide water we're about to swim: running leap in for a head start
+                Leap(ai, c, dir, 5f);
+                s.NextJump = now + 1.5f; s.NextDive = now + 20f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                Dbg("[Move|" + tag + "] diving in at " + Fmt(pos + dir * waterAt));
+                return true;
+            }
+            return false;
+        }
+
+        static void Leap(CompanionAI ai, Character c, Vector3 dir, float speed)
+        {
+            ai.transform.rotation = Quaternion.LookRotation(dir);
+            c.SetRun(true);
+            c.Jump(false);
+            Rigidbody rb = ai.GetComponent<Rigidbody>();
+            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * speed; v.z = dir.z * speed; rb.velocity = v; }
+        }
+
+        static bool FindShore(Character c, Vector3 pos, Vector3 goal, out Vector3 best)
+        {
+            best = Vector3.zero;
+            float bestScore = float.MaxValue; bool found = false;
+            float lim = MHR_Water.SwimLimit(c);
+            for (int r = 0; r < 4; r++)
+                for (int k = 0; k < 16; k++)
+                {
+                    float rad = r == 0 ? 3f : r == 1 ? 5f : r == 2 ? 8f : 12f;
+                    float ang = k * 22.5f * Mathf.Deg2Rad;
+                    Vector3 p = pos + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * rad;
+                    float w = MHR_Water.WaterLevel(p);
+                    if (w < -1000f) w = pos.y;
+                    float g = MHR_Water.GroundAt(new Vector3(p.x, w + 0.5f, p.z));
+                    if (w - g > lim - 0.3f) continue;     // still deep there
+                    if (g - w > 1.0f) continue;           // a wall, not a bank you can climb out on
+                    float score = rad + Vector3.Distance(new Vector3(p.x, g, p.z), goal) * 0.6f;
+                    if (score < bestScore) { bestScore = score; best = new Vector3(p.x, g, p.z); found = true; }
+                }
+            return found;
+        }
+
+        static float MaxStamina(Component c)
+        {
+            CompanionStamina st = c.GetComponent<CompanionStamina>();
+            return st != null ? st.MaxStamina : 0f;
+        }
+        static float Stamina(Component c)
+        {
+            CompanionStamina st = c.GetComponent<CompanionStamina>();
+            return st != null && st.MaxStamina > 0f ? st.Stamina : 999f;
+        }
+
+        // ---------- doors ----------
+        static bool DoorClosed(Door d)
+        {
+            if (d == null) return false;
+            ZNetView nv = d.GetComponent<ZNetView>();
+            return nv != null && nv.IsValid() && nv.GetZDO().GetInt("state", 0) == 0;
+        }
+        static bool Usable(Door d)
+        {
+            try { return d != null && DoorHandler.IsValidClosedDoor(d); } catch { return false; }
+        }
+
+        static Door DoorNear(Vector3 pos, float range)
+        {
+            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_cols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
+            Door best = null; float bd = float.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                Door d = s_cols[i] != null ? s_cols[i].GetComponentInParent<Door>() : null;
+                if (!Usable(d)) continue;
+                float dd = MHR_Nav.DoorDist(pos, d.transform.position);
+                if (dd < bd) { bd = dd; best = d; }
+            }
+            return bd <= range + 0.5f ? best : null;
+        }
+
+        // closed door between us and the next corner, within reach
+        static Door DoorAhead(Vector3 pos, Vector3 target)
+        {
+            Vector3 from = pos + Vector3.up * 1.0f;
+            Vector3 to = new Vector3(target.x, Mathf.Max(target.y, pos.y) + 1.0f, target.z);
+            Vector3 d = to - from; float len = Mathf.Min(d.magnitude, 2.5f);
+            if (len < 0.2f) return null;
+            RaycastHit hit;
+            if (!Physics.Raycast(from, d.normalized, out hit, len, LayerMask.GetMask("piece", "Default"))) return null;
+            Door door = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
+            return Usable(door) ? door : null;
+        }
+
+        // the closed door that opens the shortest way to the goal, and where to stand to open it
+        static Door RouteDoor(Vector3 pos, Vector3 goal, out Vector3 spot)
+        {
+            spot = Vector3.zero;
+            s_pieces.Clear();
+            Piece.GetAllPiecesInRadius(goal, 35f, s_pieces);
+            Door best = null; float bestScore = float.MaxValue; int checkedDoors = 0;
+            for (int i = 0; i < s_pieces.Count && checkedDoors < 10; i++)
+            {
+                Piece p = s_pieces[i];
+                Door d = p != null ? p.GetComponentInChildren<Door>() : null;
+                if (!Usable(d)) continue;
+                checkedDoors++;
+                Vector3 dp = d.transform.position;
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    Vector3 sp = dp + d.transform.forward * (1.4f * side);
+                    s_tmp.Clear();
+                    if (!GetPath(pos, sp, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
+                    Vector3 end = s_tmp[s_tmp.Count - 1];
+                    if (MHR_Nav.DoorDist(end, dp) > 2.2f) continue;
+                    float len = 0f; Vector3 prev = pos;
+                    for (int k = 0; k < s_tmp.Count; k++) { len += Vector3.Distance(prev, s_tmp[k]); prev = s_tmp[k]; }
+                    // the far side of the door should be closer to the goal than this side
+                    Vector3 other = dp - d.transform.forward * (1.4f * side);
+                    if (Vector3.Distance(other, goal) > Vector3.Distance(sp, goal) + 0.5f) continue;
+                    float score = len + Vector3.Distance(dp, goal);
+                    if (score < bestScore) { bestScore = score; best = d; spot = end; }
+                }
+            }
+            return best;
+        }
+
+        static void OpenDoor(CompanionAI ai, Character c, Door d, string tag)
+        {
+            if (d == null || !DoorClosed(d)) return;
+            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
+            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            Humanoid h = c as Humanoid;
+            bool ok = false;
+            try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
+            if (!ok) { Dbg("[Move|" + tag + "] couldn't open " + d.m_name); return; }
+            int id = ai.gameObject.GetInstanceID();
+            List<Opened> list;
+            if (!s_opened.TryGetValue(id, out list)) { list = new List<Opened>(); s_opened[id] = list; }
+            list.Add(new Opened { Door = d, At = Time.time });
+            Dbg("[Move|" + tag + "] opened " + d.m_name + " at " + Fmt(d.transform.position));
+        }
+
+        // ---------- per-frame housekeeping (called from MHR_ToolKeeper.Tick for every companion we own) ----------
+        public static void Tick(Component cs, CompanionAI ai)
+        {
+            if (cs == null || ai == null) return;
+            try
+            {
+                S s = Peek(ai);
+                if (s != null && s.Walking && Time.time - s.LastGo > 0.5f)
+                {
+                    Character c = ai.GetComponent<Character>();
+                    if (c != null) c.SetWalk(false);
+                    s.Walking = false;
+                }
+                List<Opened> list;
+                if (!s_opened.TryGetValue(ai.gameObject.GetInstanceID(), out list) || list.Count == 0) return;
+                Vector3 pos = ai.transform.position;
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    Opened o = list[i];
+                    if (o.Door == null || DoorClosed(o.Door) || Time.time - o.At > 60f) { list.RemoveAt(i); continue; }
+                    if (Time.time - o.At < 1.5f) continue;
+                    Vector3 dp = o.Door.transform.position;
+                    if (Flat(pos, dp) < 3.5f && Mathf.Abs(pos.y - dp.y) < 3f) continue;
+                    if (Player.m_localPlayer != null && Vector3.Distance(Player.m_localPlayer.transform.position, dp) < 2.5f) continue;
+                    if (AnyCharacterIn(dp, 1.2f)) continue;
+                    Humanoid h = ai.GetComponent<Humanoid>();
+                    try { if (h != null) o.Door.Interact(h, false, false); } catch { }
+                    Dbg("[Move] closed " + o.Door.m_name + " behind us");
+                    list.RemoveAt(i);
+                }
+            }
+            catch (Exception e)
+            {
+                if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
+            }
+        }
+        static bool AnyCharacterIn(Vector3 p, float r)
+        {
+            int n = Physics.OverlapSphereNonAlloc(p, r, s_cols, LayerMask.GetMask("character", "character_net", "character_ghost"));
+            for (int i = 0; i < n; i++) if (s_cols[i] != null && s_cols[i].GetComponentInParent<Character>() != null) return true;
+            return false;
+        }
+
+        // ---------- follow: optional catch-up when badly stuck and out of sight ----------
+        class F { public Vector3 Anchor; public float AnchorTime; }
+        static readonly Dictionary<int, F> s_follow = new Dictionary<int, F>();
+        public static void FollowWatch(CompanionAI ai, GameObject target)
+        {
+            try
+            {
+                if (ai == null || target == null || ModConfig.FollowStuckTeleport == null || !ModConfig.FollowStuckTeleport.Value) return;
+                float now = Time.time;
+                int id = ai.gameObject.GetInstanceID();
+                F f;
+                if (!s_follow.TryGetValue(id, out f)) { f = new F { Anchor = ai.transform.position, AnchorTime = now }; s_follow[id] = f; }
+                Vector3 pos = ai.transform.position, tp = target.transform.position;
+                if (Vector3.Distance(pos, tp) < 10f || Vector3.Distance(pos, f.Anchor) > 1.5f || ai.IsInCombat) { f.Anchor = pos; f.AnchorTime = now; return; }
+                if (now - f.AnchorTime < 15f) return;
+                f.Anchor = pos; f.AnchorTime = now;
+                if (!Physics.Linecast(pos + Vector3.up * 1.6f, tp + Vector3.up * 1.6f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain"))) return;   // you can see each other
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|Follow] stuck for 15s out of sight at " + Fmt(pos) + " - catching up");
+                ai.TeleportToFollowTarget();
+            }
+            catch { }
+        }
+
+        // ---------- log ----------
+        static void Log(S s, Vector3 pos, float remain, float now, Character c)
+        {
+            if (now < s.NextLog || CompanionsPlugin.Log == null) return;
+            s.NextLog = now + 3f;
+            float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
+            string route = !s.PathOk ? "none" : (s.Partial ? "partial" : "full") + " (" + s.Path.Count + " corners)";
+            CompanionsPlugin.Log.LogDebug("[Move|" + s.Tag + "] at " + Fmt(pos) + " -> " + Fmt(s.Goal) + " " + remain.ToString("F1") + "m left, route=" + route +
+                (s.RouteDoor != null ? ", via door" : "") + (s.HasDetour ? ", detour" : "") + (c.IsSwimming() ? ", swimming" : "") +
+                (noCloser > 3f ? ", no closer for " + noCloser.ToString("F0") + "s" : "") + (still > 2f ? ", standing still " + still.ToString("F0") + "s" : "") +
+                (s.Ladder > 0 ? ", unstuck step " + s.Ladder : ""));
+        }
+    }
+
+    // ---- 1.4.74: water depth measured against the companion, not "is there water" ----
+    public static class MHR_Water
+    {
+        static WaterVolume s_wv;
+        static int s_mask = -1;
+        static int Mask()
+        {
+            if (s_mask == -1) s_mask = LayerMask.GetMask("Default", "static_solid", "piece", "terrain", "vehicle");
+            return s_mask;
+        }
+        public static float WaterLevel(Vector3 p)
+        {
+            try { return Floating.GetWaterLevel(p, ref s_wv); } catch { return -10000f; }
+        }
+        public static float GroundAt(Vector3 p)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 60f, Mask())) return hit.point.y;
+            float y;
+            if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(p, out y)) return y;
+            return p.y;
+        }
+        public static float DepthAt(Vector3 p)
+        {
+            float g = GroundAt(p);
+            float w = WaterLevel(new Vector3(p.x, g + 0.3f, p.z));
+            if (w < -1000f) w = WaterLevel(p);
+            if (w < -1000f) return 0f;
+            return Mathf.Max(0f, w - g);
+        }
+        // vanilla: a character swims once the water is deeper than swimDepth - 0.4 (and only then gets Wet)
+        public static float SwimLimit(Character c) { return Mathf.Max(0.3f, (c != null ? c.m_swimDepth : 2f) - 0.4f); }
+        public static bool WouldSwim(Character c, Vector3 p) { return DepthAt(p) > SwimLimit(c); }
+
+        public static float SwimStamina(Character c, float meters)
+        {
+            float speed = c != null && c.m_swimSpeed > 0.1f ? c.m_swimSpeed : 2f;
+            float drain = ModConfig.StaminaSwimDrain != null ? ModConfig.StaminaSwimDrain.Value : 10f;
+            return meters / speed * drain;
+        }
+
+        // meters of swimming along pos -> path corners (sampled every meter, up to maxLen)
+        public static float SwimMeters(Character c, Vector3 pos, List<Vector3> path, float maxLen)
+        {
+            float lim = SwimLimit(c), swim = 0f, walked = 0f;
+            Vector3 prev = pos;
+            for (int i = 0; i < path.Count && walked < maxLen; i++)
+            {
+                Vector3 seg = path[i] - prev; float len = new Vector2(seg.x, seg.z).magnitude;
+                for (float d = 0.5f; d < len && walked < maxLen; d += 1f, walked += 1f)
+                    if (DepthAt(prev + seg * (d / len)) > lim) swim += 1f;
+                prev = path[i];
+            }
+            return swim;
+        }
+        public static float DistToWater(Character c, Vector3 pos, List<Vector3> path)
+        {
+            float lim = SwimLimit(c), walked = 0f;
+            Vector3 prev = pos;
+            for (int i = 0; i < path.Count && walked < 30f; i++)
+            {
+                Vector3 seg = path[i] - prev; float len = new Vector2(seg.x, seg.z).magnitude;
+                for (float d = 0.5f; d < len && walked < 30f; d += 1f, walked += 1f)
+                    if (DepthAt(prev + seg * (d / len)) > lim) return walked;
+                prev = path[i];
+            }
+            return 999f;
+        }
+        public static bool SwimOnLine(Character c, Vector3 a, Vector3 b, float maxLen)
+        {
+            float lim = SwimLimit(c);
+            Vector3 d = b - a; float len = Mathf.Min(new Vector2(d.x, d.z).magnitude, maxLen);
+            if (len < 0.5f) return DepthAt(b) > lim;
+            Vector3 n = new Vector3(d.x, 0f, d.z).normalized;
+            for (float t = 0.5f; t <= len; t += 1.5f)
+                if (DepthAt(a + n * t + Vector3.up * (d.y * t / len)) > lim) return true;
+            return DepthAt(b) > lim;
+        }
+
+        // replaces "below half stamina -> avoid ALL water": only steer around water he'd actually have to swim
+        static readonly Dictionary<int, KeyValuePair<float, bool>> s_agent = new Dictionary<int, KeyValuePair<float, bool>>();
+        public static void ApplyAgent(CompanionAI ai, bool lowStamina)
+        {
+            bool avoid = false;
+            try
+            {
+                Character c = ai.GetComponent<Character>();
+                GameObject f = ai.GetFollowTarget();
+                if (lowStamina && c != null && !c.IsSwimming() && f != null)
+                {
+                    int id = ai.gameObject.GetInstanceID();
+                    KeyValuePair<float, bool> cached;
+                    if (s_agent.TryGetValue(id, out cached) && Time.time - cached.Key < 1f) avoid = cached.Value;
+                    else
+                    {
+                        avoid = SwimOnLine(c, ai.transform.position, f.transform.position, 40f);
+                        s_agent[id] = new KeyValuePair<float, bool>(Time.time, avoid);
+                    }
+                }
+            }
+            catch { avoid = false; }
+            ai.m_avoidWater = avoid;
+            ai.m_pathAgentType = avoid ? Pathfinding.AgentType.HumanoidAvoidWater : Pathfinding.AgentType.Humanoid;
+        }
+    }
+
+    // ---- 1.4.74: what to fight ----
+    public static class MHR_Threat
+    {
+        static readonly Dictionary<int, float> s_ignore = new Dictionary<int, float>();
+        static float s_nextLog;
+
+        // animals that never attack (vanilla deer and the like, modded fish, dolphins...) and creatures we gave up chasing
+        public static bool IsPassive(Character c)
+        {
+            if (c == null) return false;
+            try
+            {
+                string n = c.gameObject.name;
+                if (n.StartsWith("Deer") || n.StartsWith("Hare") || n.StartsWith("Chicken")) return true;
+                float until;
+                BaseAI ai = c.GetBaseAI();
+                if (s_ignore.TryGetValue(c.GetInstanceID(), out until))
+                {
+                    bool coming = ai != null && ai.GetTargetCreature() != null;
+                    if (Time.time < until && !coming && MHR_Water.DepthAt(c.transform.position) > 1.0f) return true;
+                    s_ignore.Remove(c.GetInstanceID());
+                }
+                if (ai is AnimalAI) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        // don't chase into water he'd have to swim in; if it's attacking, a bow or crossbow with ammo still works
+        public static bool AvoidChase(Character self, Character target)
+        {
+            if (self == null || target == null) return false;
+            try
+            {
+                if (self.IsSwimming()) return false;
+                if (!MHR_Water.WouldSwim(self, target.transform.position)) return false;
+                // something swimming out there minding its own business: leave it. If it's coming for us, shoot it if we can.
+                BaseAI tai = target.GetBaseAI();
+                bool hostile = tai != null && (tai.IsAlerted() || tai.GetTargetCreature() != null);
+                Humanoid h = self as Humanoid;
+                if (hostile && h != null && MHR_Crossbow.HasReadyRanged(h)) return false;
+                if (hostile && Vector3.Distance(self.transform.position, target.transform.position) < 3f) return false;
+                if (s_ignore.Count > 200) s_ignore.Clear();
+                s_ignore[target.GetInstanceID()] = Time.time + 20f;
+                CompanionCombatAI cc = self.GetComponent<CompanionCombatAI>();
+                if (cc != null) cc.Disengage();
+                if (CompanionsPlugin.Log != null && Time.time >= s_nextLog)
+                {
+                    s_nextLog = Time.time + 5f;
+                    CompanionsPlugin.Log.LogDebug("[Combat] " + target.m_name + " is in deep water - leaving it");
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+    }
+
+    // ---- 1.4.74: crossbows. Vanilla only lets the player load one (Humanoid.IsWeaponLoaded is always false), so a
+    // companion with a crossbow could never fire. Companions now load it like a player: reload animation, reload time
+    // (faster with skill), stamina. Ranged weapons only count as ready with matching ammo in the pack. ----
+    public static class MHR_Crossbow
+    {
+        class S { public ItemDrop.ItemData Loaded, Reloading; public float Until; public string Anim; }
+        static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
+        static readonly Dictionary<int, bool> s_isComp = new Dictionary<int, bool>();
+
+        public static bool IsCompanion(Humanoid h)
+        {
+            if (h == null || h is Player) return false;
+            int id = h.GetInstanceID();
+            bool v;
+            if (!s_isComp.TryGetValue(id, out v)) { v = h.GetComponent<CompanionSetup>() != null; if (s_isComp.Count > 2000) s_isComp.Clear(); s_isComp[id] = v; }
+            return v;
+        }
+        static S Get(Humanoid h)
+        {
+            S s;
+            if (!s_s.TryGetValue(h.GetInstanceID(), out s)) { s = new S(); s_s[h.GetInstanceID()] = s; }
+            return s;
+        }
+
+        static bool IsAmmo(ItemDrop.ItemData it)
+        {
+            return it != null && it.m_shared != null && (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.AmmoNonEquipable);
+        }
+        public static bool NeedsAmmo(ItemDrop.ItemData it)
+        {
+            return it != null && it.m_shared != null && !IsAmmo(it) && !string.IsNullOrEmpty(it.m_shared.m_ammoType);
+        }
+        public static bool HasAmmo(Humanoid h, ItemDrop.ItemData weapon)
+        {
+            if (h == null || weapon == null || h.GetInventory() == null) return false;
+            string type = weapon.m_shared.m_ammoType;
+            List<ItemDrop.ItemData> items = h.GetInventory().GetAllItems();
+            for (int i = 0; i < items.Count; i++)
+            {
+                ItemDrop.ItemData it = items[i];
+                if (IsAmmo(it) && it.m_shared.m_ammoType == type && it.m_stack > 0) return true;
+            }
+            return false;
+        }
+        // replaces WeaponLogic.Ready in FindReadyBow / BalancedPrefix
+        public static bool ReadyFor(ItemDrop.ItemData it, Humanoid h)
+        {
+            if (it == null || it.m_shared == null) return false;
+            if (it.m_shared.m_useDurability && it.m_durability <= 0f) return false;
+            if (NeedsAmmo(it) && h != null && !HasAmmo(h, it)) return false;
+            return true;
+        }
+        public static bool HasReadyRanged(Humanoid h)
+        {
+            if (h == null || h.GetInventory() == null) return false;
+            List<ItemDrop.ItemData> items = h.GetInventory().GetAllItems();
+            for (int i = 0; i < items.Count; i++)
+            {
+                ItemDrop.ItemData it = items[i];
+                if (NeedsAmmo(it) && ReadyFor(it, h)) return true;
+            }
+            return false;
+        }
+
+        public static bool IsLoaded(Humanoid h)
+        {
+            S s;
+            if (h == null || !s_s.TryGetValue(h.GetInstanceID(), out s)) return false;
+            ItemDrop.ItemData w = h.GetCurrentWeapon();
+            return w != null && s.Loaded == w;
+        }
+        public static void Unload(Humanoid h)
+        {
+            S s;
+            if (h != null && s_s.TryGetValue(h.GetInstanceID(), out s)) s.Loaded = null;
+        }
+
+        public static void Tick(Humanoid h)
+        {
+            if (h == null) return;
+            try
+            {
+                ItemDrop.ItemData w = h.GetCurrentWeapon();
+                bool needs = w != null && w.m_shared != null && w.m_shared.m_attack != null && w.m_shared.m_attack.m_requiresReload && h.IsItemEquiped(w);
+                S s;
+                if (!needs)
+                {
+                    if (s_s.TryGetValue(h.GetInstanceID(), out s) && s.Reloading != null) Cancel(h, s);
+                    return;
+                }
+                s = Get(h);
+                if (s.Loaded == w) return;
+                if (s.Reloading != null && s.Reloading != w) Cancel(h, s);
+                ZSyncAnimation zanim = h.GetComponent<ZSyncAnimation>();
+                if (s.Reloading == w)
+                {
+                    if (Time.time < s.Until) return;
+                    if (zanim != null && !string.IsNullOrEmpty(s.Anim)) { zanim.SetBool(s.Anim, false); zanim.SetTrigger(s.Anim + "_done"); }
+                    s.Loaded = w; s.Reloading = null;
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Ranged] " + w.m_shared.m_name + " loaded");
+                    return;
+                }
+                if (h.InAttack() || !HasAmmo(h, w)) return;
+                Attack atk = w.m_shared.m_attack;
+                CompanionStamina st = h.GetComponent<CompanionStamina>();
+                if (st != null && atk.m_reloadStaminaDrain > 0f && !st.UseStamina(atk.m_reloadStaminaDrain)) return;
+                float skill = 0f;
+                try { skill = h.GetSkillFactor(w.m_shared.m_skillType); } catch { skill = 0f; }
+                float time = Mathf.Lerp(atk.m_reloadTime, atk.m_reloadTime * 0.5f, skill);
+                s.Reloading = w; s.Until = Time.time + Mathf.Max(0.3f, time); s.Anim = atk.m_reloadAnimation;
+                if (zanim != null && !string.IsNullOrEmpty(s.Anim)) zanim.SetBool(s.Anim, true);
+            }
+            catch { }
+        }
+        static void Cancel(Humanoid h, S s)
+        {
+            ZSyncAnimation zanim = h.GetComponent<ZSyncAnimation>();
+            if (zanim != null && !string.IsNullOrEmpty(s.Anim)) zanim.SetBool(s.Anim, false);
+            s.Reloading = null;
+        }
+    }
+
+    [HarmonyPatch(typeof(Humanoid), "IsWeaponLoaded")]
+    public static class MHR_WeaponLoaded_Patch
+    {
+        static void Postfix(Humanoid __instance, ref bool __result)
+        {
+            if (!__result && MHR_Crossbow.IsCompanion(__instance)) __result = MHR_Crossbow.IsLoaded(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(Humanoid), "ResetLoadedWeapon")]
+    public static class MHR_ResetLoaded_Patch
+    {
+        static void Postfix(Humanoid __instance)
+        {
+            if (MHR_Crossbow.IsCompanion(__instance)) MHR_Crossbow.Unload(__instance);
+        }
+    }
+}
