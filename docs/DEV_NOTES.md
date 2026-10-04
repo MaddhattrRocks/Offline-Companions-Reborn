@@ -30,7 +30,22 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
-### 1.4.75 - code done on branch `claude/relaxed-archimedes-ecoh6h`, waiting on the user's build + in-game test
+### Release plan (user, 2026-10-04)
+- No packaged release until the movement update (phases 2-4) is done. Each step is merged to `main` and tested as a version bump with the user's own build; package and release everything at the end.
+
+### Phase 2 - Follow on MHR_Mover: the user's answers (2026-10-04)
+1. Companions move around while following, not locked to one slot. Goal: behave like a real player.
+2. Up to ~10 m away (including ahead of the player) is fine.
+3. Several companions spread out around the player instead of a line behind.
+4. Player stops: companions stay where they are; they may wander a little, and come back to the player if the player stays still for an extended period.
+5. Only combat should behave differently. Combat itself (not always running off to engage, player-like strategies) is a later polish pass - not part of phase 2.
+
+### 1.4.75 - tested by the user (own build, log 795fdce4): loads clean, farming much better
+- Log: one field scan (51 crops) then 41 "Next crop nearby" in a row, 0.1-1.6 m apart, no idle/rescan, until the user opened the wheel.
+- Seen, not new: the old `DoorHandler` logs "stuck=11.0s" (Debug) while the farmer stands still harvesting - it counts working in place as stuck. Harmless; goes away when phase 3 retires the per-job stuck code.
+- Build note: on the user's PC, Windows Defender (Controlled folder access) blocked dotnet writing `obj` in Documents\GitHub - fixed on their side. `nuget.config` added to the repo for NU1100 (no nuget.org source on their PC).
+
+### 1.4.75 - code (branch `claude/relaxed-archimedes-ecoh6h`)
 What was built (all items below):
 - (1) `CompanionAI` (end of the follow/idle branch): job mode on (`MHR_JobRules.IsJobMode`: not Follow 0, not legacy Stay 4) and no job driving -> `StopMoving()` instead of `EnforceHomePatrol`/`IdleMovement`.
 - (2) `FarmController.TryNextCropNearby()` after drops are collected: if nothing needs storing (`HasCropOutput()` false), take the nearest ripe crop within `NextCropRange` (Farm, default 3 m, 0 = off) straight to MovingToPickable. Otherwise the old 2 s idle + full scan (so store trips are unchanged).
