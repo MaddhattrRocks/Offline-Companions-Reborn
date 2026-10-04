@@ -438,6 +438,11 @@ public class FarmController : MonoBehaviour
 				return;
 			}
 			_targetPickable = null;
+			UnclaimPickable();
+			if (TryNextCropNearby())
+			{
+				return;
+			}
 			_phase = FarmPhase.Idle;
 			_scanTimer = 2f;
 			Log($"Drops collected — idle for {2f}s before next scan");
@@ -961,12 +966,20 @@ public class FarmController : MonoBehaviour
 
 	private Pickable FindRipePickable()
 	{
-		int num = Physics.OverlapSphereNonAlloc(base.transform.position, ScanRadius, _pickableScanBuffer, _pickableMask);
-		Log($"FindRipePickable: {num} colliders in {ScanRadius:F0}m radius");
+		return FindRipePickable(base.transform.position, ScanRadius, summary: true);
+	}
+
+	// 1.4.75: one summary line per scan instead of a line per crop.
+	private Pickable FindRipePickable(Vector3 center, float radius, bool summary)
+	{
+		int num = Physics.OverlapSphereNonAlloc(center, radius, _pickableScanBuffer, _pickableMask);
 		Pickable pickable = null;
 		float num2 = float.MaxValue;
 		int num3 = 0;
 		int num4 = 0;
+		int notCrop = 0;
+		int blacklisted = 0;
+		int taken = 0;
 		for (int i = 0; i < num; i++)
 		{
 			Pickable pickable2 = _pickableScanBuffer[i].GetComponent<Pickable>();
@@ -981,6 +994,7 @@ public class FarmController : MonoBehaviour
 			num3++;
 			if (IsPicked(pickable2) || s_claimedPickables.Contains(pickable2.GetInstanceID()))
 			{
+				taken++;
 				continue;
 			}
 			bool flag = false;
@@ -989,33 +1003,56 @@ public class FarmController : MonoBehaviour
 			{
 				flag = true;
 			}
-			bool flag2 = false;
 			if (!flag && MHR_SafeCultivated(pickable2.transform.position))
 			{
-				flag2 = true;
 				flag = true;
 			}
 			if (!flag)
 			{
-				Log("  Skip \"" + pickable2.name + "\" drop=\"" + text + "\" — not a crop " + $"(knownCrop={s_cropOutputNames?.Contains(text) ?? false} cultivated={flag2})");
+				notCrop++;
 				continue;
 			}
 			num4++;
 			if (_ai != null && _ai.IsPositionBlacklisted(pickable2.transform.position))
 			{
-				Log("  Skip \"" + pickable2.name + "\" — position blacklisted (unreachable)");
+				blacklisted++;
 				continue;
 			}
-			float num5 = Vector3.Distance(base.transform.position, pickable2.transform.position);
-			Log($"  Crop \"{pickable2.name}\" drop=\"{text}\" dist={num5:F1}m " + $"cultivated={flag2}");
+			float num5 = Vector3.Distance(center, pickable2.transform.position);
 			if (num5 < num2)
 			{
 				pickable = pickable2;
 				num2 = num5;
 			}
 		}
-		Log($"FindRipePickable result: {num3} pickables, {num4} crops, " + "best=\"" + (pickable?.name ?? "none") + "\"");
+		if (summary)
+		{
+			Log($"FindRipePickable: {num} colliders in {radius:F0}m, {num3} pickables, {num4} crops " + $"({taken} picked/claimed, {notCrop} not crops, {blacklisted} unreachable), " + "best=\"" + (pickable?.name ?? "none") + "\"" + ((pickable != null) ? $" at {num2:F1}m" : ""));
+		}
 		return pickable;
+	}
+
+	// 1.4.75: after a crop, go straight to the next ripe one close by (FarmNextCropRange), like a player
+	// working down a row, instead of pausing and rescanning the whole field. Only when there's nothing
+	// to store; otherwise the normal scan runs so the store trip happens as before.
+	private bool TryNextCropNearby()
+	{
+		float value = ModConfig.FarmNextCropRange.Value;
+		if (value <= 0f || HasCropOutput())
+		{
+			return false;
+		}
+		Pickable pickable = FindRipePickable(base.transform.position, value, summary: false);
+		if (pickable == null)
+		{
+			return false;
+		}
+		_targetPickable = pickable;
+		ClaimPickable();
+		ResetStuck();
+		_phase = FarmPhase.MovingToPickable;
+		Log($"[Harvest] Next crop nearby \"{pickable.name}\" dist={Vector3.Distance(base.transform.position, pickable.transform.position):F1}m");
+		return true;
 	}
 
 	private void ClaimPickable()

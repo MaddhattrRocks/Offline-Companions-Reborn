@@ -26,7 +26,55 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - Equipped flag: dragging a companion's equipped item to the player goes through InventoryGui -> `Inventory.MoveItemToThis(from, item, amount, x, y)`, which clones ItemData with m_equipped=true (the shift-click path in CompanionInteractPanel.OnCompanionSelected already unequipped first). New `MHR_EquipMove.UnequipIfFromCompanion` + Harmony prefixes `MHR_MoveItemToThis5_Patch` / `MHR_MoveItemToThis2_Patch` (TargetMethod via AccessTools.Method with explicit arg types; try/catch wrapped): if the source inventory is a companion's (and target != source), `Humanoid.UnequipItem(item,false)` then `m_equipped=false` before the clone. check_maxstack.py only recognizes `catch` on its own line after `}`.
 
 ## NEXT BUILD
-- (empty - 1.4.71 shipped the agreed list; collect the user's job-test findings here)
+### Standing rules (user, 2026-10-04)
+- **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
+- Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
+
+### Release plan (user, 2026-10-04)
+- No packaged release until the movement update (phases 2-4) is done. Each step is merged to `main` and tested as a version bump with the user's own build; package and release everything at the end.
+
+### Phase 2 - Follow on MHR_Mover: the user's answers (2026-10-04)
+1. Companions move around while following, not locked to one slot. Goal: behave like a real player.
+2. Up to ~10 m away (including ahead of the player) is fine.
+3. Several companions spread out around the player instead of a line behind.
+4. Player stops: companions stay where they are; they may wander a little, and come back to the player if the player stays still for an extended period.
+5. Only combat should behave differently. Combat itself (not always running off to engage, player-like strategies) is a later polish pass - not part of phase 2.
+
+### 1.4.75 - tested by the user (own build, log 795fdce4): loads clean, farming much better
+- Log: one field scan (51 crops) then 41 "Next crop nearby" in a row, 0.1-1.6 m apart, no idle/rescan, until the user opened the wheel.
+- Seen, not new: the old `DoorHandler` logs "stuck=11.0s" (Debug) while the farmer stands still harvesting - it counts working in place as stuck. Harmless; goes away when phase 3 retires the per-job stuck code.
+- Build note: on the user's PC, Windows Defender (Controlled folder access) blocked dotnet writing `obj` in Documents\GitHub - fixed on their side. `nuget.config` added to the repo for NU1100 (no nuget.org source on their PC).
+
+### 1.4.75 - code (branch `claude/relaxed-archimedes-ecoh6h`)
+What was built (all items below):
+- (1) `CompanionAI` (end of the follow/idle branch): job mode on (`MHR_JobRules.IsJobMode`: not Follow 0, not legacy Stay 4) and no job driving -> `StopMoving()` instead of `EnforceHomePatrol`/`IdleMovement`.
+- (2) `FarmController.TryNextCropNearby()` after drops are collected: if nothing needs storing (`HasCropOutput()` false), take the nearest ripe crop within `NextCropRange` (Farm, default 3 m, 0 = off) straight to MovingToPickable. Otherwise the old 2 s idle + full scan (so store trips are unchanged).
+- (3a) `MHR_Mover.Plan`: GetPath fails outright -> `FindRouteStart` tries 8 directions at 1.5 m and 2.5 m (clear at knee height, footing, not deep water) for a spot a route starts from; steps there as a 3 s detour. Throttled to every 2 s. (3b) `MHR_Mover.Tick`: a door we opened isn't closed while the mover is active and stuck (`Ladder > 0` or a detour) within 8 m of it.
+- (4) `FindRipePickable` logs one summary line per scan (counts of picked/claimed, not crops, unreachable) instead of per crop. The per-crop `cultivated=` detail is gone; add it back temporarily if the auto-farm-zone investigation needs it.
+- (5) `[BepInIncompatibility]` removed. `CompanionsPlugin.Awake` checks `Chainloader.PluginInfos` for `com.profmags.companions` (loads first: GUIDs load alphabetically) and logs an error and doesn't start. `Start()` re-checks after all plugins loaded and shuts down (unpatch, destroy ConfigPanel/FarmZonePlacer) if needed.
+- (6) CHANGELOG 1.4.53-1.4.74 rewritten one line per item; 1.4.75 entry added. (7) README: Note 2, Recent Highlights v1.4.75 (show the user before packaging), install note about removing the original, Source section.
+- Also in 1.4.75: the Harmony attribute fix from the C# conversion. `CombatPatches.EquipBestWeapon_PreferHighestDamage.Postfix` only acts outside Balanced/Ranged/Melee (`WeaponLogic.IsManagedStance`), i.e. Passive: swaps to the highest effective-damage weapon. In 1.4.74 it never ran and `Prefix` ran a second time as a postfix.
+
+### 1.4.75 - original proposal (from the 1.4.74 farm/repair log)
+1. **Idle wander during jobs:** after each crop the farm job paused 2 s with nothing driving him, so the vanilla idle wander walked him back to his idle point (~4 m behind the farm edge, around (-275,-326)), then he walked back in for the next crop: walk in, pick, walk back, every crop. Follow was off. Fix: while a job is on, a short pause means standing still, not idle wander. No job on = wander as before.
+2. **Harvest like a player working a row:** after picking a crop, go straight to the next ripe one within a few meters, no pause and no full rescan. The full scan runs only when nothing ripe is close.
+3. **Doorways (repair trip, ~45 s lost):** he opened the door, stood in the doorway and couldn't get a route from there; the door got closed behind him and reopened while he was still trying. Fix: (a) if no route can start from where he stands (e.g. a doorway), step 1-2 m to find one right away instead of running the whole unstuck ladder; (b) don't close a door he opened while he's still stuck near it.
+4. **Farm scan log:** one summary line per scan instead of one line per crop (60-80 crops, ~460 Debug lines per scan).
+5. **Original-mod check:** remove `[BepInIncompatibility("com.profmags.companions")]` (Hexium lists it as an incompatibility tag). Replace with a startup check: if ProfMags' original is loaded, log a clear error saying to remove it (it doesn't work on Valheim 1.0) and don't start Reborn. Same note in the README and the Nexus description.
+6. **Changelog:** rewrite 1.4.53-1.4.74 in the one-line style (see the CHANGELOG style rule below).
+7. **README:** add the user's "Note 2" next to the existing note (text below).
+- Not in 1.4.75: moving Follow onto MHR_Mover is phase 2. Order after that: Follow (ask the user for their follow ideas first) -> jobs move over -> remove the old per-job stuck code.
+
+### Packaging (agreed with the user)
+- Only `Companions.dll` is needed to run. Thunderstore needs `manifest.json`, `README.md`, `icon.png` (256x256) in the zip root; `CHANGELOG.md` is optional (shows as a Changelog tab). Hexium: packaged the same way as Thunderstore. Nexus: DLL only, the description lives on the page.
+- `LICENSE` goes in every package, Nexus included (MIT: ProfMags' copyright notice must ship with copies).
+- The source now lives in this GitHub repo. The user doesn't mind including source in packages but most players won't care. The repo is **private**, so don't point the README or Nexus at it unless the user makes it public.
+
+### README / Nexus text (next update)
+- **Note 2** (already on Nexus, add to the Thunderstore/Hexium README): "Note 2: Smelting, Farming (still requires setting a zone with left-Alt + z), Wood, and Repair are mostly working now. There may still be some occasional odd behavior that will be cleaned up over the next few updates."
+- **Support section:** the user wants wording they can reuse on all their mods; not picked yet, don't change it until they do. Options offered: (1) "Enjoying my mods? You can support my work on [Patreon](https://www.patreon.com/cw/MaddHattr) or [buy me a coffee](https://ko-fi.com/maddhattr). Thank you!" (2) "If you'd like to support this and my other mods: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)" (3) "Support my modding: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)". Keep the ProfMags Patreon line as its own sentence underneath. Button images (Ko-fi/Patreon official graphics) are an option; a Discord link may join the line later.
+
+### Older findings
 - User OK with Wood doing cleanup (stumps/logs) before felling trees - nearest-first scan stays.
 - **1.4.73 log 25f30bda (Wood test, community patch on):**
   - Water bolting = combat: `Engage -> $Animal_Crab_RtD` / `$Animal_Dolphin_RtD` (RtDOcean mod sea animals) and `$enemy_neck` in the water. IsPassiveAnimal is hard-coded Deer/Hare/Chicken, so modded passive animals count as enemies. He chased a crab into the moat (WaterSafety kicked in) and shot at a dolphin 46 m out.
@@ -272,6 +320,7 @@ Hexium flagged the DLL as still reporting **1.4.37** while every log line and `m
 
 
 ## CHANGELOG.md style rule (rewritten starting v1.4.40, both packages)
+**Current rule (user, after 1.4.74): one line per item, issue and fix combined, to the point.** Example: instead of an "Issue:" bullet ("If a companion couldn't reach a tree or rock, it kept damaging it every 5 seconds from wherever it was, through walls and cliffs.") plus a "Fix:" bullet ("It now gives up on that target and picks another."), write: "Fixed NPC damaging a target regardless of if they could reach it. NPC now picks a new target instead." Rewrite 1.4.53-1.4.74 this way. Older text below is the earlier rule.
 User asked for `CHANGELOG.md` to be less technical: plain bullet points describing the issue and the fix in player-facing language, not method/class names, exception types, or root-cause internals (that detail belongs in these dev notes, not the public changelog). Rewrote the entire file in this style, not just new entries going forward - keep new entries in this same plain, bulleted issue/fix format.
 
 ## README maintenance rule (applied starting v1.4.40, both packages)
