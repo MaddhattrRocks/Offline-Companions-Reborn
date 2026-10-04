@@ -140,6 +140,16 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> FollowStuckTeleport;
 
+	internal static ConfigEntry<float> FollowMaxDistance;
+
+	internal static ConfigEntry<float> FollowIndoorDistance;
+
+	internal static ConfigEntry<bool> FollowRegroup;
+
+	internal static ConfigEntry<float> FollowRegroupTime;
+
+	internal static ConfigEntry<bool> FollowSitIndoors;
+
 	internal static ConfigEntry<int> PlantGroupSize;
 
 	internal static ConfigEntry<float> FarmNextCropRange;
@@ -465,6 +475,11 @@ internal static class ModConfig
 		WorkRunDistance = Bind(cfg, "General", "WorkRunDistance", 25f, "Companions walk while doing jobs (farming, chest trips, smelting, cooking, chores, repairs, gathering) and only run when what they are heading to is further away than this many meters. 0 = never run for work. Following you, fighting and hunting are not affected.", new AcceptableValueRange<float>(0f, 500f));
 		HomeTripRange = Bind(cfg, "General", "HomeTripRange", 60f, "How far from home (meters) a companion will still walk back for chest trips: fetching or putting back tools, repairing a broken tool, emptying its bags. Further away than this, a companion missing its job tool says so and follows you until you are both back near home.", new AcceptableValueRange<float>(10f, 500f));
 		FollowStuckTeleport = Bind(cfg, "General", "FollowStuckTeleport", defaultValue: false, "When following you, a companion that has been stuck for 15 seconds somewhere it can't see you appears next to you. Off = it keeps trying to find its own way.");
+		FollowMaxDistance = Bind(cfg, "Follow", "MaxDistance", 10f, "How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.", new AcceptableValueRange<float>(4f, 30f));
+		FollowIndoorDistance = Bind(cfg, "Follow", "IndoorDistance", 4f, "The same range while you're indoors (under a roof), so companions stay in the room with you.", new AcceptableValueRange<float>(2f, 10f));
+		FollowRegroup = Bind(cfg, "Follow", "Regroup", defaultValue: true, "When you stand still for RegroupTime seconds, companions come back and wait close to you. Off = they stay wherever they stopped.");
+		FollowRegroupTime = Bind(cfg, "Follow", "RegroupTime", 45f, "Seconds you stand still before companions regroup around you (see Regroup).", new AcceptableValueRange<float>(5f, 600f));
+		FollowSitIndoors = Bind(cfg, "Follow", "SitIndoors", defaultValue: true, "When you stop indoors, companions sit down near you: on a free chair or bench if there is one, otherwise on the floor. Near home they empty their bags first.");
 		WoodLimit = Bind(cfg, "Harvest", "WoodLimit", 500, "How many of each wood material (counting your companion's pack and chests near its home) the Wood job gathers before stopping. 0 = no limit. Per-item numbers in GatherWood override this.", new AcceptableValueRange<int>(0, 100000));
 		StoneLimit = Bind(cfg, "Harvest", "StoneLimit", 500, "Same as WoodLimit, for the Stone job and GatherStone.", new AcceptableValueRange<int>(0, 100000));
 		OreLimit = Bind(cfg, "Harvest", "OreLimit", 500, "Same as WoodLimit, for the Ore job and GatherOre.", new AcceptableValueRange<int>(0, 100000));

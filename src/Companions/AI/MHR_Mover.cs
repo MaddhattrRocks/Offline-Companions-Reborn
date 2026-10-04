@@ -84,8 +84,16 @@ namespace Companions
         // Returns true once within 'dist' (flat) and on the same level (within 1.5m up/down).
         public static bool Go(CompanionAI ai, float dt, Vector3 goal, float dist, bool allowRun, string tag)
         {
+            return Go(ai, dt, goal, dist, allowRun, tag, SpeedAuto);
+        }
+
+        // 1.4.76: speed set by the caller (Follow matches the player's pace) instead of by distance.
+        public const int SpeedAuto = 0, SpeedWalk = 1, SpeedJog = 2, SpeedRun = 3;
+        public const string FollowTag = "Follow";
+        public static bool Go(CompanionAI ai, float dt, Vector3 goal, float dist, bool allowRun, string tag, int speed)
+        {
             if (ai == null) return false;
-            try { return GoInner(ai, goal, dist, allowRun, tag ?? ""); }
+            try { return GoInner(ai, goal, dist, allowRun, tag ?? "", speed); }
             catch (Exception e)
             {
                 if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
@@ -93,7 +101,7 @@ namespace Companions
             }
         }
 
-        static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag)
+        static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag, int speed)
         {
             float now = Time.time;
             S s = Get(ai);
@@ -104,6 +112,8 @@ namespace Companions
             if (s.GaveUp && now - s.GaveUpAt > 15f) fresh = true;   // try again after a while
             if (fresh) Reset(s, goal, pos, now, tag);
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
+            // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
+            else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
             s.LastGo = now; s.Goal = goal; s.Dist = dist;
 
             // arrived: within reach on the same level (not standing under it on the floor below)
@@ -173,10 +183,15 @@ namespace Companions
             float runDist = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
             bool run = allowRun && runDist > 0f && remain > runDist;
             bool walk = remain < 2.5f;
+            if (speed == SpeedWalk) { run = false; walk = true; }
+            else if (speed == SpeedJog) { run = false; walk = false; }
+            else if (speed == SpeedRun) { run = allowRun; walk = false; }
             Steer(ai, c, s, dir, run, walk);
 
             // stuck?
             float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
+            // 1.4.76: keeping pace with a player who's moving isn't getting closer, but isn't stuck either
+            if (tag == FollowTag) noCloser = 0f;
             if (still >= StillTime || noCloser >= NoProgressTime) Unstick(ai, c, s, pos, target, now, tag, still, noCloser);
             return false;
         }
