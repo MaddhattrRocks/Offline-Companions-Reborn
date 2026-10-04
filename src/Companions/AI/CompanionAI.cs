@@ -2027,6 +2027,13 @@ public class CompanionAI : BaseAI
 		else
 		{
 			ClearFollowMovementOverrides();
+			if (zDO != null && MHR_JobRules.IsJobMode(zDO.GetInt(CompanionSetup.ActionModeHash)))
+			{
+				// 1.4.75: a job is on but paused between steps (e.g. the farmer between crops).
+				// Stand still; the idle wander would walk him back to his idle point every time.
+				StopMoving();
+				return true;
+			}
 			if (!EnforceHomePatrol(dt))
 			{
 				IdleMovement(dt);

@@ -8,13 +8,14 @@ A Valheim **1.0** compatibility update of **[Offline Companions](https://thunder
 
 > **Note:** Some of the "working" modes (smelting, farming, etc.) are still being rebuilt and may not function correctly yet. Combat and gear are solid. I'm doing regular updates to flesh out and fix these pieces, aiming to get companions acting as much like another player as the game's constraints allow. If you find a bug, please let me know — I'm also working out the best way to let people submit their BepInEx `LogOutput.log`, since that contains very useful information for tracking these down.
 
-## Recent Highlights (v1.4.74)
+> **Note 2:** Smelting, Farming (still requires setting a zone with left-Alt + z), Wood, and Repair are mostly working now. There may still be some occasional odd behavior that will be cleaned up over the next few updates.
 
-- Jobs fetch the tool they need from your chests and put borrowed ones back. Near home, broken tools get repaired or replaced.
-- Wood, Stone and Ore have gather lists with limits for what to collect and how much. Companions step clear of falling trees, and stone from mining goes in a pile away from the ore.
-- Farming keeps a supply of seeds on hand, plants mixed fields in small blocks of each crop, and stores the harvest.
-- Companions go to bed when you do, empty their bags when a job changes, and sprint in short bursts instead of burning through their stamina.
-- Trips home and to bed use new movement. Companions open and close doors and gates, find their way around walls and water, and jump streams. Crossbows now fire.
+## Recent Highlights (v1.4.75)
+
+- Farmers work down a row, going straight from one ripe crop to the next instead of walking back and forth.
+- Companions get out of doorways faster, and doors are no longer shut on them while they're stuck.
+- Companions in Passive stance hold their strongest weapon.
+- Reborn no longer shows as incompatible with ProfMags' original mod; it just won't start while the original is installed.
 
 See `CHANGELOG.md` for the full version history.
 
@@ -114,11 +115,13 @@ See `CHANGELOG.md` for the version-by-version detail.
 
 Install with a mod manager (recommended), or manually drop `Companions.dll` into your `BepInEx/plugins/` folder.
 
+**Remove ProfMags' original Offline Companions first.** It doesn't work on Valheim 1.0, and Reborn won't start while it's installed (the BepInEx log says so).
+
 **Requires:** [BepInEx](https://valheim.hexium.gg/mods/denikson/BepInExPack_Valheim) and [Harmony](https://github.com/pardeike/Harmony) — both pulled in automatically by BepInExPack.
 
 ## Source
 
-The full source code is included alongside this README, so anyone can verify or continue this project.
+The full source code will be available on GitHub soon, so anyone can verify or continue this project.
 
 ## License
 

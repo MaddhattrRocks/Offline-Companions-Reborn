@@ -25,6 +25,7 @@ namespace Companions
             public bool WaitStamina, TooTired; public float NeedStamina, WaitStart, NoWaitUntil;
             public float MainBest; public int Passes; public Vector3 Shore; public bool HasShore; public float NextShore;
             public bool Walking, NewLeg;
+            public float NextStartSearch;
         }
         class Opened { public Door Door; public float At; }
 
@@ -186,7 +187,7 @@ namespace Companions
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
-            s.NextDoorSearch = 0f; s.NextLog = now + 1f;
+            s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
         }
 
         static void Halt(CompanionAI ai, Character c, S s)
@@ -213,6 +214,19 @@ namespace Companions
             if (!ok || s.Path.Count == 0)
             {
                 s.PathOk = false; s.Partial = true; s.Path.Clear(); s.Path.Add(goal);
+                // 1.4.75: no route can start from where we stand (e.g. in a doorway): step to a spot a meter or two
+                // away that a route does start from, right away instead of after the stuck ladder
+                Vector3 start;
+                if (!s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && now >= s.NextStartSearch)
+                {
+                    s.NextStartSearch = now + 2f;
+                    if (FindRouteStart(pos, goal, out start))
+                    {
+                        s.HasDetour = true; s.Detour = start; s.DetourUntil = now + 3f;
+                        s.Path.Clear(); s.Path.Add(start);
+                        Dbg("[Move|" + s.Tag + "] no route from " + Fmt(pos) + " - stepping to " + Fmt(start) + " to find one");
+                    }
+                }
             }
             else
             {
@@ -344,15 +358,47 @@ namespace Companions
             Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - jumping toward " + Fmt(pos + dir * 2f));
         }
 
-        static bool Clear(Vector3 pos, Vector3 dir)
+        static bool Clear(Vector3 pos, Vector3 dir) { return Clear(pos, dir, 1.5f); }
+        static bool Clear(Vector3 pos, Vector3 dir, float dist)
         {
             Vector3 from = pos + Vector3.up * 0.5f;
-            if (Physics.Raycast(from, dir, 1.5f, Mask())) return false;
+            if (Physics.Raycast(from, dir, dist, Mask())) return false;
             // something to stand on and no drop into deep water
-            Vector3 p = pos + dir * 1.5f;
+            Vector3 p = pos + dir * dist;
             RaycastHit hit;
             if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) return false;
             return MHR_Water.DepthAt(hit.point) < 1.0f;
+        }
+
+        // 1.4.75: a reachable spot 1.5-2.5 m away that a route to the goal starts from (full routes first, then the shortest).
+        // Further than the 1 m that counts as reaching a detour, so the companion actually steps there.
+        static bool FindRouteStart(Vector3 pos, Vector3 goal, out Vector3 start)
+        {
+            start = Vector3.zero;
+            float best = float.MaxValue; bool bestFull = false;
+            for (int ring = 1; ring <= 2; ring++)
+            {
+                float r = ring == 1 ? 1.5f : 2.5f;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 dir = Quaternion.Euler(0f, k * 45f, 0f) * Vector3.forward;
+                    if (!Clear(pos, dir, r)) continue;
+                    RaycastHit hit;
+                    Vector3 p = pos + dir * r;
+                    if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) continue;
+                    p = hit.point;
+                    s_tmp.Clear();
+                    if (!GetPath(p, goal, s_tmp, Pathfinding.AgentType.Humanoid, false)) continue;
+                    Vector3 end = s_tmp[s_tmp.Count - 1];
+                    bool full = Flat(end, goal) <= 1.5f && Mathf.Abs(end.y - goal.y) <= 2.2f;
+                    float len = r; Vector3 prev = p;
+                    for (int i = 0; i < s_tmp.Count; i++) { len += Vector3.Distance(prev, s_tmp[i]); prev = s_tmp[i]; }
+                    if (!full) len += Vector3.Distance(prev, goal);
+                    if ((full && !bestFull) || (full == bestFull && len < best)) { best = len; bestFull = full; start = p; }
+                }
+                if (bestFull) break;   // a full route from the inner ring: no need to look further out
+            }
+            return best < float.MaxValue;
         }
 
         static bool FindDetour(Vector3 pos, Vector3 goal, Vector3 dir, out Vector3 det)
@@ -563,6 +609,8 @@ namespace Companions
                     if (Time.time - o.At < 1.5f) continue;
                     Vector3 dp = o.Door.transform.position;
                     if (Flat(pos, dp) < 3.5f && Mathf.Abs(pos.y - dp.y) < 3f) continue;
+                    // 1.4.75: still stuck near it (working through the stuck ladder or a detour) - leave it open
+                    if (s != null && Time.time - s.LastGo < 0.5f && (s.Ladder > 0 || s.HasDetour) && Flat(pos, dp) < 8f) continue;
                     if (Player.m_localPlayer != null && Vector3.Distance(Player.m_localPlayer.transform.position, dp) < 2.5f) continue;
                     if (AnyCharacterIn(dp, 1.2f)) continue;
                     Humanoid h = ai.GetComponent<Humanoid>();

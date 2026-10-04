@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -12,7 +13,6 @@ using UnityEngine.SceneManagement;
 namespace Companions;
 
 [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
-[BepInIncompatibility("com.profmags.companions")]
 [BepInDependency("com.profmags.traderoverhaul", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInDependency("com.haldor.bounties", BepInDependency.DependencyFlags.SoftDependency)]
 public class CompanionsPlugin : BaseUnityPlugin
@@ -21,7 +21,7 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	public const string PluginName = "Offline Companions Reborn";
 
-	public const string PluginVersion = "1.4.74";
+	public const string PluginVersion = "1.4.75";
 
 	private static Harmony _harmony;
 
@@ -55,11 +55,33 @@ public class CompanionsPlugin : BaseUnityPlugin
 		}
 	}
 
+	// 1.4.75: ProfMags' original mod. Checked at startup instead of with [BepInIncompatibility], which Hexium lists as a tag.
+	private const string OriginalGUID = "com.profmags.companions";
+
+	private bool _started;
+
+	private static bool OriginalInstalled()
+	{
+		return Chainloader.PluginInfos.ContainsKey(OriginalGUID);
+	}
+
+	private static void LogOriginalInstalled()
+	{
+		Log.LogError("The original Offline Companions by ProfMags (" + OriginalGUID + ") is also installed. It doesn't work on Valheim 1.0 and can't run alongside " + PluginName + ". Remove the original Offline Companions to use " + PluginName + ". " + PluginName + " has not started.");
+	}
+
 	private void Awake()
 	{
 		Log = base.Logger;
 		Log.LogInfo("[BUILD] Companions.dll built from C# source");
 		Log.LogInfo(PluginName + " v" + PluginVersion + " loading...");
+		if (OriginalInstalled())
+		{
+			LogOriginalInstalled();
+			base.enabled = false;
+			return;
+		}
+		_started = true;
 		ModConfig.Init(MHR_GetConfigFile());
 		_harmony = new Harmony(PluginGUID);
 		try
@@ -85,6 +107,38 @@ public class CompanionsPlugin : BaseUnityPlugin
 		FarmZonePlacer.EnsureInstance();
 	}
 
+	// Plugins load in GUID order, so the original normally loads first and Awake catches it. Start runs after every
+	// plugin has loaded, so this catches it if the order ever changes.
+	private void Start()
+	{
+		if (_started && OriginalInstalled())
+		{
+			LogOriginalInstalled();
+			Shutdown();
+			base.enabled = false;
+		}
+	}
+
+	private void Shutdown()
+	{
+		if (!_started)
+		{
+			return;
+		}
+		_started = false;
+		SceneManager.sceneLoaded -= OnSceneLoaded;
+		Game.m_playerInitialSpawn -= CompanionManager.MHR_StarterOnce;
+		_harmony?.UnpatchSelf();
+		if (ConfigPanel.Instance != null)
+		{
+			UnityEngine.Object.Destroy(ConfigPanel.Instance.gameObject);
+		}
+		if (FarmZonePlacer.Instance != null)
+		{
+			UnityEngine.Object.Destroy(FarmZonePlacer.Instance.gameObject);
+		}
+	}
+
 	private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
 	{
 		FontFix.Ensure("scene:" + scene.name);
@@ -92,9 +146,7 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	private void OnDestroy()
 	{
-		SceneManager.sceneLoaded -= OnSceneLoaded;
-		Game.m_playerInitialSpawn -= CompanionManager.MHR_StarterOnce;
-		_harmony?.UnpatchSelf();
+		Shutdown();
 		Log?.LogInfo("Offline Companions unloaded.");
 	}
 

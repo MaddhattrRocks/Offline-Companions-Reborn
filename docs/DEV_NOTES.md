@@ -26,7 +26,21 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - Equipped flag: dragging a companion's equipped item to the player goes through InventoryGui -> `Inventory.MoveItemToThis(from, item, amount, x, y)`, which clones ItemData with m_equipped=true (the shift-click path in CompanionInteractPanel.OnCompanionSelected already unequipped first). New `MHR_EquipMove.UnequipIfFromCompanion` + Harmony prefixes `MHR_MoveItemToThis5_Patch` / `MHR_MoveItemToThis2_Patch` (TargetMethod via AccessTools.Method with explicit arg types; try/catch wrapped): if the source inventory is a companion's (and target != source), `Humanoid.UnequipItem(item,false)` then `m_equipped=false` before the clone. check_maxstack.py only recognizes `catch` on its own line after `}`.
 
 ## NEXT BUILD
-### 1.4.75 - proposed, waiting on the user's OK (from the 1.4.74 farm/repair log)
+### Standing rules (user, 2026-10-04)
+- **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
+- Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
+
+### 1.4.75 - code done on branch `claude/relaxed-archimedes-ecoh6h`, waiting on the user's build + in-game test
+What was built (all items below):
+- (1) `CompanionAI` (end of the follow/idle branch): job mode on (`MHR_JobRules.IsJobMode`: not Follow 0, not legacy Stay 4) and no job driving -> `StopMoving()` instead of `EnforceHomePatrol`/`IdleMovement`.
+- (2) `FarmController.TryNextCropNearby()` after drops are collected: if nothing needs storing (`HasCropOutput()` false), take the nearest ripe crop within `NextCropRange` (Farm, default 3 m, 0 = off) straight to MovingToPickable. Otherwise the old 2 s idle + full scan (so store trips are unchanged).
+- (3a) `MHR_Mover.Plan`: GetPath fails outright -> `FindRouteStart` tries 8 directions at 1.5 m and 2.5 m (clear at knee height, footing, not deep water) for a spot a route starts from; steps there as a 3 s detour. Throttled to every 2 s. (3b) `MHR_Mover.Tick`: a door we opened isn't closed while the mover is active and stuck (`Ladder > 0` or a detour) within 8 m of it.
+- (4) `FindRipePickable` logs one summary line per scan (counts of picked/claimed, not crops, unreachable) instead of per crop. The per-crop `cultivated=` detail is gone; add it back temporarily if the auto-farm-zone investigation needs it.
+- (5) `[BepInIncompatibility]` removed. `CompanionsPlugin.Awake` checks `Chainloader.PluginInfos` for `com.profmags.companions` (loads first: GUIDs load alphabetically) and logs an error and doesn't start. `Start()` re-checks after all plugins loaded and shuts down (unpatch, destroy ConfigPanel/FarmZonePlacer) if needed.
+- (6) CHANGELOG 1.4.53-1.4.74 rewritten one line per item; 1.4.75 entry added. (7) README: Note 2, Recent Highlights v1.4.75 (show the user before packaging), install note about removing the original, Source section.
+- Also in 1.4.75: the Harmony attribute fix from the C# conversion. `CombatPatches.EquipBestWeapon_PreferHighestDamage.Postfix` only acts outside Balanced/Ranged/Melee (`WeaponLogic.IsManagedStance`), i.e. Passive: swaps to the highest effective-damage weapon. In 1.4.74 it never ran and `Prefix` ran a second time as a postfix.
+
+### 1.4.75 - original proposal (from the 1.4.74 farm/repair log)
 1. **Idle wander during jobs:** after each crop the farm job paused 2 s with nothing driving him, so the vanilla idle wander walked him back to his idle point (~4 m behind the farm edge, around (-275,-326)), then he walked back in for the next crop: walk in, pick, walk back, every crop. Follow was off. Fix: while a job is on, a short pause means standing still, not idle wander. No job on = wander as before.
 2. **Harvest like a player working a row:** after picking a crop, go straight to the next ripe one within a few meters, no pause and no full rescan. The full scan runs only when nothing ripe is close.
 3. **Doorways (repair trip, ~45 s lost):** he opened the door, stood in the doorway and couldn't get a route from there; the door got closed behind him and reopened while he was still trying. Fix: (a) if no route can start from where he stands (e.g. a doorway), step 1-2 m to find one right away instead of running the whole unstuck ladder; (b) don't close a door he opened while he's still stuck near it.

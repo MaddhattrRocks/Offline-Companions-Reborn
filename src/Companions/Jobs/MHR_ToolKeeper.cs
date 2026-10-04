@@ -780,6 +780,12 @@ namespace Companions
             return zdo != null && zdo.GetInt(CompanionSetup.ActionModeHash, 0) != 0;
         }
 
+        // 1.4.75: a work mode is on (not Follow, and not the old Stay mode that pre-1.4.65 saves can still hold).
+        public static bool IsJobMode(int mode)
+        {
+            return mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay;
+        }
+
         public static void OnJobSet(CompanionSetup cs, int mode)
         {
             if (cs == null || mode == 0 || !cs.GetStayHome()) return;

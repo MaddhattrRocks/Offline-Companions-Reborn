@@ -142,6 +142,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<int> PlantGroupSize;
 
+	internal static ConfigEntry<float> FarmNextCropRange;
+
 	internal static ConfigEntry<string> PlantAny;
 
 	internal static ConfigEntry<int> WoodLimit;
@@ -457,6 +459,7 @@ internal static class ModConfig
 		SeedReserve = Bind(cfg, "Farm", "SeedMinimum", 20, "The fewest of each plantable item (carrot, turnip, onion seeds, barley, flax and so on) the farmer keeps, counting its pack and chests near its home. It never plants seeds if that would take them below this. Barley, flax and other crops that grow from themselves are still planted, and the farmer keeps this many in its pack instead of storing them.", new AcceptableValueRange<int>(0, 1000));
 		SeedTarget = Bind(cfg, "Farm", "SeedTarget", 100, "While a seed is under this number, the farmer grows seed plants (planting carrots, turnips, onions...) alongside its regular crops to build the stock back up. Below SeedMinimum it grows only seed plants for that crop. At or above this number it grows only crops.", new AcceptableValueRange<int>(0, 5000));
 		PlantGroupSize = Bind(cfg, "Farm", "PlantGroupSize", 4, "How many of one plant the farmer puts in before switching to the next type, so a mixed field ends up in small blocks instead of one crop. 1 = fully mixed.", new AcceptableValueRange<int>(1, 100));
+		FarmNextCropRange = Bind(cfg, "Farm", "NextCropRange", 3f, "After picking a crop, the farmer goes straight to the next ripe crop within this many meters, like working down a row, instead of pausing and scanning the whole field. 0 = always pause and scan.", new AcceptableValueRange<float>(0f, 10f));
 		PlantAny = Bind(cfg, "Farm", "PlantAny", "CarrotSeeds, TurnipSeeds, OnionSeeds, Barley, Flax, MushroomJotunPuffs, MushroomMagecap, VineberrySeeds", "What the farmer plants in farm zones set to Any crop. Comma-separated item names. Anything not on the list (tree seeds such as BirchSeeds, Acorn, BeechSeeds, PineCone, FirCone) is never planted in an Any zone. Items added by other mods work too, for example MushroomCommon or Raspberry with Plant Everything.");
 		SeedCarry = Bind(cfg, "Farm", "SeedCarry", 40, "How many of each plantable item the farmer carries. When it opens a chest for seeds it takes up to this many of every type on the PlantAny list (and vegetables for seed plants while that seed is under SeedTarget), so it can fill the fields without walking back for each type. It keeps up to this many in its pack instead of storing them.", new AcceptableValueRange<int>(1, 200));
 		WorkRunDistance = Bind(cfg, "General", "WorkRunDistance", 25f, "Companions walk while doing jobs (farming, chest trips, smelting, cooking, chores, repairs, gathering) and only run when what they are heading to is further away than this many meters. 0 = never run for work. Following you, fighting and hunting are not affected.", new AcceptableValueRange<float>(0f, 500f));
