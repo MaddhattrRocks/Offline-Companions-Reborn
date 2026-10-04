@@ -26,7 +26,26 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - Equipped flag: dragging a companion's equipped item to the player goes through InventoryGui -> `Inventory.MoveItemToThis(from, item, amount, x, y)`, which clones ItemData with m_equipped=true (the shift-click path in CompanionInteractPanel.OnCompanionSelected already unequipped first). New `MHR_EquipMove.UnequipIfFromCompanion` + Harmony prefixes `MHR_MoveItemToThis5_Patch` / `MHR_MoveItemToThis2_Patch` (TargetMethod via AccessTools.Method with explicit arg types; try/catch wrapped): if the source inventory is a companion's (and target != source), `Humanoid.UnequipItem(item,false)` then `m_equipped=false` before the clone. check_maxstack.py only recognizes `catch` on its own line after `}`.
 
 ## NEXT BUILD
-- (empty - 1.4.71 shipped the agreed list; collect the user's job-test findings here)
+### 1.4.75 - proposed, waiting on the user's OK (from the 1.4.74 farm/repair log)
+1. **Idle wander during jobs:** after each crop the farm job paused 2 s with nothing driving him, so the vanilla idle wander walked him back to his idle point (~4 m behind the farm edge, around (-275,-326)), then he walked back in for the next crop: walk in, pick, walk back, every crop. Follow was off. Fix: while a job is on, a short pause means standing still, not idle wander. No job on = wander as before.
+2. **Harvest like a player working a row:** after picking a crop, go straight to the next ripe one within a few meters, no pause and no full rescan. The full scan runs only when nothing ripe is close.
+3. **Doorways (repair trip, ~45 s lost):** he opened the door, stood in the doorway and couldn't get a route from there; the door got closed behind him and reopened while he was still trying. Fix: (a) if no route can start from where he stands (e.g. a doorway), step 1-2 m to find one right away instead of running the whole unstuck ladder; (b) don't close a door he opened while he's still stuck near it.
+4. **Farm scan log:** one summary line per scan instead of one line per crop (60-80 crops, ~460 Debug lines per scan).
+5. **Original-mod check:** remove `[BepInIncompatibility("com.profmags.companions")]` (Hexium lists it as an incompatibility tag). Replace with a startup check: if ProfMags' original is loaded, log a clear error saying to remove it (it doesn't work on Valheim 1.0) and don't start Reborn. Same note in the README and the Nexus description.
+6. **Changelog:** rewrite 1.4.53-1.4.74 in the one-line style (see the CHANGELOG style rule below).
+7. **README:** add the user's "Note 2" next to the existing note (text below).
+- Not in 1.4.75: moving Follow onto MHR_Mover is phase 2. Order after that: Follow (ask the user for their follow ideas first) -> jobs move over -> remove the old per-job stuck code.
+
+### Packaging (agreed with the user)
+- Only `Companions.dll` is needed to run. Thunderstore needs `manifest.json`, `README.md`, `icon.png` (256x256) in the zip root; `CHANGELOG.md` is optional (shows as a Changelog tab). Hexium: packaged the same way as Thunderstore. Nexus: DLL only, the description lives on the page.
+- `LICENSE` goes in every package, Nexus included (MIT: ProfMags' copyright notice must ship with copies).
+- The source now lives in this GitHub repo. The user doesn't mind including source in packages but most players won't care. The repo is **private**, so don't point the README or Nexus at it unless the user makes it public.
+
+### README / Nexus text (next update)
+- **Note 2** (already on Nexus, add to the Thunderstore/Hexium README): "Note 2: Smelting, Farming (still requires setting a zone with left-Alt + z), Wood, and Repair are mostly working now. There may still be some occasional odd behavior that will be cleaned up over the next few updates."
+- **Support section:** the user wants wording they can reuse on all their mods; not picked yet, don't change it until they do. Options offered: (1) "Enjoying my mods? You can support my work on [Patreon](https://www.patreon.com/cw/MaddHattr) or [buy me a coffee](https://ko-fi.com/maddhattr). Thank you!" (2) "If you'd like to support this and my other mods: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)" (3) "Support my modding: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)". Keep the ProfMags Patreon line as its own sentence underneath. Button images (Ko-fi/Patreon official graphics) are an option; a Discord link may join the line later.
+
+### Older findings
 - User OK with Wood doing cleanup (stumps/logs) before felling trees - nearest-first scan stays.
 - **1.4.73 log 25f30bda (Wood test, community patch on):**
   - Water bolting = combat: `Engage -> $Animal_Crab_RtD` / `$Animal_Dolphin_RtD` (RtDOcean mod sea animals) and `$enemy_neck` in the water. IsPassiveAnimal is hard-coded Deer/Hare/Chicken, so modded passive animals count as enemies. He chased a crab into the moat (WaterSafety kicked in) and shot at a dolphin 46 m out.
@@ -272,6 +291,7 @@ Hexium flagged the DLL as still reporting **1.4.37** while every log line and `m
 
 
 ## CHANGELOG.md style rule (rewritten starting v1.4.40, both packages)
+**Current rule (user, after 1.4.74): one line per item, issue and fix combined, to the point.** Example: instead of an "Issue:" bullet ("If a companion couldn't reach a tree or rock, it kept damaging it every 5 seconds from wherever it was, through walls and cliffs.") plus a "Fix:" bullet ("It now gives up on that target and picks another."), write: "Fixed NPC damaging a target regardless of if they could reach it. NPC now picks a new target instead." Rewrite 1.4.53-1.4.74 this way. Older text below is the earlier rule.
 User asked for `CHANGELOG.md` to be less technical: plain bullet points describing the issue and the fix in player-facing language, not method/class names, exception types, or root-cause internals (that detail belongs in these dev notes, not the public changelog). Rewrote the entire file in this style, not just new entries going forward - keep new entries in this same plain, bulleted issue/fix format.
 
 ## README maintenance rule (applied starting v1.4.40, both packages)
