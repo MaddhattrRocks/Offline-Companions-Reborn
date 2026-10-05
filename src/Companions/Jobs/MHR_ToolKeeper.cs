@@ -974,7 +974,7 @@ namespace Companions
                     if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
                     if (!LineClear(stand, chest)) continue;
                     s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true) || s_path.Count == 0)
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
                     { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
                     // 1.4.67: the route has to actually end at the spot, not just somewhere near it
                     Vector3 end = s_path[s_path.Count - 1];
@@ -1025,7 +1025,7 @@ namespace Companions
                     if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
                     if (!ClearTo(stand, cp, piece)) continue;
                     s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true)) continue;
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
                     if (s_path.Count == 0) continue;
                     Vector3 end = s_path[s_path.Count - 1];
                     if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;

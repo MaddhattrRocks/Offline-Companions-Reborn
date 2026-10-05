@@ -223,7 +223,8 @@ namespace Companions
             Steer(ai, c, s, dir, run, walk);
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
-            if ((s.Direct || now - s.AnchorTime > 0.6f) && now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && StepAhead(pos, dir))
+            // 1.4.85: and the moment we reach the edge of a step (the companion route map climbs 0.6 m, more than walking does)
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (((s.Direct || now - s.AnchorTime > 0.6f) && StepAhead(pos, dir)) || StepEdge(pos, dir)))
             {
                 s.NextHop = now + 0.6f;
                 ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -271,7 +272,7 @@ namespace Companions
             if (Vector3.Distance(goal, s.Dest) > 1.5f) { s.NewLeg = true; s.ProgressTime = now; }   // new leg: measure progress from here
             s.Dest = goal;
             s.RouteSwim = 0f;
-            bool ok = GetPath(pos, goal, s.Path, Pathfinding.AgentType.Humanoid, false);
+            bool ok = GetPath(pos, goal, s.Path, MHR_CompanionNavMesh.AgentOrHumanoid, false);
             if (!ok || s.Path.Count == 0)
             {
                 s.PathOk = false; s.Partial = true; s.Path.Clear(); s.Path.Add(goal);
@@ -605,6 +606,16 @@ namespace Companions
             return hops <= 10;
         }
 
+        // 1.4.85: right at the edge of a step up: level ground just ahead, then 0.35-1.3 m higher a bit further on
+        static bool StepEdge(Vector3 pos, Vector3 dir)
+        {
+            RaycastHit near, far;
+            if (!Physics.Raycast(pos + dir * 0.3f + Vector3.up * 1.5f, Vector3.down, out near, 2.5f, Mask()) || near.point.y > pos.y + 0.2f) return false;
+            if (!Physics.Raycast(pos + dir * 0.8f + Vector3.up * 1.5f, Vector3.down, out far, 2.5f, Mask())) return false;
+            float rise = far.point.y - pos.y;
+            return rise > 0.35f && rise < 1.3f;
+        }
+
         // something to hop up onto just ahead (a step, a low wall), or a knee-high block
         static bool StepAhead(Vector3 pos, Vector3 dir)
         {
@@ -667,7 +678,7 @@ namespace Companions
                     if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) continue;
                     p = hit.point;
                     s_tmp.Clear();
-                    if (!GetPath(p, goal, s_tmp, Pathfinding.AgentType.Humanoid, false)) continue;
+                    if (!GetPath(p, goal, s_tmp, MHR_CompanionNavMesh.AgentOrHumanoid, false)) continue;
                     Vector3 end = s_tmp[s_tmp.Count - 1];
                     bool full = Flat(end, goal) <= 1.5f && Mathf.Abs(end.y - goal.y) <= 2.2f;
                     float len = r; Vector3 prev = p;
@@ -689,7 +700,7 @@ namespace Companions
                 float off = (i < 2 ? 4f : 7f) * (i % 2 == 0 ? 1f : -1f);
                 Vector3 p = pos + side * off - dir * 1.5f;
                 s_tmp.Clear();
-                if (!GetPath(pos, p, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
+                if (!GetPath(pos, p, s_tmp, MHR_CompanionNavMesh.AgentOrHumanoid, true)) continue;
                 det = s_tmp[s_tmp.Count - 1];
                 if (Flat(det, pos) < 2f) continue;
                 return true;
@@ -933,7 +944,7 @@ namespace Companions
                     if (!HopLine(b, goal, out hops)) continue;
                     if (queries++ >= 24) break;
                     s_tmp.Clear();
-                    if (!GetPath(pos, b, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
+                    if (!GetPath(pos, b, s_tmp, MHR_CompanionNavMesh.AgentOrHumanoid, true)) continue;
                     Vector3 end = s_tmp[s_tmp.Count - 1];
                     if (Flat(end, b) > 1.0f || Mathf.Abs(end.y - b.y) > 1.2f) continue;
                     float len = 0f; Vector3 prev = pos;
