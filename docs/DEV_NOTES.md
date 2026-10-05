@@ -35,7 +35,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - SmeltController: all four moves (chest, smelter slot, smelter output, output chest) through `MHR_Nav.MoveSmelt` -> MHR_Mover tag "Smelt" (was `MoveWalk` -> vanilla MoveToPoint). Stand spots: `MHR_Chests.PickApproach` for chests, new `MHR_Chests.PickApproachPoint` (rings 0.9/1.4/1.9 m x 12 round the ore/fuel/output switch, ignoring the smelter's own colliders, max 1.8 m up/down) for slots; move to the spot at 0.5 m, standing on it counts as in reach (`AtSpot`). A chest with no spot and `!CanReach` is skipped for 60 s ("Skipping chest at ...") and the trip aborted so the next scan picks another. Stuck: aborts when `MHR_Mover.GaveUp`; the distance-based 10 s timer doesn't run while `MHR_Mover.Progressing`. `PickApproachPiece` now shares `PickNear` with it.
 - Stairs: removed the proactive `StepEdge` hop (1.4.85); hops only in Direct mode or when held up > 0.5 s with `StepAhead`.
 - MHR_Diag: no "hasn't moved" warning while the companion is in combat (1.4.85 log: standing shooting a boar).
-- Combat note from the 1.4.85 log: engaged a boar 18 m off that had targeted Gunter but wasn't alerted yet (matches the rule). Offered: wait until it actually comes at him - no answer yet.
+- Combat note from the 1.4.85 log: engaged a boar 18 m off that had targeted Gunter but wasn't alerted yet (matches the rule). User: the current rule is fine.
 
 ### Where things stand (2026-10-05, end of session)
 See `docs/SESSION_HANDOFF.md` for the short version to paste into a new session. 1.4.77-1.4.85 are on `claude/relaxed-archimedes-ecoh6h`, no PR yet; 1.4.85 is pushed and waiting on the user's build + test.
