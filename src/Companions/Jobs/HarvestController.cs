@@ -1586,7 +1586,7 @@ public class HarvestController : MonoBehaviour
 		int num = -1;
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
-			if (allItem?.m_shared != null && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)))
+			if (allItem?.m_shared != null && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)) && allItem.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow && string.IsNullOrEmpty(allItem.m_shared.m_ammoType))
 			{
 				HitData.DamageTypes damage = allItem.GetDamage();
 				bool flag = false;
@@ -1661,6 +1661,12 @@ public class HarvestController : MonoBehaviour
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
 			if (allItem?.m_shared == null || (allItem.m_shared.m_useDurability && allItem.m_durability <= 0f))
+			{
+				continue;
+			}
+			// 1.4.81: bows and crossbows can't chop or mine, whatever chop damage the item lists (1.4.80 log: the Arbalest
+			// "chop=140" beat the axe, he equipped it for Wood and just stood there)
+			if (allItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(allItem.m_shared.m_ammoType) || allItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo)
 			{
 				continue;
 			}

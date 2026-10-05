@@ -27,6 +27,7 @@ namespace Companions
             public bool Walking, NewLeg;
             public float NextStartSearch;
             public Door LastRouteDoor; public float LastRouteDoorAt;
+            public float RouteSwim;
         }
         class Opened { public Door Door; public float At; }
 
@@ -67,6 +68,8 @@ namespace Companions
         public static bool GaveUp(CompanionAI ai) { S s = Peek(ai); return s != null && s.GaveUp; }
         // 1.4.79: the current route doesn't reach the goal (Follow switches to the player's path then)
         public static bool RoutePartial(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && s.Partial && !s.HasDetour; }
+        // 1.4.81: meters of swimming on the current route
+        public static float RouteSwim(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? s.RouteSwim : 0f; }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -238,6 +241,7 @@ namespace Companions
             Vector3 goal = s.HasDetour ? s.Detour : s.RouteDoor != null ? s.RouteDoorSpot : s.Goal;
             if (Vector3.Distance(goal, s.Dest) > 1.5f) { s.NewLeg = true; s.ProgressTime = now; }   // new leg: measure progress from here
             s.Dest = goal;
+            s.RouteSwim = 0f;
             bool ok = GetPath(pos, goal, s.Path, Pathfinding.AgentType.Humanoid, false);
             if (!ok || s.Path.Count == 0)
             {
@@ -266,6 +270,7 @@ namespace Companions
                 if (!c.IsSwimming())
                 {
                     float swim = MHR_Water.SwimMeters(c, pos, s.Path, 60f);
+                    s.RouteSwim = swim;
                     if (swim > 0.5f)
                     {
                         float need = MHR_Water.SwimStamina(c, swim) * 1.25f + 5f;

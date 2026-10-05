@@ -661,6 +661,14 @@ public class CompanionInteract : MonoBehaviour
 			_holdActive = false;
 			return;
 		}
+		// 1.4.81: the farm zone key is the same key (Z by default), pressed with a modifier. Holding modifier + Z to set a
+		// zone counted as holding the command key, which recalled the companions and switched their job off.
+		if (!ZInput.IsGamepadActive() && ((FarmZonePlacer.Instance != null && FarmZonePlacer.Instance.IsVisible) || Input.GetKey(ModConfig.FarmZoneModifier.Value)))
+		{
+			_holdActive = false;
+			_holdTimer = 0f;
+			return;
+		}
 		float deltaTime = Time.deltaTime;
 		_cmdCooldown -= deltaTime;
 		bool flag = ZInput.IsGamepadActive();

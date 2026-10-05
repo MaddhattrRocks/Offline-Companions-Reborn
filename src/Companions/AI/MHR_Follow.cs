@@ -173,7 +173,12 @@ namespace Companions
                 float dSpot = Flat(me, goal);
                 // 1.4.77: stay put for a second after the player sets off, and while the player is right next to us,
                 // so the player can walk up and open the inventory or the command wheel
-                bool hold = now - t.MovingSince < 1f || distP < 2.5f;
+                // 1.4.81: also while the player is walking toward us (the spot is set by the player's direction, so walking
+                // up to a companion swung its spot round and it moved off - most noticeable with Wander off)
+                Vector3 toMe = me - pp; toMe.y = 0f;
+                bool approaching = distP < maxD && toMe.sqrMagnitude > 0.01f && Vector3.Dot(t.Travel, toMe.normalized) > 0.7f;
+                bool hold = now - t.MovingSince < 1f || distP < 2.5f || approaching;
+                if (s.Moving && approaching && distP < 4f) { s.Moving = false; MHR_Mover.Release(ai); }
                 if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
                 if (s.Moving)
                 {
@@ -186,6 +191,9 @@ namespace Companions
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
+                    // 1.4.81: the route to its spot means a swim but the player walked (1.4.80 log: round through the moat
+                    // while the player went in by the gate) - walk the player's path instead
+                    if (!s.Trail && !player.IsSwimming() && !c.IsSwimming() && MHR_Mover.RouteSwim(ai) > 1f) { s.Trail = true; s.NextPick = now + 6f; s.NextCheck = now + 6f; }
                     if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
                 }
                 else ai.StopMoving();

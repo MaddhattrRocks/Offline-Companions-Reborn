@@ -2,6 +2,13 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.81
+- Fixed companions walking all the way home to empty their bags or put a tool back when you turn a job off out in the field. They now do it once they're back home.
+- Fixed the Wood job equipping a crossbow and standing there. Bows and crossbows are never used as gathering tools.
+- Fixed following companions swimming across a moat when you walked in through the gate. They now follow your path when their own way would mean a swim.
+- Companions stay put while you walk up to them, so they're easy to catch with Wander off too.
+- Fixed setting a farm zone (modifier + Z) also recalling your companions and turning their job off.
+
 ## 1.4.80
 - Fixed Stone and Ore companions hitting each rock once and moving on to the next. Many rocks turn into a cracked version on the first hit, and companions took that as the rock being gone. They now keep mining the cracked rock until it breaks.
 

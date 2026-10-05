@@ -42,7 +42,7 @@ namespace Companions
         // working (same rules as after a job change). Only does anything near home and with something to put away.
         public static void RequestUnload(CompanionSetup cs)
         {
-            if (cs == null || !cs.HasHomePosition() || !NearHome(cs)) return;   // only at home, not at an outpost
+            if (cs == null || !cs.HasHomePosition() || !AtHome(cs)) return;   // only at home, not at an outpost
             State st;
             if (!s_state.TryGetValue(cs.GetInstanceID(), out st) || st.UnloadPending || st.Phase != 0) return;
             Humanoid hum = cs.GetComponent<Humanoid>();
@@ -142,7 +142,8 @@ namespace Companions
             }
             if (!nearHome) goto FETCH;
 
-            // 1) put back anything borrowed that the current job doesn't use
+            // 1) put back anything borrowed that the current job doesn't use (1.4.81: only at home, it can wait till then)
+            if (!AtHome(cs)) goto FETCH;
             for (int b = 0; b < st.Borrowed.Count; b++)
             {
                 Entry e = st.Borrowed[b];
@@ -361,6 +362,13 @@ namespace Companions
 
         // ---- 1.4.71: home range, repairs ----
         public static float HomeRange() { return ModConfig.HomeTripRange != null ? ModConfig.HomeTripRange.Value : 60f; }
+        // 1.4.81: "at home" for putting things away (bags, borrowed tools) and repairing barely-worn gear: inside the base,
+        // not anywhere within HomeTripRange
+        public static float AtHomeRange() { return Mathf.Min(25f, HomeRange()); }
+        public static bool AtHome(CompanionSetup cs)
+        {
+            return cs == null || !cs.HasHomePosition() || Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= AtHomeRange();
+        }
         public static bool NearHome(CompanionSetup cs)
         {
             return cs == null || !cs.HasHomePosition() || Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= HomeRange();
@@ -498,7 +506,9 @@ namespace Companions
             Vector3 me = cs.transform.position;
             bool hasHome = cs.HasHomePosition();
             Vector3 home = hasHome ? cs.GetHomePosition() : me;
-            if (hasHome && Vector3.Distance(me, home) > HomeRange()) { st.UnloadActive = false; return false; }   // later, when back home
+            // 1.4.81: only when actually at home (25 m), not anywhere within HomeTripRange - he walked 54 m back to put
+            // away a stack of stone when the job was switched off out in the field (1.4.80 test)
+            if (hasHome && Vector3.Distance(me, home) > AtHomeRange()) { st.UnloadActive = false; return false; }   // later, when back home
             List<ItemDrop.ItemData> items = UnloadList(cs, st, inv, mode);
             if (items.Count == 0 || st.UnloadTrips >= 10)
             {
@@ -1069,8 +1079,7 @@ namespace Companions
             CompanionSetup cs = c != null ? c.GetComponent<CompanionSetup>() : null;
             // 1.4.78: only actually at home (within 25 m of the home spot, or HomeTripRange if smaller). With the whole
             // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
-            if (cs != null && cs.HasHomePosition() &&
-                Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= Mathf.Min(25f, MHR_ToolKeeper.HomeRange())) return 0.999f;
+            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return 0.999f;
             return cfg;
         }
 
