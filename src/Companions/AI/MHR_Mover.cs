@@ -222,7 +222,8 @@ namespace Companions
             else if (speed == SpeedRun) { run = allowRun; walk = false; }
             Steer(ai, c, s, dir, run, walk);
             // 1.4.83: going straight: hop the step in front, like a player
-            if (s.Direct && now >= s.NextHop && c.IsOnGround() && !c.InAttack() && StepAhead(pos, dir))
+            // 1.4.84: and on a normal route, when something low has stopped us for a moment
+            if ((s.Direct || now - s.AnchorTime > 0.6f) && now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && StepAhead(pos, dir))
             {
                 s.NextHop = now + 0.6f;
                 ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -334,7 +335,9 @@ namespace Companions
                 float straight = Vector3.Distance(pos, goal);
                 float len = Remaining(s, pos);
                 int hops;
-                if (straight < 25f && (s.Partial || len > straight * 1.6f + 6f) && HopLine(pos, goal, out hops))
+                // 1.4.84: also a short way round something low that's in the way (a log, a low wall): a player hops it
+                bool longWay = s.Partial || len > straight * 1.6f + 6f;
+                if (straight < 25f && (longWay || len > straight + 2f) && HopLine(pos, goal, out hops) && (longWay || hops > 0))
                 {
                     if (!wasDirect) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
                     s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;

@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak;
+            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }
@@ -118,6 +118,16 @@ namespace Companions
                 LogDebug("Job changed (" + st.LastMode + " -> " + mode + (stayHome && !st.LastStayHome ? ", Homestead" : "") + ") - will empty bags at home");
             }
             st.LastMode = mode; st.LastStayHome = stayHome;
+            // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
+            // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
+            // with tin ore, bone fragments, meat... and he kept it all until a job was picked)
+            bool atHome = cs.HasHomePosition() && AtHome(cs);
+            if (atHome && !st.WasAtHome && mode == 0 && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
+            {
+                st.UnloadPending = true; st.UnloadTrips = 0;
+                LogDebug("Back home - will empty bags");
+            }
+            st.WasAtHome = atHome;
 
             if (st.Phase != 0) { UpdateTrip(cs, st, ai, hum, inv, zdo, mode, now, dt); return; }
             if (now < st.NextDecide) return;

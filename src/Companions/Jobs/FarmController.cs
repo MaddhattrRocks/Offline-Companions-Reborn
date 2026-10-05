@@ -775,7 +775,7 @@ public class FarmController : MonoBehaviour
 		{
 			ScanNearbyChests();
 			Container container = null;
-			for (int i = 0; i < 4; i++)
+			for (int i = 0; i < 12; i++)
 			{
 				container = FindChestWithSpace();
 				if (container == null || ChestReachable(container))
@@ -917,7 +917,7 @@ public class FarmController : MonoBehaviour
 				seedInfo = default(SeedPlantInfo);
 				seedPrefab = null;
 				seedCount = 0;
-				for (int i = 0; i < 4; i++)
+				for (int i = 0; i < 12; i++)
 				{
 					container = FindChestWithSeeds(itemData, out seedInfo, out seedPrefab, out seedCount);
 					if (container == null || ChestReachable(container))
@@ -954,7 +954,7 @@ public class FarmController : MonoBehaviour
 			Container container2 = null;
 			seedInfo2 = default(SeedPlantInfo);
 			seedCount2 = 0;
-			for (int i = 0; i < 4; i++)
+			for (int i = 0; i < 12; i++)
 			{
 				container2 = FindChestWithSpecificSeed(cropSeed, out seedInfo2, out seedCount2);
 				if (container2 == null || ChestReachable(container2))
@@ -1186,9 +1186,17 @@ public class FarmController : MonoBehaviour
 		return false;
 	}
 
+	private float _unreachableClearAt;
+
 	private void ScanNearbyChests()
 	{
-		_unreachableChests.Clear();
+		// 1.4.84: remember unreachable chests for a minute instead of re-checking them every scan; with only 4 tries per
+		// search the same 4 chests up on the ledge used up every try and he never stored anything (1.4.83 log)
+		if (Time.time >= _unreachableClearAt)
+		{
+			_unreachableChests.Clear();
+			_unreachableClearAt = Time.time + 60f;
+		}
 		_nearbyChests.Clear();
 		_tempPieces.Clear();
 		Piece.GetAllPiecesInRadius(base.transform.position, ScanRadius, _tempPieces);
@@ -1307,6 +1315,10 @@ public class FarmController : MonoBehaviour
 		float num3 = Mathf.Floor(halfSize / num) * num;
 		float num4 = float.MaxValue;
 		bool flag = false;
+		// 1.4.84: plant in rows like a player, starting at the far edge of the zone and working back toward where he came
+		// in, back and forth along each row, so he always stands on ground that's still empty. Nearest-first had him
+		// planting in a ring around himself in the middle until he was boxed in by his own crops (1.4.83 log).
+		PlantOrder order = GetPlantOrder(zone);
 		int num5 = 0;
 		int num6 = 0;
 		int num7 = 0;
@@ -1354,7 +1366,15 @@ public class FarmController : MonoBehaviour
 					num7++;
 					continue;
 				}
-				float num13 = Vector3.Distance(base.transform.position, vector);
+				if (_ai != null && _ai.IsPositionBlacklisted(vector))
+				{
+					num7++;
+					continue;
+				}
+				float rowKey = (order.AlongZ ? num11 : num10) * order.RowSign;
+				float colKey = order.AlongZ ? num10 : num11;
+				int row = Mathf.RoundToInt((rowKey + halfSize) / num);
+				float num13 = row * 10000f + ((row % 2 == 0) ? colKey : (0f - colKey));
 				if (num13 < num4)
 				{
 					num4 = num13;
@@ -1363,8 +1383,44 @@ public class FarmController : MonoBehaviour
 				}
 			}
 		}
+		if (!flag)
+		{
+			_plantOrders.Remove(ZoneKey(zone));   // zone done: pick the starting edge afresh next time
+		}
 		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
 		return flag;
+	}
+
+	private struct PlantOrder
+	{
+		public bool AlongZ;
+
+		public float RowSign;
+	}
+
+	private readonly Dictionary<string, PlantOrder> _plantOrders = new Dictionary<string, PlantOrder>();
+
+	private static string ZoneKey(FarmZone zone)
+	{
+		return $"{zone.Center.x:F1},{zone.Center.z:F1}";
+	}
+
+	// rows run across the side he's coming from; the first row is the opposite edge
+	private PlantOrder GetPlantOrder(FarmZone zone)
+	{
+		string key = ZoneKey(zone);
+		if (_plantOrders.TryGetValue(key, out var value))
+		{
+			return value;
+		}
+		zone.WorldToLocal(base.transform.position, out var lx, out var lz);
+		value = default(PlantOrder);
+		value.AlongZ = Mathf.Abs(lz) >= Mathf.Abs(lx);
+		float me = value.AlongZ ? lz : lx;
+		value.RowSign = (me >= 0f) ? 1f : (-1f);
+		_plantOrders[key] = value;
+		Log($"[Plant] Zone at {zone.Center:F0}: rows along {(value.AlongZ ? "x" : "z")}, starting at the far edge");
+		return value;
 	}
 
 	private Container FindChestWithSeeds(ItemDrop.ItemData cultivator, out SeedPlantInfo seedInfo, out string seedPrefab, out int seedCount)
