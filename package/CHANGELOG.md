@@ -2,6 +2,15 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.78
+- Fixed the farmer running back and forth through a gate on the way to a chest. Companions now walk to a spot by chests and crafting stations that they can actually reach.
+- Fixed companions sidestepping and hopping around between crops while farming.
+- Fixed gatherers swinging at a rock over and over without hitting it.
+- Fixed companions picking fights with harmless animals (modded crabs and dolphins) and staying "in combat" with something far away, which stopped their job. They now let go of anything more than 40 m away.
+- Picking a job now turns Follow off, so the companion stays at the work. Turning the job off turns Follow back on, and picking Follow turns the job off.
+- Companions only repair barely-worn gear when they're actually at home (within 25 m), not anywhere within HomeTripRange.
+- Smoother following when you walk close to a companion.
+
 ## 1.4.77
 The third part of the new movement system starts: jobs. Farming and the Wood, Stone, Ore and Forage jobs now move the same way as following and trips.
 - Farm and gathering companions find their way around walls, open doors and gates, handle water and get unstuck like they do on trips.

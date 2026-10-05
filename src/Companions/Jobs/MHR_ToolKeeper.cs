@@ -803,11 +803,39 @@ namespace Companions
             return mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay;
         }
 
+        // 1.4.78: a job and Follow can't both be on either (user, 1.4.77 test): with Follow on, a companion whose job had
+        // nothing to do trailed after the player instead of staying at the work. Picking a job turns Follow off; turning
+        // the job off turns Follow back on if the job was what turned it off. Picking Follow turns the job off (radial).
+        static readonly int FollowPausedHash = "HC_FollowPausedByJob".GetStableHashCode();
+
         public static void OnJobSet(CompanionSetup cs, int mode)
         {
-            if (cs == null || mode == 0 || !cs.GetStayHome()) return;
-            cs.SetStayHome(false);
-            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
+            if (cs == null) return;
+            ZNetView nv = cs.GetComponent<ZNetView>();
+            ZDO zdo = nv != null ? nv.GetZDO() : null;
+            if (mode != 0)
+            {
+                if (cs.GetFollow())
+                {
+                    cs.SetFollow(false);
+                    if (zdo != null) zdo.Set(FollowPausedHash, true);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Follow turned off");
+                }
+                if (cs.GetStayHome())
+                {
+                    cs.SetStayHome(false);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
+                }
+            }
+            else if (zdo != null && zdo.GetBool(FollowPausedHash))
+            {
+                zdo.Set(FollowPausedHash, false);
+                if (!cs.GetStayHome())
+                {
+                    cs.SetFollow(true);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
+                }
+            }
         }
     }
 
@@ -938,6 +966,73 @@ namespace Companions
             return found;
         }
 
+        // 1.4.78: the same for any building piece (workbench, forge...): a spot in reach of it that a route actually ends
+        // at, instead of its centre (which is inside it, so routes never reach it - 1.4.77 log: swam across instead of
+        // taking the door).
+        public static bool PickApproachPiece(Vector3 me, Component target, out Vector3 spot)
+        {
+            spot = Vector3.zero;
+            if (target == null) return false;
+            Piece piece = target.GetComponentInParent<Piece>();
+            Vector3 cp = target.transform.position;
+            float best = float.MaxValue; bool found = false;
+            float[] radii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
+            for (int r = 0; r < radii.Length; r++)
+            {
+                for (int k = 0; k < 8; k++)
+                {
+                    float ang = k * 45f * Mathf.Deg2Rad;
+                    Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
+                    RaycastHit hit;
+                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
+                    if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
+                    Vector3 stand = hit.point;
+                    if (Mathf.Abs(stand.y - cp.y) > 1.5f) continue;
+                    if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
+                    if (!ClearTo(stand, cp, piece)) continue;
+                    s_path.Clear();
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true)) continue;
+                    if (s_path.Count == 0) continue;
+                    Vector3 end = s_path[s_path.Count - 1];
+                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
+                    float score = 0f;
+                    Vector3 prev = me;
+                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                    if (score < best) { best = score; spot = stand; found = true; }
+                }
+                if (found) break;
+            }
+            return found;
+        }
+        static bool IsPart(Collider col, Piece piece) { return col != null && piece != null && col.GetComponentInParent<Piece>() == piece; }
+        static bool BlockedNear(Vector3 p, Piece piece)
+        {
+            int n = Physics.OverlapSphereNonAlloc(p, 0.35f, s_small, Mask());
+            for (int i = 0; i < n; i++)
+            {
+                Collider col = s_small[i];
+                if (col == null || IsPart(col, piece) || col.GetComponentInParent<Character>() != null) continue;
+                return true;
+            }
+            return false;
+        }
+        static bool ClearTo(Vector3 from, Vector3 to, Piece piece)
+        {
+            Vector3 a = from + Vector3.up * 1.0f, b = to + Vector3.up * 0.5f;
+            Vector3 d = b - a; float len = d.magnitude;
+            if (len < 0.05f) return true;
+            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider col = hits[i].collider;
+                if (col == null || IsPart(col, piece) || col.GetComponentInParent<Character>() != null) continue;
+                Vector3 size = col.bounds.size;
+                if (Mathf.Max(size.x, Mathf.Max(size.y, size.z)) < 1.2f) continue;
+                return false;
+            }
+            return true;
+        }
+
         static bool Blocked(Vector3 p, Container chest)
         {
             int n = Physics.OverlapSphereNonAlloc(p, 0.35f, s_small, Mask());
@@ -972,7 +1067,10 @@ namespace Companions
             float cfg = ModConfig.RepairDurabilityThreshold != null ? ModConfig.RepairDurabilityThreshold.Value : 0.5f;
             if (cfg > 1f) cfg /= 100f;
             CompanionSetup cs = c != null ? c.GetComponent<CompanionSetup>() : null;
-            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.NearHome(cs)) return 0.999f;
+            // 1.4.78: only actually at home (within 25 m of the home spot, or HomeTripRange if smaller). With the whole
+            // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
+            if (cs != null && cs.HasHomePosition() &&
+                Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= Mathf.Min(25f, MHR_ToolKeeper.HomeRange())) return 0.999f;
             return cfg;
         }
 

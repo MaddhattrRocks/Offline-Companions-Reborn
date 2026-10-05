@@ -783,10 +783,20 @@ public class HarvestController : MonoBehaviour
 			flag7 = num7 > 8f;
 		}
 		_shouldRun = flag7;
-		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint. Its own stuck handling replaces the old
-		// nav-retry wait and the close-range push, which would have fought it.
+		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint.
 		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7, "Gather");
-		if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
+		if (!flag8 && num7 < 4f && (_character?.GetVelocity().magnitude ?? 0f) < 1f)
+		{
+			// 1.4.78: put back from before 1.4.77. Close in but not moving (the approach point is right up against a big
+			// rock): step straight at it, so the swings connect. Without this he swung 20 times from 1.9 m and missed.
+			Vector3 vector4 = lockedMoveTarget - base.transform.position;
+			vector4.y = 0f;
+			if (vector4.sqrMagnitude > 0.01f)
+			{
+				_ai.MoveTowards(vector4.normalized, run: false);
+			}
+		}
+		else if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
 		{
 			Vector3 vector5 = lockedMoveTarget - base.transform.position;
 			vector5.y = 0f;

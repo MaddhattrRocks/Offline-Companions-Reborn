@@ -489,6 +489,19 @@ public class CompanionCombatAI : MonoBehaviour
 			{
 				_targetCreature = null;
 			}
+			else if (!HuntMode && Vector3.Distance(base.transform.position, _targetCreature.transform.position) > CombatLeash)
+			{
+				// 1.4.78: don't chase something across the map (1.4.77 log: a dolphin 141 m out kept him "in combat",
+				// so his job never started)
+				CompanionsPlugin.Log.LogDebug($"[Combat] {_targetCreature.m_name} is over {CombatLeash:F0} m away - letting it go");
+				_targetCreature = null;
+			}
+			else if (!HuntMode && IsPassiveAnimal(_targetCreature) && _targetCreature.GetBaseAI()?.GetTargetCreature() == null)
+			{
+				// 1.4.78: it's gone back to minding its own business
+				CompanionsPlugin.Log.LogDebug("[Combat] " + _targetCreature.m_name + " isn't a threat - leaving it");
+				_targetCreature = null;
+			}
 		}
 		canHearTarget = false;
 		canSeeTarget = false;
@@ -669,6 +682,8 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		return flag2;
 	}
+
+	private const float CombatLeash = 40f;
 
 	private static bool IsPassiveAnimal(Character c)
 	{

@@ -177,9 +177,13 @@ namespace Companions
                 if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
                 if (s.Moving)
                 {
-                    // aim a little ahead of the spot so it keeps walking into it instead of stopping and starting
-                    Vector3 lead = s.Trail ? goal : goal + t.Travel * (Mathf.Min(t.Speed, 8f) * 0.5f);
-                    MHR_Mover.Go(ai, dt, lead, 0.8f, true, MHR_Mover.FollowTag, Pace(player, dSpot, distP, maxD));
+                    // aim well ahead of the spot so it keeps walking with the player instead of arriving, stopping and
+                    // starting again (1.4.78: the 1.4.77 lead was short enough to "arrive" mid-walk - stutter)
+                    Vector3 lead = s.Trail ? goal : goal + t.Travel * Mathf.Max(1.5f, Mathf.Min(t.Speed, 8f));
+                    int pace = Pace(player, dSpot, distP, maxD);
+                    // ahead of its spot: ease off a step instead of stopping
+                    if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+                    MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
                 }
                 else ai.StopMoving();

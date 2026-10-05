@@ -1251,6 +1251,12 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(WanderFollowMigratedHash, value: true);
 			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
 		}
+		// 1.4.78: a job and Follow can't both be on (saves from before have both)
+		int mode = zDO.GetInt(ActionModeHash);
+		if (MHR_JobRules.IsJobMode(mode))
+		{
+			MHR_JobRules.OnJobSet(this, mode);
+		}
 	}
 
 	private void RestoreActionMode()

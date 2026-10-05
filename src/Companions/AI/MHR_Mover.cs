@@ -26,6 +26,7 @@ namespace Companions
             public float MainBest; public int Passes; public Vector3 Shore; public bool HasShore; public float NextShore;
             public bool Walking, NewLeg;
             public float NextStartSearch;
+            public Door LastRouteDoor; public float LastRouteDoorAt;
         }
         class Opened { public Door Door; public float At; }
 
@@ -111,6 +112,14 @@ namespace Companions
             bool fresh = shift > 4f || now - s.LastGo > 2f || s.Tag != tag;
             if (s.GaveUp && now - s.GaveUpAt > 15f) fresh = true;   // try again after a while
             if (fresh) Reset(s, goal, pos, now, tag);
+            // 1.4.78: a new nearby target (the farmer's next crop 2 m on) or carrying on after a pause (harvesting,
+            // swinging) starts the stuck clocks over. They used to keep running while he stood working, so the next
+            // short step counted as "standing still 4s" and he started sidestepping and hopping around the field.
+            else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
+            {
+                s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.MainBest = float.MaxValue;
+                s.Ladder = 0; s.Passes = 0; s.StepUntil = 0f;
+            }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
             else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
@@ -152,6 +161,7 @@ namespace Companions
                     // open it, then walk through to the far side before asking for a new route
                     Vector3 dp = s.RouteDoor.transform.position, across = dp - s.RouteDoorSpot; across.y = 0f;
                     OpenDoor(ai, c, s.RouteDoor, tag);
+                    s.LastRouteDoor = s.RouteDoor; s.LastRouteDoorAt = now;
                     if (across.sqrMagnitude > 0.01f) { s.HasDetour = true; s.Detour = dp + across.normalized * 1.8f; s.DetourUntil = now + 5f; }
                     s.RouteDoor = null; s.NextPlan = 0f; Halt(ai, c, s);
                     return false;
@@ -275,7 +285,10 @@ namespace Companions
             if (s.Partial && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
             {
                 s.NextDoorSearch = now + 4f;
-                Vector3 spot; Door d = RouteDoor(pos, goal, out spot);
+                // 1.4.78: not the door we just came through - if the route still doesn't reach the goal from the other
+                // side, that door isn't the answer (1.4.77 log: back and forth through the same gate six times)
+                Door skip = now - s.LastRouteDoorAt < 30f ? s.LastRouteDoor : null;
+                Vector3 spot; Door d = RouteDoor(pos, goal, out spot, skip);
                 if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; Dbg("[Move|" + s.Tag + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
             }
         }
@@ -553,7 +566,7 @@ namespace Companions
         }
 
         // the closed door that opens the shortest way to the goal, and where to stand to open it
-        static Door RouteDoor(Vector3 pos, Vector3 goal, out Vector3 spot)
+        static Door RouteDoor(Vector3 pos, Vector3 goal, out Vector3 spot, Door skip)
         {
             spot = Vector3.zero;
             s_pieces.Clear();
@@ -563,7 +576,7 @@ namespace Companions
             {
                 Piece p = s_pieces[i];
                 Door d = p != null ? p.GetComponentInChildren<Door>() : null;
-                if (!Usable(d)) continue;
+                if (!Usable(d) || d == skip) continue;
                 checkedDoors++;
                 Vector3 dp = d.transform.position;
                 for (int side = -1; side <= 1; side += 2)
@@ -812,6 +825,12 @@ namespace Companions
                     s_ignore.Remove(c.GetInstanceID());
                 }
                 if (ai is AnimalAI) return true;
+                // 1.4.78: creatures that only fight back (passive-aggressive), sea creatures that keep off land, and ones
+                // that flee unless alerted are left alone while they aren't after anyone. Modded crabs and dolphins
+                // (RtDOcean) use MonsterAI, so the AnimalAI check above missed them.
+                MonsterAI mai = ai as MonsterAI;
+                if (ai != null && ai.GetTargetCreature() == null && !ai.IsAlerted() &&
+                    (ai.m_passiveAggresive || (mai != null && (mai.m_avoidLand || mai.m_fleeIfNotAlerted)))) return true;
             }
             catch { }
             return false;

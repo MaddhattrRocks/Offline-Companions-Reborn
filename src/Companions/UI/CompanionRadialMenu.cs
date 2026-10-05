@@ -1733,6 +1733,12 @@ public class CompanionRadialMenu : MonoBehaviour
 		if (flag)
 		{
 			_companion.SetStayHome(v: false);
+			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off
+			if (MHR_JobRules.HasJob(_companion))
+			{
+				SetActionMode(0);
+				return;
+			}
 		}
 		int mode = (_companionNview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
 		_companion.ApplyFollowMode(mode);

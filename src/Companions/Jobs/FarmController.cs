@@ -472,7 +472,8 @@ public class FarmController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _targetChest.transform.position, UseDistance, _shouldRun);
+			Vector3 chestGoal = ChestGoal(_targetChest);
+			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, chestGoal, _hasApproach ? 0.5f : UseDistance, _shouldRun);
 			LogMovement(dt, "seed chest", num, moveOk);
 			UpdateStuckDetection(dt, "seed chest");
 		}
@@ -640,7 +641,8 @@ public class FarmController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _outputChest.transform.position, UseDistance, _shouldRun);
+			Vector3 chestGoal = ChestGoal(_outputChest);
+			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, chestGoal, _hasApproach ? 0.5f : UseDistance, _shouldRun);
 			LogMovement(dt, "output chest", num, moveOk);
 			UpdateStuckDetection(dt, "output chest");
 		}
@@ -1367,6 +1369,33 @@ public class FarmController : MonoBehaviour
 
 	private void LogMovement(float dt, string target, float dist, bool moveOk)
 	{
+	}
+
+	private Container _approachChest;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
+
+	// 1.4.78: walk to a spot in front of the chest that can be reached (like tool trips), not the chest's centre.
+	// The centre is inside the chest, so no route ever reached it and the movement went looking for a door to go
+	// through instead (1.4.77 log: back and forth through a gate 30 m away).
+	private Vector3 ChestGoal(Container chest)
+	{
+		if (chest == null)
+		{
+			return base.transform.position;
+		}
+		if (chest != _approachChest)
+		{
+			_approachChest = chest;
+			_hasApproach = MHR_Chests.PickApproach(base.transform.position, chest, out _approachSpot);
+		}
+		if (!_hasApproach)
+		{
+			return chest.transform.position;
+		}
+		return _approachSpot;
 	}
 
 	private void UpdateStuckDetection(float dt, string targetName)
