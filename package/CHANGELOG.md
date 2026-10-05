@@ -3,7 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.4.84
-- Fixed the farmer never storing crops when the nearest chests were out of reach. It now keeps looking until it finds one it can get to.
+- Fixed the farmer never storing crops in chests indoors. Chests behind a closed door now count as reachable, and the farmer opens the door to get to them.
 - Farmers plant in rows from the far edge of the zone back toward where they came in, instead of in a ring around themselves until they're boxed in by their own crops.
 - Companions coming home with no job now put away what they picked up, like after turning a job off. This also happens after loading in at home.
 - Companions hop over low things in the way (logs, low walls) instead of running around them.

@@ -807,6 +807,13 @@ namespace Companions
         }
 
         // the closed door that opens the shortest way to the goal, and where to stand to open it
+        // 1.4.84: is there a closed door that, once opened, gets us from pos to goal?
+        public static bool ReachableViaDoor(Vector3 pos, Vector3 goal)
+        {
+            try { Vector3 spot; return RouteDoor(pos, goal, out spot, null) != null; }
+            catch { return false; }
+        }
+
         static Door RouteDoor(Vector3 pos, Vector3 goal, out Vector3 spot, Door skip)
         {
             spot = Vector3.zero;

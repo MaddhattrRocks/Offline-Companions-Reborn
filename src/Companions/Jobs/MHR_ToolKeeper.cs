@@ -958,6 +958,7 @@ namespace Companions
             if (chest == null) return false;
             Vector3 cp = chest.transform.position;
             float best = float.MaxValue; bool found = false;
+            List<Vector3> viaDoor = null;
             float[] radii = { 1.2f, 1.7f };
             for (int r = 0; r < radii.Length; r++)
             {
@@ -973,17 +974,28 @@ namespace Companions
                     if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
                     if (!LineClear(stand, chest)) continue;
                     s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true)) continue;
-                    if (s_path.Count == 0) continue;
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true) || s_path.Count == 0)
+                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
                     // 1.4.67: the route has to actually end at the spot, not just somewhere near it
                     Vector3 end = s_path[s_path.Count - 1];
-                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
+                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
+                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
                     float score = 0f;
                     Vector3 prev = me;
                     for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
                     if (score < best) { best = score; spot = stand; found = true; }
                 }
                 if (found) break;
+            }
+            // 1.4.84: no route straight there, but maybe through a closed door (closed doors block routes): a chest
+            // indoors is reachable once he opens the door (1.4.83 test: the chests in the house above the farm were
+            // all "can't get within reach" from the farm, so crops never got stored)
+            if (!found && viaDoor != null)
+            {
+                for (int i = 0; i < viaDoor.Count && i < 4; i++)
+                {
+                    if (MHR_Mover.ReachableViaDoor(me, viaDoor[i])) { spot = viaDoor[i]; found = true; break; }
+                }
             }
             return found;
         }
