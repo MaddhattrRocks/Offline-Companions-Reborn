@@ -36,7 +36,7 @@ User: climbed out of the moat (log: "climbing out at ... steepest step 0.4m" the
 - Warp: it was the plain FollowTeleportDistance (50 m) check in CompanionAI, not FollowWatch. Now skipped while there's line of sight (`MHR_Mover.CanSee`, eye height), unless > 1.5 x the setting.
 - Boars: CompanionCombatAI.UpdateTarget re-picks `FindNearbyEnemy` every 2 s while engaged, without the 1.4.79 IsAfterUs rule; after the Neck it moved on to boars. Now filtered too (not in HuntMode, not the current target). The Engage log line now says the distance, the creature's own target and whether it's alerted, to check if boars really were after the player.
 - Shield: CompanionSetup.AutoEquipBest had no Shield case, so itemData4 was always null and the shield only came out via the combat weapon logic. Added (best GetBaseBlockPower); the existing code already skips it with a 2H weapon or bow.
-- SeneaL_UI rename: not changed. Our name box is a TMP_InputField on a clone of InventoryGui's container; a UI mod that restyles InventoryGui probably covers it or eats the clicks. Possible fallback: rename through the vanilla TextInput dialog (like signs) from somewhere outside the panel - ask the user first.
+- SeneaL_UI rename: not changed. Our name box is a TMP_InputField on a clone of InventoryGui's container; a UI mod that restyles InventoryGui probably covers it or eats the clicks. Fallback is in the BACKLOG (rename fallback + command wheel revisit).
 
 ### 1.4.82 - fixes from the 1.4.81 test (log e8ba46da): code done, waiting on the user's build + test
 User: chest animation sometimes missing; farm stores after a few crops; planted a few and stopped; Follow ran down to the beach/water again (dry moat = pit with a narrow path); wants the 2.5 m approach hold back; Wood works; fell into the moat and couldn't get out; super recall works when the companion is loaded. Stone and Wood OK.
@@ -160,6 +160,8 @@ What was built (all items below):
   - DoorHandler already closes doors behind it (if they were closed) - keep that behaviour in the overhaul.
 
 ## BACKLOG (come back to - check with the user before building any of it)
+- **Command wheel revisit (user, 1.4.83):** the wheel needs a rethink before more goes on it. Candidates: Rename, a guard / patrol mode, and late-game features from the base game. The user isn't sure how much more belongs on the wheel; consider a sub-menu or moving some items elsewhere. Talk it through with the user before building.
+- **Rename fallback (user agreed it's probably the fix, 1.4.83):** SeneaL_UI (hexium.gg/mods/seneaL/SeneaL_UI) blocks the panel's name box. Rename through the vanilla `TextInput` dialog (like signs: implement `TextReceiver`, `TextInput.instance.RequestText(receiver, topic, 24)`), opened from outside the inventory panel. Where it lives depends on the command wheel revisit.
 - **Other gather drops by limit (user, 1.4.64):** survey what else gathering targets drop (seeds from foraged/gathered plants, feathers, etc.) and pick them up according to their own gather limits instead of the current "not on the list = leave it".
 - **Piles (Part B, agreed design in 1.4.64 notes):** UsePiles toggle, shared pile zones, placement priority, hammer via ToolKeeper, chest fallback. Confirm stack capacities/pieces in-game first.
 - **Forage / food limits:** same list + category-default treatment as GatherWood (ForageLimit, FoodLimit).
