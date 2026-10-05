@@ -30,6 +30,9 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### Where things stand (2026-10-05, end of session)
+See `docs/SESSION_HANDOFF.md` for the short version to paste into a new session. 1.4.77-1.4.85 are on `claude/relaxed-archimedes-ecoh6h`, no PR yet; 1.4.85 is pushed and waiting on the user's build + test.
+
 ### 1.4.85 - companion route map (user, 1.4.84 test: "3 doors is not enough", why does the count need a number)
 - Valheim's Pathfinding builds a navmesh per agent type from colliders on m_layers; closed doors are colliders, so they're walls, and Humanoid has agentClimb 0.3 m so most stairs/steps don't connect. The door BFS (1.4.84) had to test door combinations with route queries, hence the cap.
 - `Patches/MHR_CompanionNavMesh.cs`: postfix on Pathfinding.SetupAgents adds AgentType 40 (copy of Humanoid, agentClimb 0.6); prefix on Pathfinding.BuildTile rebuilds tiles of that type exactly like vanilla (walkable sources + water as area 3, Humanoid swims) but drops every build source whose collider has a Door in its parents. Tiles only get built where GetPath pokes them with that type, i.e. around companions. Any failure -> `Ready = false`, back to Humanoid. Config General.CompanionPathing (default on, restart).
