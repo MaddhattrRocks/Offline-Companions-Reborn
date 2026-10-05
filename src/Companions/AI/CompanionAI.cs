@@ -2022,7 +2022,11 @@ public class CompanionAI : BaseAI
 		if (m_follow != null)
 		{
 			MHR_Mover.FollowWatch(this, m_follow);
-			FollowWithFormation(m_follow, dt);
+			// 1.4.76: following a player goes through MHR_Follow; the old formation code is left for other targets
+			if (!MHR_Follow.Update(this, m_follow, dt))
+			{
+				FollowWithFormation(m_follow, dt);
+			}
 		}
 		else
 		{
@@ -2893,6 +2897,29 @@ public class CompanionAI : BaseAI
 			return !IsTakingOff();
 		}
 		return false;
+	}
+
+	// 1.4.76: MHR_Follow - sneak when the player sneaks (MHR_Mover sets walk/run itself)
+	internal void MHR_SetCrouch(bool sneak)
+	{
+		if (sneak && _companionStamina != null && _companionStamina.Stamina <= 0f)
+		{
+			sneak = false;
+		}
+		if (_companionStamina != null)
+		{
+			_companionStamina.IsCrouching = sneak;
+		}
+		if (_zanim != null)
+		{
+			_zanim.SetBool(s_crouching, sneak);
+		}
+	}
+
+	// 1.4.76: MHR_Follow - the game's own follow when the new movement has given up for now
+	internal void MHR_FollowFallback(GameObject target, float dt)
+	{
+		Follow(target, dt);
 	}
 
 	private void ApplyPlayerMovementMatch(bool sneak, bool walk, bool run)

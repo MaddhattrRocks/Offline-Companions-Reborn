@@ -2,6 +2,17 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.76
+The second part of the new movement system: following you.
+- Companions follow like a player. Each picks its own spot beside, behind or sometimes ahead of you, and moves it now and then.
+- Several companions spread out around you instead of lining up behind you.
+- Following uses the new movement: doors, water, stream jumps and getting unstuck all work while following.
+- In doorways, on stairs and in narrow paths, companions follow your path and spread out again when there's room.
+- When you stop, companions wait where they are and idle nearby.
+- After you've stood still for a while, companions come back and wait near you. New settings `Regroup` and `RegroupTime` (Follow, on, 45 s).
+- Indoors, companions stay closer (`IndoorDistance`, Follow, default 4 m) and sit down on a free chair or the floor when you stop. Near home they empty their bags first. New setting `SitIndoors` (Follow, on).
+- New setting `MaxDistance` (Follow, default 10 m). `FormationOffset` and `FormationCatchupDist` no longer do anything.
+
 ## 1.4.75
 - Fixed companions walking back and forth while farming. With a job on, they now stand still between tasks instead of wandering back to their idle spot.
 - The farmer now goes straight to the next ripe crop close by, like working down a row, instead of pausing and rescanning the field. New setting `NextCropRange` (Farm, default 3 m, 0 = off).

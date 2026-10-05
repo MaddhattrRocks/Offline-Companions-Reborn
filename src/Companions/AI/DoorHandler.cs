@@ -170,7 +170,7 @@ public class DoorHandler : MonoBehaviour
 
 	private void Update()
 	{
-		if ((_phase == Phase.Idle && MHR_Mover.OwnsMovement(this)) || _ai == null || _humanoid == null || _setup == null || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner())
+		if ((_phase == Phase.Idle && (MHR_Mover.OwnsMovement(this) || MHR_Follow.Owns(this))) || _ai == null || _humanoid == null || _setup == null || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner())
 		{
 			return;
 		}

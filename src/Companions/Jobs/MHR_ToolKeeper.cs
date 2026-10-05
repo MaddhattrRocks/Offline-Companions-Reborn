@@ -38,6 +38,22 @@ namespace Companions
             return s_state.TryGetValue(cs.GetInstanceID(), out st) && (st.Phase != 0 || st.UnloadActive || st.WaitHome);
         }
 
+        // 1.4.76: Follow asks for this before a companion sits down indoors: put away what it picked up while
+        // working (same rules as after a job change). Only does anything near home and with something to put away.
+        public static void RequestUnload(CompanionSetup cs)
+        {
+            if (cs == null || !cs.HasHomePosition() || !NearHome(cs)) return;   // only at home, not at an outpost
+            State st;
+            if (!s_state.TryGetValue(cs.GetInstanceID(), out st) || st.UnloadPending || st.Phase != 0) return;
+            Humanoid hum = cs.GetComponent<Humanoid>();
+            Inventory inv = hum != null ? hum.GetInventory() : null;
+            ZNetView nv = cs.GetComponent<ZNetView>();
+            int mode = nv != null && nv.GetZDO() != null ? nv.GetZDO().GetInt(CompanionSetup.ActionModeHash, 0) : 0;
+            if (inv == null || UnloadList(cs, st, inv, mode).Count == 0) return;
+            st.UnloadPending = true; st.UnloadTrips = 0; st.NextDecide = 0f;
+            LogDebug("Settling down near home - emptying bags first");
+        }
+
         // 1.4.65: called from CompanionAI.UpdateAI after combat is handled. While a trip is on, the trip
         // is the only thing steering the companion (follow, patrol and job movement wait until it ends).
         public static bool Drive(CompanionAI ai, float dt)
@@ -89,6 +105,7 @@ namespace Companions
             if (inv == null) return;
             MHR_Crossbow.Tick(hum);
             MHR_Mover.Tick(cs, ai);
+            MHR_Follow.Tick(cs, ai);
 
             // 1.4.70: gear, food and mead the player hands over (through the inventory panel) are the companion's own;
             // anything picked up during work isn't. Everything present at load counts as its own too.
