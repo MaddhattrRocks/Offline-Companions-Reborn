@@ -955,12 +955,6 @@ namespace Companions
     // ---- 1.4.66: movement with a progress log and a forward jump when stuck ----
     public static class MHR_Nav
     {
-        class S { public Vector3 Goal; public float Best; public float ProgressTime; public float NextLog; public float NextJump; public int Jumps; public bool Init; public Vector3 Anchor; public float AnchorTime; }
-        static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
-        static readonly List<Vector3> s_path = new List<Vector3>();
-        static readonly float[] s_jumpAngles = { 0f, 35f, -35f, 0f };
-        static float s_nextErr;
-
         public static bool MoveFarm(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Farm"); }
         public static bool MovePlant(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Plant"); }
 
@@ -1023,76 +1017,17 @@ namespace Companions
 
         public static bool Move(CompanionAI ai, float dt, Vector3 point, float dist, bool run, string tag)
         {
-            // 1.4.68: MoveToPoint counts "arrived" by flat distance, but the jobs check real distance. When the target is on a
-            // different level (deck above the field, chest up on the porch) he stopped short and stood there forever.
-            // If the flat distance is already close but the height isn't, keep walking until he's really there.
-            // (1.4.70: only for planting - chests and crops are reached from wherever they're in range, like a player)
+            // 1.4.68: planting needs him on the field itself, not standing above or below it (deck over the field).
+            // (1.4.70: chests and crops are reached from wherever they're in range, like a player - the callers check that.)
             Vector3 d = point - ai.transform.position;
             float flat = new Vector2(d.x, d.z).magnitude;
             float useDist = dist;
             if (tag == "Plant" && Mathf.Abs(d.y) > 1.0f && flat <= dist) useDist = Mathf.Min(dist, 0.5f);
-            bool arrived = ai.MoveToPoint(dt, point, useDist, run && FarEnoughToRun(ai, point));
-            try { Track(ai, point, useDist, arrived, tag); } catch (Exception e) { if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Path] " + e.Message); } }
-            return arrived;
+            // 1.4.77 (movement phase 3): through MHR_Mover - routes, doors, water, the shared stuck ladder.
+            // It walks the last few steps, jogs in between and runs past WorkRunDistance when 'run' is allowed.
+            return MHR_Mover.Go(ai, dt, point, useDist, run, tag);
         }
 
-        static void Track(CompanionAI ai, Vector3 goal, float stopDist, bool arrived, string tag)
-        {
-            float now = Time.time;
-            int id = ai.GetInstanceID();
-            S s;
-            if (!s_s.TryGetValue(id, out s)) { s = new S(); s_s[id] = s; }
-            Vector3 pos = ai.transform.position;
-            float dist = Vector3.Distance(pos, goal);
-            if (!s.Init || Vector3.Distance(goal, s.Goal) > 1.5f || now - s.ProgressTime > 30f)
-            {
-                s.Init = true; s.Goal = goal; s.Best = dist; s.ProgressTime = now; s.Jumps = 0; s.NextLog = now + 2f;
-                s.Anchor = pos; s.AnchorTime = now;
-            }
-            if (arrived) { s.Best = dist; s.ProgressTime = now; s.Jumps = 0; s.Anchor = pos; s.AnchorTime = now; return; }
-            if (dist < s.Best - 0.5f) { s.Best = dist; s.ProgressTime = now; s.Jumps = 0; }
-            if (Vector3.Distance(pos, s.Anchor) > 1.0f) { s.Anchor = pos; s.AnchorTime = now; }
-            // 1.4.67: stuck = hasn't moved a meter in 3s, or hasn't got any closer in 8s (pacing back and forth)
-            float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
-            float stuck = Mathf.Max(still >= 3f ? still : 0f, noCloser >= 8f ? noCloser : 0f);
-
-            if (now >= s.NextLog && CompanionsPlugin.Log != null)
-            {
-                s.NextLog = now + 2f;
-                bool havePath = GetPath(pos, goal);
-                string next = s_path.Count > 1 ? Fmt(s_path[1]) : "-";
-                CompanionsPlugin.Log.LogDebug("[Path|" + tag + "] at " + Fmt(pos) + " -> " + Fmt(goal) + " " + dist.ToString("F1") + "m left, path=" +
-                    (havePath ? "yes (" + s_path.Count + " corners, next " + next + ")" : "NO") + (noCloser > 2.5f ? ", no closer for " + noCloser.ToString("F0") + "s" : "") + (still > 2.5f ? ", standing still " + still.ToString("F0") + "s" : ""));
-            }
-
-            if (stuck <= 0f || now < s.NextJump || s.Jumps >= s_jumpAngles.Length) return;
-            Character c = ai.GetComponent<Character>();
-            if (c == null || !c.IsOnGround() || c.IsSwimming() || c.InAttack()) return;
-            Vector3 target = goal;
-            if (GetPath(pos, goal))
-                for (int i = 1; i < s_path.Count; i++)
-                    if (Vector3.Distance(new Vector3(s_path[i].x, pos.y, s_path[i].z), pos) > 1.0f) { target = s_path[i]; break; }
-            Vector3 dir = target - pos; dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f) return;
-            dir = Quaternion.Euler(0f, s_jumpAngles[s.Jumps], 0f) * dir.normalized;
-            ai.transform.rotation = Quaternion.LookRotation(dir);
-            c.Jump(false);
-            Rigidbody rb = ai.GetComponent<Rigidbody>();
-            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * 3.5f; v.z = dir.z * 3.5f; rb.velocity = v; }
-            s.Jumps++;
-            s.NextJump = now + 1.5f;
-            s.AnchorTime = now - 1.5f; s.Anchor = pos;
-            if (noCloser >= 8f) s.ProgressTime = now - 6.5f;
-            if (CompanionsPlugin.Log != null)
-                CompanionsPlugin.Log.LogDebug("[Path|" + tag + "] stuck at " + Fmt(pos) + " - jumping toward " + Fmt(target) + " (try " + s.Jumps + ")");
-        }
-
-        static bool GetPath(Vector3 from, Vector3 to)
-        {
-            s_path.Clear();
-            return Pathfinding.instance != null && Pathfinding.instance.GetPath(from, to, s_path, Pathfinding.AgentType.Humanoid, true, true, false);
-        }
-        static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
     }
 
     // ---- 1.4.70: sprint in bursts. Run until stamina is down to half (30% in a fight), then walk until it's back to 90% ----

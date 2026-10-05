@@ -2,6 +2,14 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.77
+The third part of the new movement system starts: jobs. Farming and the Wood, Stone, Ore and Forage jobs now move the same way as following and trips.
+- Farm and gathering companions find their way around walls, open doors and gates, handle water and get unstuck like they do on trips.
+- Gatherers working their way around something to reach a tree or rock no longer give up on it too early. If they really can't get there, they pick another target.
+- Companions wait a moment before following when you set off, and stay put while you're right next to them, so they're easy to grab.
+- The Wander toggle now also controls following. On (now the default for every companion): moves around you and idles when you stop. Off: keeps one spot near you and stands still.
+- Fixed thousands of log warnings while a companion sat on a chair.
+
 ## 1.4.76
 The second part of the new movement system: following you.
 - Companions follow like a player. Each picks its own spot beside, behind or sometimes ahead of you, and moves it now and then.

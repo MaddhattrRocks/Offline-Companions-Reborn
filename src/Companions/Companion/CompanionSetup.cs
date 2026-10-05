@@ -34,6 +34,9 @@ public class CompanionSetup : MonoBehaviour
 
 	internal static readonly int WanderHash = "HC_Wander".GetStableHashCode();
 
+	// 1.4.77: Wander also controls how a companion moves around while following. Switched on once for every companion.
+	internal static readonly int WanderFollowMigratedHash = "HC_WanderFollowMigrated".GetStableHashCode();
+
 	internal static readonly int FormationSlotHash = "HC_FormationSlot".GetStableHashCode();
 
 	internal static readonly int IsCommandableHash = "HC_IsCommandable".GetStableHashCode();
@@ -1241,6 +1244,12 @@ public class CompanionSetup : MonoBehaviour
 			}
 			zDO.Set(ActionModeHash, num2);
 			zDO.Set(ActionModeSchemaHash, 3);
+		}
+		if (!zDO.GetBool(WanderFollowMigratedHash))
+		{
+			zDO.Set(WanderHash, value: true);
+			zDO.Set(WanderFollowMigratedHash, value: true);
+			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
 		}
 	}
 

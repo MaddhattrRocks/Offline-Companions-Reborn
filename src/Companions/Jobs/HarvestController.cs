@@ -708,12 +708,19 @@ public class HarvestController : MonoBehaviour
 			Vector3 vector2 = _target.transform.position - base.transform.position;
 			vector2.y = 0f;
 			float num3 = ((vector2.sqrMagnitude > 0.01f) ? Vector3.Dot(lhs, vector2.normalized) : 0f);
-			float num4 = ((num3 > 1f) ? 0.3f : 1f);
+			// 1.4.77: following a route around something (MHR_Mover still getting closer) counts like walking at the target
+			float num4 = ((num3 > 1f || MHR_Mover.Progressing(_ai)) ? 0.3f : 1f);
 			if (MHR_DoorBusy())
 			{
 				goto IL_04a6;
 			}
 			_moveTimer += deltaTime * num4;
+		}
+		// 1.4.77: the movement worked through its whole stuck ladder - give this target up now (after a moment, so a
+		// give-up left over from the previous target doesn't count)
+		if (_moveTimer > 0.5f && MHR_Mover.GaveUp(_ai))
+		{
+			_moveTimer = 10.01f;
 		}
 		if (_moveTimer > 10f)
 		{
@@ -776,25 +783,10 @@ public class HarvestController : MonoBehaviour
 			flag7 = num7 > 8f;
 		}
 		_shouldRun = flag7;
-		bool flag8 = MHR_Nav.MoveWalk(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7);
-		if (_ai.IsNavMeshRetrying)
-		{
-			_ai.StopMoving();
-		}
-		else if (!flag8 && num7 < 4f && !_ai.IsNavMeshFailing)
-		{
-			float num9 = _character?.GetVelocity().magnitude ?? 0f;
-			if (num9 < 1f)
-			{
-				Vector3 vector4 = lockedMoveTarget - base.transform.position;
-				vector4.y = 0f;
-				if (vector4.sqrMagnitude > 0.01f)
-				{
-					_ai.MoveTowards(vector4.normalized, run: false);
-				}
-			}
-		}
-		else if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
+		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint. Its own stuck handling replaces the old
+		// nav-retry wait and the close-range push, which would have fought it.
+		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7, "Gather");
+		if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
 		{
 			Vector3 vector5 = lockedMoveTarget - base.transform.position;
 			vector5.y = 0f;
@@ -1154,7 +1146,7 @@ public class HarvestController : MonoBehaviour
 				float num = Vector3.Distance(base.transform.position, _currentDrop.transform.position);
 				if (!(num <= 2.2f))
 				{
-					MHR_Nav.MoveWalk(_ai, deltaTime, _currentDrop.transform.position, 1.5f, run: true);
+					MHR_Mover.Go(_ai, deltaTime, _currentDrop.transform.position, 1.5f, true, "Gather");
 					_moveLogTimer -= deltaTime;
 					if (_moveLogTimer <= 0f)
 					{
