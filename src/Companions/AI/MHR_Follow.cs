@@ -173,7 +173,8 @@ namespace Companions
                 float dSpot = Flat(me, goal);
                 // 1.4.77/1.4.82: if it was standing still, stay put for 1.5 s after the player sets off, so the player can
                 // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
-                bool hold = now - t.MovingSince < 1.5f;
+                // 1.4.82: and while the player stands within 2.5 m of it (doesn't start it moving, never stops it)
+                bool hold = now - t.MovingSince < 1.5f || (distP < 2.5f && !c.IsSwimming());
                 if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
                 if (s.Moving)
                 {
@@ -189,6 +190,13 @@ namespace Companions
                     // 1.4.81: the route to its spot means a swim but the player walked (1.4.80 log: round through the moat
                     // while the player went in by the gate) - walk the player's path instead
                     if (!s.Trail && !player.IsSwimming() && !c.IsSwimming() && MHR_Mover.RouteSwim(ai) > 1f) { s.Trail = true; s.NextPick = now + 6f; s.NextCheck = now + 6f; }
+                    // 1.4.82: the route is a long way round (1.4.81 log: 67 m down past the beach for 21 m straight,
+                    // while the player took the path through the moat) - walk the player's path instead
+                    if (!s.Trail && distP > 3f)
+                    {
+                        float len = MHR_Mover.RouteLength(ai);
+                        if (len > Flat(me, lead) * 1.8f + 8f) { s.Trail = true; s.NextPick = now + 6f; s.NextCheck = now + 6f; }
+                    }
                     if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
                 }
                 else ai.StopMoving();

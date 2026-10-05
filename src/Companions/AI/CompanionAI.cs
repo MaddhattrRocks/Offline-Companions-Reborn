@@ -2600,6 +2600,27 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	// 1.4.82: MHR_Mover's trapped rescue - put him back on a spot he walked from
+	internal void MHR_PlaceAt(Vector3 position)
+	{
+		base.transform.position = position;
+		if (_body != null)
+		{
+			_body.position = position;
+			_body.linearVelocity = Vector3.zero;
+		}
+		_ctxSmoothedDir = Vector3.zero;
+		_pathStuckTimer = 0f;
+		_navClaimedDoneCount = 0;
+		_inContextSteerFallback = false;
+		_ctxFallbackStartPos = Vector3.zero;
+		StopMoving();
+		if (m_nview?.GetZDO() != null)
+		{
+			m_nview.GetZDO().SetPosition(position);
+		}
+	}
+
 	private void TeleportToHome()
 	{
 		if (_setup == null || !_setup.HasHomePosition())

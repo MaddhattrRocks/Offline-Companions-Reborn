@@ -28,6 +28,8 @@ namespace Companions
             public float NextStartSearch;
             public Door LastRouteDoor; public float LastRouteDoorAt;
             public float RouteSwim;
+            public bool MainPartial;
+            public Vector3 GoodPos; public float GoodAt; public bool HasGood;
         }
         class Opened { public Door Door; public float At; }
 
@@ -70,6 +72,13 @@ namespace Companions
         public static bool RoutePartial(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && s.Partial && !s.HasDetour; }
         // 1.4.81: meters of swimming on the current route
         public static float RouteSwim(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? s.RouteSwim : 0f; }
+        // 1.4.82: length of the current route, for callers that compare it with the straight line (0 when not moving)
+        public static float RouteLength(CompanionAI ai)
+        {
+            S s = Peek(ai);
+            if (s == null || Time.time - s.LastGo >= 0.5f || !s.PathOk || s.Path.Count == 0) return 0f;
+            return Remaining(s, ai.transform.position);
+        }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -121,10 +130,13 @@ namespace Companions
             // 1.4.78: a new nearby target (the farmer's next crop 2 m on) or carrying on after a pause (harvesting,
             // swinging) starts the stuck clocks over. They used to keep running while he stood working, so the next
             // short step counted as "standing still 4s" and he started sidestepping and hopping around the field.
+            // 1.4.82: a new goal also clears an old give-up (1.4.81 log: planting stopped because the give-up from the
+            // last spot was still set). A mere pause on the same goal keeps the stuck ladder where it was: the harvest
+            // swings reset it every few seconds, so in the moat he sat on "step 1" forever and never gave up.
             else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
             {
-                s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.MainBest = float.MaxValue;
-                s.Ladder = 0; s.Passes = 0; s.StepUntil = 0f;
+                s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.StepUntil = 0f;
+                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; }
             }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
@@ -246,6 +258,7 @@ namespace Companions
             if (!ok || s.Path.Count == 0)
             {
                 s.PathOk = false; s.Partial = true; s.Path.Clear(); s.Path.Add(goal);
+                if (!s.HasDetour && s.RouteDoor == null) s.MainPartial = true;
                 // 1.4.75: no route can start from where we stand (e.g. in a doorway): step to a spot a meter or two
                 // away that a route does start from, right away instead of after the stuck ladder
                 Vector3 start;
@@ -265,6 +278,12 @@ namespace Companions
                 s.PathOk = true;
                 Vector3 end = s.Path[s.Path.Count - 1];
                 s.Partial = Flat(end, goal) > 1.5f || Mathf.Abs(end.y - goal.y) > 2.2f;
+                // 1.4.82: the last place a full route to the goal started from, for the trapped rescue below
+                if (!s.HasDetour && s.RouteDoor == null)
+                {
+                    s.MainPartial = s.Partial;
+                    if (!s.Partial && c.IsOnGround() && !c.IsSwimming()) { s.GoodPos = pos; s.GoodAt = now; s.HasGood = true; }
+                }
                 // tired: a swim longer than the stamina allows -> a dry route, or wait on the bank
                 s.TooTired = false;
                 if (!c.IsSwimming())
@@ -371,6 +390,7 @@ namespace Companions
                     s.GaveUp = true; s.GaveUpAt = now;
                     Halt(ai, c, s);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
+                    Rescue(ai, c, s, pos, now, tag);
                     return;
             }
         }
@@ -380,14 +400,41 @@ namespace Companions
             Vector3 back = -dir;
             Vector3 left = Quaternion.Euler(0f, -45f, 0f) * back, right = Quaternion.Euler(0f, 45f, 0f) * back;
             Vector3 a = leftFirst ? left : right, b = leftFirst ? right : left;
-            Vector3 pick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, back) ? back : Quaternion.Euler(0f, 90f, 0f) * dir;
+            Vector3 side = Quaternion.Euler(0f, 90f, 0f) * dir;
+            if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
+            Vector3 pick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, back) ? back : side;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
             Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
+        }
+
+        // 1.4.82: fell somewhere with no route out (1.4.81 log: down a dry moat with sheer walls, only a player's
+        // sprint-jumping gets out). After a full stuck ladder, well below the last spot that had a full route and still
+        // no route from here: put him back there.
+        static void Rescue(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            if (!s.HasGood || !s.MainPartial || c.IsSwimming() || ai.IsInCombat) return;
+            if (pos.y > s.GoodPos.y - 2f || Vector3.Distance(pos, s.GoodPos) > 40f || now - s.GoodAt > 300f) return;
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] trapped at " + Fmt(pos) + " (" + (s.GoodPos.y - pos.y).ToString("F1") + "m below the last good spot) - moving back to " + Fmt(s.GoodPos));
+            ai.MHR_PlaceAt(s.GoodPos);
+            s.HasGood = false;
+            Reset(s, s.Goal, s.GoodPos, now, tag);
+        }
+
+        // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)
+        public static bool DropAhead(Vector3 pos, Vector3 dir, float dist, float maxDrop)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return false;
+            Vector3 p = pos + dir.normalized * dist;
+            RaycastHit hit;
+            if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 1.5f + maxDrop, Mask())) return true;
+            return MHR_Water.DepthAt(hit.point) >= 1.0f;
         }
 
         static void Hop(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why)
         {
             if (c.IsSwimming() || !c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            if (DropAhead(pos, dir, 1.5f, 1.2f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
@@ -405,6 +452,7 @@ namespace Companions
             Vector3 p = pos + dir * dist;
             RaycastHit hit;
             if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) return false;
+            if (hit.point.y < pos.y - 1.2f) return false;   // 1.4.82: not over a ledge
             return MHR_Water.DepthAt(hit.point) < 1.0f;
         }
 

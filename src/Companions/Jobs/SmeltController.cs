@@ -506,6 +506,7 @@ public class SmeltController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_targetChest.SetInUse(inUse: true);
+			GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened chest — waiting for animation");
@@ -796,6 +797,7 @@ public class SmeltController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_outputChest.SetInUse(inUse: true);
+			GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened output chest — waiting for animation");

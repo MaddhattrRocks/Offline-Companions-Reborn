@@ -2,6 +2,14 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.82
+- Fixed the farmer carrying crops to a chest after every few. It now picks everything ripe first and stores when nothing ripe is left or its pack is nearly full.
+- Fixed the farmer planting a few seeds and then stopping.
+- Fixed following companions taking a long way round (down past the beach) when you went a shorter way. They now follow your path.
+- A standing companion stays put while you're within 2.5 m of it, so it's easy to walk up to.
+- Fixed gatherers walking off ledges (into a moat) while stepping in to reach a tree or rock. If a companion still ends up trapped somewhere with no way out, it's moved back up to where it last had a way to its target.
+- Companions now play the interact animation when opening a chest for farming, smelting and putting tools away.
+
 ## 1.4.81
 - Fixed companions walking all the way home to empty their bags or put a tool back when you turn a job off out in the field. They now do it once they're back home.
 - Fixed the Wood job equipping a crossbow and standing there. Bows and crossbows are never used as gathering tools.

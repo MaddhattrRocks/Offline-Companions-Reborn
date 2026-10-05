@@ -297,6 +297,8 @@ namespace Companions
             if (!canReach && distNow > UseDist + 1f) { st.NeedMove = true; return; }
             st.NeedMove = false;
             ai.StopMoving();
+            ai.LookAtPoint(cp);
+            cs.GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
             Inventory cinv = st.Chest.GetInventory();
             if (cinv == null) { EndTrip(cs, st, ai, mode); return; }
             if (st.Phase == 3)

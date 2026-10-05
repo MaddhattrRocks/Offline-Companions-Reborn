@@ -338,18 +338,20 @@ public class FarmController : MonoBehaviour
 	{
 		BuildSeedMapping();
 		Log("Scanning — mode=" + (_preferHarvest ? "HARVEST" : "PLANT") + " " + $"rotTimer={_rotationTimer:F0}s cropNames={s_cropOutputNames?.Count ?? 0} " + $"seedMap={s_seedToPlant?.Count ?? 0} pos={base.transform.position:F1}");
-		if (TryScanStore())
+		// 1.4.82: pick everything that's ripe first and only carry it to a chest when nothing ripe is left
+		// or the pack is nearly full (1.4.81 log: he went to a chest after every few crops).
+		if (PackNearlyFull() && TryScanStore())
 		{
 			return;
 		}
 		if (_preferHarvest)
 		{
-			if (TryScanHarvest() || TryScanPlant())
+			if (TryScanHarvest() || TryScanStore() || TryScanPlant())
 			{
 				return;
 			}
 		}
-		else if (TryScanPlant() || TryScanHarvest())
+		else if (TryScanStore() || TryScanPlant() || TryScanHarvest())
 		{
 			return;
 		}
@@ -493,6 +495,10 @@ public class FarmController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_targetChest.SetInUse(inUse: true);
+			if (_zanim != null)
+			{
+				_zanim.SetTrigger("interact");
+			}
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened seed chest — waiting for animation");
@@ -662,6 +668,10 @@ public class FarmController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_outputChest.SetInUse(inUse: true);
+			if (_zanim != null)
+			{
+				_zanim.SetTrigger("interact");
+			}
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened output chest");
@@ -1067,12 +1077,12 @@ public class FarmController : MonoBehaviour
 	}
 
 	// 1.4.75: after a crop, go straight to the next ripe one close by (FarmNextCropRange), like a player
-	// working down a row, instead of pausing and rescanning the whole field. Only when there's nothing
-	// to store; otherwise the normal scan runs so the store trip happens as before.
+	// working down a row, instead of pausing and rescanning the whole field.
+	// 1.4.82: keeps going while carrying crops; only a nearly full pack stops it.
 	private bool TryNextCropNearby()
 	{
 		float value = ModConfig.FarmNextCropRange.Value;
-		if (value <= 0f || HasCropOutput())
+		if (value <= 0f || PackNearlyFull())
 		{
 			return false;
 		}
@@ -1115,6 +1125,20 @@ public class FarmController : MonoBehaviour
 		_stuckTimer = 0f;
 		_stuckCheckTimer = 0f;
 		_stuckCheckPos = base.transform.position;
+	}
+
+	private bool PackNearlyFull()
+	{
+		Inventory inventory = _humanoid?.GetInventory();
+		if (inventory == null)
+		{
+			return false;
+		}
+		if (inventory.GetEmptySlots() <= 1)
+		{
+			return true;
+		}
+		return inventory.GetTotalWeight() >= ModConfig.HarvestOverweightThreshold.Value;
 	}
 
 	private bool HasCropOutput()
