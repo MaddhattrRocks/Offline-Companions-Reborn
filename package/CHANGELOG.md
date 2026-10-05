@@ -7,7 +7,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed the farmer planting a few seeds and then stopping.
 - Fixed following companions taking a long way round (down past the beach) when you went a shorter way. They now follow your path.
 - A standing companion stays put while you're within 2.5 m of it, so it's easy to walk up to.
-- Fixed gatherers walking off ledges (into a moat) while stepping in to reach a tree or rock. If a companion still ends up trapped somewhere with no way out, it's moved back up to where it last had a way to its target.
+- Fixed gatherers walking off ledges (into a moat) while stepping in to reach a tree or rock.
+- A companion stuck in a pit (a dry moat) now climbs out like a player: it picks the lowest, least steep way up nearby, sprints at it and keeps jumping, resting when out of stamina. If that fails, it's moved back up to where it last had a way to its target.
 - Companions now play the interact animation when opening a chest for farming, smelting and putting tools away.
 
 ## 1.4.81

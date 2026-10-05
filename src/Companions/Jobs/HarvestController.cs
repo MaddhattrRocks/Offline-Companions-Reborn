@@ -898,7 +898,7 @@ public class HarvestController : MonoBehaviour
 			Vector3 vector4 = lockedMoveTarget - base.transform.position;
 			vector4.y = 0f;
 			// 1.4.82: not over an edge (1.4.81 log: he pushed at a stump on the moat's lip and fell in)
-			if (vector4.sqrMagnitude > 0.01f && !MHR_Mover.DropAhead(base.transform.position, vector4, 0.8f, 1.2f))
+			if (vector4.sqrMagnitude > 0.01f && !MHR_Mover.DropAhead(base.transform.position, vector4, 0.8f, 1.2f) && !MHR_Mover.Climbing(_ai))
 			{
 				_ai.MoveTowards(vector4.normalized, run: false);
 			}

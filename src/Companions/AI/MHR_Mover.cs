@@ -30,6 +30,8 @@ namespace Companions
             public float RouteSwim;
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
+            public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
+            public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
         }
         class Opened { public Door Door; public float At; }
 
@@ -159,6 +161,9 @@ namespace Companions
 
             Log(s, pos, remain, now, c);
 
+            // 1.4.82: climbing out of a pit
+            if (now < s.ClimbUntil) { Climb(ai, c, s, pos, now, tag); return false; }
+
             // a sidestep / hop in progress
             if (now < s.StepUntil) { Steer(ai, c, s, s.StepDir, s.StepRun, false); return false; }
 
@@ -231,6 +236,7 @@ namespace Companions
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
+            s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f;
         }
 
         static void Halt(CompanionAI ai, Character c, S s)
@@ -364,6 +370,8 @@ namespace Companions
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
             dir.Normalize();
+            // 1.4.82: down in a pit with no route out: climb out like a player before anything else
+            if (step == 0 && TryStartClimb(ai, c, s, pos, now, tag, why)) { s.Ladder = 0; return; }
             switch (step)
             {
                 case 0:
@@ -405,6 +413,116 @@ namespace Companions
             Vector3 pick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, back) ? back : side;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
             Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
+        }
+
+        // ---------- climbing out ----------
+        // 1.4.82: like a player in a dry moat: find the lowest / least steep way up within reach, sprint at it and keep
+        // jumping. Non-player characters never slide (Character.GetSlideAngle is 90 for them), and anything flatter
+        // than ~84 degrees counts as ground to jump from, so jumping up a steep face works for them as it does for a player.
+        const int ClimbMaxTries = 3;
+        const float ClimbMaxRise = 10f;
+        static readonly int s_terrainLayer = LayerMask.NameToLayer("terrain");
+
+        public static bool Climbing(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time < s.ClimbUntil && Time.time - s.LastGo < 0.5f; }
+
+        static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
+        {
+            if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
+            // how high we need to get: the last spot a full route started from, else the goal itself
+            float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
+            if (needY < pos.y + 1.5f) return false;
+            needY = Mathf.Min(needY, pos.y + ClimbMaxRise);
+            Vector3 top; float steep;
+            if (!FindClimb(s, pos, needY, out top, out steep)) return false;
+            s.ClimbTries++; s.ClimbTried.Add(top);
+            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+            s.StepUntil = 0f; s.HasDetour = false;
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            return true;
+        }
+
+        // Ground heights along 16 directions, a meter at a time out to 16 m: the way up whose steepest one-meter step is
+        // smallest (shorter ways win ties), skipping ways already tried and anything through deep water.
+        static bool FindClimb(S s, Vector3 pos, float needY, out Vector3 top, out float steep)
+        {
+            top = Vector3.zero; steep = 0f;
+            float bestScore = float.MaxValue;
+            int mask = LayerMask.GetMask("terrain", "static_solid", "piece", "Default");
+            for (int k = 0; k < 16; k++)
+            {
+                Vector3 dir = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
+                float prevY = pos.y, maxStep = 0f;
+                for (int i = 1; i <= 16; i++)
+                {
+                    Vector3 p = pos + dir * i;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(new Vector3(p.x, needY + 4f, p.z), Vector3.down, out hit, needY + 4f - (pos.y - 3f), mask)) break;
+                    if (MHR_Water.DepthAt(hit.point) >= 1.0f) break;
+                    float rise = hit.point.y - prevY;
+                    if (rise < -1.5f) break;   // dips back down: not a way up
+                    if (rise > 1.0f && hit.collider.gameObject.layer != s_terrainLayer) break;   // a built wall or a roof, not a slope
+                    if (rise > 6f) break;
+                    if (rise > maxStep) maxStep = rise;
+                    prevY = hit.point.y;
+                    if (hit.point.y >= needY - 0.5f)
+                    {
+                        Vector3 t = hit.point + dir * 0.75f;
+                        bool tried = false;
+                        foreach (Vector3 old in s.ClimbTried) if (Flat(old, t) < 3f) { tried = true; break; }
+                        float score = maxStep * 3f + i * 0.1f;
+                        if (!tried && score < bestScore) { bestScore = score; top = t; steep = maxStep; }
+                        break;
+                    }
+                }
+            }
+            return bestScore < float.MaxValue;
+        }
+
+        static void Climb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            Vector3 dir = s.ClimbTop - pos; dir.y = 0f;
+            bool atTop = pos.y >= s.ClimbTop.y - 0.6f;
+            if (atTop || dir.sqrMagnitude < 0.25f)
+            {
+                s.ClimbUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
+                s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? "climbed out" : "reached the climb spot") + " at " + Fmt(pos));
+                return;
+            }
+            dir.Normalize();
+            if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; }
+            // out of breath: stand and get some back, like a player would, then go again
+            float max = MaxStamina(ai);
+            if (max > 0f && (now < s.ClimbRestUntil || Stamina(ai) < max * 0.15f) && c.IsOnGround())
+            {
+                if (now >= s.ClimbRestUntil) s.ClimbRestUntil = now + 5f;
+                if (Stamina(ai) >= max * 0.6f) s.ClimbRestUntil = 0f;
+                Halt(ai, c, s); s.ClimbProgressAt = now; s.ClimbUntil = Mathf.Max(s.ClimbUntil, now + 6f);
+                return;
+            }
+            // no higher in 5 s: this way doesn't go; the next stuck check picks another or carries on with the ladder
+            if (now - s.ClimbProgressAt > 5f)
+            {
+                s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0;
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't climb out at " + Fmt(s.ClimbTop) + " (got to " + Fmt(pos) + ")");
+                return;
+            }
+            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Steer(ai, c, s, dir, true, false);
+            // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward
+            if (c.IsOnGround() && now >= s.NextClimbJump)
+            {
+                Vector3 v = c.GetVelocity(); v.y = 0f;
+                RaycastHit hit;
+                bool rises = Physics.Raycast(pos + dir * 0.9f + Vector3.up * 3f, Vector3.down, out hit, 4f, Mask()) && hit.point.y > pos.y + 0.4f;
+                if (rises || v.magnitude < 1f)
+                {
+                    c.Jump(false);
+                    Rigidbody rb = ai.GetComponent<Rigidbody>();
+                    if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 5f; bv.z = dir.z * 5f; rb.linearVelocity = bv; }
+                    s.NextClimbJump = now + 0.3f;
+                }
+            }
         }
 
         // 1.4.82: fell somewhere with no route out (1.4.81 log: down a dry moat with sheer walls, only a player's
