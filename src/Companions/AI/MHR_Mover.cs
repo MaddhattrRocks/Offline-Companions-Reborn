@@ -33,6 +33,7 @@ namespace Companions
         static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
         static readonly Dictionary<int, List<Opened>> s_opened = new Dictionary<int, List<Opened>>();
         static readonly List<Vector3> s_tmp = new List<Vector3>();
+        static readonly List<Vector3> s_tmp2 = new List<Vector3>();
         static readonly List<Piece> s_pieces = new List<Piece>();
         static readonly Collider[] s_cols = new Collider[16];
         static int s_mask = -1;
@@ -64,6 +65,8 @@ namespace Companions
         // ---------- queries for the callers ----------
         public static bool OwnsMovement(Component c) { S s = Peek(c); return s != null && Time.time - s.LastGo < 0.3f; }
         public static bool GaveUp(CompanionAI ai) { S s = Peek(ai); return s != null && s.GaveUp; }
+        // 1.4.79: the current route doesn't reach the goal (Follow switches to the player's path then)
+        public static bool RoutePartial(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && s.Partial && !s.HasDetour; }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -282,7 +285,9 @@ namespace Companions
                 }
             }
             // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
-            if (s.Partial && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
+            // 1.4.79: not while following - a door 20 m the other way isn't how you keep up with someone (1.4.78 log);
+            // MHR_Follow walks the player's own path instead when the route doesn't reach its spot
+            if (s.Partial && s.Tag != FollowTag && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
             {
                 s.NextDoorSearch = now + 4f;
                 // 1.4.78: not the door we just came through - if the route still doesn't reach the goal from the other
@@ -591,6 +596,13 @@ namespace Companions
                     // the far side of the door should be closer to the goal than this side
                     Vector3 other = dp - d.transform.forward * (1.4f * side);
                     if (Vector3.Distance(other, goal) > Vector3.Distance(sp, goal) + 0.5f) continue;
+                    // 1.4.79: and from the far side a route has to actually reach the goal. Otherwise the door isn't the
+                    // problem (the goal is just out of reach) and going through it only sends him round in circles
+                    // (1.4.78 log: out through the gate and back, again and again, for a chest on a ledge).
+                    s_tmp2.Clear();
+                    if (!GetPath(other, goal, s_tmp2, Pathfinding.AgentType.Humanoid, false)) continue;
+                    Vector3 far = s_tmp2[s_tmp2.Count - 1];
+                    if (Flat(far, goal) > 2.0f || Mathf.Abs(far.y - goal.y) > 2.2f) continue;
                     float score = len + Vector3.Distance(dp, goal);
                     if (score < bestScore) { bestScore = score; best = d; spot = end; }
                 }
@@ -834,6 +846,21 @@ namespace Companions
             }
             catch { }
             return false;
+        }
+
+        // 1.4.79: is it going after a player or a companion right now?
+        public static bool IsAfterUs(Character c)
+        {
+            if (c == null) return false;
+            try
+            {
+                BaseAI ai = c.GetBaseAI();
+                if (ai == null) return true;   // not an AI creature: leave it to the normal rules
+                Character t = ai.GetTargetCreature();
+                if (t == null) return false;
+                return t.IsPlayer() || t.GetComponent<CompanionSetup>() != null;
+            }
+            catch { return true; }
         }
 
         // don't chase into water he'd have to swim in; if it's attacking, a bow or crossbow with ammo still works

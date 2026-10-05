@@ -184,6 +184,8 @@ namespace Companions
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
+                    // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
+                    if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
                     if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
                 }
                 else ai.StopMoving();

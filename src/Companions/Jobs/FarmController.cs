@@ -764,7 +764,16 @@ public class FarmController : MonoBehaviour
 		if (HasCropOutput())
 		{
 			ScanNearbyChests();
-			Container container = FindChestWithSpace();
+			Container container = null;
+			for (int i = 0; i < 4; i++)
+			{
+				container = FindChestWithSpace();
+				if (container == null || ChestReachable(container))
+				{
+					break;
+				}
+				container = null;
+			}
 			if (container != null)
 			{
 				_outputChest = container;
@@ -894,7 +903,19 @@ public class FarmController : MonoBehaviour
 				SeedPlantInfo seedInfo;
 				string seedPrefab;
 				int seedCount;
-				Container container = FindChestWithSeeds(itemData, out seedInfo, out seedPrefab, out seedCount);
+				Container container = null;
+				seedInfo = default(SeedPlantInfo);
+				seedPrefab = null;
+				seedCount = 0;
+				for (int i = 0; i < 4; i++)
+				{
+					container = FindChestWithSeeds(itemData, out seedInfo, out seedPrefab, out seedCount);
+					if (container == null || ChestReachable(container))
+					{
+						break;
+					}
+					container = null;
+				}
 				if (container != null)
 				{
 					Log($"[Plant] Zone[{num4}] found {seedCount}x \"{seedPrefab}\" in chest");
@@ -920,7 +941,18 @@ public class FarmController : MonoBehaviour
 			}
 			SeedPlantInfo seedInfo2;
 			int seedCount2;
-			Container container2 = FindChestWithSpecificSeed(cropSeed, out seedInfo2, out seedCount2);
+			Container container2 = null;
+			seedInfo2 = default(SeedPlantInfo);
+			seedCount2 = 0;
+			for (int i = 0; i < 4; i++)
+			{
+				container2 = FindChestWithSpecificSeed(cropSeed, out seedInfo2, out seedCount2);
+				if (container2 == null || ChestReachable(container2))
+				{
+					break;
+				}
+				container2 = null;
+			}
 			if (container2 != null)
 			{
 				Log($"[Plant] Zone[{num4}] found {seedCount2}x \"{cropSeed}\" in chest");
@@ -1102,8 +1134,37 @@ public class FarmController : MonoBehaviour
 		return false;
 	}
 
+	// 1.4.79: only chests he can actually get to (a spot in reach of it that a route ends at, nothing solid in between).
+	// 1.4.78 log: he picked a chest up on a ledge through a wall, couldn't reach it, and ran around the building.
+	private readonly HashSet<int> _unreachableChests = new HashSet<int>();
+
+	private bool SkipChest(Container c)
+	{
+		if (c == null || _unreachableChests.Contains(c.GetInstanceID()))
+		{
+			return true;
+		}
+		if (_ai != null)
+		{
+			return _ai.IsPositionBlacklisted(c.transform.position);
+		}
+		return false;
+	}
+
+	private bool ChestReachable(Container c)
+	{
+		if (MHR_Chests.CanReach(base.transform.position, c))
+		{
+			return true;
+		}
+		_unreachableChests.Add(c.GetInstanceID());
+		Log($"Skipping chest at {c.transform.position:F1} - can't get within reach of it");
+		return false;
+	}
+
 	private void ScanNearbyChests()
 	{
+		_unreachableChests.Clear();
 		_nearbyChests.Clear();
 		_tempPieces.Clear();
 		Piece.GetAllPiecesInRadius(base.transform.position, ScanRadius, _tempPieces);
@@ -1127,7 +1188,7 @@ public class FarmController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1296,7 +1357,7 @@ public class FarmController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1339,7 +1400,7 @@ public class FarmController : MonoBehaviour
 		}
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null)
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1414,6 +1475,11 @@ public class FarmController : MonoBehaviour
 			}
 			_stuckCheckPos = base.transform.position;
 			_stuckCheckTimer = 0f;
+		}
+		// 1.4.79: the movement has worked through its whole stuck ladder - give this target up now
+		if (_ai != null && MHR_Mover.GaveUp(_ai))
+		{
+			_stuckTimer = 10.01f;
 		}
 		if (_stuckTimer > 10f)
 		{

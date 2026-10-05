@@ -2,6 +2,14 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.79
+- Fixed following companions running off to a gate on the other side of the base. When they can't get to their spot, they now follow your path instead.
+- Fixed the farmer picking chests it can't reach (up on a ledge, behind a wall) and running around the building trying. It now only uses chests it can get to.
+- Companions no longer go through a door unless it actually leads to where they're going.
+- Fixed gatherers swinging at big rocks without reaching them. They now step in until the rock is in reach.
+- Gatherers wait a moment for drops to land before moving on to the next rock.
+- Companions only start fights with creatures that are going after you or them. Anything that attacks them is still fought.
+
 ## 1.4.78
 - Fixed the farmer running back and forth through a gate on the way to a chest. Companions now walk to a spot by chests and crafting stations that they can actually reach.
 - Fixed companions sidestepping and hopping around between crops while farming.

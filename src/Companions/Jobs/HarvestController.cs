@@ -145,6 +145,14 @@ public class HarvestController : MonoBehaviour
 
 	private float _dropScanDelayTimer;
 
+	private int _scanSeen;
+
+	private int _scanUnwanted;
+
+	private int _scanNoAuto;
+
+	private int _scanFull;
+
 	private int _dropsPickedUp;
 
 	private int _itemLayerMask;
@@ -192,6 +200,46 @@ public class HarvestController : MonoBehaviour
 			return IsRockLikeTarget();
 		}
 		return false;
+	}
+
+	private float _closeInTimer;
+
+	private bool _closingIn;
+
+	// 1.4.79: where the rock's surface actually is, straight ahead from chest height toward its centre
+	private bool RockSurface(out Vector3 surface, out float dist)
+	{
+		surface = Vector3.zero;
+		dist = 0f;
+		if (_target == null)
+		{
+			return false;
+		}
+		Vector3 from = base.transform.position + Vector3.up * 1.0f;
+		Vector3 to = GetEffectiveTargetPosition();
+		Vector3 d = to - from;
+		float len = d.magnitude;
+		if (len < 0.05f)
+		{
+			return false;
+		}
+		RaycastHit[] hits = Physics.RaycastAll(from, d / len, len + 0.5f, -1, QueryTriggerInteraction.Ignore);
+		float best = float.MaxValue;
+		for (int i = 0; i < hits.Length; i++)
+		{
+			Collider c = hits[i].collider;
+			if (c != null && c.transform.IsChildOf(_target.transform) && hits[i].distance < best)
+			{
+				best = hits[i].distance;
+				surface = hits[i].point;
+			}
+		}
+		if (best == float.MaxValue)
+		{
+			return false;
+		}
+		dist = best;
+		return true;
 	}
 
 	internal void TryApplyRockAoe()
@@ -689,6 +737,8 @@ public class HarvestController : MonoBehaviour
 			_reapproach = false;
 			_attackTimer = 0.3f;
 			_attackDiagTimer = 0f;
+			_closeInTimer = 0f;
+			_closingIn = false;
 			_state = HarvestState.Attacking;
 			if (IsRockLikeTarget())
 			{
@@ -846,6 +896,8 @@ public class HarvestController : MonoBehaviour
 			_reapproach = false;
 			_attackTimer = 0.3f;
 			_attackDiagTimer = 0f;
+			_closeInTimer = 0f;
+			_closingIn = false;
 			_state = HarvestState.Attacking;
 			if (flag6)
 			{
@@ -955,6 +1007,35 @@ public class HarvestController : MonoBehaviour
 			_moveTargetLocked = false;
 			_state = HarvestState.Moving;
 			return;
+		}
+		// 1.4.79: the distance above is to the spot beside the rock, not the rock itself. On a big rock the surface can be
+		// further than the pickaxe reaches, so every swing missed (1.4.78 log: 10 swings at 1.5 m, no damage). Check the
+		// actual surface and step in until it's in reach (up to 2.5 s, then swing anyway).
+		if (flag && _character != null && !_character.InAttack())
+		{
+			Vector3 surface;
+			float surfaceDist;
+			if (RockSurface(out surface, out surfaceDist) && surfaceDist > attackRange * 0.85f && _closeInTimer < 2.5f)
+			{
+				_closeInTimer += Time.deltaTime;
+				Vector3 step = surface - base.transform.position;
+				step.y = 0f;
+				if (step.sqrMagnitude > 0.01f)
+				{
+					_ai.MoveTowards(step.normalized, run: false);
+				}
+				if (!_closingIn)
+				{
+					_closingIn = true;
+					Log($"Rock surface is {surfaceDist:F1}m away (reach {attackRange * 0.85f:F1}m) — stepping in");
+				}
+				return;
+			}
+			if (_closingIn)
+			{
+				_closingIn = false;
+				_ai.StopMoving();
+			}
 		}
 		_attackTimer -= Time.deltaTime;
 		if (_attackTimer > 0f)
@@ -1173,7 +1254,12 @@ public class HarvestController : MonoBehaviour
 		GameObject gameObject = ScanForDrops();
 		if (gameObject == null)
 		{
-			Log($"No more drops nearby — picked up {_dropsPickedUp} items, resuming harvest");
+			// 1.4.79: give drops a moment to land before moving on (1.4.78 log: "picked up 0 items" right after a rock broke)
+			if (_dropsPickedUp == 0 && _dropTimer < 1.5f)
+			{
+				return;
+			}
+			Log($"No more drops nearby — picked up {_dropsPickedUp} items, resuming harvest " + $"(last scan: {_scanSeen} items in {DropScanRadius:F0}m, skipped {_scanUnwanted} not wanted, {_scanNoAuto} not auto-pickup, {_scanFull} no room{(IsOverweight() ? ", overweight" : "")})");
 			FinishDropCollection();
 			return;
 		}
@@ -2037,6 +2123,10 @@ public class HarvestController : MonoBehaviour
 		GameObject result = null;
 		float num2 = float.MaxValue;
 		int num3 = 0;
+		_scanSeen = 0;
+		_scanUnwanted = 0;
+		_scanNoAuto = 0;
+		_scanFull = 0;
 		for (int i = 0; i < num; i++)
 		{
 			Collider collider = _dropBuffer[i];
@@ -2045,12 +2135,27 @@ public class HarvestController : MonoBehaviour
 				continue;
 			}
 			ItemDrop component = collider.attachedRigidbody.GetComponent<ItemDrop>();
-			if (component == null || !component.m_autoPickup)
+			if (component == null)
 			{
 				continue;
 			}
+			_scanSeen++;
+			if (!component.m_autoPickup)
+			{
+				_scanNoAuto++;
+				continue;
+			}
 			ZNetView component2 = component.GetComponent<ZNetView>();
-			if (component2 == null || !component2.IsValid() || !MHR_GatherRules.WantDrop(this, component) || IsOverweight())
+			if (component2 == null || !component2.IsValid())
+			{
+				continue;
+			}
+			if (!MHR_GatherRules.WantDrop(this, component))
+			{
+				_scanUnwanted++;
+				continue;
+			}
+			if (IsOverweight())
 			{
 				continue;
 			}
@@ -2062,6 +2167,7 @@ public class HarvestController : MonoBehaviour
 				{
 					string text = component.m_itemData?.m_shared?.m_name ?? "?";
 					Log("Drop scan: skipping \"" + text + "\" — inventory full/can't add");
+					_scanFull++;
 					continue;
 				}
 			}

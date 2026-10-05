@@ -1964,6 +1964,14 @@ public class CompanionAI : BaseAI
 					{
 						character = null;
 					}
+					// 1.4.79: on its own, only pick a fight with something that's after us (the player, this companion or
+					// another companion), like a player would. Something that attacks the companion is still fought
+					// (OnDamaged engages the attacker), and Hunt goes after game on purpose. 1.4.78 log: he shot at a
+					// Neck and a crab that were minding their own business.
+					if (character != null && !MHR_Threat.IsAfterUs(character))
+					{
+						character = null;
+					}
 					if (character != null)
 					{
 						SetAlerted(alert: true);
