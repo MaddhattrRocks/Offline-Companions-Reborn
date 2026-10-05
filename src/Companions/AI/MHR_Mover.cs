@@ -354,6 +354,16 @@ namespace Companions
                 Door skip = now - s.LastRouteDoorAt < 30f ? s.LastRouteDoor : null;
                 Vector3 spot; Door d = RouteDoor(pos, goal, out spot, skip);
                 if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; Dbg("[Move|" + s.Tag + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
+                // 1.4.84: no door either: a spot the route does reach, from which the rest can be hopped (stairs)
+                else if (!c.IsSwimming())
+                {
+                    Vector3 b;
+                    if (FindHopBridge(pos, goal, out b) && Flat(pos, b) > 1.0f)
+                    {
+                        s.HasDetour = true; s.Detour = b; s.DetourUntil = now + 10f + Flat(pos, b) * 0.5f; s.NextPlan = 0f;
+                        Dbg("[Move|" + s.Tag + "] no route to " + Fmt(goal) + " - going to " + Fmt(b) + " to hop the rest");
+                    }
+                }
             }
         }
 
@@ -578,13 +588,13 @@ namespace Companions
             float len = d.magnitude;
             if (len < 1.5f) return false;
             d /= len;
-            float top = Mathf.Max(from.y, to.y) + 4f, depth = top - (Mathf.Min(from.y, to.y) - 4f);
             Vector3 prev = from;
             for (float x = 0.5f; x <= len + 0.01f; x += 0.5f)
             {
                 Vector3 p = from + d * Mathf.Min(x, len);
                 RaycastHit hit;
-                if (!Physics.Raycast(new Vector3(p.x, top, p.z), Vector3.down, out hit, depth, Mask())) return false;
+                // 1.4.84: from just above where the feet are, like walking: a roof or an upper floor overhead isn't the ground
+                if (!Physics.Raycast(new Vector3(p.x, prev.y + 1.5f, p.z), Vector3.down, out hit, 4f, Mask())) return false;
                 float rise = hit.point.y - prev.y;
                 if (rise > 1.1f || rise < -2f) return false;
                 if (MHR_Water.DepthAt(hit.point) > 0.8f) return false;
@@ -810,47 +820,143 @@ namespace Companions
         // 1.4.84: is there a closed door that, once opened, gets us from pos to goal?
         public static bool ReachableViaDoor(Vector3 pos, Vector3 goal)
         {
-            try { Vector3 spot; return RouteDoor(pos, goal, out spot, null) != null; }
-            catch { return false; }
+            return CanGetTo(pos, goal);
         }
 
+        // 1.4.84: through up to three closed doors in a row (closed doors block routes): a breadth-first search over
+        // door sides - from here to the near side of a door, from its far side to the near side of the next, and from
+        // the last far side a route has to actually reach the goal (1.4.79: otherwise the door isn't the answer and he
+        // goes round in circles). Returns the first door of the shortest chain; once through it, the next plan finds
+        // the next one. Capped at 120 route queries.
+        class DoorNode { public int Door, Side, Depth, First; public Vector3 FirstSpot; public float Len; }
+        static readonly List<Door> s_doors = new List<Door>();
         static Door RouteDoor(Vector3 pos, Vector3 goal, out Vector3 spot, Door skip)
         {
             spot = Vector3.zero;
+            s_doors.Clear();
             s_pieces.Clear();
             Piece.GetAllPiecesInRadius(goal, 35f, s_pieces);
-            Door best = null; float bestScore = float.MaxValue; int checkedDoors = 0;
-            for (int i = 0; i < s_pieces.Count && checkedDoors < 10; i++)
+            if (Flat(pos, goal) > 20f) Piece.GetAllPiecesInRadius(pos, 20f, s_pieces);
+            for (int i = 0; i < s_pieces.Count; i++)
             {
                 Piece p = s_pieces[i];
                 Door d = p != null ? p.GetComponentInChildren<Door>() : null;
-                if (!Usable(d) || d == skip) continue;
-                checkedDoors++;
-                Vector3 dp = d.transform.position;
+                if (!Usable(d) || d == skip || s_doors.Contains(d)) continue;
+                s_doors.Add(d);
+            }
+            if (s_doors.Count == 0) return null;
+            Vector3 mid = (pos + goal) * 0.5f;
+            s_doors.Sort((a, b) => Vector3.Distance(a.transform.position, mid).CompareTo(Vector3.Distance(b.transform.position, mid)));
+            if (s_doors.Count > 8) s_doors.RemoveRange(8, s_doors.Count - 8);
+
+            int budget = 120;
+            bool[] seen = new bool[s_doors.Count * 2];
+            Queue<DoorNode> queue = new Queue<DoorNode>();
+            for (int i = 0; i < s_doors.Count; i++)
                 for (int side = -1; side <= 1; side += 2)
                 {
-                    Vector3 sp = dp + d.transform.forward * (1.4f * side);
-                    s_tmp.Clear();
-                    if (!GetPath(pos, sp, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
-                    Vector3 end = s_tmp[s_tmp.Count - 1];
-                    if (MHR_Nav.DoorDist(end, dp) > 2.2f) continue;
-                    float len = 0f; Vector3 prev = pos;
-                    for (int k = 0; k < s_tmp.Count; k++) { len += Vector3.Distance(prev, s_tmp[k]); prev = s_tmp[k]; }
-                    // the far side of the door should be closer to the goal than this side
-                    Vector3 other = dp - d.transform.forward * (1.4f * side);
-                    if (Vector3.Distance(other, goal) > Vector3.Distance(sp, goal) + 0.5f) continue;
-                    // 1.4.79: and from the far side a route has to actually reach the goal. Otherwise the door isn't the
-                    // problem (the goal is just out of reach) and going through it only sends him round in circles
-                    // (1.4.78 log: out through the gate and back, again and again, for a chest on a ledge).
-                    s_tmp2.Clear();
-                    if (!GetPath(other, goal, s_tmp2, Pathfinding.AgentType.Humanoid, false)) continue;
+                    Vector3 end; float len;
+                    if (budget-- <= 0) break;
+                    if (!ToDoor(pos, s_doors[i], side, out end, out len)) continue;
+                    seen[i * 2 + (side > 0 ? 1 : 0)] = true;
+                    queue.Enqueue(new DoorNode { Door = i, Side = side, Depth = 1, First = i, FirstSpot = end, Len = len });
+                }
+            Door best = null; float bestScore = float.MaxValue; int bestDepth = 99;
+            while (queue.Count > 0 && budget > 0)
+            {
+                DoorNode n = queue.Dequeue();
+                if (n.Depth > bestDepth) break;
+                Door d = s_doors[n.Door];
+                Vector3 other = d.transform.position - d.transform.forward * (1.4f * n.Side);
+                s_tmp2.Clear(); budget--;
+                if (GetPath(other, goal, s_tmp2, Pathfinding.AgentType.Humanoid, false))
+                {
                     Vector3 far = s_tmp2[s_tmp2.Count - 1];
-                    if (Flat(far, goal) > 2.0f || Mathf.Abs(far.y - goal.y) > 2.2f) continue;
-                    float score = len + Vector3.Distance(dp, goal);
-                    if (score < bestScore) { bestScore = score; best = d; spot = end; }
+                    if (Flat(far, goal) <= 2.0f && Mathf.Abs(far.y - goal.y) <= 2.2f)
+                    {
+                        float score = n.Len + Vector3.Distance(d.transform.position, goal);
+                        if (score < bestScore) { bestScore = score; best = s_doors[n.First]; spot = n.FirstSpot; bestDepth = n.Depth; }
+                        continue;
+                    }
+                }
+                if (n.Depth >= 3) continue;
+                for (int j = 0; j < s_doors.Count && budget > 0; j++)
+                {
+                    if (j == n.Door) continue;
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        int key = j * 2 + (side > 0 ? 1 : 0);
+                        if (seen[key] || budget-- <= 0) continue;
+                        Vector3 end; float len;
+                        if (!ToDoor(other, s_doors[j], side, out end, out len)) continue;
+                        seen[key] = true;
+                        queue.Enqueue(new DoorNode { Door = j, Side = side, Depth = n.Depth + 1, First = n.First, FirstSpot = n.FirstSpot, Len = n.Len + len });
+                    }
                 }
             }
             return best;
+        }
+
+        // a full route from 'from' to one side of the door, ending by the door
+        static bool ToDoor(Vector3 from, Door d, int side, out Vector3 end, out float len)
+        {
+            end = Vector3.zero; len = 0f;
+            Vector3 dp = d.transform.position;
+            Vector3 sp = dp + d.transform.forward * (1.4f * side);
+            s_tmp.Clear();
+            if (!GetPath(from, sp, s_tmp, Pathfinding.AgentType.Humanoid, true)) return false;
+            end = s_tmp[s_tmp.Count - 1];
+            if (MHR_Nav.DoorDist(end, dp) > 2.2f) return false;
+            Vector3 prev = from;
+            for (int k = 0; k < s_tmp.Count; k++) { len += Vector3.Distance(prev, s_tmp[k]); prev = s_tmp[k]; }
+            return true;
+        }
+
+        // 1.4.84: no route at all, but a spot a route does reach from which the rest can be hopped (the bottom of stairs
+        // the routes don't use - 1.4.83 test: the farm's chests are up the stairs in the house). Rings round the goal.
+        public static bool FindHopBridge(Vector3 pos, Vector3 goal, out Vector3 bridge)
+        {
+            bridge = Vector3.zero;
+            float best = float.MaxValue; int queries = 0;
+            float[] radii = { 3f, 6f, 10f, 15f, 20f };
+            for (int r = 0; r < radii.Length; r++)
+            {
+                for (int k = 0; k < 12; k++)
+                {
+                    Vector3 dir = Quaternion.Euler(0f, k * 30f, 0f) * Vector3.forward;
+                    Vector3 p = goal + dir * radii[r];
+                    RaycastHit hit;
+                    if (!Physics.Raycast(new Vector3(p.x, goal.y + 1.5f, p.z), Vector3.down, out hit, 12f, Mask())) continue;
+                    if (MHR_Water.DepthAt(hit.point) > 0.8f) continue;
+                    Vector3 b = hit.point;
+                    int hops;
+                    if (!HopLine(b, goal, out hops)) continue;
+                    if (queries++ >= 24) break;
+                    s_tmp.Clear();
+                    if (!GetPath(pos, b, s_tmp, Pathfinding.AgentType.Humanoid, true)) continue;
+                    Vector3 end = s_tmp[s_tmp.Count - 1];
+                    if (Flat(end, b) > 1.0f || Mathf.Abs(end.y - b.y) > 1.2f) continue;
+                    float len = 0f; Vector3 prev = pos;
+                    for (int i = 0; i < s_tmp.Count; i++) { len += Vector3.Distance(prev, s_tmp[i]); prev = s_tmp[i]; }
+                    len += radii[r];
+                    if (len < best) { best = len; bridge = b; }
+                }
+                if (best < float.MaxValue) break;   // nearest ring that works
+            }
+            return best < float.MaxValue;
+        }
+
+        // 1.4.84: can he get from pos to goal: a route, a route plus a hop, through closed doors, or straight hopping
+        public static bool CanGetTo(Vector3 pos, Vector3 goal)
+        {
+            try
+            {
+                Vector3 v; int hops;
+                if (Flat(pos, goal) < 25f && HopLine(pos, goal, out hops)) return true;
+                if (FindHopBridge(pos, goal, out v)) return true;
+                return RouteDoor(pos, goal, out v, null) != null;
+            }
+            catch { return false; }
         }
 
         static void OpenDoor(CompanionAI ai, Character c, Door d, string tag)

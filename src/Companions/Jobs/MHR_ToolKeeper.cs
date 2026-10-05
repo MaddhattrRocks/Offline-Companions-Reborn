@@ -987,9 +987,9 @@ namespace Companions
                 }
                 if (found) break;
             }
-            // 1.4.84: no route straight there, but maybe through a closed door (closed doors block routes): a chest
-            // indoors is reachable once he opens the door (1.4.83 test: the chests in the house above the farm were
-            // all "can't get within reach" from the farm, so crops never got stored)
+            // 1.4.84: no route straight there, but maybe with a hop or through closed doors (routes don't use some stairs,
+            // and closed doors block them) - 1.4.83 test: the chests in the house up the stairs above the farm were all
+            // "can't get within reach" from the farm, so crops never got stored
             if (!found && viaDoor != null)
             {
                 for (int i = 0; i < viaDoor.Count && i < 4; i++)
