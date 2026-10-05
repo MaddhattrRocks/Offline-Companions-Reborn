@@ -119,7 +119,8 @@ public class CompanionCombatAI : MonoBehaviour
 				_unableToAttackTargetTimer = 0f;
 				_parryAttackCount = 0;
 				_engaged = true;
-				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} (routes through normal SelectBestAttack/shield/flee logic)");
+				Character after = target.GetBaseAI()?.GetTargetCreature();
+				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
 				_ai.SetAlerted(alert: true);
 			}
 		}
@@ -418,6 +419,12 @@ public class CompanionCombatAI : MonoBehaviour
 			_updateTargetTimer = (flag ? 2f : 6f);
 			Character character = _ai.FindNearbyEnemy();
 			if (character != null && IsPassiveAnimal(character))
+			{
+				character = null;
+			}
+			// 1.4.83: switching targets mid-fight follows the same rule as starting one: only something that's after us
+			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business)
+			if (character != null && character != _targetCreature && !HuntMode && !MHR_Threat.IsAfterUs(character))
 			{
 				character = null;
 			}

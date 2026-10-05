@@ -32,6 +32,7 @@ namespace Companions
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
+            public bool Direct; public float NextHop, NoDirectUntil;
         }
         class Opened { public Door Door; public float At; }
 
@@ -220,6 +221,15 @@ namespace Companions
             else if (speed == SpeedJog) { run = false; walk = false; }
             else if (speed == SpeedRun) { run = allowRun; walk = false; }
             Steer(ai, c, s, dir, run, walk);
+            // 1.4.83: going straight: hop the step in front, like a player
+            if (s.Direct && now >= s.NextHop && c.IsOnGround() && !c.InAttack() && StepAhead(pos, dir))
+            {
+                s.NextHop = now + 0.6f;
+                ai.transform.rotation = Quaternion.LookRotation(dir);
+                c.Jump(false);
+                Rigidbody rb = ai.GetComponent<Rigidbody>();
+                if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
+            }
 
             // stuck?
             float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
@@ -236,7 +246,7 @@ namespace Companions
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
-            s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f;
+            s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
         }
 
         static void Halt(CompanionAI ai, Character c, S s)
@@ -314,6 +324,22 @@ namespace Companions
                     }
                 }
             }
+            // 1.4.83: a long way round for something close (1.4.82 log: 85-120 m round the base for the steps in front of
+            // it, 4 m away - the route can't use the steps): if the straight line only has steps a player would hop up,
+            // go straight and jump them
+            bool wasDirect = s.Direct;
+            s.Direct = false;
+            if (!s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && now >= s.NoDirectUntil)
+            {
+                float straight = Vector3.Distance(pos, goal);
+                float len = Remaining(s, pos);
+                int hops;
+                if (straight < 25f && (s.Partial || len > straight * 1.6f + 6f) && HopLine(pos, goal, out hops))
+                {
+                    if (!wasDirect) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
+                    s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;
+                }
+            }
             // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
             // 1.4.79: not while following - a door 20 m the other way isn't how you keep up with someone (1.4.78 log);
             // MHR_Follow walks the player's own path instead when the route doesn't reach its spot
@@ -366,6 +392,8 @@ namespace Companions
             string why = still >= StillTime ? "standing still " + still.ToString("F0") + "s" : "no closer for " + noCloser.ToString("F0") + "s";
             s.AnchorTime = now; s.Anchor = pos;
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
+            // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
+            if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; Dbg("[Move|" + tag + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
             int step = s.Ladder++;
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
@@ -536,6 +564,40 @@ namespace Companions
             ai.MHR_PlaceAt(s.GoodPos);
             s.HasGood = false;
             Reset(s, s.Goal, s.GoodPos, now, tag);
+        }
+
+        // 1.4.83: the straight line from -> to, every half meter: each step up no more than a hop (1.1 m), no drop over
+        // 2 m, no deep water, and nothing in the way at chest height (walls, doors, fences taller than a hop)
+        static bool HopLine(Vector3 from, Vector3 to, out int hops)
+        {
+            hops = 0;
+            Vector3 d = to - from; d.y = 0f;
+            float len = d.magnitude;
+            if (len < 1.5f) return false;
+            d /= len;
+            float top = Mathf.Max(from.y, to.y) + 4f, depth = top - (Mathf.Min(from.y, to.y) - 4f);
+            Vector3 prev = from;
+            for (float x = 0.5f; x <= len + 0.01f; x += 0.5f)
+            {
+                Vector3 p = from + d * Mathf.Min(x, len);
+                RaycastHit hit;
+                if (!Physics.Raycast(new Vector3(p.x, top, p.z), Vector3.down, out hit, depth, Mask())) return false;
+                float rise = hit.point.y - prev.y;
+                if (rise > 1.1f || rise < -2f) return false;
+                if (MHR_Water.DepthAt(hit.point) > 0.8f) return false;
+                if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) return false;
+                if (rise > 0.35f) hops++;
+                prev = hit.point;
+            }
+            return hops <= 10;
+        }
+
+        // something to hop up onto just ahead (a step, a low wall), or a knee-high block
+        static bool StepAhead(Vector3 pos, Vector3 dir)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(pos + dir * 0.7f + Vector3.up * 2f, Vector3.down, out hit, 2.5f, Mask()) && hit.point.y > pos.y + 0.35f && hit.point.y < pos.y + 1.3f) return true;
+            return Physics.Raycast(pos + Vector3.up * 0.4f, dir, 0.7f, Mask()) && !Physics.Raycast(pos + Vector3.up * 1.4f, dir, 1.0f, Mask());
         }
 
         // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)
@@ -863,6 +925,12 @@ namespace Companions
                 ai.TeleportToFollowTarget();
             }
             catch { }
+        }
+
+        // 1.4.83: eye to eye, nothing solid in between
+        public static bool CanSee(Vector3 a, Vector3 b)
+        {
+            return !Physics.Linecast(a + Vector3.up * 1.6f, b + Vector3.up * 1.6f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain"));
         }
 
         // ---------- log ----------

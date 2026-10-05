@@ -2,6 +2,12 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.83
+- Fixed companions running a long way round (and warping) instead of hopping up steps or a low wall. When the way round is much longer, they now go straight and jump over it like a player.
+- Following companions no longer warp to you while you can still see them, unless they're half as far again as FollowTeleportDistance.
+- Fixed companions switching mid-fight to creatures that weren't after anyone (boars while exploring).
+- Companions now carry their shield with a one-handed weapon all the time, not only once a fight starts.
+
 ## 1.4.82
 - Fixed the farmer carrying crops to a chest after every few. It now picks everything ripe first and stores when nothing ripe is left or its pack is nearly full.
 - Fixed the farmer planting a few seeds and then stopping.

@@ -1651,7 +1651,9 @@ public class CompanionAI : BaseAI
 			{
 				TeleportToFollowTarget();
 			}
-			else if (num > FollowTeleportDist)
+			// 1.4.83: not while you can still see each other, unless it's half as far again (1.4.82 log: warped while the
+			// player watched it run the long way round)
+			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || !MHR_Mover.CanSee(base.transform.position, position)))
 			{
 				TeleportToFollowTarget();
 			}

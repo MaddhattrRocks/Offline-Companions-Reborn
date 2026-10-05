@@ -1021,6 +1021,14 @@ public class CompanionSetup : MonoBehaviour
 					num9 = armor;
 				}
 				break;
+			// 1.4.83: carry the best shield with a one-hander, like a player (it was only picked up once a fight started)
+			case ItemDrop.ItemData.ItemType.Shield:
+				if (item.GetBaseBlockPower() > num4)
+				{
+					itemData4 = item;
+					num4 = item.GetBaseBlockPower();
+				}
+				break;
 			case ItemDrop.ItemData.ItemType.Trinket:
 				if (armor > num10)
 				{
