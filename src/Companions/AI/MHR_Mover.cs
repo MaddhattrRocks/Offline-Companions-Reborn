@@ -223,8 +223,8 @@ namespace Companions
             Steer(ai, c, s, dir, run, walk);
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
-            // 1.4.85: and the moment we reach the edge of a step (the companion route map climbs 0.6 m, more than walking does)
-            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (((s.Direct || now - s.AnchorTime > 0.6f) && StepAhead(pos, dir)) || StepEdge(pos, dir)))
+            // 1.4.86: walk up stairs like a player; only hop when a step actually holds him up (1.4.85 hopped every step)
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Direct || now - s.AnchorTime > 0.5f) && StepAhead(pos, dir))
             {
                 s.NextHop = now + 0.6f;
                 ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -604,16 +604,6 @@ namespace Companions
                 prev = hit.point;
             }
             return hops <= 10;
-        }
-
-        // 1.4.85: right at the edge of a step up: level ground just ahead, then 0.35-1.3 m higher a bit further on
-        static bool StepEdge(Vector3 pos, Vector3 dir)
-        {
-            RaycastHit near, far;
-            if (!Physics.Raycast(pos + dir * 0.3f + Vector3.up * 1.5f, Vector3.down, out near, 2.5f, Mask()) || near.point.y > pos.y + 0.2f) return false;
-            if (!Physics.Raycast(pos + dir * 0.8f + Vector3.up * 1.5f, Vector3.down, out far, 2.5f, Mask())) return false;
-            float rise = far.point.y - pos.y;
-            return rise > 0.35f && rise < 1.3f;
         }
 
         // something to hop up onto just ahead (a step, a low wall), or a knee-high block

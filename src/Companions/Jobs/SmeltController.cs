@@ -475,7 +475,13 @@ public class SmeltController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetChest.transform.position);
-		if (num < UseDistance)
+		Vector3 goal = ChestGoal(_targetChest);
+		if (num >= UseDistance && ChestOutOfReach(_targetChest))
+		{
+			Abort("chest out of reach");
+			return;
+		}
+		if (num < UseDistance || AtSpot(num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetChest.transform.position);
@@ -486,7 +492,7 @@ public class SmeltController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveWalk(_ai, dt, _targetChest.transform.position, UseDistance, _shouldRun);
+			bool moveOk = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			LogMovement(dt, "chest", num, moveOk);
 			UpdateStuckDetection(dt, "chest");
 		}
@@ -587,10 +593,11 @@ public class SmeltController : MonoBehaviour
 		}
 		Vector3 smelterInteractPoint = GetSmelterInteractPoint(_targetSmelter, _carryingIsFuel);
 		float num = MHR_Nav.ReachDist(base.transform.position, smelterInteractPoint);
-		if (!(num < UseDistance))
+		Vector3 goal = SlotGoal(_targetSmelter, SlotPosition(_targetSmelter, _carryingIsFuel), smelterInteractPoint, _carryingIsFuel ? "fuel" : "ore");
+		if (!(num < UseDistance) && !AtSpot(num))
 		{
 			_shouldRun = num > 8f;
-			bool flag = MHR_Nav.MoveWalk(_ai, dt, smelterInteractPoint, UseDistance, _shouldRun);
+			bool flag = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
 			{
 				LogMovement(dt, "smelter", num, flag);
@@ -697,10 +704,11 @@ public class SmeltController : MonoBehaviour
 		}
 		Vector3 smelterOutputPoint = GetSmelterOutputPoint(_targetSmelter);
 		float num = Vector3.Distance(base.transform.position, smelterOutputPoint);
-		if (num > UseDistance)
+		Vector3 goal = SlotGoal(_targetSmelter, OutputSlotPosition(_targetSmelter), smelterOutputPoint, "out");
+		if (num > UseDistance && !AtSpot(num))
 		{
 			_shouldRun = num > 8f;
-			bool flag = MHR_Nav.MoveWalk(_ai, Time.deltaTime, smelterOutputPoint, UseDistance, _shouldRun);
+			bool flag = MHR_Nav.MoveSmelt(_ai, Time.deltaTime, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
 			{
 				LogMovement(Time.deltaTime, "smelter (collect)", num, flag);
@@ -766,9 +774,16 @@ public class SmeltController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _outputChest.transform.position);
-		if (num < UseDistance)
+		Vector3 goal = ChestGoal(_outputChest);
+		if (num >= UseDistance && ChestOutOfReach(_outputChest))
+		{
+			Abort("output chest out of reach");
+			return;
+		}
+		if (num < UseDistance || AtSpot(num))
 		{
 			_ai.StopMoving();
+			_ai.LookAtPoint(_outputChest.transform.position);
 			_chestOpened = false;
 			_phase = SmeltPhase.StoringOutput;
 			Log($"Arrived at output chest (dist={num:F1}m) — storing output");
@@ -776,7 +791,7 @@ public class SmeltController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveWalk(_ai, dt, _outputChest.transform.position, UseDistance, _shouldRun);
+			bool moveOk = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			LogMovement(dt, "output chest", num, moveOk);
 			UpdateStuckDetection(dt, "output chest");
 		}
@@ -940,10 +955,99 @@ public class SmeltController : MonoBehaviour
 		_stuckCheckTimer = 0f;
 		_stuckCheckPos = base.transform.position;
 		_stuckBestDist = float.MaxValue;
+		_approachKey = null;
+	}
+
+	// 1.4.86 (movement phase 3 part 2): Smelt moves through MHR_Mover like Farm, and walks to a spot it can actually
+	// stand on by the chest or by the smelter's ore/fuel slot, instead of at the chest or slot itself.
+	private string _approachKey;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
+
+	private readonly HashSet<int> _unreachableChests = new HashSet<int>();
+
+	private float _unreachableClearAt;
+
+	private Vector3 ChestGoal(Container chest)
+	{
+		string text = "c" + chest.GetInstanceID();
+		if (_approachKey != text)
+		{
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproach(base.transform.position, chest, out _approachSpot);
+		}
+		return _hasApproach ? _approachSpot : chest.transform.position;
+	}
+
+	private Vector3 SlotGoal(Smelter smelter, Vector3 slot, Vector3 fallback, string which)
+	{
+		string text = "s" + smelter.GetInstanceID() + which;
+		if (_approachKey != text)
+		{
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproachPoint(base.transform.position, slot, smelter, out _approachSpot);
+		}
+		return _hasApproach ? _approachSpot : fallback;
+	}
+
+	// standing on the picked spot counts as in reach (it can be a little past UseDistance from the measuring point)
+	private bool AtSpot(float dist)
+	{
+		if (!_hasApproach || dist > UseDistance + 1.5f)
+		{
+			return false;
+		}
+		Vector3 position = base.transform.position;
+		return new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.2f;
+	}
+
+	private float MoveDist => _hasApproach ? 0.5f : UseDistance;
+
+	// a chest with no spot in reach that a route gets to: skip it for a minute and pick another
+	private bool ChestOutOfReach(Container chest)
+	{
+		if (_hasApproach || MHR_Chests.CanReach(base.transform.position, chest))
+		{
+			return false;
+		}
+		_unreachableChests.Add(chest.GetInstanceID());
+		Log($"Skipping chest at {chest.transform.position:F1} - can't get within reach of it");
+		return true;
+	}
+
+	private bool SkipChest(Container chest)
+	{
+		return chest == null || _unreachableChests.Contains(chest.GetInstanceID()) || (_ai != null && _ai.IsPositionBlacklisted(chest.transform.position));
+	}
+
+	private static Vector3 SlotPosition(Smelter smelter, bool isFuel)
+	{
+		Transform transform = ((!isFuel) ? smelter.m_addOreSwitch?.transform : smelter.m_addWoodSwitch?.transform);
+		return (transform != null) ? transform.position : smelter.transform.position;
+	}
+
+	private static Vector3 OutputSlotPosition(Smelter smelter)
+	{
+		if (smelter.m_emptyOreSwitch != null)
+		{
+			return smelter.m_emptyOreSwitch.transform.position;
+		}
+		if (smelter.m_outputPoint != null)
+		{
+			return smelter.m_outputPoint.position;
+		}
+		return smelter.transform.position;
 	}
 
 	private void ScanNearbyChests()
 	{
+		if (Time.time >= _unreachableClearAt)
+		{
+			_unreachableChests.Clear();
+			_unreachableClearAt = Time.time + 60f;
+		}
 		_nearbyChests.Clear();
 		_tempPieces.Clear();
 		Piece.GetAllPiecesInRadius(base.transform.position, ScanRadius, _tempPieces);
@@ -1021,7 +1125,7 @@ public class SmeltController : MonoBehaviour
 			string text2 = item2.m_from.gameObject.name;
 			foreach (Container nearbyChest in _nearbyChests)
 			{
-				if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+				if (SkipChest(nearbyChest))
 				{
 					continue;
 				}
@@ -1134,7 +1238,7 @@ public class SmeltController : MonoBehaviour
 		int num6 = 0;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1236,7 +1340,8 @@ public class SmeltController : MonoBehaviour
 		{
 			Vector3 currentTargetPosition = GetCurrentTargetPosition();
 			float num = Vector3.Distance(base.transform.position, currentTargetPosition);
-			if (_stuckBestDist - num < 0.3f)
+			// 1.4.86: a route round a building doesn't always get closer as the crow flies; the mover knows if it's getting somewhere
+			if (_stuckBestDist - num < 0.3f && !(_ai != null && MHR_Mover.Progressing(_ai)))
 			{
 				_stuckTimer += _stuckCheckTimer;
 			}
@@ -1247,6 +1352,11 @@ public class SmeltController : MonoBehaviour
 			}
 			_stuckCheckPos = base.transform.position;
 			_stuckCheckTimer = 0f;
+		}
+		// the movement has worked through its whole stuck ladder - give this target up now
+		if (_ai != null && MHR_Mover.GaveUp(_ai))
+		{
+			_stuckTimer = 10.01f;
 		}
 		if (_stuckTimer > 10f)
 		{
@@ -1418,7 +1528,7 @@ public class SmeltController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}

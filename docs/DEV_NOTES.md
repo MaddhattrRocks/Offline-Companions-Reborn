@@ -30,6 +30,13 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.86 - movement phase 3 part 2: Smelt (user: Cook and Homestead need a feature review first - come back to them)
+- PR #4 (1.4.77-1.4.85) merged; branch restarted from main. User on 1.4.85: looks good, jumping over obstacles + wandering feels like a player; wants stairs walked normally ("jumping some of the time is ok").
+- SmeltController: all four moves (chest, smelter slot, smelter output, output chest) through `MHR_Nav.MoveSmelt` -> MHR_Mover tag "Smelt" (was `MoveWalk` -> vanilla MoveToPoint). Stand spots: `MHR_Chests.PickApproach` for chests, new `MHR_Chests.PickApproachPoint` (rings 0.9/1.4/1.9 m x 12 round the ore/fuel/output switch, ignoring the smelter's own colliders, max 1.8 m up/down) for slots; move to the spot at 0.5 m, standing on it counts as in reach (`AtSpot`). A chest with no spot and `!CanReach` is skipped for 60 s ("Skipping chest at ...") and the trip aborted so the next scan picks another. Stuck: aborts when `MHR_Mover.GaveUp`; the distance-based 10 s timer doesn't run while `MHR_Mover.Progressing`. `PickApproachPiece` now shares `PickNear` with it.
+- Stairs: removed the proactive `StepEdge` hop (1.4.85); hops only in Direct mode or when held up > 0.5 s with `StepAhead`.
+- MHR_Diag: no "hasn't moved" warning while the companion is in combat (1.4.85 log: standing shooting a boar).
+- Combat note from the 1.4.85 log: engaged a boar 18 m off that had targeted Gunter but wasn't alerted yet (matches the rule). Offered: wait until it actually comes at him - no answer yet.
+
 ### Where things stand (2026-10-05, end of session)
 See `docs/SESSION_HANDOFF.md` for the short version to paste into a new session. 1.4.77-1.4.85 are on `claude/relaxed-archimedes-ecoh6h`, no PR yet; 1.4.85 is pushed and waiting on the user's build + test.
 
@@ -183,6 +190,7 @@ What was built (all items below):
   - DoorHandler already closes doors behind it (if they were closed) - keep that behaviour in the overhaul.
 
 ## BACKLOG (come back to - check with the user before building any of it)
+- **Cook and Homestead review (user, 1.4.86):** both need a feature review before moving them onto MHR_Mover (phase 3 part 2 continued). Leave them alone unless something is really off.
 - **Jobs + Follow together (user, 1.4.84 test):** turning Follow off for a job (1.4.78) is fine for home jobs (farm, smelt, cook...) but not for Wood/Stone/Ore out in the field: with no ore around he stood still while the player left, and Follow had to be turned back on. Wanted: a gathering job can run with Follow on - work what's near, and when there's nothing to do, go back to following the player (and pick up the job again near the next targets). Probably per job: field jobs (Wood, Stone, Ore, Forage, Hunt?) keep Follow; home jobs turn it off. Talk through with the user before building.
 - **Command wheel revisit (user, 1.4.83):** the wheel needs a rethink before more goes on it. Candidates: Rename, a guard / patrol mode, and late-game features from the base game. The user isn't sure how much more belongs on the wheel; consider a sub-menu or moving some items elsewhere. Talk it through with the user before building.
 - **Rename fallback (user agreed it's probably the fix, 1.4.83):** SeneaL_UI (hexium.gg/mods/seneaL/SeneaL_UI) blocks the panel's name box. Rename through the vanilla `TextInput` dialog (like signs: implement `TextReceiver`, `TextInput.instance.RequestText(receiver, topic, 24)`), opened from outside the inventory panel. Where it lives depends on the command wheel revisit.

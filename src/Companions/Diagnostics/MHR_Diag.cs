@@ -59,7 +59,8 @@ public static class MHR_Diag
 				value = track;
 				s_track[instanceID] = value;
 			}
-			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f)
+			// 1.4.86: standing still in a fight (shooting from where it is) isn't being stuck
+			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f || (companionSetup.GetComponent<CompanionAI>()?.IsInCombat ?? false))
 			{
 				value.Anchor = position2;
 				value.Since = time;

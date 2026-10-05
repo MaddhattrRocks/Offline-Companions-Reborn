@@ -4,12 +4,15 @@ Paste this into a new session to pick up where we left off. Details per version 
 
 ## Repo and workflow
 - Repo: `MaddhattrRocks/Offline-Companions-Reborn` (private, going public soon). Fork of ProfMags' Offline Companions (MIT).
-- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#3 are merged into `main` (C# conversion, 1.4.75, 1.4.76). Everything from **1.4.77 to 1.4.85 is on the branch with no PR yet** - open one when the user says so.
+- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#4 are merged into `main` (C# conversion, 1.4.75, 1.4.76, 1.4.77-1.4.85). After a merge the branch is restarted from `main` under the same name.
 - The user builds the DLL (`dotnet build -c Release` on their PC, paths in the git-ignored `Environment.props`). Sessions only compile-check, never hand over DLLs unless asked. No game files in git.
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.85 pushed, not yet tested
+## Current state: 1.4.86 pushed, not yet tested
+- 1.4.86 (phase 3 part 2, Smelt only): Smelt on MHR_Mover with stand spots at chests and smelter slots, unreachable chests skipped; stairs walked normally (hop only when held up); no "hasn't moved" diag warning in combat. Cook and Homestead wait for a feature review.
+
+## Previous: 1.4.85 (tested OK, merged in PR #4)
 - 1.4.85: companions' own route map (`Patches/MHR_CompanionNavMesh.cs`): closed doors don't block routes (opened on arrival, any number), steps up to 0.6 m connect and are hopped as he reaches them. Config `General > CompanionPathing` (on; restart). Wider chest stand-spot search (1.2/1.7/2.2 m, 16 directions); farm opens a chest from its picked spot. Log should say "[Move] Companion route map ready" at world load.
 - User's next test: build 1.4.85, check the farm stores crops in the house chests up the stairs, doors, stairs, narrow chests ("Skipping chest at ..." lines show any still ruled out).
 

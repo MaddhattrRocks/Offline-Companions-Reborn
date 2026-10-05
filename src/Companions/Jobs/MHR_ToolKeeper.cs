@@ -1008,21 +1008,32 @@ namespace Companions
         {
             spot = Vector3.zero;
             if (target == null) return false;
-            Piece piece = target.GetComponentInParent<Piece>();
-            Vector3 cp = target.transform.position;
+            return PickNear(me, target.transform.position, target.GetComponentInParent<Piece>(), s_pieceRadii, 8, 1.5f, out spot);
+        }
+        static readonly float[] s_pieceRadii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
+        static readonly float[] s_pointRadii = { 0.9f, 1.4f, 1.9f };
+
+        // 1.4.86: the same around one point of a piece, e.g. a smelter's ore or fuel slot
+        public static bool PickApproachPoint(Vector3 me, Vector3 point, Component owner, out Vector3 spot)
+        {
+            return PickNear(me, point, owner != null ? owner.GetComponentInParent<Piece>() : null, s_pointRadii, 12, 1.8f, out spot);
+        }
+
+        static bool PickNear(Vector3 me, Vector3 cp, Piece piece, float[] radii, int dirs, float maxDy, out Vector3 spot)
+        {
+            spot = Vector3.zero;
             float best = float.MaxValue; bool found = false;
-            float[] radii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
             for (int r = 0; r < radii.Length; r++)
             {
-                for (int k = 0; k < 8; k++)
+                for (int k = 0; k < dirs; k++)
                 {
-                    float ang = k * 45f * Mathf.Deg2Rad;
+                    float ang = k * (360f / dirs) * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
                     RaycastHit hit;
                     if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
                     if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
                     Vector3 stand = hit.point;
-                    if (Mathf.Abs(stand.y - cp.y) > 1.5f) continue;
+                    if (Mathf.Abs(stand.y - cp.y) > maxDy) continue;
                     if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
                     if (!ClearTo(stand, cp, piece)) continue;
                     s_path.Clear();
@@ -1087,6 +1098,7 @@ namespace Companions
     {
         public static bool MoveFarm(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Farm"); }
         public static bool MovePlant(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Plant"); }
+        public static bool MoveSmelt(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Smelt"); }
 
         // 1.4.70: "in range" the way a player reaches things: flat distance while within 2.2m up or down (stacked chests,
         // crops below a low edge); real distance beyond that
