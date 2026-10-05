@@ -202,6 +202,62 @@ public class HarvestController : MonoBehaviour
 		return false;
 	}
 
+	private Vector3 _lastTargetPos;
+
+	// 1.4.79: many rocks are swapped for a cracked copy on the first hit (Destructible.m_spawnWhenDamaged): the object
+	// we were hitting is gone, but the rock is still there. That read as "destroyed" - no drops, off to the next rock,
+	// one hit each (1.4.78 test). If a rock now stands exactly where ours was, keep mining that one.
+	private bool TryFollowCrackedRock()
+	{
+		string type = _targetType;
+		if (type != "MineRock" && type != "MineRock5" && type != "Destructible")
+		{
+			return false;
+		}
+		Collider[] cols = Physics.OverlapSphere(_lastTargetPos, 2.5f, -1, QueryTriggerInteraction.Ignore);
+		GameObject found = null;
+		for (int i = 0; i < cols.Length; i++)
+		{
+			Collider c = cols[i];
+			if (c == null || c.GetComponentInParent<Piece>() != null || c.GetComponentInParent<Character>() != null)
+			{
+				continue;
+			}
+			Component rock = (Component)c.GetComponentInParent<MineRock5>() ?? (Component)c.GetComponentInParent<MineRock>() ?? c.GetComponentInParent<Destructible>();
+			if (rock == null || Vector3.Distance(rock.transform.position, _lastTargetPos) > 0.5f)
+			{
+				continue;
+			}
+			ZNetView nv = rock.GetComponent<ZNetView>();
+			if (nv == null || !nv.IsValid())
+			{
+				continue;
+			}
+			found = rock.gameObject;
+			break;
+		}
+		if (found == null)
+		{
+			return false;
+		}
+		UnclaimTarget();
+		_target = found;
+		_targetType = ClassifyTargetType(found, GetMode());
+		ClaimTarget();
+		_moveTargetLocked = false;
+		_attackFaceLocked = false;
+		_rock5CurrentSegment = null;
+		_swingCount = 0;
+		_totalAttempts = 0;
+		_consecutiveFailures = 0;
+		if (_targetType == "MineRock5")
+		{
+			_rock5ActiveSections = CountActiveRock5Sections();
+		}
+		Log("Rock cracked - carrying on with \"" + found.name + "\" (" + _targetType + ")");
+		return true;
+	}
+
 	private float _closeInTimer;
 
 	private bool _closingIn;
@@ -944,6 +1000,14 @@ public class HarvestController : MonoBehaviour
 			{
 				_ai.StopMoving();
 			}
+			return;
+		}
+		if (_target != null)
+		{
+			_lastTargetPos = _target.transform.position;
+		}
+		if (!IsTargetValid(_target) && TryFollowCrackedRock())
+		{
 			return;
 		}
 		if (!IsTargetValid(_target))

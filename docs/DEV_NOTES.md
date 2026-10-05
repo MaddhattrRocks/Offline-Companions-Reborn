@@ -30,6 +30,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.80 - Stone: one hit per rock (user report; the uploaded log was the 1.4.78 one again)
+- Destructible.Damage instantiates m_spawnWhenDamaged (the cracked `_frac` rock) at the same transform and the original object goes away, so `_target` became null after the first hit -> "Target DESTROYED after 1 hits" -> drop collection found nothing (nothing had dropped) -> next rock. The user saw a damaged rock left behind each time.
+- `HarvestController.TryFollowCrackedRock`: when a MineRock/MineRock5/Destructible target vanishes, look for a rock object (not a Piece/Character) whose root is within 0.5 m of the old target position (`_lastTargetPos`, updated every attacking frame) and carry on with it: reclassify, re-claim, reset swing/attempt counters and the locked move/face targets. Log: "Rock cracked - carrying on with ...". If none: the old destroyed -> drops path.
+
 ### 1.4.79 - fixes from the 1.4.78 test (log 997dc2e2): code done, waiting on the user's build + test
 User: ran away from the player again; Stone hit a rock then ran to another (x2); shot a "boar" (a Neck) that wasn't aggro; missing a rock; farm ran around behind the building (chest through a wall). Job/Follow switching worked. Screenshot issue in ValheimDiscordRelay: death video fine, so very likely the full-res path (no Blit, AsyncGPUReadback straight to RGB24) - not our repo.
 - Follow ran off: just spawned by the moat, spot route partial -> RouteDoor -> wood gate 20 m away. RouteDoor is now off for the Follow tag; MHR_Follow switches to the trail (player's path) when `MHR_Mover.RoutePartial` and > 3 m from the player.
