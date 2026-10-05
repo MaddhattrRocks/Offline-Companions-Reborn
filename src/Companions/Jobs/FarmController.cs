@@ -463,7 +463,7 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetChest.transform.position);
-		if (num < UseDistance)
+		if (num < UseDistance || AtChestSpot(_targetChest, num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetChest.transform.position);
@@ -636,7 +636,7 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _outputChest.transform.position);
-		if (num < UseDistance)
+		if (num < UseDistance || AtChestSpot(_outputChest, num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_outputChest.transform.position);
@@ -1521,6 +1521,22 @@ public class FarmController : MonoBehaviour
 	// 1.4.78: walk to a spot in front of the chest that can be reached (like tool trips), not the chest's centre.
 	// The centre is inside the chest, so no route ever reached it and the movement went looking for a door to go
 	// through instead (1.4.77 log: back and forth through a gate 30 m away).
+	// 1.4.85: standing on the spot picked for this chest counts as in reach (the spot can be up to 2.2 m out, a little
+	// past UseDistance, and moving stops within half a meter of it)
+	private bool AtChestSpot(Container chest, float dist)
+	{
+		if (!_hasApproach || chest != _approachChest || dist > UseDistance + 1f)
+		{
+			return false;
+		}
+		Vector3 position = base.transform.position;
+		if (new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude > 0.7f || Mathf.Abs(position.y - _approachSpot.y) > 1.2f)
+		{
+			return false;
+		}
+		return MHR_Chests.LineClear(position, chest);
+	}
+
 	private Vector3 ChestGoal(Container chest)
 	{
 		if (chest == null)

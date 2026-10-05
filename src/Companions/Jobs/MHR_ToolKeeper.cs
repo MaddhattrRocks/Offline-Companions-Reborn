@@ -959,12 +959,13 @@ namespace Companions
             Vector3 cp = chest.transform.position;
             float best = float.MaxValue; bool found = false;
             List<Vector3> viaDoor = null;
-            float[] radii = { 1.2f, 1.7f };
+            // 1.4.85: out to 2.2 m (inside the 2-2.5 m use distance) and every 22.5 degrees, for chests in narrow spots
+            float[] radii = { 1.2f, 1.7f, 2.2f };
             for (int r = 0; r < radii.Length; r++)
             {
-                for (int k = 0; k < 8; k++)
+                for (int k = 0; k < 16; k++)
                 {
-                    float ang = k * 45f * Mathf.Deg2Rad;
+                    float ang = k * 22.5f * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
                     RaycastHit hit;
                     if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
