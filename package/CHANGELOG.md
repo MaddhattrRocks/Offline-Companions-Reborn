@@ -2,6 +2,67 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.85
+- Companions now find their way with their own map of the world. Closed doors don't block their way (they open each one as they reach it, however many there are), and they hop up stairs and steps the normal map doesn't connect. New setting General > CompanionPathing (on) turns it off if it causes trouble.
+- Companions find a place to stand by chests in narrow spots more often (anywhere within reach, from more directions).
+
+## 1.4.84
+- Fixed the farmer never storing crops in chests up the stairs indoors. Companions now head for the bottom of stairs the game's pathing doesn't use and hop up them.
+- Companions can find their way through several closed doors in a row (up to 3), not just one.
+- Farmers plant in rows from the far edge of the zone back toward where they came in, instead of in a ring around themselves until they're boxed in by their own crops.
+- Companions coming home with no job now put away what they picked up, like after turning a job off. This also happens after loading in at home.
+- Companions hop over low things in the way (logs, low walls) instead of running around them.
+
+## 1.4.83
+- Fixed companions running a long way round (and warping) instead of hopping up steps or a low wall. When the way round is much longer, they now go straight and jump over it like a player.
+- Following companions no longer warp to you while you can still see them, unless they're half as far again as FollowTeleportDistance.
+- Fixed companions switching mid-fight to creatures that weren't after anyone (boars while exploring).
+- Companions now carry their shield with a one-handed weapon all the time, not only once a fight starts.
+
+## 1.4.82
+- Fixed the farmer carrying crops to a chest after every few. It now picks everything ripe first and stores when nothing ripe is left or its pack is nearly full.
+- Fixed the farmer planting a few seeds and then stopping.
+- Fixed following companions taking a long way round (down past the beach) when you went a shorter way. They now follow your path.
+- A standing companion stays put while you're within 2.5 m of it, so it's easy to walk up to.
+- Fixed gatherers walking off ledges (into a moat) while stepping in to reach a tree or rock.
+- A companion stuck in a pit (a dry moat) now climbs out like a player: it picks the lowest, least steep way up nearby, sprints at it and keeps jumping, resting when out of stamina. If that fails, it's moved back up to where it last had a way to its target.
+- Companions now play the interact animation when opening a chest for farming, smelting and putting tools away.
+
+## 1.4.81
+- Fixed companions walking all the way home to empty their bags or put a tool back when you turn a job off out in the field. They now do it once they're back home.
+- Fixed the Wood job equipping a crossbow and standing there. Bows and crossbows are never used as gathering tools.
+- Fixed following companions swimming across a moat when you walked in through the gate. They now follow your path when their own way would mean a swim.
+- When you set off, a companion that was standing still now waits 1.5 seconds before following, so it's easy to walk up to, with Wander on or off.
+- Fixed setting a farm zone (modifier + Z) also recalling your companions and turning their job off.
+
+## 1.4.80
+- Fixed Stone and Ore companions hitting each rock once and moving on to the next. Many rocks turn into a cracked version on the first hit, and companions took that as the rock being gone. They now keep mining the cracked rock until it breaks.
+
+## 1.4.79
+- Fixed following companions running off to a gate on the other side of the base. When they can't get to their spot, they now follow your path instead.
+- Fixed the farmer picking chests it can't reach (up on a ledge, behind a wall) and running around the building trying. It now only uses chests it can get to.
+- Companions no longer go through a door unless it actually leads to where they're going.
+- Fixed gatherers swinging at big rocks without reaching them. They now step in until the rock is in reach.
+- Gatherers wait a moment for drops to land before moving on to the next rock.
+- Companions only start fights with creatures that are going after you or them. Anything that attacks them is still fought.
+
+## 1.4.78
+- Fixed the farmer running back and forth through a gate on the way to a chest. Companions now walk to a spot by chests and crafting stations that they can actually reach.
+- Fixed companions sidestepping and hopping around between crops while farming.
+- Fixed gatherers swinging at a rock over and over without hitting it.
+- Fixed companions picking fights with harmless animals (modded crabs and dolphins) and staying "in combat" with something far away, which stopped their job. They now let go of anything more than 40 m away.
+- Picking a job now turns Follow off, so the companion stays at the work. Turning the job off turns Follow back on, and picking Follow turns the job off.
+- Companions only repair barely-worn gear when they're actually at home (within 25 m), not anywhere within HomeTripRange.
+- Smoother following when you walk close to a companion.
+
+## 1.4.77
+The third part of the new movement system starts: jobs. Farming and the Wood, Stone, Ore and Forage jobs now move the same way as following and trips.
+- Farm and gathering companions find their way around walls, open doors and gates, handle water and get unstuck like they do on trips.
+- Gatherers working their way around something to reach a tree or rock no longer give up on it too early. If they really can't get there, they pick another target.
+- Companions wait a moment before following when you set off, and stay put while you're right next to them, so they're easy to grab.
+- The Wander toggle now also controls following. On (now the default for every companion): moves around you and idles when you stop. Off: keeps one spot near you and stands still.
+- Fixed thousands of log warnings while a companion sat on a chair.
+
 ## 1.4.76
 The second part of the new movement system: following you.
 - Companions follow like a player. Each picks its own spot beside, behind or sometimes ahead of you, and moves it now and then.

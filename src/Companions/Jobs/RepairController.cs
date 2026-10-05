@@ -84,6 +84,27 @@ public class RepairController : MonoBehaviour
 
 	private static float UseDistance => ModConfig.RepairUseDistance.Value;
 
+	private CraftingStation _approachStation;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
+
+	// 1.4.78: walk to a reachable spot by the station, not its centre (see MHR_Chests.PickApproachPiece)
+	private Vector3 StationGoal()
+	{
+		if (_targetStation != _approachStation)
+		{
+			_approachStation = _targetStation;
+			_hasApproach = MHR_Chests.PickApproachPiece(base.transform.position, _targetStation, out _approachSpot);
+		}
+		if (!_hasApproach)
+		{
+			return _targetStation.transform.position;
+		}
+		return _approachSpot;
+	}
+
 	public bool DirectRepairAt(CraftingStation station)
 	{
 		if (station == null)
@@ -387,7 +408,8 @@ public class RepairController : MonoBehaviour
 			Log($"Arrived at \"{_targetStation.m_name}\" — starting repair of {_repairQueue.Count} items");
 			return;
 		}
-		MHR_Mover.Go(_ai, dt, _targetStation.transform.position, UseDistance, num > 8f, "Repair");
+		Vector3 goal = StationGoal();
+		MHR_Mover.Go(_ai, dt, goal, _hasApproach ? 0.5f : UseDistance, num > 8f, "Repair");
 		_stuckTimer = MHR_Mover.StuckSeconds(_ai);
 		if (_stuckTimer > 10f)
 		{

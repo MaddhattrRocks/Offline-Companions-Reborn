@@ -145,6 +145,14 @@ public class HarvestController : MonoBehaviour
 
 	private float _dropScanDelayTimer;
 
+	private int _scanSeen;
+
+	private int _scanUnwanted;
+
+	private int _scanNoAuto;
+
+	private int _scanFull;
+
 	private int _dropsPickedUp;
 
 	private int _itemLayerMask;
@@ -192,6 +200,102 @@ public class HarvestController : MonoBehaviour
 			return IsRockLikeTarget();
 		}
 		return false;
+	}
+
+	private Vector3 _lastTargetPos;
+
+	// 1.4.79: many rocks are swapped for a cracked copy on the first hit (Destructible.m_spawnWhenDamaged): the object
+	// we were hitting is gone, but the rock is still there. That read as "destroyed" - no drops, off to the next rock,
+	// one hit each (1.4.78 test). If a rock now stands exactly where ours was, keep mining that one.
+	private bool TryFollowCrackedRock()
+	{
+		string type = _targetType;
+		if (type != "MineRock" && type != "MineRock5" && type != "Destructible")
+		{
+			return false;
+		}
+		Collider[] cols = Physics.OverlapSphere(_lastTargetPos, 2.5f, -1, QueryTriggerInteraction.Ignore);
+		GameObject found = null;
+		for (int i = 0; i < cols.Length; i++)
+		{
+			Collider c = cols[i];
+			if (c == null || c.GetComponentInParent<Piece>() != null || c.GetComponentInParent<Character>() != null)
+			{
+				continue;
+			}
+			Component rock = (Component)c.GetComponentInParent<MineRock5>() ?? (Component)c.GetComponentInParent<MineRock>() ?? c.GetComponentInParent<Destructible>();
+			if (rock == null || Vector3.Distance(rock.transform.position, _lastTargetPos) > 0.5f)
+			{
+				continue;
+			}
+			ZNetView nv = rock.GetComponent<ZNetView>();
+			if (nv == null || !nv.IsValid())
+			{
+				continue;
+			}
+			found = rock.gameObject;
+			break;
+		}
+		if (found == null)
+		{
+			return false;
+		}
+		UnclaimTarget();
+		_target = found;
+		_targetType = ClassifyTargetType(found, GetMode());
+		ClaimTarget();
+		_moveTargetLocked = false;
+		_attackFaceLocked = false;
+		_rock5CurrentSegment = null;
+		_swingCount = 0;
+		_totalAttempts = 0;
+		_consecutiveFailures = 0;
+		if (_targetType == "MineRock5")
+		{
+			_rock5ActiveSections = CountActiveRock5Sections();
+		}
+		Log("Rock cracked - carrying on with \"" + found.name + "\" (" + _targetType + ")");
+		return true;
+	}
+
+	private float _closeInTimer;
+
+	private bool _closingIn;
+
+	// 1.4.79: where the rock's surface actually is, straight ahead from chest height toward its centre
+	private bool RockSurface(out Vector3 surface, out float dist)
+	{
+		surface = Vector3.zero;
+		dist = 0f;
+		if (_target == null)
+		{
+			return false;
+		}
+		Vector3 from = base.transform.position + Vector3.up * 1.0f;
+		Vector3 to = GetEffectiveTargetPosition();
+		Vector3 d = to - from;
+		float len = d.magnitude;
+		if (len < 0.05f)
+		{
+			return false;
+		}
+		RaycastHit[] hits = Physics.RaycastAll(from, d / len, len + 0.5f, -1, QueryTriggerInteraction.Ignore);
+		float best = float.MaxValue;
+		for (int i = 0; i < hits.Length; i++)
+		{
+			Collider c = hits[i].collider;
+			if (c != null && c.transform.IsChildOf(_target.transform) && hits[i].distance < best)
+			{
+				best = hits[i].distance;
+				surface = hits[i].point;
+			}
+		}
+		if (best == float.MaxValue)
+		{
+			return false;
+		}
+		dist = best;
+		return true;
 	}
 
 	internal void TryApplyRockAoe()
@@ -689,6 +793,8 @@ public class HarvestController : MonoBehaviour
 			_reapproach = false;
 			_attackTimer = 0.3f;
 			_attackDiagTimer = 0f;
+			_closeInTimer = 0f;
+			_closingIn = false;
 			_state = HarvestState.Attacking;
 			if (IsRockLikeTarget())
 			{
@@ -708,12 +814,19 @@ public class HarvestController : MonoBehaviour
 			Vector3 vector2 = _target.transform.position - base.transform.position;
 			vector2.y = 0f;
 			float num3 = ((vector2.sqrMagnitude > 0.01f) ? Vector3.Dot(lhs, vector2.normalized) : 0f);
-			float num4 = ((num3 > 1f) ? 0.3f : 1f);
+			// 1.4.77: following a route around something (MHR_Mover still getting closer) counts like walking at the target
+			float num4 = ((num3 > 1f || MHR_Mover.Progressing(_ai)) ? 0.3f : 1f);
 			if (MHR_DoorBusy())
 			{
 				goto IL_04a6;
 			}
 			_moveTimer += deltaTime * num4;
+		}
+		// 1.4.77: the movement worked through its whole stuck ladder - give this target up now (after a moment, so a
+		// give-up left over from the previous target doesn't count)
+		if (_moveTimer > 0.5f && MHR_Mover.GaveUp(_ai))
+		{
+			_moveTimer = 10.01f;
 		}
 		if (_moveTimer > 10f)
 		{
@@ -776,22 +889,18 @@ public class HarvestController : MonoBehaviour
 			flag7 = num7 > 8f;
 		}
 		_shouldRun = flag7;
-		bool flag8 = MHR_Nav.MoveWalk(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7);
-		if (_ai.IsNavMeshRetrying)
+		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint.
+		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7, "Gather");
+		if (!flag8 && num7 < 4f && (_character?.GetVelocity().magnitude ?? 0f) < 1f)
 		{
-			_ai.StopMoving();
-		}
-		else if (!flag8 && num7 < 4f && !_ai.IsNavMeshFailing)
-		{
-			float num9 = _character?.GetVelocity().magnitude ?? 0f;
-			if (num9 < 1f)
+			// 1.4.78: put back from before 1.4.77. Close in but not moving (the approach point is right up against a big
+			// rock): step straight at it, so the swings connect. Without this he swung 20 times from 1.9 m and missed.
+			Vector3 vector4 = lockedMoveTarget - base.transform.position;
+			vector4.y = 0f;
+			// 1.4.82: not over an edge (1.4.81 log: he pushed at a stump on the moat's lip and fell in)
+			if (vector4.sqrMagnitude > 0.01f && !MHR_Mover.DropAhead(base.transform.position, vector4, 0.8f, 1.2f) && !MHR_Mover.Climbing(_ai))
 			{
-				Vector3 vector4 = lockedMoveTarget - base.transform.position;
-				vector4.y = 0f;
-				if (vector4.sqrMagnitude > 0.01f)
-				{
-					_ai.MoveTowards(vector4.normalized, run: false);
-				}
+				_ai.MoveTowards(vector4.normalized, run: false);
 			}
 		}
 		else if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
@@ -844,6 +953,8 @@ public class HarvestController : MonoBehaviour
 			_reapproach = false;
 			_attackTimer = 0.3f;
 			_attackDiagTimer = 0f;
+			_closeInTimer = 0f;
+			_closingIn = false;
 			_state = HarvestState.Attacking;
 			if (flag6)
 			{
@@ -890,6 +1001,14 @@ public class HarvestController : MonoBehaviour
 			{
 				_ai.StopMoving();
 			}
+			return;
+		}
+		if (_target != null)
+		{
+			_lastTargetPos = _target.transform.position;
+		}
+		if (!IsTargetValid(_target) && TryFollowCrackedRock())
+		{
 			return;
 		}
 		if (!IsTargetValid(_target))
@@ -953,6 +1072,35 @@ public class HarvestController : MonoBehaviour
 			_moveTargetLocked = false;
 			_state = HarvestState.Moving;
 			return;
+		}
+		// 1.4.79: the distance above is to the spot beside the rock, not the rock itself. On a big rock the surface can be
+		// further than the pickaxe reaches, so every swing missed (1.4.78 log: 10 swings at 1.5 m, no damage). Check the
+		// actual surface and step in until it's in reach (up to 2.5 s, then swing anyway).
+		if (flag && _character != null && !_character.InAttack())
+		{
+			Vector3 surface;
+			float surfaceDist;
+			if (RockSurface(out surface, out surfaceDist) && surfaceDist > attackRange * 0.85f && _closeInTimer < 2.5f)
+			{
+				_closeInTimer += Time.deltaTime;
+				Vector3 step = surface - base.transform.position;
+				step.y = 0f;
+				if (step.sqrMagnitude > 0.01f)
+				{
+					_ai.MoveTowards(step.normalized, run: false);
+				}
+				if (!_closingIn)
+				{
+					_closingIn = true;
+					Log($"Rock surface is {surfaceDist:F1}m away (reach {attackRange * 0.85f:F1}m) — stepping in");
+				}
+				return;
+			}
+			if (_closingIn)
+			{
+				_closingIn = false;
+				_ai.StopMoving();
+			}
 		}
 		_attackTimer -= Time.deltaTime;
 		if (_attackTimer > 0f)
@@ -1154,7 +1302,7 @@ public class HarvestController : MonoBehaviour
 				float num = Vector3.Distance(base.transform.position, _currentDrop.transform.position);
 				if (!(num <= 2.2f))
 				{
-					MHR_Nav.MoveWalk(_ai, deltaTime, _currentDrop.transform.position, 1.5f, run: true);
+					MHR_Mover.Go(_ai, deltaTime, _currentDrop.transform.position, 1.5f, true, "Gather");
 					_moveLogTimer -= deltaTime;
 					if (_moveLogTimer <= 0f)
 					{
@@ -1171,7 +1319,12 @@ public class HarvestController : MonoBehaviour
 		GameObject gameObject = ScanForDrops();
 		if (gameObject == null)
 		{
-			Log($"No more drops nearby — picked up {_dropsPickedUp} items, resuming harvest");
+			// 1.4.79: give drops a moment to land before moving on (1.4.78 log: "picked up 0 items" right after a rock broke)
+			if (_dropsPickedUp == 0 && _dropTimer < 1.5f)
+			{
+				return;
+			}
+			Log($"No more drops nearby — picked up {_dropsPickedUp} items, resuming harvest " + $"(last scan: {_scanSeen} items in {DropScanRadius:F0}m, skipped {_scanUnwanted} not wanted, {_scanNoAuto} not auto-pickup, {_scanFull} no room{(IsOverweight() ? ", overweight" : "")})");
 			FinishDropCollection();
 			return;
 		}
@@ -1434,7 +1587,7 @@ public class HarvestController : MonoBehaviour
 		int num = -1;
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
-			if (allItem?.m_shared != null && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)))
+			if (allItem?.m_shared != null && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)) && allItem.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow && string.IsNullOrEmpty(allItem.m_shared.m_ammoType))
 			{
 				HitData.DamageTypes damage = allItem.GetDamage();
 				bool flag = false;
@@ -1509,6 +1662,12 @@ public class HarvestController : MonoBehaviour
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
 			if (allItem?.m_shared == null || (allItem.m_shared.m_useDurability && allItem.m_durability <= 0f))
+			{
+				continue;
+			}
+			// 1.4.81: bows and crossbows can't chop or mine, whatever chop damage the item lists (1.4.80 log: the Arbalest
+			// "chop=140" beat the axe, he equipped it for Wood and just stood there)
+			if (allItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(allItem.m_shared.m_ammoType) || allItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo)
 			{
 				continue;
 			}
@@ -2035,6 +2194,10 @@ public class HarvestController : MonoBehaviour
 		GameObject result = null;
 		float num2 = float.MaxValue;
 		int num3 = 0;
+		_scanSeen = 0;
+		_scanUnwanted = 0;
+		_scanNoAuto = 0;
+		_scanFull = 0;
 		for (int i = 0; i < num; i++)
 		{
 			Collider collider = _dropBuffer[i];
@@ -2043,12 +2206,27 @@ public class HarvestController : MonoBehaviour
 				continue;
 			}
 			ItemDrop component = collider.attachedRigidbody.GetComponent<ItemDrop>();
-			if (component == null || !component.m_autoPickup)
+			if (component == null)
 			{
 				continue;
 			}
+			_scanSeen++;
+			if (!component.m_autoPickup)
+			{
+				_scanNoAuto++;
+				continue;
+			}
 			ZNetView component2 = component.GetComponent<ZNetView>();
-			if (component2 == null || !component2.IsValid() || !MHR_GatherRules.WantDrop(this, component) || IsOverweight())
+			if (component2 == null || !component2.IsValid())
+			{
+				continue;
+			}
+			if (!MHR_GatherRules.WantDrop(this, component))
+			{
+				_scanUnwanted++;
+				continue;
+			}
+			if (IsOverweight())
 			{
 				continue;
 			}
@@ -2060,6 +2238,7 @@ public class HarvestController : MonoBehaviour
 				{
 					string text = component.m_itemData?.m_shared?.m_name ?? "?";
 					Log("Drop scan: skipping \"" + text + "\" — inventory full/can't add");
+					_scanFull++;
 					continue;
 				}
 			}

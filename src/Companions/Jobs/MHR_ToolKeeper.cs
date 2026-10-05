@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak;
+            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }
@@ -42,7 +42,7 @@ namespace Companions
         // working (same rules as after a job change). Only does anything near home and with something to put away.
         public static void RequestUnload(CompanionSetup cs)
         {
-            if (cs == null || !cs.HasHomePosition() || !NearHome(cs)) return;   // only at home, not at an outpost
+            if (cs == null || !cs.HasHomePosition() || !AtHome(cs)) return;   // only at home, not at an outpost
             State st;
             if (!s_state.TryGetValue(cs.GetInstanceID(), out st) || st.UnloadPending || st.Phase != 0) return;
             Humanoid hum = cs.GetComponent<Humanoid>();
@@ -118,6 +118,16 @@ namespace Companions
                 LogDebug("Job changed (" + st.LastMode + " -> " + mode + (stayHome && !st.LastStayHome ? ", Homestead" : "") + ") - will empty bags at home");
             }
             st.LastMode = mode; st.LastStayHome = stayHome;
+            // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
+            // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
+            // with tin ore, bone fragments, meat... and he kept it all until a job was picked)
+            bool atHome = cs.HasHomePosition() && AtHome(cs);
+            if (atHome && !st.WasAtHome && mode == 0 && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
+            {
+                st.UnloadPending = true; st.UnloadTrips = 0;
+                LogDebug("Back home - will empty bags");
+            }
+            st.WasAtHome = atHome;
 
             if (st.Phase != 0) { UpdateTrip(cs, st, ai, hum, inv, zdo, mode, now, dt); return; }
             if (now < st.NextDecide) return;
@@ -142,7 +152,8 @@ namespace Companions
             }
             if (!nearHome) goto FETCH;
 
-            // 1) put back anything borrowed that the current job doesn't use
+            // 1) put back anything borrowed that the current job doesn't use (1.4.81: only at home, it can wait till then)
+            if (!AtHome(cs)) goto FETCH;
             for (int b = 0; b < st.Borrowed.Count; b++)
             {
                 Entry e = st.Borrowed[b];
@@ -296,6 +307,8 @@ namespace Companions
             if (!canReach && distNow > UseDist + 1f) { st.NeedMove = true; return; }
             st.NeedMove = false;
             ai.StopMoving();
+            ai.LookAtPoint(cp);
+            cs.GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
             Inventory cinv = st.Chest.GetInventory();
             if (cinv == null) { EndTrip(cs, st, ai, mode); return; }
             if (st.Phase == 3)
@@ -361,6 +374,13 @@ namespace Companions
 
         // ---- 1.4.71: home range, repairs ----
         public static float HomeRange() { return ModConfig.HomeTripRange != null ? ModConfig.HomeTripRange.Value : 60f; }
+        // 1.4.81: "at home" for putting things away (bags, borrowed tools) and repairing barely-worn gear: inside the base,
+        // not anywhere within HomeTripRange
+        public static float AtHomeRange() { return Mathf.Min(25f, HomeRange()); }
+        public static bool AtHome(CompanionSetup cs)
+        {
+            return cs == null || !cs.HasHomePosition() || Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= AtHomeRange();
+        }
         public static bool NearHome(CompanionSetup cs)
         {
             return cs == null || !cs.HasHomePosition() || Vector3.Distance(cs.transform.position, cs.GetHomePosition()) <= HomeRange();
@@ -498,7 +518,9 @@ namespace Companions
             Vector3 me = cs.transform.position;
             bool hasHome = cs.HasHomePosition();
             Vector3 home = hasHome ? cs.GetHomePosition() : me;
-            if (hasHome && Vector3.Distance(me, home) > HomeRange()) { st.UnloadActive = false; return false; }   // later, when back home
+            // 1.4.81: only when actually at home (25 m), not anywhere within HomeTripRange - he walked 54 m back to put
+            // away a stack of stone when the job was switched off out in the field (1.4.80 test)
+            if (hasHome && Vector3.Distance(me, home) > AtHomeRange()) { st.UnloadActive = false; return false; }   // later, when back home
             List<ItemDrop.ItemData> items = UnloadList(cs, st, inv, mode);
             if (items.Count == 0 || st.UnloadTrips >= 10)
             {
@@ -803,11 +825,39 @@ namespace Companions
             return mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay;
         }
 
+        // 1.4.78: a job and Follow can't both be on either (user, 1.4.77 test): with Follow on, a companion whose job had
+        // nothing to do trailed after the player instead of staying at the work. Picking a job turns Follow off; turning
+        // the job off turns Follow back on if the job was what turned it off. Picking Follow turns the job off (radial).
+        static readonly int FollowPausedHash = "HC_FollowPausedByJob".GetStableHashCode();
+
         public static void OnJobSet(CompanionSetup cs, int mode)
         {
-            if (cs == null || mode == 0 || !cs.GetStayHome()) return;
-            cs.SetStayHome(false);
-            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
+            if (cs == null) return;
+            ZNetView nv = cs.GetComponent<ZNetView>();
+            ZDO zdo = nv != null ? nv.GetZDO() : null;
+            if (mode != 0)
+            {
+                if (cs.GetFollow())
+                {
+                    cs.SetFollow(false);
+                    if (zdo != null) zdo.Set(FollowPausedHash, true);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Follow turned off");
+                }
+                if (cs.GetStayHome())
+                {
+                    cs.SetStayHome(false);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
+                }
+            }
+            else if (zdo != null && zdo.GetBool(FollowPausedHash))
+            {
+                zdo.Set(FollowPausedHash, false);
+                if (!cs.GetStayHome())
+                {
+                    cs.SetFollow(true);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
+                }
+            }
         }
     }
 
@@ -908,12 +958,14 @@ namespace Companions
             if (chest == null) return false;
             Vector3 cp = chest.transform.position;
             float best = float.MaxValue; bool found = false;
-            float[] radii = { 1.2f, 1.7f };
+            List<Vector3> viaDoor = null;
+            // 1.4.85: out to 2.2 m (inside the 2-2.5 m use distance) and every 22.5 degrees, for chests in narrow spots
+            float[] radii = { 1.2f, 1.7f, 2.2f };
             for (int r = 0; r < radii.Length; r++)
             {
-                for (int k = 0; k < 8; k++)
+                for (int k = 0; k < 16; k++)
                 {
-                    float ang = k * 45f * Mathf.Deg2Rad;
+                    float ang = k * 22.5f * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
                     RaycastHit hit;
                     if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
@@ -923,9 +975,59 @@ namespace Companions
                     if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
                     if (!LineClear(stand, chest)) continue;
                     s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, Pathfinding.AgentType.Humanoid, false, true, true)) continue;
-                    if (s_path.Count == 0) continue;
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
+                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
                     // 1.4.67: the route has to actually end at the spot, not just somewhere near it
+                    Vector3 end = s_path[s_path.Count - 1];
+                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
+                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
+                    float score = 0f;
+                    Vector3 prev = me;
+                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                    if (score < best) { best = score; spot = stand; found = true; }
+                }
+                if (found) break;
+            }
+            // 1.4.84: no route straight there, but maybe with a hop or through closed doors (routes don't use some stairs,
+            // and closed doors block them) - 1.4.83 test: the chests in the house up the stairs above the farm were all
+            // "can't get within reach" from the farm, so crops never got stored
+            if (!found && viaDoor != null)
+            {
+                for (int i = 0; i < viaDoor.Count && i < 4; i++)
+                {
+                    if (MHR_Mover.ReachableViaDoor(me, viaDoor[i])) { spot = viaDoor[i]; found = true; break; }
+                }
+            }
+            return found;
+        }
+
+        // 1.4.78: the same for any building piece (workbench, forge...): a spot in reach of it that a route actually ends
+        // at, instead of its centre (which is inside it, so routes never reach it - 1.4.77 log: swam across instead of
+        // taking the door).
+        public static bool PickApproachPiece(Vector3 me, Component target, out Vector3 spot)
+        {
+            spot = Vector3.zero;
+            if (target == null) return false;
+            Piece piece = target.GetComponentInParent<Piece>();
+            Vector3 cp = target.transform.position;
+            float best = float.MaxValue; bool found = false;
+            float[] radii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
+            for (int r = 0; r < radii.Length; r++)
+            {
+                for (int k = 0; k < 8; k++)
+                {
+                    float ang = k * 45f * Mathf.Deg2Rad;
+                    Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
+                    RaycastHit hit;
+                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
+                    if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
+                    Vector3 stand = hit.point;
+                    if (Mathf.Abs(stand.y - cp.y) > 1.5f) continue;
+                    if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
+                    if (!ClearTo(stand, cp, piece)) continue;
+                    s_path.Clear();
+                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
+                    if (s_path.Count == 0) continue;
                     Vector3 end = s_path[s_path.Count - 1];
                     if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
                     float score = 0f;
@@ -936,6 +1038,34 @@ namespace Companions
                 if (found) break;
             }
             return found;
+        }
+        static bool IsPart(Collider col, Piece piece) { return col != null && piece != null && col.GetComponentInParent<Piece>() == piece; }
+        static bool BlockedNear(Vector3 p, Piece piece)
+        {
+            int n = Physics.OverlapSphereNonAlloc(p, 0.35f, s_small, Mask());
+            for (int i = 0; i < n; i++)
+            {
+                Collider col = s_small[i];
+                if (col == null || IsPart(col, piece) || col.GetComponentInParent<Character>() != null) continue;
+                return true;
+            }
+            return false;
+        }
+        static bool ClearTo(Vector3 from, Vector3 to, Piece piece)
+        {
+            Vector3 a = from + Vector3.up * 1.0f, b = to + Vector3.up * 0.5f;
+            Vector3 d = b - a; float len = d.magnitude;
+            if (len < 0.05f) return true;
+            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider col = hits[i].collider;
+                if (col == null || IsPart(col, piece) || col.GetComponentInParent<Character>() != null) continue;
+                Vector3 size = col.bounds.size;
+                if (Mathf.Max(size.x, Mathf.Max(size.y, size.z)) < 1.2f) continue;
+                return false;
+            }
+            return true;
         }
 
         static bool Blocked(Vector3 p, Container chest)
@@ -955,12 +1085,6 @@ namespace Companions
     // ---- 1.4.66: movement with a progress log and a forward jump when stuck ----
     public static class MHR_Nav
     {
-        class S { public Vector3 Goal; public float Best; public float ProgressTime; public float NextLog; public float NextJump; public int Jumps; public bool Init; public Vector3 Anchor; public float AnchorTime; }
-        static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
-        static readonly List<Vector3> s_path = new List<Vector3>();
-        static readonly float[] s_jumpAngles = { 0f, 35f, -35f, 0f };
-        static float s_nextErr;
-
         public static bool MoveFarm(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Farm"); }
         public static bool MovePlant(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Plant"); }
 
@@ -978,7 +1102,9 @@ namespace Companions
             float cfg = ModConfig.RepairDurabilityThreshold != null ? ModConfig.RepairDurabilityThreshold.Value : 0.5f;
             if (cfg > 1f) cfg /= 100f;
             CompanionSetup cs = c != null ? c.GetComponent<CompanionSetup>() : null;
-            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.NearHome(cs)) return 0.999f;
+            // 1.4.78: only actually at home (within 25 m of the home spot, or HomeTripRange if smaller). With the whole
+            // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
+            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return 0.999f;
             return cfg;
         }
 
@@ -1023,76 +1149,17 @@ namespace Companions
 
         public static bool Move(CompanionAI ai, float dt, Vector3 point, float dist, bool run, string tag)
         {
-            // 1.4.68: MoveToPoint counts "arrived" by flat distance, but the jobs check real distance. When the target is on a
-            // different level (deck above the field, chest up on the porch) he stopped short and stood there forever.
-            // If the flat distance is already close but the height isn't, keep walking until he's really there.
-            // (1.4.70: only for planting - chests and crops are reached from wherever they're in range, like a player)
+            // 1.4.68: planting needs him on the field itself, not standing above or below it (deck over the field).
+            // (1.4.70: chests and crops are reached from wherever they're in range, like a player - the callers check that.)
             Vector3 d = point - ai.transform.position;
             float flat = new Vector2(d.x, d.z).magnitude;
             float useDist = dist;
             if (tag == "Plant" && Mathf.Abs(d.y) > 1.0f && flat <= dist) useDist = Mathf.Min(dist, 0.5f);
-            bool arrived = ai.MoveToPoint(dt, point, useDist, run && FarEnoughToRun(ai, point));
-            try { Track(ai, point, useDist, arrived, tag); } catch (Exception e) { if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Path] " + e.Message); } }
-            return arrived;
+            // 1.4.77 (movement phase 3): through MHR_Mover - routes, doors, water, the shared stuck ladder.
+            // It walks the last few steps, jogs in between and runs past WorkRunDistance when 'run' is allowed.
+            return MHR_Mover.Go(ai, dt, point, useDist, run, tag);
         }
 
-        static void Track(CompanionAI ai, Vector3 goal, float stopDist, bool arrived, string tag)
-        {
-            float now = Time.time;
-            int id = ai.GetInstanceID();
-            S s;
-            if (!s_s.TryGetValue(id, out s)) { s = new S(); s_s[id] = s; }
-            Vector3 pos = ai.transform.position;
-            float dist = Vector3.Distance(pos, goal);
-            if (!s.Init || Vector3.Distance(goal, s.Goal) > 1.5f || now - s.ProgressTime > 30f)
-            {
-                s.Init = true; s.Goal = goal; s.Best = dist; s.ProgressTime = now; s.Jumps = 0; s.NextLog = now + 2f;
-                s.Anchor = pos; s.AnchorTime = now;
-            }
-            if (arrived) { s.Best = dist; s.ProgressTime = now; s.Jumps = 0; s.Anchor = pos; s.AnchorTime = now; return; }
-            if (dist < s.Best - 0.5f) { s.Best = dist; s.ProgressTime = now; s.Jumps = 0; }
-            if (Vector3.Distance(pos, s.Anchor) > 1.0f) { s.Anchor = pos; s.AnchorTime = now; }
-            // 1.4.67: stuck = hasn't moved a meter in 3s, or hasn't got any closer in 8s (pacing back and forth)
-            float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
-            float stuck = Mathf.Max(still >= 3f ? still : 0f, noCloser >= 8f ? noCloser : 0f);
-
-            if (now >= s.NextLog && CompanionsPlugin.Log != null)
-            {
-                s.NextLog = now + 2f;
-                bool havePath = GetPath(pos, goal);
-                string next = s_path.Count > 1 ? Fmt(s_path[1]) : "-";
-                CompanionsPlugin.Log.LogDebug("[Path|" + tag + "] at " + Fmt(pos) + " -> " + Fmt(goal) + " " + dist.ToString("F1") + "m left, path=" +
-                    (havePath ? "yes (" + s_path.Count + " corners, next " + next + ")" : "NO") + (noCloser > 2.5f ? ", no closer for " + noCloser.ToString("F0") + "s" : "") + (still > 2.5f ? ", standing still " + still.ToString("F0") + "s" : ""));
-            }
-
-            if (stuck <= 0f || now < s.NextJump || s.Jumps >= s_jumpAngles.Length) return;
-            Character c = ai.GetComponent<Character>();
-            if (c == null || !c.IsOnGround() || c.IsSwimming() || c.InAttack()) return;
-            Vector3 target = goal;
-            if (GetPath(pos, goal))
-                for (int i = 1; i < s_path.Count; i++)
-                    if (Vector3.Distance(new Vector3(s_path[i].x, pos.y, s_path[i].z), pos) > 1.0f) { target = s_path[i]; break; }
-            Vector3 dir = target - pos; dir.y = 0f;
-            if (dir.sqrMagnitude < 0.01f) return;
-            dir = Quaternion.Euler(0f, s_jumpAngles[s.Jumps], 0f) * dir.normalized;
-            ai.transform.rotation = Quaternion.LookRotation(dir);
-            c.Jump(false);
-            Rigidbody rb = ai.GetComponent<Rigidbody>();
-            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * 3.5f; v.z = dir.z * 3.5f; rb.velocity = v; }
-            s.Jumps++;
-            s.NextJump = now + 1.5f;
-            s.AnchorTime = now - 1.5f; s.Anchor = pos;
-            if (noCloser >= 8f) s.ProgressTime = now - 6.5f;
-            if (CompanionsPlugin.Log != null)
-                CompanionsPlugin.Log.LogDebug("[Path|" + tag + "] stuck at " + Fmt(pos) + " - jumping toward " + Fmt(target) + " (try " + s.Jumps + ")");
-        }
-
-        static bool GetPath(Vector3 from, Vector3 to)
-        {
-            s_path.Clear();
-            return Pathfinding.instance != null && Pathfinding.instance.GetPath(from, to, s_path, Pathfinding.AgentType.Humanoid, true, true, false);
-        }
-        static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
     }
 
     // ---- 1.4.70: sprint in bursts. Run until stamina is down to half (30% in a fight), then walk until it's back to 90% ----

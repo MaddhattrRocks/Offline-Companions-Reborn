@@ -30,7 +30,7 @@ namespace Companions
         class T
         {
             public readonly List<Vector3> Trail = new List<Vector3>();
-            public Vector3 Travel, LastPos; public float Speed, StillSince, NextIndoorCheck; public bool Indoors; public int Frame = -1;
+            public Vector3 Travel, LastPos; public float Speed, StillSince, MovingSince, NextIndoorCheck; public bool Indoors; public int Frame = -1;
         }
 
         static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
@@ -88,6 +88,7 @@ namespace Companions
             t.Speed = Mathf.Lerp(t.Speed, v.magnitude, Mathf.Clamp01(frameDt * 8f));
             if (t.Speed > 0.6f)
             {
+                if (now - t.StillSince > 1f) t.MovingSince = now;   // just set off after standing still
                 t.StillSince = now;
                 Vector3 d = Vector3.Slerp(t.Travel, v.sqrMagnitude > 0.0001f ? v.normalized : t.Travel, Mathf.Clamp01(frameDt * 2.5f)); d.y = 0f;
                 if (d.sqrMagnitude > 0.0001f) t.Travel = d.normalized;
@@ -128,6 +129,10 @@ namespace Companions
             Character c = ai.GetComponent<Character>();
             Vector3 me = ai.transform.position, pp = target.transform.position;
             float maxD = MaxDist(t);
+            // 1.4.77: the Wander toggle. On = moves its spot around and idles when the player stops.
+            // Off = keeps one spot (still spread out from the others) and stands still.
+            CompanionSetup setup = ai.GetComponent<CompanionSetup>();
+            bool wander = setup == null || setup.GetWander();
             float distP = Mathf.Abs(me.y - pp.y) > 3f ? Vector3.Distance(me, pp) : Flat(me, pp);
             int tid = target.GetInstanceID();
             if (now - s.LastUpdate > 0.5f || s.TargetId != tid)
@@ -152,7 +157,7 @@ namespace Companions
             {
                 s.Regrouped = false; s.UnloadAsked = false; s.HasIdle = false; s.IdleMoving = false;
                 if (s.GoingToChair) ReleaseChair(s);
-                if (!s.HasSpot || now >= s.NextPick) PickSpot(ai, s, t, pp, maxD, false, 0f);
+                if (!s.HasSpot || (now >= s.NextPick && (wander || s.Trail))) PickSpot(ai, s, t, pp, maxD, false, 0f);
                 else if (now >= s.NextCheck)
                 {
                     s.NextCheck = now + 1f;
@@ -166,12 +171,32 @@ namespace Companions
                 }
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 float dSpot = Flat(me, goal);
-                if (!s.Moving && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
+                // 1.4.77/1.4.82: if it was standing still, stay put for 1.5 s after the player sets off, so the player can
+                // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
+                // 1.4.82: and while the player stands within 2.5 m of it (doesn't start it moving, never stops it)
+                bool hold = now - t.MovingSince < 1.5f || (distP < 2.5f && !c.IsSwimming());
+                if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
                 if (s.Moving)
                 {
-                    // aim a little ahead of the spot so it keeps walking into it instead of stopping and starting
-                    Vector3 lead = s.Trail ? goal : goal + t.Travel * (Mathf.Min(t.Speed, 8f) * 0.5f);
-                    MHR_Mover.Go(ai, dt, lead, 0.8f, true, MHR_Mover.FollowTag, Pace(player, dSpot, distP, maxD));
+                    // aim well ahead of the spot so it keeps walking with the player instead of arriving, stopping and
+                    // starting again (1.4.78: the 1.4.77 lead was short enough to "arrive" mid-walk - stutter)
+                    Vector3 lead = s.Trail ? goal : goal + t.Travel * Mathf.Max(1.5f, Mathf.Min(t.Speed, 8f));
+                    int pace = Pace(player, dSpot, distP, maxD);
+                    // ahead of its spot: ease off a step instead of stopping
+                    if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+                    MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
+                    // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
+                    if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
+                    // 1.4.81: the route to its spot means a swim but the player walked (1.4.80 log: round through the moat
+                    // while the player went in by the gate) - walk the player's path instead
+                    if (!s.Trail && !player.IsSwimming() && !c.IsSwimming() && MHR_Mover.RouteSwim(ai) > 1f) { s.Trail = true; s.NextPick = now + 6f; s.NextCheck = now + 6f; }
+                    // 1.4.82: the route is a long way round (1.4.81 log: 67 m down past the beach for 21 m straight,
+                    // while the player took the path through the moat) - walk the player's path instead
+                    if (!s.Trail && distP > 3f)
+                    {
+                        float len = MHR_Mover.RouteLength(ai);
+                        if (len > Flat(me, lead) * 1.8f + 8f) { s.Trail = true; s.NextPick = now + 6f; s.NextCheck = now + 6f; }
+                    }
                     if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
                 }
                 else ai.StopMoving();
@@ -213,7 +238,12 @@ namespace Companions
                 if (Settle(ai, s, c, pp, maxD, dt, now)) return;
             }
 
-            // idle: shuffle around a little, now and then turn to look at the player
+            // idle: shuffle around a little, now and then turn to look at the player (Wander on only)
+            if (!wander && !s.IdleMoving)
+            {
+                ai.StopMoving();
+                return;
+            }
             if (s.IdleMoving)
             {
                 if (MHR_Mover.Go(ai, dt, s.IdleGoal, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))

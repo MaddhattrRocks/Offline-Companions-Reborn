@@ -1651,7 +1651,9 @@ public class CompanionAI : BaseAI
 			{
 				TeleportToFollowTarget();
 			}
-			else if (num > FollowTeleportDist)
+			// 1.4.83: not while you can still see each other, unless it's half as far again (1.4.82 log: warped while the
+			// player watched it run the long way round)
+			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || !MHR_Mover.CanSee(base.transform.position, position)))
 			{
 				TeleportToFollowTarget();
 			}
@@ -1961,6 +1963,14 @@ public class CompanionAI : BaseAI
 				{
 					Character character = FindEnemy();
 					if (character != null && IsPassiveAnimal(character))
+					{
+						character = null;
+					}
+					// 1.4.79: on its own, only pick a fight with something that's after us (the player, this companion or
+					// another companion), like a player would. Something that attacks the companion is still fought
+					// (OnDamaged engages the attacker), and Hunt goes after game on purpose. 1.4.78 log: he shot at a
+					// Neck and a crab that were minding their own business.
+					if (character != null && !MHR_Threat.IsAfterUs(character))
 					{
 						character = null;
 					}
@@ -2589,6 +2599,27 @@ public class CompanionAI : BaseAI
 		if (m_nview?.GetZDO() != null)
 		{
 			m_nview.GetZDO().SetPosition(position2);
+		}
+	}
+
+	// 1.4.82: MHR_Mover's trapped rescue - put him back on a spot he walked from
+	internal void MHR_PlaceAt(Vector3 position)
+	{
+		base.transform.position = position;
+		if (_body != null)
+		{
+			_body.position = position;
+			_body.linearVelocity = Vector3.zero;
+		}
+		_ctxSmoothedDir = Vector3.zero;
+		_pathStuckTimer = 0f;
+		_navClaimedDoneCount = 0;
+		_inContextSteerFallback = false;
+		_ctxFallbackStartPos = Vector3.zero;
+		StopMoving();
+		if (m_nview?.GetZDO() != null)
+		{
+			m_nview.GetZDO().SetPosition(position);
 		}
 	}
 

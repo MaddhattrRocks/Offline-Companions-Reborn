@@ -338,18 +338,20 @@ public class FarmController : MonoBehaviour
 	{
 		BuildSeedMapping();
 		Log("Scanning — mode=" + (_preferHarvest ? "HARVEST" : "PLANT") + " " + $"rotTimer={_rotationTimer:F0}s cropNames={s_cropOutputNames?.Count ?? 0} " + $"seedMap={s_seedToPlant?.Count ?? 0} pos={base.transform.position:F1}");
-		if (TryScanStore())
+		// 1.4.82: pick everything that's ripe first and only carry it to a chest when nothing ripe is left
+		// or the pack is nearly full (1.4.81 log: he went to a chest after every few crops).
+		if (PackNearlyFull() && TryScanStore())
 		{
 			return;
 		}
 		if (_preferHarvest)
 		{
-			if (TryScanHarvest() || TryScanPlant())
+			if (TryScanHarvest() || TryScanStore() || TryScanPlant())
 			{
 				return;
 			}
 		}
-		else if (TryScanPlant() || TryScanHarvest())
+		else if (TryScanStore() || TryScanPlant() || TryScanHarvest())
 		{
 			return;
 		}
@@ -461,7 +463,7 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetChest.transform.position);
-		if (num < UseDistance)
+		if (num < UseDistance || AtChestSpot(_targetChest, num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetChest.transform.position);
@@ -472,7 +474,8 @@ public class FarmController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _targetChest.transform.position, UseDistance, _shouldRun);
+			Vector3 chestGoal = ChestGoal(_targetChest);
+			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, chestGoal, _hasApproach ? 0.5f : UseDistance, _shouldRun);
 			LogMovement(dt, "seed chest", num, moveOk);
 			UpdateStuckDetection(dt, "seed chest");
 		}
@@ -492,6 +495,10 @@ public class FarmController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_targetChest.SetInUse(inUse: true);
+			if (_zanim != null)
+			{
+				_zanim.SetTrigger("interact");
+			}
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened seed chest — waiting for animation");
@@ -629,7 +636,7 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _outputChest.transform.position);
-		if (num < UseDistance)
+		if (num < UseDistance || AtChestSpot(_outputChest, num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_outputChest.transform.position);
@@ -640,7 +647,8 @@ public class FarmController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _outputChest.transform.position, UseDistance, _shouldRun);
+			Vector3 chestGoal = ChestGoal(_outputChest);
+			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, chestGoal, _hasApproach ? 0.5f : UseDistance, _shouldRun);
 			LogMovement(dt, "output chest", num, moveOk);
 			UpdateStuckDetection(dt, "output chest");
 		}
@@ -660,6 +668,10 @@ public class FarmController : MonoBehaviour
 		if (!_chestOpened)
 		{
 			_outputChest.SetInUse(inUse: true);
+			if (_zanim != null)
+			{
+				_zanim.SetTrigger("interact");
+			}
 			_chestOpened = true;
 			_actionTimer = 0.8f;
 			Log("Opened output chest");
@@ -762,7 +774,16 @@ public class FarmController : MonoBehaviour
 		if (HasCropOutput())
 		{
 			ScanNearbyChests();
-			Container container = FindChestWithSpace();
+			Container container = null;
+			for (int i = 0; i < 12; i++)
+			{
+				container = FindChestWithSpace();
+				if (container == null || ChestReachable(container))
+				{
+					break;
+				}
+				container = null;
+			}
 			if (container != null)
 			{
 				_outputChest = container;
@@ -892,7 +913,19 @@ public class FarmController : MonoBehaviour
 				SeedPlantInfo seedInfo;
 				string seedPrefab;
 				int seedCount;
-				Container container = FindChestWithSeeds(itemData, out seedInfo, out seedPrefab, out seedCount);
+				Container container = null;
+				seedInfo = default(SeedPlantInfo);
+				seedPrefab = null;
+				seedCount = 0;
+				for (int i = 0; i < 12; i++)
+				{
+					container = FindChestWithSeeds(itemData, out seedInfo, out seedPrefab, out seedCount);
+					if (container == null || ChestReachable(container))
+					{
+						break;
+					}
+					container = null;
+				}
 				if (container != null)
 				{
 					Log($"[Plant] Zone[{num4}] found {seedCount}x \"{seedPrefab}\" in chest");
@@ -918,7 +951,18 @@ public class FarmController : MonoBehaviour
 			}
 			SeedPlantInfo seedInfo2;
 			int seedCount2;
-			Container container2 = FindChestWithSpecificSeed(cropSeed, out seedInfo2, out seedCount2);
+			Container container2 = null;
+			seedInfo2 = default(SeedPlantInfo);
+			seedCount2 = 0;
+			for (int i = 0; i < 12; i++)
+			{
+				container2 = FindChestWithSpecificSeed(cropSeed, out seedInfo2, out seedCount2);
+				if (container2 == null || ChestReachable(container2))
+				{
+					break;
+				}
+				container2 = null;
+			}
 			if (container2 != null)
 			{
 				Log($"[Plant] Zone[{num4}] found {seedCount2}x \"{cropSeed}\" in chest");
@@ -1033,12 +1077,12 @@ public class FarmController : MonoBehaviour
 	}
 
 	// 1.4.75: after a crop, go straight to the next ripe one close by (FarmNextCropRange), like a player
-	// working down a row, instead of pausing and rescanning the whole field. Only when there's nothing
-	// to store; otherwise the normal scan runs so the store trip happens as before.
+	// working down a row, instead of pausing and rescanning the whole field.
+	// 1.4.82: keeps going while carrying crops; only a nearly full pack stops it.
 	private bool TryNextCropNearby()
 	{
 		float value = ModConfig.FarmNextCropRange.Value;
-		if (value <= 0f || HasCropOutput())
+		if (value <= 0f || PackNearlyFull())
 		{
 			return false;
 		}
@@ -1083,6 +1127,20 @@ public class FarmController : MonoBehaviour
 		_stuckCheckPos = base.transform.position;
 	}
 
+	private bool PackNearlyFull()
+	{
+		Inventory inventory = _humanoid?.GetInventory();
+		if (inventory == null)
+		{
+			return false;
+		}
+		if (inventory.GetEmptySlots() <= 1)
+		{
+			return true;
+		}
+		return inventory.GetTotalWeight() >= ModConfig.HarvestOverweightThreshold.Value;
+	}
+
 	private bool HasCropOutput()
 	{
 		Inventory inventory = _humanoid?.GetInventory();
@@ -1100,8 +1158,45 @@ public class FarmController : MonoBehaviour
 		return false;
 	}
 
+	// 1.4.79: only chests he can actually get to (a spot in reach of it that a route ends at, nothing solid in between).
+	// 1.4.78 log: he picked a chest up on a ledge through a wall, couldn't reach it, and ran around the building.
+	private readonly HashSet<int> _unreachableChests = new HashSet<int>();
+
+	private bool SkipChest(Container c)
+	{
+		if (c == null || _unreachableChests.Contains(c.GetInstanceID()))
+		{
+			return true;
+		}
+		if (_ai != null)
+		{
+			return _ai.IsPositionBlacklisted(c.transform.position);
+		}
+		return false;
+	}
+
+	private bool ChestReachable(Container c)
+	{
+		if (MHR_Chests.CanReach(base.transform.position, c))
+		{
+			return true;
+		}
+		_unreachableChests.Add(c.GetInstanceID());
+		Log($"Skipping chest at {c.transform.position:F1} - can't get within reach of it");
+		return false;
+	}
+
+	private float _unreachableClearAt;
+
 	private void ScanNearbyChests()
 	{
+		// 1.4.84: remember unreachable chests for a minute instead of re-checking them every scan; with only 4 tries per
+		// search the same 4 chests up on the ledge used up every try and he never stored anything (1.4.83 log)
+		if (Time.time >= _unreachableClearAt)
+		{
+			_unreachableChests.Clear();
+			_unreachableClearAt = Time.time + 60f;
+		}
 		_nearbyChests.Clear();
 		_tempPieces.Clear();
 		Piece.GetAllPiecesInRadius(base.transform.position, ScanRadius, _tempPieces);
@@ -1125,7 +1220,7 @@ public class FarmController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1220,6 +1315,10 @@ public class FarmController : MonoBehaviour
 		float num3 = Mathf.Floor(halfSize / num) * num;
 		float num4 = float.MaxValue;
 		bool flag = false;
+		// 1.4.84: plant in rows like a player, starting at the far edge of the zone and working back toward where he came
+		// in, back and forth along each row, so he always stands on ground that's still empty. Nearest-first had him
+		// planting in a ring around himself in the middle until he was boxed in by his own crops (1.4.83 log).
+		PlantOrder order = GetPlantOrder(zone);
 		int num5 = 0;
 		int num6 = 0;
 		int num7 = 0;
@@ -1267,7 +1366,15 @@ public class FarmController : MonoBehaviour
 					num7++;
 					continue;
 				}
-				float num13 = Vector3.Distance(base.transform.position, vector);
+				if (_ai != null && _ai.IsPositionBlacklisted(vector))
+				{
+					num7++;
+					continue;
+				}
+				float rowKey = (order.AlongZ ? num11 : num10) * order.RowSign;
+				float colKey = order.AlongZ ? num10 : num11;
+				int row = Mathf.RoundToInt((rowKey + halfSize) / num);
+				float num13 = row * 10000f + ((row % 2 == 0) ? colKey : (0f - colKey));
 				if (num13 < num4)
 				{
 					num4 = num13;
@@ -1276,8 +1383,44 @@ public class FarmController : MonoBehaviour
 				}
 			}
 		}
+		if (!flag)
+		{
+			_plantOrders.Remove(ZoneKey(zone));   // zone done: pick the starting edge afresh next time
+		}
 		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
 		return flag;
+	}
+
+	private struct PlantOrder
+	{
+		public bool AlongZ;
+
+		public float RowSign;
+	}
+
+	private readonly Dictionary<string, PlantOrder> _plantOrders = new Dictionary<string, PlantOrder>();
+
+	private static string ZoneKey(FarmZone zone)
+	{
+		return $"{zone.Center.x:F1},{zone.Center.z:F1}";
+	}
+
+	// rows run across the side he's coming from; the first row is the opposite edge
+	private PlantOrder GetPlantOrder(FarmZone zone)
+	{
+		string key = ZoneKey(zone);
+		if (_plantOrders.TryGetValue(key, out var value))
+		{
+			return value;
+		}
+		zone.WorldToLocal(base.transform.position, out var lx, out var lz);
+		value = default(PlantOrder);
+		value.AlongZ = Mathf.Abs(lz) >= Mathf.Abs(lx);
+		float me = value.AlongZ ? lz : lx;
+		value.RowSign = (me >= 0f) ? 1f : (-1f);
+		_plantOrders[key] = value;
+		Log($"[Plant] Zone at {zone.Center:F0}: rows along {(value.AlongZ ? "x" : "z")}, starting at the far edge");
+		return value;
 	}
 
 	private Container FindChestWithSeeds(ItemDrop.ItemData cultivator, out SeedPlantInfo seedInfo, out string seedPrefab, out int seedCount)
@@ -1294,7 +1437,7 @@ public class FarmController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1337,7 +1480,7 @@ public class FarmController : MonoBehaviour
 		}
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null)
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1369,6 +1512,49 @@ public class FarmController : MonoBehaviour
 	{
 	}
 
+	private Container _approachChest;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
+
+	// 1.4.78: walk to a spot in front of the chest that can be reached (like tool trips), not the chest's centre.
+	// The centre is inside the chest, so no route ever reached it and the movement went looking for a door to go
+	// through instead (1.4.77 log: back and forth through a gate 30 m away).
+	// 1.4.85: standing on the spot picked for this chest counts as in reach (the spot can be up to 2.2 m out, a little
+	// past UseDistance, and moving stops within half a meter of it)
+	private bool AtChestSpot(Container chest, float dist)
+	{
+		if (!_hasApproach || chest != _approachChest || dist > UseDistance + 1f)
+		{
+			return false;
+		}
+		Vector3 position = base.transform.position;
+		if (new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude > 0.7f || Mathf.Abs(position.y - _approachSpot.y) > 1.2f)
+		{
+			return false;
+		}
+		return MHR_Chests.LineClear(position, chest);
+	}
+
+	private Vector3 ChestGoal(Container chest)
+	{
+		if (chest == null)
+		{
+			return base.transform.position;
+		}
+		if (chest != _approachChest)
+		{
+			_approachChest = chest;
+			_hasApproach = MHR_Chests.PickApproach(base.transform.position, chest, out _approachSpot);
+		}
+		if (!_hasApproach)
+		{
+			return chest.transform.position;
+		}
+		return _approachSpot;
+	}
+
 	private void UpdateStuckDetection(float dt, string targetName)
 	{
 		_stuckCheckTimer += dt;
@@ -1385,6 +1571,11 @@ public class FarmController : MonoBehaviour
 			}
 			_stuckCheckPos = base.transform.position;
 			_stuckCheckTimer = 0f;
+		}
+		// 1.4.79: the movement has worked through its whole stuck ladder - give this target up now
+		if (_ai != null && MHR_Mover.GaveUp(_ai))
+		{
+			_stuckTimer = 10.01f;
 		}
 		if (_stuckTimer > 10f)
 		{

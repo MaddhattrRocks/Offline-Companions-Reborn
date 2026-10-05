@@ -34,6 +34,9 @@ public class CompanionSetup : MonoBehaviour
 
 	internal static readonly int WanderHash = "HC_Wander".GetStableHashCode();
 
+	// 1.4.77: Wander also controls how a companion moves around while following. Switched on once for every companion.
+	internal static readonly int WanderFollowMigratedHash = "HC_WanderFollowMigrated".GetStableHashCode();
+
 	internal static readonly int FormationSlotHash = "HC_FormationSlot".GetStableHashCode();
 
 	internal static readonly int IsCommandableHash = "HC_IsCommandable".GetStableHashCode();
@@ -1018,6 +1021,14 @@ public class CompanionSetup : MonoBehaviour
 					num9 = armor;
 				}
 				break;
+			// 1.4.83: carry the best shield with a one-hander, like a player (it was only picked up once a fight started)
+			case ItemDrop.ItemData.ItemType.Shield:
+				if (item.GetBaseBlockPower() > num4)
+				{
+					itemData4 = item;
+					num4 = item.GetBaseBlockPower();
+				}
+				break;
 			case ItemDrop.ItemData.ItemType.Trinket:
 				if (armor > num10)
 				{
@@ -1241,6 +1252,18 @@ public class CompanionSetup : MonoBehaviour
 			}
 			zDO.Set(ActionModeHash, num2);
 			zDO.Set(ActionModeSchemaHash, 3);
+		}
+		if (!zDO.GetBool(WanderFollowMigratedHash))
+		{
+			zDO.Set(WanderHash, value: true);
+			zDO.Set(WanderFollowMigratedHash, value: true);
+			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
+		}
+		// 1.4.78: a job and Follow can't both be on (saves from before have both)
+		int mode = zDO.GetInt(ActionModeHash);
+		if (MHR_JobRules.IsJobMode(mode))
+		{
+			MHR_JobRules.OnJobSet(this, mode);
 		}
 	}
 

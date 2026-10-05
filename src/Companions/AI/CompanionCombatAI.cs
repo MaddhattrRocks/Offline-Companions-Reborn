@@ -119,7 +119,8 @@ public class CompanionCombatAI : MonoBehaviour
 				_unableToAttackTargetTimer = 0f;
 				_parryAttackCount = 0;
 				_engaged = true;
-				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} (routes through normal SelectBestAttack/shield/flee logic)");
+				Character after = target.GetBaseAI()?.GetTargetCreature();
+				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
 				_ai.SetAlerted(alert: true);
 			}
 		}
@@ -421,6 +422,12 @@ public class CompanionCombatAI : MonoBehaviour
 			{
 				character = null;
 			}
+			// 1.4.83: switching targets mid-fight follows the same rule as starting one: only something that's after us
+			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business)
+			if (character != null && character != _targetCreature && !HuntMode && !MHR_Threat.IsAfterUs(character))
+			{
+				character = null;
+			}
 			if (_recallIgnored != null)
 			{
 				if (!_recallIgnored || _recallIgnored.GetHealth() <= 0f)
@@ -487,6 +494,19 @@ public class CompanionCombatAI : MonoBehaviour
 			}
 			else if (!HuntMode && !_ai.IsEnemy(_targetCreature))
 			{
+				_targetCreature = null;
+			}
+			else if (!HuntMode && Vector3.Distance(base.transform.position, _targetCreature.transform.position) > CombatLeash)
+			{
+				// 1.4.78: don't chase something across the map (1.4.77 log: a dolphin 141 m out kept him "in combat",
+				// so his job never started)
+				CompanionsPlugin.Log.LogDebug($"[Combat] {_targetCreature.m_name} is over {CombatLeash:F0} m away - letting it go");
+				_targetCreature = null;
+			}
+			else if (!HuntMode && IsPassiveAnimal(_targetCreature) && _targetCreature.GetBaseAI()?.GetTargetCreature() == null)
+			{
+				// 1.4.78: it's gone back to minding its own business
+				CompanionsPlugin.Log.LogDebug("[Combat] " + _targetCreature.m_name + " isn't a threat - leaving it");
 				_targetCreature = null;
 			}
 		}
@@ -669,6 +689,8 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		return flag2;
 	}
+
+	private const float CombatLeash = 40f;
 
 	private static bool IsPassiveAnimal(Character c)
 	{
