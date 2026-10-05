@@ -6,7 +6,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed companions walking all the way home to empty their bags or put a tool back when you turn a job off out in the field. They now do it once they're back home.
 - Fixed the Wood job equipping a crossbow and standing there. Bows and crossbows are never used as gathering tools.
 - Fixed following companions swimming across a moat when you walked in through the gate. They now follow your path when their own way would mean a swim.
-- Companions stay put while you walk up to them, so they're easy to catch with Wander off too.
+- When you set off, a companion that was standing still now waits 1.5 seconds before following, so it's easy to walk up to, with Wander on or off.
 - Fixed setting a farm zone (modifier + Z) also recalling your companions and turning their job off.
 
 ## 1.4.80

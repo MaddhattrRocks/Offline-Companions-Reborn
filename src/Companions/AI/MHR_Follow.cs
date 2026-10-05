@@ -171,14 +171,9 @@ namespace Companions
                 }
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 float dSpot = Flat(me, goal);
-                // 1.4.77: stay put for a second after the player sets off, and while the player is right next to us,
-                // so the player can walk up and open the inventory or the command wheel
-                // 1.4.81: also while the player is walking toward us (the spot is set by the player's direction, so walking
-                // up to a companion swung its spot round and it moved off - most noticeable with Wander off)
-                Vector3 toMe = me - pp; toMe.y = 0f;
-                bool approaching = distP < maxD && toMe.sqrMagnitude > 0.01f && Vector3.Dot(t.Travel, toMe.normalized) > 0.7f;
-                bool hold = now - t.MovingSince < 1f || distP < 2.5f || approaching;
-                if (s.Moving && approaching && distP < 4f) { s.Moving = false; MHR_Mover.Release(ai); }
+                // 1.4.77/1.4.82: if it was standing still, stay put for 1.5 s after the player sets off, so the player can
+                // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
+                bool hold = now - t.MovingSince < 1.5f;
                 if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
                 if (s.Moving)
                 {
