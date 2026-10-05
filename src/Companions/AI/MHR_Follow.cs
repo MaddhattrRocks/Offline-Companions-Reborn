@@ -24,6 +24,7 @@ namespace Companions
             public float SettleDelay; public bool UnloadAsked; public float UnloadAskedAt;
             public Chair Chair; public bool GoingToChair; public float ChairUntil, ChairFailUntil, NextChairLook;
             public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim;
+            public Collider[] ChairCols;
         }
         // one per followed player, shared by all companions following them
         class T
@@ -437,20 +438,33 @@ namespace Companions
             MHR_Mover.Release(ai);
             ai.StopMoving();
             s.GoingToChair = false; s.SitChair = true; s.SitPlayerPos = pp; s.ChairAnim = ch.m_attachAnimation;
+            // pass through the chair itself (like ship seats) so physics doesn't push the companion off it
+            Piece piece = ch.GetComponentInParent<Piece>();
+            s.ChairCols = piece != null ? piece.GetComponentsInChildren<Collider>() : ch.GetComponentsInChildren<Collider>();
+            IgnoreChair(ai, s, true);
             Pin(ai, s);
             ZSyncAnimation za = ai.GetComponent<ZSyncAnimation>();
             if (za != null && !string.IsNullOrEmpty(s.ChairAnim)) za.SetBool(s.ChairAnim, true);
             SetResting(ai, true);
             Dbg(ai.GetComponent<Character>().m_name + " sat down on " + ch.m_name);
         }
-        // keep the seated companion on the seat (kinematic so nothing pushes it off)
+        // keep the seated companion on the seat. Not kinematic: the game sets every character's velocity each physics
+        // tick, and on a kinematic body that's a Unity warning every time (1.4.76 test log: thousands of them).
         static void Pin(CompanionAI ai, S s)
         {
             if (s.Chair == null || s.Chair.m_attachPoint == null) return;
             Transform at = s.Chair.m_attachPoint;
             ai.transform.position = at.position; ai.transform.rotation = at.rotation;
             Rigidbody rb = ai.GetComponent<Rigidbody>();
-            if (rb != null) { rb.position = at.position; rb.linearVelocity = Vector3.zero; rb.useGravity = false; rb.isKinematic = true; }
+            if (rb != null && !rb.isKinematic) { rb.position = at.position; rb.linearVelocity = Vector3.zero; rb.useGravity = false; }
+        }
+        static void IgnoreChair(CompanionAI ai, S s, bool ignore)
+        {
+            Collider me = ai.GetComponent<CapsuleCollider>();
+            if (me == null || s.ChairCols == null) return;
+            for (int i = 0; i < s.ChairCols.Length; i++)
+                if (s.ChairCols[i] != null) Physics.IgnoreCollision(me, s.ChairCols[i], ignore);
+            if (!ignore) s.ChairCols = null;
         }
 
         static void SitOnFloor(CompanionAI ai, S s, Vector3 pp)
@@ -492,7 +506,8 @@ namespace Companions
                     else pos = at.TransformPoint(s.Chair.m_detachOffset);
                 }
                 ai.transform.position = pos;
-                if (rb != null) { rb.isKinematic = false; rb.useGravity = true; rb.position = pos; rb.linearVelocity = Vector3.zero; }
+                IgnoreChair(ai, s, false);
+                if (rb != null && !rb.isKinematic) { rb.useGravity = true; rb.position = pos; rb.linearVelocity = Vector3.zero; }
             }
             if (s.SitFloor && !keepAnim && za != null) { za.SetTrigger("emote_stop"); za.SetBool("emote_sit", false); }
             if (!keepAnim) SetResting(ai, false);

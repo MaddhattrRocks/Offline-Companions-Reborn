@@ -30,7 +30,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
-### 1.4.76 - phase 2, Follow on MHR_Mover: code done, waiting on the user's build + in-game test
+### 1.4.76 - tested by the user (log 0f7e80ce): "everything working as expected"
+- Loads clean (58 methods patched). Follow seen in the log: opened wood gates/doors on the way ("no way through - heading for the closed $piece_woodgate" -> opened), one sidestep unstick, sat on $piece_throne01, got up when the player moved, regrouped after 56 s.
+- Fixed after the test: 2,779 Unity warnings "Setting linear velocity of a kinematic body is not supported" while seated. Character.UpdateWalking sets m_body.linearVelocity every physics tick even when attached, so a kinematic body warns each tick. The seat is now held without kinematic: gravity off, collisions with the chair piece ignored (like ship seats), position pinned every frame; restored on getting up.
+- Probably the same warning flood with ship seats (`CompanionAI.AttachToShip` sets the body kinematic) - pre-existing, not checked; fix the same way when ships come up.
+
+### 1.4.76 - phase 2, Follow on MHR_Mover
 Design approved by the user (with: regroup is a toggle + timer; indoors stay closer and sit, emptying bags first near home).
 - New `AI/MHR_Follow.cs`. CompanionAI's follow branch calls `MHR_Follow.Update` for Player targets; non-player targets still use `FollowWithFormation`.
 - Per followed player (`T`): travel direction from position change (smoothed; not camera facing), speed, still-since, a trail of the last 40 positions (0.75 m apart, cleared on teleport), indoors = local player `InShelter()` (checked every 0.5 s).
