@@ -70,7 +70,7 @@ public class CookController : MonoBehaviour
 			switch (Kind)
 			{
 			case TaskKind.Craft:
-				return "make " + Name(Recipe?.m_item?.gameObject.name) + " at the " + Loc(Station?.m_name);
+				return "make " + Count + "x " + Name(Recipe?.m_item?.gameObject.name) + " at the " + Loc(Station?.m_name);
 			case TaskKind.Grill:
 				return "cook " + Count + "x " + Name(Item) + " on the " + Loc(Cooker?.m_name);
 			case TaskKind.Rescue:
@@ -186,6 +186,8 @@ public class CookController : MonoBehaviour
 	private static int FoodTarget => ModConfig.CookFoodTarget?.Value ?? 20;
 
 	private static int BaseTarget => ModConfig.CookMeadBaseTarget?.Value ?? 10;
+
+	private static int Batch => ModConfig.CookBatchSize?.Value ?? 5;
 
 	private static int MeadTarget => ModConfig.CookMeadTarget?.Value ?? 20;
 
@@ -388,7 +390,7 @@ public class CookController : MonoBehaviour
 			{
 				continue;
 			}
-			best = CraftTask(recipe, station, final);
+			best = CraftTask(recipe, station, final, FoodTarget - stock);
 			bestScore = score;
 		}
 		// on a cooking station / oven
@@ -418,7 +420,7 @@ public class CookController : MonoBehaviour
 				}
 				int room = FoodTarget - Count(to);
 				int have = Usable(from);
-				int n = Mathf.Min(CountSlots(cooker, -1), Mathf.Min(room, have));
+				int n = Mathf.Min(Mathf.Min(CountSlots(cooker, -1), Batch), Mathf.Min(room, have));
 				if (n <= 0)
 				{
 					continue;
@@ -465,7 +467,7 @@ public class CookController : MonoBehaviour
 			CraftingStation station = FindStation(recipe);
 			if (station != null && IngredientsOk(recipe))
 			{
-				return CraftTask(recipe, station, mead);
+				return CraftTask(recipe, station, mead, BaseTarget - Count(mead));
 			}
 		}
 		return null;
@@ -512,21 +514,33 @@ public class CookController : MonoBehaviour
 		return null;
 	}
 
-	private Task CraftTask(Recipe recipe, CraftingStation station, string final)
+	// 1.4.87: a batch (Cooking.BatchSize), as many as the target has room for and the ingredients allow
+	private Task CraftTask(Recipe recipe, CraftingStation station, string final, int room)
 	{
+		int per = Mathf.Max(1, recipe.m_amount);
+		int times = Mathf.Min(Batch, Mathf.Max(1, (room + per - 1) / per));
+		foreach (Piece.Requirement req in recipe.m_resources)
+		{
+			if (req?.m_resItem != null && req.GetAmount(1) > 0)
+			{
+				times = Mathf.Min(times, Usable(req.m_resItem.gameObject.name) / req.GetAmount(1));
+			}
+		}
+		times = Mathf.Max(1, times);
 		Task task = new Task
 		{
 			Kind = TaskKind.Craft,
 			Recipe = recipe,
 			Station = station,
 			Item = recipe.m_item.gameObject.name,
-			Final = final
+			Final = final,
+			Count = times
 		};
-		foreach (Piece.Requirement req in recipe.m_resources)
+		foreach (Piece.Requirement req2 in recipe.m_resources)
 		{
-			if (req?.m_resItem != null && req.GetAmount(1) > 0)
+			if (req2?.m_resItem != null && req2.GetAmount(1) > 0)
 			{
-				AddFetch(task, req.m_resItem.gameObject.name, req.GetAmount(1));
+				AddFetch(task, req2.m_resItem.gameObject.name, req2.GetAmount(1) * times);
 			}
 		}
 		return task;
@@ -772,6 +786,15 @@ public class CookController : MonoBehaviour
 		AddLedger(output, amount);
 		station.m_craftItemDoneEffects?.Create(station.transform.position, Quaternion.identity);
 		Log($"Made {amount}x {Name(output)} at the {Loc(station.m_name)}");
+		// the rest of the batch
+		_task.Count--;
+		if (_task.Count > 0 && CanCraftAgain(recipe))
+		{
+			_timer = 0.5f;
+			_zanim?.SetTrigger("interact");
+			station.m_craftItemEffects?.Create(station.transform.position, Quaternion.identity);
+			return;
+		}
 		// a fresh mead base goes straight into an empty fermenter, if one wants it
 		if (CookCatalog.IsMeadBase(output))
 		{
@@ -783,6 +806,18 @@ public class CookController : MonoBehaviour
 			}
 		}
 		Finish();
+	}
+
+	private bool CanCraftAgain(Recipe recipe)
+	{
+		foreach (Piece.Requirement req in recipe.m_resources)
+		{
+			if (req?.m_resItem != null && HomesteadController.CountItemInInventory(Bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private void AddToCooker()

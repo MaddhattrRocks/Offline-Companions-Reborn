@@ -37,7 +37,8 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - Cooking stations: fetch raw (+ up to 3 fuel for an oven), RPC_AddFuel / RPC_AddItem per item, then stand by it: every 0.5 s RPC_RemoveDoneItem for done/burnt slots and pick up drops round the spawn point (only made food, meads, coal); leaves when nothing of its item is still cooking (max 240 s). Slot state read from the ZDO ("slot"+i, "slotstatus"+i: 0 cooking, 1 done, 2 burnt).
 - Ledger: what it made/picked up (ZDO HC_CookLedger "prefab:n;"), trimmed to what's still in the bag; storing moves exactly that. Store chest: same item > other made food (Cooking.StoreWithCookedFood) > nearest to the last station used.
 - `CookCatalog`: built once from ObjectDB recipes, CookingStation and Fermenter prefabs (mods included); writes BepInEx/config/OfflineCompanionsReborn.Cooking.txt (foods with value + station, mead bases -> meads, stages). MeadFocus stage = last `defeated_<boss>` global key; unknown names in MeadFocus are logged.
-- Settings: [Cooking] Range 25, IngredientReserve 20, FoodTarget 20, Foods *, StoreWithCookedFood on, MeadBaseTarget 10, MeadTarget 20, MeadFocus (draft table, user to review).
+- Batches (user): Cooking.BatchSize 5 - crafting repeats up to min(batch, target room / recipe amount, usable ingredients / need) times in one trip (2 s each); cooking stations fill min(free slots, batch, room, usable) slots.
+- Settings: [Cooking] Range 25, IngredientReserve 20, FoodTarget 20, BatchSize 5, Foods *, StoreWithCookedFood on, MeadBaseTarget 10, MeadTarget 20, MeadFocus (draft table, user to review).
 - Moves through MHR_Mover (tag "Cook") with stand spots; gives up on MHR_Mover.GaveUp or 12 s with no progress.
 
 ### 1.4.86 - movement phase 3 part 2: Smelt (user: Cook and Homestead need a feature review first - come back to them)

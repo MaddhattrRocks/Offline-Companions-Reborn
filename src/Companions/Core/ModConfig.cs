@@ -148,6 +148,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<int> CookFoodTarget;
 
+	internal static ConfigEntry<int> CookBatchSize;
+
 	internal static ConfigEntry<string> CookFoods;
 
 	internal static ConfigEntry<bool> CookStoreWithCookedFood;
@@ -455,6 +457,7 @@ internal static class ModConfig
 		CookRange = Bind(cfg, "Cooking", "Range", 25f, "How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests.", new AcceptableValueRange<float>(5f, 60f));
 		CookIngredientReserve = Bind(cfg, "Cooking", "IngredientReserve", 20, "A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.", new AcceptableValueRange<int>(0, 1000));
 		CookFoodTarget = Bind(cfg, "Cooking", "FoodTarget", 20, "Cook a food until the chests in range hold this many of it.", new AcceptableValueRange<int>(1, 1000));
+		CookBatchSize = Bind(cfg, "Cooking", "BatchSize", 5, "How many of a food (or mead base) to make in one go, like a player cooking a batch. Still stops at FoodTarget / MeadBaseTarget and never goes into the ingredient reserve. On a cooking station or oven it's also limited by the free slots.", new AcceptableValueRange<int>(1, 50));
 		CookFoods = Bind(cfg, "Cooking", "Foods", "*", "What may be cooked. * = everything (mods included). Otherwise a comma-separated list of item names; -Name excludes one, e.g. \"*, -Eyescream\". The names to use are listed in OfflineCompanionsReborn.Cooking.txt in the config folder (written at startup).");
 		CookStoreWithCookedFood = Bind(cfg, "Cooking", "StoreWithCookedFood", true, "Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.");
 		CookMeadBaseTarget = Bind(cfg, "Cooking", "MeadBaseTarget", 10, "Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.", new AcceptableValueRange<int>(0, 1000));
