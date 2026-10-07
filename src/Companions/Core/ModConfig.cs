@@ -142,6 +142,22 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> CompanionNavMesh;
 
+	internal static ConfigEntry<float> CookRange;
+
+	internal static ConfigEntry<int> CookIngredientReserve;
+
+	internal static ConfigEntry<int> CookFoodTarget;
+
+	internal static ConfigEntry<string> CookFoods;
+
+	internal static ConfigEntry<bool> CookStoreWithCookedFood;
+
+	internal static ConfigEntry<int> CookMeadBaseTarget;
+
+	internal static ConfigEntry<int> CookMeadTarget;
+
+	internal static ConfigEntry<string> CookMeadFocus;
+
 	internal static ConfigEntry<float> FollowMaxDistance;
 
 	internal static ConfigEntry<float> FollowIndoorDistance;
@@ -436,6 +452,14 @@ internal static class ModConfig
 		HomesteadSmeltSlotTime = Bind(cfg, "Homestead", "SmeltSlotTime", 60f, "Seconds for smelting turn in rotation", new AcceptableValueRange<float>(10f, 300f));
 		HomesteadScanBackoff = Bind(cfg, "Homestead", "ScanBackoff", 30f, "Extended scan interval when nothing to do", new AcceptableValueRange<float>(5f, 120f));
 		HomesteadUseDistance = Bind(cfg, "Homestead", "UseDistance", 2f, "Interaction range for fires/chests", new AcceptableValueRange<float>(1f, 5f));
+		CookRange = Bind(cfg, "Cooking", "Range", 25f, "How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests.", new AcceptableValueRange<float>(5f, 60f));
+		CookIngredientReserve = Bind(cfg, "Cooking", "IngredientReserve", 20, "A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.", new AcceptableValueRange<int>(0, 1000));
+		CookFoodTarget = Bind(cfg, "Cooking", "FoodTarget", 20, "Cook a food until the chests in range hold this many of it.", new AcceptableValueRange<int>(1, 1000));
+		CookFoods = Bind(cfg, "Cooking", "Foods", "*", "What may be cooked. * = everything (mods included). Otherwise a comma-separated list of item names; -Name excludes one, e.g. \"*, -Eyescream\". The names to use are listed in OfflineCompanionsReborn.Cooking.txt in the config folder (written at startup).");
+		CookStoreWithCookedFood = Bind(cfg, "Cooking", "StoreWithCookedFood", true, "Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.");
+		CookMeadBaseTarget = Bind(cfg, "Cooking", "MeadBaseTarget", 10, "Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.", new AcceptableValueRange<int>(0, 1000));
+		CookMeadTarget = Bind(cfg, "Cooking", "MeadTarget", 20, "Keep fermenters going with a mead base until the chests in range hold this many of the finished mead.", new AcceptableValueRange<int>(0, 1000));
+		CookMeadFocus = Bind(cfg, "Cooking", "MeadFocus", "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; bonemass: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseFrostResist; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseFrostResist, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, BarleyWineBase; queen: MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseEitrMinor, BarleyWineBase; fader: MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor, BarleyWineBase", "Which mead bases to brew and ferment, by the last boss beaten, to get ready for the next one. Format: stage: Base, Base; stage: ... Stages: start, eikthyr, gdking (The Elder), bonemass, dragon (Moder), goblinking (Yagluth), queen, fader. A stage with no entry uses the one before it. Mead base names are listed in OfflineCompanionsReborn.Cooking.txt in the config folder.");
 		RestHealRate = Bind(cfg, "Rest", "HealRate", 2f, "HP per second while resting", new AcceptableValueRange<float>(0.5f, 20f));
 		RestPlayerRange = Bind(cfg, "Rest", "PlayerRange", 5f, "Max player distance for auto-sit", new AcceptableValueRange<float>(2f, 20f));
 		RestFireRange = Bind(cfg, "Rest", "FireRange", 5f, "Campfire detection radius", new AcceptableValueRange<float>(2f, 20f));

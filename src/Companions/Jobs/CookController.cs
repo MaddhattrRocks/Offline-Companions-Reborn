@@ -1,41 +1,90 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using System.Text;
+using BepInEx;
+using HarmonyLib;
 using UnityEngine;
 
 namespace Companions;
 
+// 1.4.87: the Cook job, rewritten (design agreed with the user 2026-10-07, see docs/DEV_NOTES.md).
+// Works like a player at home or at a camp:
+// - Uses every cooking station: cauldron and food preparation table (crafted there, needs fire/roof like for a player),
+//   cooking station, iron cooking station and oven (items go on, come off when done, oven gets wood).
+// - Makes the best food it can: a recipe the player knows, food below Cooking.FoodTarget in the chests in range,
+//   and every raw ingredient above Cooking.IngredientReserve (the player always keeps some to cook with).
+//   Prep table -> oven chains (dough, raw pies) count as the food they turn into.
+// - Mead: brews the bases in Cooking.MeadFocus for the last boss beaten (up to MeadBaseTarget), keeps fermenters
+//   going while the finished mead is below MeadTarget, taps finished fermenters.
+// - Takes finished food off any cooking station in range before it burns.
+// - Puts away exactly what it made (a ledger kept on the companion), not food it was given to eat.
 public class CookController : MonoBehaviour
 {
 	internal enum CookPhase
 	{
 		Idle,
-		MovingToIngredientChest,
-		TakingIngredients,
-		MovingToCauldron,
+		Fetching,
+		MovingToStation,
 		Crafting,
-		MovingToFermenter,
-		InsertingMeadBase,
-		MovingToReadyFermenter,
-		TappingFermenter,
-		CollectingDrops,
-		MovingToOutputChest,
-		StoringOutput
-	}
-
-	private enum CookTask
-	{
-		CookFood,
-		BrewMead,
-		FillFermenter,
-		TapFermenter,
-		StoreOutput
-	}
-
-	private enum FermenterStatus
-	{
-		Empty,
+		Cooking,
 		Fermenting,
-		Ready
+		CollectingDrops,
+		Storing
+	}
+
+	private enum TaskKind
+	{
+		None,
+		Craft,
+		Grill,
+		Rescue,
+		Fill,
+		Tap,
+		Store
+	}
+
+	private class Task
+	{
+		public TaskKind Kind;
+
+		public Recipe Recipe;
+
+		public CraftingStation Station;
+
+		public CookingStation Cooker;
+
+		public Fermenter Fermenter;
+
+		public string Item;
+
+		public int Count;
+
+		public string Final;
+
+		public readonly List<KeyValuePair<string, int>> Fetch = new List<KeyValuePair<string, int>>();
+
+		public string Describe()
+		{
+			switch (Kind)
+			{
+			case TaskKind.Craft:
+				return "make " + Name(Recipe?.m_item?.gameObject.name) + " at the " + Loc(Station?.m_name);
+			case TaskKind.Grill:
+				return "cook " + Count + "x " + Name(Item) + " on the " + Loc(Cooker?.m_name);
+			case TaskKind.Rescue:
+				return "take finished food off the " + Loc(Cooker?.m_name);
+			case TaskKind.Fill:
+				return "fill a fermenter with " + Name(Item);
+			case TaskKind.Tap:
+				return "tap a fermenter";
+			case TaskKind.Store:
+				return "put away " + Name(Item);
+			default:
+				return "nothing";
+			}
+		}
 	}
 
 	private CompanionAI _ai;
@@ -52,109 +101,106 @@ public class CookController : MonoBehaviour
 
 	private CompanionTalk _talk;
 
-	private CompanionFood _food;
-
-	private DoorHandler _doorHandler;
-
 	private CookPhase _phase;
 
-	private CookTask _currentTask;
+	private Task _task;
 
 	private float _scanTimer;
 
-	private float _actionTimer;
+	private float _timer;
+
+	private float _phaseStart;
+
+	private float _nextWatchLog;
+
+	private int _fetchIndex;
+
+	private Container _chest;
+
+	private bool _chestOpen;
+
+	private Vector3 _cookArea;
+
+	private bool _hasCookArea;
+
+	private bool _allDoneNotified;
+
+	private readonly List<Container> _chests = new List<Container>();
+
+	private readonly List<CraftingStation> _stations = new List<CraftingStation>();
+
+	private readonly List<CookingStation> _cookers = new List<CookingStation>();
+
+	private readonly List<Fermenter> _fermenters = new List<Fermenter>();
+
+	private readonly List<Piece> _pieces = new List<Piece>();
+
+	private readonly HashSet<int> _unreachable = new HashSet<int>();
+
+	private float _unreachableClearAt;
+
+	private readonly Dictionary<int, float> _stationProblemUntil = new Dictionary<int, float>();
+
+	private readonly Dictionary<string, int> _ledger = new Dictionary<string, int>();
+
+	private bool _ledgerLoaded;
+
+	private string _approachKey;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
 
 	private float _stuckTimer;
 
 	private float _stuckCheckTimer;
 
-	private Vector3 _stuckCheckPos;
+	private float _stuckBestDist;
 
-	private bool _chestOpened;
+	private static readonly HashSet<int> s_claimed = new HashSet<int>();
 
-	private bool _shouldRun;
+	private int _claimedId;
 
-	private float _cookCooldown;
+	private static readonly Collider[] s_drops = new Collider[48];
 
-	private float _brewCooldown;
+	private static int s_itemMask = -1;
 
-	private float _fillCooldown;
+	private static readonly int LedgerHash = "HC_CookLedger".GetStableHashCode();
 
-	private float _tapCooldown;
+	private static readonly FieldInfo s_haveFire = AccessTools.Field(typeof(CraftingStation), "m_haveFire");
 
-	private float _storeCooldown;
+	private static readonly MethodInfo s_isFireLit = AccessTools.Method(typeof(CookingStation), "IsFireLit");
 
-	private static readonly HashSet<int> s_claimedFermenters = new HashSet<int>();
+	private const float ScanInterval = 4f;
 
-	private int _claimedFermenterId;
-
-	private CraftingStation _targetCauldron;
-
-	private Fermenter _targetFermenter;
-
-	private Container _targetChest;
-
-	private Container _outputChest;
-
-	private Recipe _selectedRecipe;
-
-	private readonly List<(string prefab, int needed)> _ingredientList = new List<(string, int)>();
-
-	private int _ingredientIndex;
-
-	private string _meadBasePrefab;
-
-	private readonly List<Fermenter> _nearbyFermenters = new List<Fermenter>();
-
-	private readonly List<Container> _nearbyChests = new List<Container>();
-
-	private readonly List<Piece> _tempPieces = new List<Piece>();
-
-	private static readonly Collider[] _dropScanBuffer = new Collider[32];
-
-	private static int _itemLayerMask = -1;
-
-	private static HashSet<string> s_fermenterInputPrefabs;
-
-	private const float ScanRadius = 25f;
-
-	private const float ScanInterval = 5f;
-
-	private const float UseDistance = 2.5f;
-
-	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
-
-	private const float ChestOpenDelay = 0.8f;
-
-	private const float CraftingTime = 3f;
-
-	private const float TapWaitTime = 2f;
-
-	private const float WeightTap = 50f;
-
-	private const float WeightCook = 40f;
-
-	private const float WeightStore = 35f;
-
-	private const float WeightFill = 30f;
-
-	private const float WeightBrew = 25f;
+	private const float UseReach = 2.5f;
 
 	internal CookPhase Phase => _phase;
 
 	public bool IsActive => _phase != CookPhase.Idle;
 
+	private static float Range => ModConfig.CookRange?.Value ?? 25f;
+
+	private static int Reserve => ModConfig.CookIngredientReserve?.Value ?? 20;
+
+	private static int FoodTarget => ModConfig.CookFoodTarget?.Value ?? 20;
+
+	private static int BaseTarget => ModConfig.CookMeadBaseTarget?.Value ?? 10;
+
+	private static int MeadTarget => ModConfig.CookMeadTarget?.Value ?? 20;
+
 	public void NotifyActionModeChanged()
 	{
 		if (_phase != CookPhase.Idle)
 		{
-			Log("NotifyActionModeChanged — aborting cook");
 			Abort("mode changed");
 		}
+	}
+
+	internal bool IsCookMode()
+	{
+		ZDO zDO = _nview?.GetZDO();
+		return zDO != null && zDO.GetInt(CompanionSetup.ActionModeHash) == 17;
 	}
 
 	private void Awake()
@@ -166,39 +212,12 @@ public class CookController : MonoBehaviour
 		_nview = GetComponent<ZNetView>();
 		_zanim = GetComponent<ZSyncAnimation>();
 		_talk = GetComponent<CompanionTalk>();
-		_food = GetComponent<CompanionFood>();
-		_doorHandler = GetComponent<DoorHandler>();
 	}
 
 	private void OnDestroy()
 	{
-		UnclaimFermenter();
-		CloseAnyChest();
-	}
-
-	private void UnclaimFermenter()
-	{
-		if (_claimedFermenterId != 0)
-		{
-			s_claimedFermenters.Remove(_claimedFermenterId);
-			_claimedFermenterId = 0;
-		}
-	}
-
-	private void CloseAnyChest()
-	{
-		if (_chestOpened)
-		{
-			if (_phase == CookPhase.StoringOutput && _outputChest != null)
-			{
-				_outputChest.SetInUse(inUse: false);
-			}
-			else if (_targetChest != null)
-			{
-				_targetChest.SetInUse(inUse: false);
-			}
-			_chestOpened = false;
-		}
+		Unclaim();
+		CloseChest();
 	}
 
 	private void Update()
@@ -207,1022 +226,1022 @@ public class CookController : MonoBehaviour
 		{
 			return;
 		}
-		if (ShouldAbort())
+		if (!_ledgerLoaded)
+		{
+			LoadLedger();
+		}
+		if ((_ai != null && _ai.IsInCombat) || CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
 			if (_phase != CookPhase.Idle)
 			{
 				Abort("interrupted");
 			}
+			return;
 		}
-		else
+		if (!IsCookMode())
 		{
-			if (!IsCookMode() && _phase == CookPhase.Idle)
-			{
-				return;
-			}
-			if (!IsCookMode() && _phase != CookPhase.Idle)
+			if (_phase != CookPhase.Idle)
 			{
 				Abort("mode changed");
-				return;
 			}
-			float deltaTime = Time.deltaTime;
-			_cookCooldown = Mathf.Max(0f, _cookCooldown - deltaTime);
-			_brewCooldown = Mathf.Max(0f, _brewCooldown - deltaTime);
-			_fillCooldown = Mathf.Max(0f, _fillCooldown - deltaTime);
-			_tapCooldown = Mathf.Max(0f, _tapCooldown - deltaTime);
-			_storeCooldown = Mathf.Max(0f, _storeCooldown - deltaTime);
+			return;
+		}
+		float dt = Time.deltaTime;
+		try
+		{
 			switch (_phase)
 			{
 			case CookPhase.Idle:
-				UpdateIdle(deltaTime);
+				UpdateIdle(dt);
 				break;
-			case CookPhase.MovingToIngredientChest:
-				UpdateMovingToIngredientChest(deltaTime);
+			case CookPhase.Fetching:
+				UpdateFetching(dt);
 				break;
-			case CookPhase.TakingIngredients:
-				UpdateTakingIngredients(deltaTime);
-				break;
-			case CookPhase.MovingToCauldron:
-				UpdateMovingToCauldron(deltaTime);
+			case CookPhase.MovingToStation:
+				UpdateMovingToStation(dt);
 				break;
 			case CookPhase.Crafting:
-				UpdateCrafting(deltaTime);
+				UpdateCrafting(dt);
 				break;
-			case CookPhase.MovingToFermenter:
-				UpdateMovingToFermenter(deltaTime);
+			case CookPhase.Cooking:
+				UpdateCooking(dt);
 				break;
-			case CookPhase.InsertingMeadBase:
-				UpdateInsertingMeadBase(deltaTime);
-				break;
-			case CookPhase.MovingToReadyFermenter:
-				UpdateMovingToReadyFermenter(deltaTime);
-				break;
-			case CookPhase.TappingFermenter:
-				UpdateTappingFermenter(deltaTime);
+			case CookPhase.Fermenting:
+				UpdateFermenting(dt);
 				break;
 			case CookPhase.CollectingDrops:
-				UpdateCollectingDrops(deltaTime);
+				UpdateCollecting(dt);
 				break;
-			case CookPhase.MovingToOutputChest:
-				UpdateMovingToOutputChest(deltaTime);
-				break;
-			case CookPhase.StoringOutput:
-				UpdateStoringOutput(deltaTime);
+			case CookPhase.Storing:
+				UpdateStoring(dt);
 				break;
 			}
 		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Cook] " + ex.Message + " - starting over");
+			Abort("error");
+		}
 	}
 
-	private bool ShouldAbort()
-	{
-		if (_ai != null && _ai.IsInCombat)
-		{
-			return true;
-		}
-		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
-		{
-			return true;
-		}
-		return false;
-	}
-
-	private void Abort(string reason)
-	{
-		Log($"Aborted — {reason} (phase was {_phase})");
-		UnclaimFermenter();
-		CloseAnyChest();
-		_targetCauldron = null;
-		_targetFermenter = null;
-		_targetChest = null;
-		_outputChest = null;
-		_selectedRecipe = null;
-		_meadBasePrefab = null;
-		_ingredientList.Clear();
-		_phase = CookPhase.Idle;
-		_scanTimer = 5f;
-		RestoreFollow();
-	}
-
-	internal bool IsCookMode()
-	{
-		ZDO zDO = _nview?.GetZDO();
-		if (zDO == null)
-		{
-			return false;
-		}
-		return zDO.GetInt(CompanionSetup.ActionModeHash) == 17;
-	}
+	// ---------------------------------------------------------------- deciding what to do
 
 	private void UpdateIdle(float dt)
 	{
 		_scanTimer -= dt;
-		if (!(_scanTimer > 0f))
+		if (_scanTimer > 0f)
 		{
-			_scanTimer = 5f;
-			ScanNearbyChests();
-			ScanNearbyFermenters();
-			EnsureFermenterInputCache();
-			PickNextBehavior();
+			return;
+		}
+		_scanTimer = ScanInterval;
+		CookCatalog.Ensure();
+		Scan();
+		Task task = PickTask();
+		if (task == null)
+		{
+			if (!_allDoneNotified)
+			{
+				_allDoneNotified = true;
+				Log("Nothing to cook right now");
+				RestoreFollow();
+			}
+			_scanTimer = 10f;
+			return;
+		}
+		_allDoneNotified = false;
+		Start(task);
+	}
+
+	private Task PickTask()
+	{
+		// 1) things that won't wait: finished food about to burn, finished fermenters
+		foreach (CookingStation cooker in _cookers)
+		{
+			if (CountSlots(cooker, 1) + CountSlots(cooker, 2) > 0 && Usable(cooker))
+			{
+				return new Task { Kind = TaskKind.Rescue, Cooker = cooker };
+			}
+		}
+		foreach (Fermenter fermenter in _fermenters)
+		{
+			if (!s_claimed.Contains(fermenter.GetInstanceID()) && FermenterState(fermenter) == 2 && Usable(fermenter))
+			{
+				return new Task { Kind = TaskKind.Tap, Fermenter = fermenter };
+			}
+		}
+		// 2) a full bag of things it made: put them away first
+		int carried = LedgerCarried();
+		if (carried >= 10)
+		{
+			Task task = StoreTask();
+			if (task != null)
+			{
+				return task;
+			}
+		}
+		// 3) mead: fill an empty fermenter, brew a focus base
+		Task task2 = FillTask() ?? BrewTask();
+		if (task2 != null)
+		{
+			return task2;
+		}
+		// 4) the best food it can make
+		Task task3 = FoodTask();
+		if (task3 != null)
+		{
+			return task3;
+		}
+		// 5) nothing to make: put away what it made
+		return (carried > 0) ? StoreTask() : null;
+	}
+
+	private Task FoodTask()
+	{
+		Task best = null;
+		float bestScore = 0f;
+		// crafted at the cauldron / prep table
+		foreach (Recipe recipe in CookCatalog.Recipes)
+		{
+			string output = recipe.m_item.gameObject.name;
+			string final = CookCatalog.FinalFood(output);
+			if (final == null || CookCatalog.IsMeadBase(output) || !CookCatalog.Allowed(final) || !Known(recipe))
+			{
+				continue;
+			}
+			float score = CookCatalog.Value(final);
+			if (score <= bestScore)
+			{
+				continue;
+			}
+			int stock = Count(final) + ((final != output) ? Count(output) : 0);
+			if (stock >= FoodTarget)
+			{
+				continue;
+			}
+			// a prep-table item needs a cooking station in range that finishes it
+			if (final != output && FindCooker(output, needFree: false) == null)
+			{
+				continue;
+			}
+			CraftingStation station = FindStation(recipe);
+			if (station == null || !IngredientsOk(recipe))
+			{
+				continue;
+			}
+			best = CraftTask(recipe, station, final);
+			bestScore = score;
+		}
+		// on a cooking station / oven
+		foreach (CookingStation cooker in _cookers)
+		{
+			if (!Usable(cooker) || CountSlots(cooker, -1) == 0 || !HasHeat(cooker, orFuelInReach: true))
+			{
+				continue;
+			}
+			foreach (CookingStation.ItemConversion conv in cooker.m_conversion)
+			{
+				if (conv?.m_from == null || conv.m_to == null)
+				{
+					continue;
+				}
+				string from = conv.m_from.gameObject.name;
+				string to = conv.m_to.gameObject.name;
+				if (!CookCatalog.Allowed(to))
+				{
+					continue;
+				}
+				// finishing something already prepared beats starting something new of the same worth
+				float score = CookCatalog.Value(to) + (CookCatalog.IsMade(from) ? 0.5f : 0f);
+				if (score <= bestScore)
+				{
+					continue;
+				}
+				int room = FoodTarget - Count(to);
+				int have = Usable(from);
+				int n = Mathf.Min(CountSlots(cooker, -1), Mathf.Min(room, have));
+				if (n <= 0)
+				{
+					continue;
+				}
+				Task task = new Task
+				{
+					Kind = TaskKind.Grill,
+					Cooker = cooker,
+					Item = from,
+					Final = to,
+					Count = n
+				};
+				AddFetch(task, from, n);
+				if (cooker.m_useFuel && cooker.m_fuelItem != null)
+				{
+					int fuelNeed = Mathf.Clamp(3 - Mathf.FloorToInt(Fuel(cooker)), 0, 3);
+					int fuelHave = Count(cooker.m_fuelItem.gameObject.name);
+					if (fuelNeed > 0 && fuelHave > 0)
+					{
+						AddFetch(task, cooker.m_fuelItem.gameObject.name, Mathf.Min(fuelNeed, fuelHave));
+					}
+				}
+				best = task;
+				bestScore = score;
+			}
+		}
+		return best;
+	}
+
+	private Task BrewTask()
+	{
+		foreach (string mead in CookCatalog.Focus())
+		{
+			Recipe recipe = CookCatalog.RecipeFor(mead);
+			if (recipe == null || !Known(recipe))
+			{
+				continue;
+			}
+			string finished = CookCatalog.MeadOf(mead);
+			if (Count(mead) >= BaseTarget || (finished != null && Count(finished) >= MeadTarget))
+			{
+				continue;
+			}
+			CraftingStation station = FindStation(recipe);
+			if (station != null && IngredientsOk(recipe))
+			{
+				return CraftTask(recipe, station, mead);
+			}
+		}
+		return null;
+	}
+
+	private Task FillTask()
+	{
+		Inventory bag = Bag;
+		List<string> list = new List<string>(CookCatalog.Focus());
+		if (bag != null)
+		{
+			foreach (ItemDrop.ItemData item in bag.GetAllItems())
+			{
+				string text = item?.m_dropPrefab?.name;
+				if (text != null && CookCatalog.IsMeadBase(text) && !list.Contains(text))
+				{
+					list.Add(text);
+				}
+			}
+		}
+		foreach (string mead in list)
+		{
+			string finished = CookCatalog.MeadOf(mead);
+			if (finished == null || Count(finished) >= MeadTarget || Count(mead) <= 0)
+			{
+				continue;
+			}
+			foreach (Fermenter fermenter in _fermenters)
+			{
+				if (s_claimed.Contains(fermenter.GetInstanceID()) || FermenterState(fermenter) != 0 || !Usable(fermenter) || !Accepts(fermenter, mead))
+				{
+					continue;
+				}
+				Task task = new Task
+				{
+					Kind = TaskKind.Fill,
+					Fermenter = fermenter,
+					Item = mead
+				};
+				AddFetch(task, mead, 1);
+				return task;
+			}
+		}
+		return null;
+	}
+
+	private Task CraftTask(Recipe recipe, CraftingStation station, string final)
+	{
+		Task task = new Task
+		{
+			Kind = TaskKind.Craft,
+			Recipe = recipe,
+			Station = station,
+			Item = recipe.m_item.gameObject.name,
+			Final = final
+		};
+		foreach (Piece.Requirement req in recipe.m_resources)
+		{
+			if (req?.m_resItem != null && req.GetAmount(1) > 0)
+			{
+				AddFetch(task, req.m_resItem.gameObject.name, req.GetAmount(1));
+			}
+		}
+		return task;
+	}
+
+	private void AddFetch(Task task, string item, int amount)
+	{
+		int inBag = HomesteadController.CountItemInInventory(Bag, item);
+		if (amount > inBag)
+		{
+			task.Fetch.Add(new KeyValuePair<string, int>(item, amount));
 		}
 	}
 
-	private void UpdateMovingToIngredientChest(float dt)
+	private Task StoreTask()
 	{
-		if (_doorHandler != null && _doorHandler.IsActive)
+		Inventory bag = Bag;
+		if (bag == null)
 		{
-			return;
+			return null;
 		}
-		if (_targetChest == null)
+		foreach (KeyValuePair<string, int> item in _ledger)
 		{
-			Abort("ingredient chest destroyed");
-			return;
+			if (item.Value <= 0 || HomesteadController.CountItemInInventory(bag, item.Key) <= 0)
+			{
+				continue;
+			}
+			Container container = StoreChest(item.Key);
+			if (container != null)
+			{
+				return new Task
+				{
+					Kind = TaskKind.Store,
+					Item = item.Key
+				};
+			}
 		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _targetChest.transform.position);
-		if (num < 2.5f)
-		{
-			_ai?.StopMoving();
-			_chestOpened = false;
-			_phase = CookPhase.TakingIngredients;
-			return;
-		}
-		_shouldRun = num > 8f;
-		CompanionAI ai = _ai;
-		if ((object)ai != null)
-		{
-			MHR_Nav.MoveWalk(ai, dt, _targetChest.transform.position, 2.5f, _shouldRun);
-		}
-		UpdateStuck(dt, "ingredient chest", num);
+		return null;
 	}
 
-	private void UpdateTakingIngredients(float dt)
+	// ---------------------------------------------------------------- running a task
+
+	private void Start(Task task)
 	{
-		if (_targetChest == null)
+		_task = task;
+		_fetchIndex = 0;
+		_chest = null;
+		_approachKey = null;
+		if (_ai != null)
 		{
-			Abort("ingredient chest gone");
-			return;
+			_ai.SetFollowTarget(null);
 		}
-		if (!_chestOpened)
+		if (task.Fermenter != null)
 		{
-			_targetChest.SetInUse(inUse: true);
-			_chestOpened = true;
-			if (_zanim != null)
-			{
-				_zanim.SetTrigger("interact");
-			}
-			_actionTimer = 0.8f;
-			return;
+			Claim(task.Fermenter);
 		}
-		_actionTimer -= dt;
-		if (_actionTimer > 0f)
+		Log("Going to " + task.Describe());
+		Say(task.Kind);
+		if (task.Kind == TaskKind.Store)
 		{
-			return;
+			_chest = StoreChest(task.Item);
+			Enter(CookPhase.Storing);
 		}
-		Inventory inventory = _humanoid?.GetInventory();
-		Inventory inventory2 = _targetChest.GetInventory();
-		if (inventory == null || inventory2 == null)
+		else if (task.Fetch.Count > 0)
 		{
-			CloseCurrentChest();
-			Abort("inventory null");
-			return;
-		}
-		(string prefab, int needed) tuple = _ingredientList[_ingredientIndex];
-		string item = tuple.prefab;
-		int item2 = tuple.needed;
-		int num = HomesteadController.CountItemInInventory(inventory, item);
-		int num2 = item2 - num;
-		if (num2 > 0)
-		{
-			ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(inventory2, item);
-			if (itemData != null)
-			{
-				HomesteadController.TransferOne(inventory2, inventory, itemData);
-				return;
-			}
-			CloseCurrentChest();
-			_targetChest = FindChestWithItem(item);
-			if (_targetChest != null)
-			{
-				ResetStuck();
-				_phase = CookPhase.MovingToIngredientChest;
-			}
-			else
-			{
-				Abort("no more chests with ingredient");
-			}
-			return;
-		}
-		_ingredientIndex++;
-		if (FindNextIngredientChest())
-		{
-			CloseCurrentChest();
-			ResetStuck();
-			_phase = CookPhase.MovingToIngredientChest;
-			return;
-		}
-		CloseCurrentChest();
-		ResetStuck();
-		if (_currentTask == CookTask.FillFermenter)
-		{
-			if (_targetFermenter == null)
-			{
-				Abort("fermenter gone");
-				return;
-			}
-			_phase = CookPhase.MovingToFermenter;
-			Log("Got mead base — heading to fermenter");
-		}
-		else if (_targetCauldron == null)
-		{
-			Abort("cauldron gone");
+			Enter(CookPhase.Fetching);
 		}
 		else
 		{
-			_phase = CookPhase.MovingToCauldron;
-			Log("All ingredients gathered — heading to cauldron");
+			Enter(CookPhase.MovingToStation);
 		}
 	}
 
-	private void UpdateMovingToCauldron(float dt)
+	private void Enter(CookPhase phase)
 	{
-		if (_doorHandler != null && _doorHandler.IsActive)
+		_phase = phase;
+		_phaseStart = Time.time;
+		_timer = 0f;
+		_approachKey = null;
+		ResetStuck();
+	}
+
+	private void UpdateFetching(float dt)
+	{
+		Inventory bag = Bag;
+		if (bag == null)
+		{
+			Abort("no inventory");
+			return;
+		}
+		while (_fetchIndex < _task.Fetch.Count && HomesteadController.CountItemInInventory(bag, _task.Fetch[_fetchIndex].Key) >= _task.Fetch[_fetchIndex].Value)
+		{
+			_fetchIndex++;
+			_chest = null;
+		}
+		if (_fetchIndex >= _task.Fetch.Count)
+		{
+			CloseChest();
+			Enter(CookPhase.MovingToStation);
+			return;
+		}
+		string item = _task.Fetch[_fetchIndex].Key;
+		int need = _task.Fetch[_fetchIndex].Value - HomesteadController.CountItemInInventory(bag, item);
+		if (_chest == null)
+		{
+			_chest = ChestWith(item);
+			if (_chest == null)
+			{
+				Abort("no chest in reach has " + Name(item));
+				return;
+			}
+		}
+		if (!AtChest(_chest, dt, "chest with " + Name(item)))
 		{
 			return;
 		}
-		if (_targetCauldron == null)
+		if (!OpenChest(_chest, dt))
 		{
-			Abort("cauldron destroyed");
 			return;
 		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _targetCauldron.transform.position);
-		if (num < 2.5f)
+		Inventory inv = _chest.GetInventory();
+		int taken = 0;
+		while (taken < need)
 		{
-			_ai?.StopMoving();
-			_actionTimer = 3f;
-			_phase = CookPhase.Crafting;
-			Log("At cauldron — crafting");
+			ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(inv, item);
+			if (itemData == null || !HomesteadController.TransferOne(inv, bag, itemData))
+			{
+				break;
+			}
+			taken++;
+		}
+		Log($"Took {taken}x {Name(item)}");
+		CloseChest();
+		if (taken == 0)
+		{
+			// someone emptied it on the way: try another chest
+			_unreachable.Add(_chest.GetInstanceID());
+		}
+		_chest = null;
+		_approachKey = null;
+	}
+
+	private void UpdateMovingToStation(float dt)
+	{
+		Component target = TaskTarget();
+		if (target == null)
+		{
+			Abort("station gone");
 			return;
 		}
-		_shouldRun = num > 8f;
-		CompanionAI ai = _ai;
-		if ((object)ai != null)
+		Vector3 point = TaskPoint();
+		if (!AtPoint(target, point, dt, Loc(TaskName())))
 		{
-			MHR_Nav.MoveWalk(ai, dt, _targetCauldron.transform.position, 2.5f, _shouldRun);
+			return;
 		}
-		UpdateStuck(dt, "cauldron", num);
+		_ai?.StopMoving();
+		_ai?.LookAtPoint(target.transform.position);
+		_cookArea = target.transform.position;
+		_hasCookArea = true;
+		switch (_task.Kind)
+		{
+		case TaskKind.Craft:
+			if (!StationReady(_task.Station, out var why))
+			{
+				_stationProblemUntil[_task.Station.GetInstanceID()] = Time.time + 60f;
+				Abort("the " + Loc(_task.Station.m_name) + " " + why);
+				return;
+			}
+			_task.Station.PokeInUse();
+			_zanim?.SetTrigger("interact");
+			_task.Station.m_craftItemEffects?.Create(_task.Station.transform.position, Quaternion.identity);
+			Enter(CookPhase.Crafting);
+			break;
+		case TaskKind.Grill:
+			AddToCooker();
+			Enter(CookPhase.Cooking);
+			break;
+		case TaskKind.Rescue:
+			Enter(CookPhase.Cooking);
+			break;
+		case TaskKind.Fill:
+		case TaskKind.Tap:
+			_zanim?.SetTrigger("interact");
+			Enter(CookPhase.Fermenting);
+			break;
+		default:
+			Finish();
+			break;
+		}
 	}
 
 	private void UpdateCrafting(float dt)
 	{
-		if (_targetCauldron != null)
+		CraftingStation station = _task.Station;
+		if (station == null)
 		{
-			_ai?.StopMoving();
-			_ai?.LookAtPoint(_targetCauldron.transform.position);
+			Abort("station gone");
+			return;
 		}
-		_actionTimer -= dt;
-		if (_actionTimer > 0f)
+		_ai?.StopMoving();
+		_ai?.LookAtPoint(station.transform.position);
+		station.PokeInUse();
+		_timer += dt;
+		if (_timer < 2.5f)
 		{
 			return;
 		}
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
+		Inventory bag = Bag;
+		Recipe recipe = _task.Recipe;
+		foreach (Piece.Requirement req in recipe.m_resources)
 		{
-			Abort("inventory null");
-			return;
-		}
-		Piece.Requirement[] resources = _selectedRecipe.m_resources;
-		foreach (Piece.Requirement requirement in resources)
-		{
-			if (!(requirement?.m_resItem == null))
+			if (req?.m_resItem != null && HomesteadController.CountItemInInventory(bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
 			{
-				string prefabName = requirement.m_resItem.gameObject.name;
-				int amount = requirement.GetAmount(1);
-				for (int j = 0; j < amount; j++)
-				{
-					HomesteadController.ConsumeOneFromInventory(inventory, prefabName);
-				}
-			}
-		}
-		string text = _selectedRecipe.m_item.gameObject.name;
-		int amount2 = _selectedRecipe.m_amount;
-		ItemDrop.ItemData itemData = inventory.AddItem(text, amount2, 1, 0, 0L, "", cheated: false);
-		if (itemData == null)
-		{
-			GameObject gameObject = ObjectDB.instance?.GetItemPrefab(text);
-			if (gameObject != null)
-			{
-				GameObject gameObject2 = UnityEngine.Object.Instantiate(gameObject, base.transform.position + Vector3.up * 0.5f, Quaternion.identity);
-				ItemDrop component = gameObject2.GetComponent<ItemDrop>();
-				if (component != null)
-				{
-					component.m_itemData.m_stack = amount2;
-				}
-				Log("Inventory full — dropped " + text + " on ground");
-			}
-		}
-		string arg = _selectedRecipe.m_item.m_itemData?.m_shared?.m_name ?? text;
-		Log($"Crafted {amount2}x {arg}");
-		if (_currentTask == CookTask.BrewMead)
-		{
-			_brewCooldown = 15f;
-		}
-		else
-		{
-			_cookCooldown = 15f;
-		}
-		if (_currentTask == CookTask.BrewMead && itemData != null)
-		{
-			_meadBasePrefab = text;
-			Fermenter fermenter = FindEmptyFermenter();
-			if (fermenter != null)
-			{
-				_targetFermenter = fermenter;
-				ClaimFermenter(fermenter);
-				ResetStuck();
-				_phase = CookPhase.MovingToFermenter;
-				if (_talk != null)
-				{
-					_talk.Say(ModLocalization.Loc("hc_speech_cook_fermenter"));
-				}
-				Log("Brewed mead base — heading to fermenter");
+				Abort("missing " + Name(req.m_resItem.gameObject.name));
 				return;
 			}
 		}
-		if (HasStorableOutput() && TryStartStore())
+		foreach (Piece.Requirement req2 in recipe.m_resources)
 		{
-			_currentTask = CookTask.StoreOutput;
+			if (req2?.m_resItem != null)
+			{
+				for (int i = 0; i < req2.GetAmount(1); i++)
+				{
+					HomesteadController.ConsumeOneFromInventory(bag, req2.m_resItem.gameObject.name);
+				}
+			}
 		}
-		else
+		string output = recipe.m_item.gameObject.name;
+		int amount = Mathf.Max(1, recipe.m_amount);
+		if (bag.AddItem(output, amount, 1, 0, 0L, "", cheated: false) == null)
 		{
-			Finish();
+			GameObject prefab = ObjectDB.instance?.GetItemPrefab(output);
+			if (prefab != null)
+			{
+				ItemDrop drop = UnityEngine.Object.Instantiate(prefab, base.transform.position + Vector3.up * 0.5f, Quaternion.identity).GetComponent<ItemDrop>();
+				if (drop != null)
+				{
+					drop.m_itemData.m_stack = amount;
+				}
+			}
+			Log("Bag full - dropped " + Name(output));
 		}
+		AddLedger(output, amount);
+		station.m_craftItemDoneEffects?.Create(station.transform.position, Quaternion.identity);
+		Log($"Made {amount}x {Name(output)} at the {Loc(station.m_name)}");
+		// a fresh mead base goes straight into an empty fermenter, if one wants it
+		if (CookCatalog.IsMeadBase(output))
+		{
+			Task task = FillTask();
+			if (task != null && task.Item == output)
+			{
+				Start(task);
+				return;
+			}
+		}
+		Finish();
 	}
 
-	private void UpdateMovingToFermenter(float dt)
+	private void AddToCooker()
 	{
-		if (_doorHandler != null && _doorHandler.IsActive)
+		CookingStation cooker = _task.Cooker;
+		Inventory bag = Bag;
+		ZNetView nv = cooker.GetComponent<ZNetView>();
+		if (bag == null || nv == null || !nv.IsValid())
 		{
 			return;
 		}
-		if (_targetFermenter == null)
+		if (cooker.m_useFuel && cooker.m_fuelItem != null)
 		{
-			Abort("fermenter destroyed");
-			return;
+			string fuel = cooker.m_fuelItem.gameObject.name;
+			int added = 0;
+			while (Fuel(cooker) + added < cooker.m_maxFuel && added < 3 && HomesteadController.ConsumeOneFromInventory(bag, fuel))
+			{
+				nv.InvokeRPC("RPC_AddFuel");
+				added++;
+			}
+			if (added > 0)
+			{
+				Log($"Added {added}x {Name(fuel)} to the {Loc(cooker.m_name)}");
+			}
 		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _targetFermenter.transform.position);
-		if (num < 2.5f)
+		int put = 0;
+		int free = CountSlots(cooker, -1);
+		while (put < _task.Count && put < free && HomesteadController.ConsumeOneFromInventory(bag, _task.Item))
 		{
-			_ai?.StopMoving();
-			_actionTimer = 0.5f;
-			_phase = CookPhase.InsertingMeadBase;
-			return;
+			nv.InvokeRPC("RPC_AddItem", _task.Item, false);
+			put++;
 		}
-		_shouldRun = num > 8f;
-		CompanionAI ai = _ai;
-		if ((object)ai != null)
-		{
-			MHR_Nav.MoveWalk(ai, dt, _targetFermenter.transform.position, 2.5f, _shouldRun);
-		}
-		UpdateStuck(dt, "fermenter", num);
+		_zanim?.SetTrigger("interact");
+		Log($"Put {put}x {Name(_task.Item)} on the {Loc(cooker.m_name)}");
 	}
 
-	private void UpdateInsertingMeadBase(float dt)
+	// stand by the station, take each item off when it's done (before it burns), pick it up
+	private void UpdateCooking(float dt)
 	{
-		if (_targetFermenter == null)
+		CookingStation cooker = _task.Cooker;
+		if (cooker == null)
+		{
+			Abort("cooking station gone");
+			return;
+		}
+		ZNetView nv = cooker.GetComponent<ZNetView>();
+		_ai?.StopMoving();
+		_ai?.LookAtPoint(cooker.transform.position);
+		_timer -= dt;
+		if (_timer > 0f)
+		{
+			return;
+		}
+		_timer = 0.5f;
+		PickUpDrops(DropPoint(cooker), 4f, ledger: true);
+		if (CountSlots(cooker, 1) + CountSlots(cooker, 2) > 0)
+		{
+			nv?.InvokeRPC("RPC_RemoveDoneItem", base.transform.position, 1);
+			_zanim?.SetTrigger("interact");
+			_timer = 0.8f;
+			return;
+		}
+		bool waiting = _task.Kind == TaskKind.Grill && CountCooking(cooker, _task.Item) > 0;
+		if (waiting && Time.time - _phaseStart < 240f)
+		{
+			if (Time.time >= _nextWatchLog)
+			{
+				_nextWatchLog = Time.time + 20f;
+				Log("Waiting for the " + Loc(cooker.m_name) + " (" + CountCooking(cooker, _task.Item) + " cooking)");
+			}
+			return;
+		}
+		PickUpDrops(DropPoint(cooker), 4f, ledger: true);
+		Finish();
+	}
+
+	private void UpdateFermenting(float dt)
+	{
+		Fermenter fermenter = _task.Fermenter;
+		if (fermenter == null)
 		{
 			Abort("fermenter gone");
 			return;
 		}
 		_ai?.StopMoving();
-		_ai?.LookAtPoint(_targetFermenter.transform.position);
-		_actionTimer -= dt;
-		if (_actionTimer > 0f)
+		_ai?.LookAtPoint(fermenter.transform.position);
+		_timer += dt;
+		if (_timer < 0.6f)
 		{
 			return;
 		}
-		if (GetFermenterStatus(_targetFermenter) != FermenterStatus.Empty)
+		ZNetView nv = fermenter.GetComponent<ZNetView>();
+		if (_task.Kind == TaskKind.Fill)
 		{
-			Log("Fermenter no longer empty — aborting fill");
-			UnclaimFermenter();
+			if (FermenterState(fermenter) == 0 && HomesteadController.ConsumeOneFromInventory(Bag, _task.Item))
+			{
+				nv?.InvokeRPC("RPC_AddItem", _task.Item);
+				TakeFromLedger(_task.Item, 1);
+				Log("Put " + Name(_task.Item) + " in the fermenter");
+			}
 			Finish();
 			return;
 		}
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null || !HomesteadController.ConsumeOneFromInventory(inventory, _meadBasePrefab))
+		if (FermenterState(fermenter) == 2)
 		{
-			Log("Don't have mead base \"" + _meadBasePrefab + "\" — aborting");
-			UnclaimFermenter();
-			Finish();
+			nv?.InvokeRPC("RPC_Tap");
+			Log("Tapped the fermenter");
+		}
+		Enter(CookPhase.CollectingDrops);
+	}
+
+	private void UpdateCollecting(float dt)
+	{
+		_timer += dt;
+		if (_timer < 2f)
+		{
 			return;
 		}
-		ZNetView component = _targetFermenter.GetComponent<ZNetView>();
-		if (component != null && component.GetZDO() != null)
-		{
-			component.InvokeRPC("RPC_AddItem", _meadBasePrefab);
-			Log("Inserted \"" + _meadBasePrefab + "\" into fermenter");
-		}
-		UnclaimFermenter();
-		_fillCooldown = 10f;
+		Fermenter fermenter = _task.Fermenter;
+		Vector3 center = (fermenter != null && fermenter.m_outputPoint != null) ? fermenter.m_outputPoint.position : base.transform.position;
+		PickUpDrops(center, 4f, ledger: true);
 		Finish();
 	}
 
-	private void UpdateMovingToReadyFermenter(float dt)
+	private void UpdateStoring(float dt)
 	{
-		if (_doorHandler != null && _doorHandler.IsActive)
-		{
-			return;
-		}
-		if (_targetFermenter == null)
-		{
-			Abort("ready fermenter destroyed");
-			return;
-		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _targetFermenter.transform.position);
-		if (num < 2.5f)
-		{
-			_ai?.StopMoving();
-			_actionTimer = 0f;
-			_phase = CookPhase.TappingFermenter;
-			return;
-		}
-		_shouldRun = num > 8f;
-		CompanionAI ai = _ai;
-		if ((object)ai != null)
-		{
-			MHR_Nav.MoveWalk(ai, dt, _targetFermenter.transform.position, 2.5f, _shouldRun);
-		}
-		UpdateStuck(dt, "ready fermenter", num);
-	}
-
-	private void UpdateTappingFermenter(float dt)
-	{
-		if (_targetFermenter == null)
-		{
-			Abort("fermenter gone during tap");
-			return;
-		}
-		_ai?.StopMoving();
-		_ai?.LookAtPoint(_targetFermenter.transform.position);
-		if (_actionTimer <= 0f)
-		{
-			if (GetFermenterStatus(_targetFermenter) != FermenterStatus.Ready)
-			{
-				Log("Fermenter no longer ready");
-				UnclaimFermenter();
-				Finish();
-				return;
-			}
-			ZNetView component = _targetFermenter.GetComponent<ZNetView>();
-			if (component != null && component.GetZDO() != null)
-			{
-				component.InvokeRPC("RPC_Tap");
-				Log("Tapped fermenter — waiting for items to spawn");
-			}
-			_actionTimer = 2f;
-		}
-		else
-		{
-			_actionTimer -= dt;
-			if (!(_actionTimer > 0f))
-			{
-				_phase = CookPhase.CollectingDrops;
-			}
-		}
-	}
-
-	private void UpdateCollectingDrops(float dt)
-	{
-		if (_targetFermenter == null)
-		{
-			UnclaimFermenter();
-			Finish();
-			return;
-		}
-		Vector3 vector = ((_targetFermenter.m_outputPoint != null) ? _targetFermenter.m_outputPoint.position : _targetFermenter.transform.position);
-		float num = Vector3.Distance(base.transform.position, vector);
-		if (num > 3.5f)
-		{
-			_shouldRun = num > 8f;
-			CompanionAI ai = _ai;
-			if ((object)ai != null)
-			{
-				MHR_Nav.MoveWalk(ai, dt, vector, 2.5f, _shouldRun);
-			}
-			return;
-		}
-		_ai?.StopMoving();
-		PickUpNearbyDrops(vector);
-		UnclaimFermenter();
-		_tapCooldown = 5f;
-		if (HasStorableOutput() && TryStartStore())
-		{
-			_currentTask = CookTask.StoreOutput;
-		}
-		else
-		{
-			Finish();
-		}
-	}
-
-	private void UpdateMovingToOutputChest(float dt)
-	{
-		if (_doorHandler != null && _doorHandler.IsActive)
-		{
-			return;
-		}
-		if (_outputChest == null)
+		Inventory bag = Bag;
+		if (_chest == null || bag == null)
 		{
 			Finish();
 			return;
 		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _outputChest.transform.position);
-		if (num < 2.5f)
+		if (!AtChest(_chest, dt, "chest to store " + Name(_task.Item)))
 		{
-			_ai?.StopMoving();
-			_chestOpened = false;
-			_phase = CookPhase.StoringOutput;
 			return;
 		}
-		_shouldRun = num > 8f;
-		CompanionAI ai = _ai;
-		if ((object)ai != null)
+		if (!OpenChest(_chest, dt))
 		{
-			MHR_Nav.MoveWalk(ai, dt, _outputChest.transform.position, 2.5f, _shouldRun);
+			return;
 		}
-		UpdateStuck(dt, "output chest", num);
-	}
-
-	private void UpdateStoringOutput(float dt)
-	{
-		if (_outputChest == null)
+		Inventory inv = _chest.GetInventory();
+		int stored = 0;
+		// everything it made that fits here, starting with the item it came for
+		List<string> items = new List<string> { _task.Item };
+		foreach (string key in _ledger.Keys)
 		{
-			if (_chestOpened)
+			if (!items.Contains(key) && (HasItem(inv, key) || key == _task.Item))
 			{
-				_chestOpened = false;
+				items.Add(key);
 			}
-			Finish();
-			return;
 		}
-		if (!_chestOpened)
+		foreach (string item in items)
 		{
-			_outputChest.SetInUse(inUse: true);
-			_chestOpened = true;
-			if (_zanim != null)
+			int want = Mathf.Min(LedgerOf(item), HomesteadController.CountItemInInventory(bag, item));
+			int moved = 0;
+			while (moved < want)
 			{
-				_zanim.SetTrigger("interact");
-			}
-			_actionTimer = 0.8f;
-			return;
-		}
-		_actionTimer -= dt;
-		if (_actionTimer > 0f)
-		{
-			return;
-		}
-		Inventory inventory = _humanoid?.GetInventory();
-		Inventory inventory2 = _outputChest.GetInventory();
-		if (inventory == null || inventory2 == null)
-		{
-			_outputChest.SetInUse(inUse: false);
-			_chestOpened = false;
-			Finish();
-			return;
-		}
-		int num = 0;
-		List<ItemDrop.ItemData> allItems = inventory.GetAllItems();
-		for (int num2 = allItems.Count - 1; num2 >= 0; num2--)
-		{
-			ItemDrop.ItemData itemData = allItems[num2];
-			if (itemData != null && IsStorableOutput(itemData) && inventory2.CanAddItem(itemData, itemData.m_stack))
-			{
-				ItemDrop.ItemData itemData2 = itemData.Clone();
-				itemData2.m_stack = itemData.m_stack;
-				if (inventory2.AddItem(itemData2))
+				ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(bag, item);
+				if (itemData == null || !inv.CanAddItem(itemData, 1) || !HomesteadController.TransferOne(bag, inv, itemData))
 				{
-					inventory.RemoveItem(itemData);
-					num++;
+					break;
 				}
+				moved++;
+			}
+			if (moved > 0)
+			{
+				TakeFromLedger(item, moved);
+				stored += moved;
+				Log($"Put away {moved}x {Name(item)}");
 			}
 		}
-		_outputChest.SetInUse(inUse: false);
-		_chestOpened = false;
-		_storeCooldown = 10f;
-		Log($"Stored {num} item stacks in chest");
+		CloseChest();
+		if (stored == 0)
+		{
+			// nothing fitted: don't come back to this chest for a while
+			_unreachable.Add(_chest.GetInstanceID());
+		}
+		_chest = null;
 		Finish();
 	}
 
-	private void LateUpdate()
+	// ---------------------------------------------------------------- moving
+
+	private Component TaskTarget()
 	{
-		if (!(_character == null) && (_phase == CookPhase.MovingToIngredientChest || _phase == CookPhase.MovingToCauldron || _phase == CookPhase.MovingToFermenter || _phase == CookPhase.MovingToReadyFermenter || _phase == CookPhase.MovingToOutputChest || _phase == CookPhase.CollectingDrops))
+		switch (_task.Kind)
 		{
-			_character.SetRun(_shouldRun);
+		case TaskKind.Craft:
+			return _task.Station;
+		case TaskKind.Grill:
+		case TaskKind.Rescue:
+			return _task.Cooker;
+		case TaskKind.Fill:
+		case TaskKind.Tap:
+			return _task.Fermenter;
+		default:
+			return null;
 		}
 	}
 
-	private void Log(string msg)
+	private string TaskName()
 	{
-		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogInfo("[Cook|" + text + "] " + msg);
+		Component component = TaskTarget();
+		if (component is CraftingStation craftingStation)
+		{
+			return craftingStation.m_name;
+		}
+		if (component is CookingStation cookingStation)
+		{
+			return cookingStation.m_name;
+		}
+		return "$piece_fermenter";
 	}
 
-	private void ScanNearbyChests()
+	// where to stand: by the cooking station's food slot, by the fermenter's tap, by the crafting station
+	private Vector3 TaskPoint()
 	{
-		_nearbyChests.Clear();
-		_tempPieces.Clear();
-		Piece.GetAllPiecesInRadius(base.transform.position, 25f, _tempPieces);
-		foreach (Piece tempPiece in _tempPieces)
+		if (_task.Cooker != null && (_task.Kind == TaskKind.Grill || _task.Kind == TaskKind.Rescue))
 		{
-			if (!(tempPiece == null))
-			{
-				Container componentInChildren = tempPiece.GetComponentInChildren<Container>();
-				if (!(componentInChildren == null) && componentInChildren.GetInventory() != null && !(componentInChildren.gameObject == base.gameObject) && !componentInChildren.IsInUse())
-				{
-					_nearbyChests.Add(componentInChildren);
-				}
-			}
+			return (_task.Cooker.m_addFoodSwitch != null) ? _task.Cooker.m_addFoodSwitch.transform.position : _task.Cooker.transform.position;
 		}
+		if (_task.Fermenter != null && (_task.Kind == TaskKind.Fill || _task.Kind == TaskKind.Tap))
+		{
+			return (_task.Fermenter.m_outputPoint != null) ? _task.Fermenter.m_outputPoint.position : _task.Fermenter.transform.position;
+		}
+		return TaskTarget().transform.position;
 	}
 
-	private void ScanNearbyFermenters()
+	private bool AtPoint(Component target, Vector3 point, float dt, string what)
 	{
-		_nearbyFermenters.Clear();
-		foreach (Piece tempPiece in _tempPieces)
+		string text = "p" + target.GetInstanceID();
+		if (_approachKey != text)
 		{
-			if (tempPiece == null)
-			{
-				continue;
-			}
-			Fermenter component = tempPiece.GetComponent<Fermenter>();
-			if (!(component == null))
-			{
-				ZNetView component2 = component.GetComponent<ZNetView>();
-				if (!(component2 == null) && component2.GetZDO() != null)
-				{
-					_nearbyFermenters.Add(component);
-				}
-			}
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproachPoint(base.transform.position, point, target, out _approachSpot);
 		}
-	}
-
-	private static void EnsureFermenterInputCache()
-	{
-		if (s_fermenterInputPrefabs != null)
+		Vector3 position = base.transform.position;
+		float num = MHR_Nav.ReachDist(position, point);
+		if (num < 2f || (_hasApproach && OnSpot(num)))
 		{
-			return;
+			return true;
 		}
-		s_fermenterInputPrefabs = new HashSet<string>();
-		Fermenter[] array = Resources.FindObjectsOfTypeAll<Fermenter>();
-		Fermenter[] array2 = array;
-		foreach (Fermenter fermenter in array2)
-		{
-			if (fermenter?.m_conversion == null)
-			{
-				continue;
-			}
-			foreach (Fermenter.ItemConversion item in fermenter.m_conversion)
-			{
-				if (item?.m_from != null)
-				{
-					s_fermenterInputPrefabs.Add(item.m_from.gameObject.name);
-				}
-			}
-		}
-	}
-
-	private void PickNextBehavior()
-	{
-		if (_storeCooldown <= 0f && HasStorableOutput() && TryStartStore())
-		{
-			_currentTask = CookTask.StoreOutput;
-			return;
-		}
-		if (_tapCooldown <= 0f && TryStartTapFermenter())
-		{
-			_currentTask = CookTask.TapFermenter;
-			return;
-		}
-		float num = ((_cookCooldown <= 0f) ? 40f : 0f);
-		float num2 = ((_brewCooldown <= 0f) ? 25f : 0f);
-		float num3 = ((_fillCooldown <= 0f) ? 30f : 0f);
-		float num4 = num + num2 + num3;
-		if (num4 <= 0f)
-		{
-			return;
-		}
-		float num5 = UnityEngine.Random.Range(0f, num4);
-		float num6 = 0f;
-		num6 += num;
-		if (num5 < num6)
-		{
-			if (TryStartCookOrBrew(meadOnly: false))
-			{
-				_currentTask = CookTask.CookFood;
-			}
-			else
-			{
-				_cookCooldown = 30f;
-			}
-			return;
-		}
-		num6 += num2;
-		if (num5 < num6)
-		{
-			if (TryStartCookOrBrew(meadOnly: true))
-			{
-				_currentTask = CookTask.BrewMead;
-			}
-			else
-			{
-				_brewCooldown = 30f;
-			}
-			return;
-		}
-		num6 += num3;
-		if (num5 < num6)
-		{
-			if (TryStartFillFermenter())
-			{
-				_currentTask = CookTask.FillFermenter;
-			}
-			else
-			{
-				_fillCooldown = 20f;
-			}
-		}
-	}
-
-	private bool HasStorableOutput()
-	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
-		{
-			return false;
-		}
-		List<ItemDrop.ItemData> allItems = inventory.GetAllItems();
-		foreach (ItemDrop.ItemData item in allItems)
-		{
-			if (IsStorableOutput(item))
-			{
-				return true;
-			}
-		}
+		Vector3 goal = _hasApproach ? _approachSpot : point;
+		MHR_Nav.Move(_ai, dt, goal, _hasApproach ? 0.5f : 2f, FarEnough(num), "Cook");
+		CheckStuck(dt, num, what);
 		return false;
 	}
 
-	private bool TryStartStore()
+	private bool AtChest(Container chest, float dt, string what)
 	{
-		ScanNearbyChests();
-		_outputChest = FindChestWithSpace();
-		if (_outputChest == null)
+		string text = "c" + chest.GetInstanceID();
+		if (_approachKey != text)
 		{
-			Log("No chest with space for output");
-			return false;
-		}
-		ClearFollowForMovement();
-		ResetStuck();
-		_phase = CookPhase.MovingToOutputChest;
-		if (_talk != null)
-		{
-			_talk.Say(ModLocalization.Loc("hc_speech_cook_storing"));
-		}
-		Log($"Storing output in chest at {_outputChest.transform.position:F1}");
-		return true;
-	}
-
-	private bool TryStartTapFermenter()
-	{
-		foreach (Fermenter nearbyFermenter in _nearbyFermenters)
-		{
-			if (!(nearbyFermenter == null) && !s_claimedFermenters.Contains(nearbyFermenter.GetInstanceID()) && GetFermenterStatus(nearbyFermenter) == FermenterStatus.Ready)
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproach(base.transform.position, chest, out _approachSpot);
+			if (!_hasApproach && !MHR_Chests.CanReach(base.transform.position, chest))
 			{
-				_targetFermenter = nearbyFermenter;
-				ClaimFermenter(nearbyFermenter);
-				ClearFollowForMovement();
-				ResetStuck();
-				_phase = CookPhase.MovingToReadyFermenter;
-				Log("Found ready fermenter — heading to tap");
-				if (_talk != null)
-				{
-					_talk.Say(ModLocalization.Loc("hc_speech_cook_tapping"));
-				}
-				return true;
+				_unreachable.Add(chest.GetInstanceID());
+				Log($"Skipping chest at {chest.transform.position:F1} - can't get within reach of it");
+				Abort("chest out of reach");
+				return false;
 			}
 		}
+		float num = MHR_Nav.ReachDist(base.transform.position, chest.transform.position);
+		if (num < UseReach || (_hasApproach && OnSpot(num)))
+		{
+			_ai?.StopMoving();
+			return true;
+		}
+		Vector3 goal = _hasApproach ? _approachSpot : chest.transform.position;
+		MHR_Nav.Move(_ai, dt, goal, _hasApproach ? 0.5f : UseReach, FarEnough(num), "Cook");
+		CheckStuck(dt, num, what);
 		return false;
 	}
 
-	private bool TryStartCookOrBrew(bool meadOnly)
+	private bool OnSpot(float dist)
 	{
-		_targetCauldron = FindCauldron();
-		if (_targetCauldron == null)
-		{
-			Log("No cauldron found nearby");
-			return false;
-		}
-		List<Recipe> list = ObjectDB.instance?.m_recipes;
-		if (list == null)
-		{
-			return false;
-		}
-		List<Recipe> list2 = new List<Recipe>();
-		foreach (Recipe item in list)
-		{
-			if (item == null || !item.m_enabled || item.m_item == null || item.m_craftingStation == null || item.m_craftingStation.m_name != _targetCauldron.m_name || _targetCauldron.GetLevel() < item.GetRequiredStationLevel(1))
-			{
-				continue;
-			}
-			ItemDrop.ItemData.SharedData sharedData = item.m_item.m_itemData?.m_shared;
-			if (sharedData == null)
-			{
-				continue;
-			}
-			if (meadOnly)
-			{
-				if (!IsFermenterInput(item.m_item.gameObject.name))
-				{
-					continue;
-				}
-			}
-			else if ((sharedData.m_food <= 0f && sharedData.m_foodStamina <= 0f) || IsFermenterInput(item.m_item.gameObject.name))
-			{
-				continue;
-			}
-			if (CanCraftFromChests(item))
-			{
-				list2.Add(item);
-			}
-		}
-		if (list2.Count == 0)
-		{
-			Log(meadOnly ? "No viable mead base recipes" : "No viable food recipes");
-			return false;
-		}
-		_selectedRecipe = list2[UnityEngine.Random.Range(0, list2.Count)];
-		_ingredientList.Clear();
-		Piece.Requirement[] resources = _selectedRecipe.m_resources;
-		foreach (Piece.Requirement requirement in resources)
-		{
-			if (!(requirement?.m_resItem == null))
-			{
-				int amount = requirement.GetAmount(1);
-				if (amount > 0)
-				{
-					_ingredientList.Add((requirement.m_resItem.gameObject.name, amount));
-				}
-			}
-		}
-		_ingredientIndex = 0;
-		if (!FindNextIngredientChest())
-		{
-			Log("Can't find chest with first ingredient");
-			return false;
-		}
-		ClearFollowForMovement();
-		ResetStuck();
-		_phase = CookPhase.MovingToIngredientChest;
-		string text = _selectedRecipe.m_item.m_itemData?.m_shared?.m_name ?? "?";
-		Log("Starting " + (meadOnly ? "brew" : "cook") + ": " + text);
-		if (_talk != null)
-		{
-			string key = (meadOnly ? "hc_speech_cook_brewing" : "hc_speech_cook_cooking");
-			_talk.Say(ModLocalization.Loc(key));
-		}
-		return true;
+		Vector3 position = base.transform.position;
+		return dist <= UseReach + 1.5f && new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.2f;
 	}
 
-	private bool TryStartFillFermenter()
+	private static bool FarEnough(float dist)
 	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
-		{
-			return false;
-		}
-		string text = FindMeadBaseInInventory(inventory);
-		Container container = null;
-		if (text == null)
-		{
-			foreach (Container nearbyChest in _nearbyChests)
-			{
-				Inventory inventory2 = nearbyChest?.GetInventory();
-				if (inventory2 != null)
-				{
-					string text2 = FindMeadBaseInInventoryInternal(inventory2);
-					if (text2 != null)
-					{
-						text = text2;
-						container = nearbyChest;
-						break;
-					}
-				}
-			}
-		}
-		if (text == null)
-		{
-			Log("No mead base available");
-			return false;
-		}
-		Fermenter fermenter = null;
-		foreach (Fermenter nearbyFermenter in _nearbyFermenters)
-		{
-			if (!(nearbyFermenter == null) && !s_claimedFermenters.Contains(nearbyFermenter.GetInstanceID()) && GetFermenterStatus(nearbyFermenter) == FermenterStatus.Empty && FermenterAccepts(nearbyFermenter, text))
-			{
-				fermenter = nearbyFermenter;
-				break;
-			}
-		}
-		if (fermenter == null)
-		{
-			Log("No empty fermenter available");
-			return false;
-		}
-		_targetFermenter = fermenter;
-		_meadBasePrefab = text;
-		ClaimFermenter(fermenter);
-		ClearFollowForMovement();
-		ResetStuck();
-		if (container != null)
-		{
-			_targetChest = container;
-			_phase = CookPhase.MovingToIngredientChest;
-			_ingredientList.Clear();
-			_ingredientList.Add((text, 1));
-			_ingredientIndex = 0;
-			Log("Getting mead base \"" + text + "\" from chest, then filling fermenter");
-		}
-		else
-		{
-			_phase = CookPhase.MovingToFermenter;
-			Log("Have mead base \"" + text + "\" — heading to fermenter");
-		}
-		if (_talk != null)
-		{
-			_talk.Say(ModLocalization.Loc("hc_speech_cook_fermenter"));
-		}
-		return true;
+		float num = ModConfig.WorkRunDistance?.Value ?? 25f;
+		return num > 0f && dist > num;
 	}
 
-	private CraftingStation FindCauldron()
+	private void ResetStuck()
 	{
-		List<CraftingStation> allCraftingStations = ReflectionHelper.GetAllCraftingStations();
-		if (allCraftingStations == null)
+		_stuckTimer = 0f;
+		_stuckCheckTimer = 0f;
+		_stuckBestDist = float.MaxValue;
+	}
+
+	private void CheckStuck(float dt, float dist, string what)
+	{
+		_stuckCheckTimer += dt;
+		if (_stuckCheckTimer >= 1f)
+		{
+			if (_stuckBestDist - dist < 0.3f && !(_ai != null && MHR_Mover.Progressing(_ai)))
+			{
+				_stuckTimer += _stuckCheckTimer;
+			}
+			else
+			{
+				_stuckBestDist = Mathf.Min(_stuckBestDist, dist);
+				_stuckTimer = 0f;
+			}
+			_stuckCheckTimer = 0f;
+		}
+		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > 12f)
+		{
+			Abort("couldn't get to the " + what);
+		}
+	}
+
+	// ---------------------------------------------------------------- chests
+
+	private bool OpenChest(Container chest, float dt)
+	{
+		if (!_chestOpen)
+		{
+			chest.SetInUse(inUse: true);
+			_chestOpen = true;
+			_zanim?.SetTrigger("interact");
+			_ai?.LookAtPoint(chest.transform.position);
+			_timer = 0.8f;
+			return false;
+		}
+		_timer -= dt;
+		return _timer <= 0f;
+	}
+
+	private void CloseChest()
+	{
+		if (_chestOpen && _chest != null)
+		{
+			_chest.SetInUse(inUse: false);
+		}
+		_chestOpen = false;
+	}
+
+	private Container ChestWith(string item)
+	{
+		Container best = null;
+		float bestDist = float.MaxValue;
+		foreach (Container chest in _chests)
+		{
+			if (chest == null || chest.IsInUse() || _unreachable.Contains(chest.GetInstanceID()) || !HasItem(chest.GetInventory(), item))
+			{
+				continue;
+			}
+			float num = Vector3.Distance(base.transform.position, chest.transform.position);
+			if (num < bestDist)
+			{
+				best = chest;
+				bestDist = num;
+			}
+		}
+		return best;
+	}
+
+	// like emptying bags: a chest that already has this food; else one with other cooked food; else the one nearest the
+	// cooking area (Cooking.StoreWithCookedFood off: the nearest chest with room)
+	private Container StoreChest(string item)
+	{
+		GameObject prefab = ObjectDB.instance?.GetItemPrefab(item);
+		ItemDrop.ItemData sample = prefab?.GetComponent<ItemDrop>()?.m_itemData;
+		if (sample == null)
 		{
 			return null;
 		}
-		CraftingStation result = null;
-		float num = float.MaxValue;
-		foreach (CraftingStation item in allCraftingStations)
+		bool smart = ModConfig.CookStoreWithCookedFood?.Value ?? true;
+		Vector3 near = _hasCookArea ? _cookArea : base.transform.position;
+		Container same = null;
+		Container cooked = null;
+		Container nearest = null;
+		float d1 = float.MaxValue;
+		float d2 = float.MaxValue;
+		float d3 = float.MaxValue;
+		foreach (Container chest in _chests)
 		{
-			if (!(item == null) && item.m_name.ToLower().Contains("cauldron"))
-			{
-				float num2 = Vector3.Distance(base.transform.position, item.transform.position);
-				if (!(num2 > 25f) && num2 < num)
-				{
-					num = num2;
-					result = item;
-				}
-			}
-		}
-		return result;
-	}
-
-	private static bool IsFermenterInput(string prefabName)
-	{
-		if (s_fermenterInputPrefabs == null)
-		{
-			return false;
-		}
-		return s_fermenterInputPrefabs.Contains(prefabName);
-	}
-
-	private bool CanCraftFromChests(Recipe recipe)
-	{
-		Piece.Requirement[] resources = recipe.m_resources;
-		foreach (Piece.Requirement requirement in resources)
-		{
-			if (requirement?.m_resItem == null)
+			if (chest == null || chest.IsInUse() || _unreachable.Contains(chest.GetInstanceID()))
 			{
 				continue;
 			}
-			string prefabName = requirement.m_resItem.gameObject.name;
-			int amount = requirement.GetAmount(1);
-			if (amount <= 0)
+			Inventory inv = chest.GetInventory();
+			if (inv == null || !inv.CanAddItem(sample, 1))
 			{
 				continue;
 			}
-			int num = 0;
-			Inventory inventory = _humanoid?.GetInventory();
-			if (inventory != null)
+			float num = Vector3.Distance(near, chest.transform.position);
+			if (smart && HasItem(inv, item) && num < d1)
 			{
-				num += HomesteadController.CountItemInInventory(inventory, prefabName);
+				same = chest;
+				d1 = num;
 			}
-			foreach (Container nearbyChest in _nearbyChests)
+			else if (smart && HasCookedFood(inv) && num < d2)
 			{
-				Inventory inventory2 = nearbyChest?.GetInventory();
-				if (inventory2 != null)
-				{
-					num += HomesteadController.CountItemInInventory(inventory2, prefabName);
-				}
+				cooked = chest;
+				d2 = num;
 			}
-			if (num < amount)
+			else if (inv.GetEmptySlots() > 0 && num < d3)
+			{
+				nearest = chest;
+				d3 = num;
+			}
+		}
+		return same ?? cooked ?? nearest;
+	}
+
+	private static bool HasItem(Inventory inv, string item)
+	{
+		return inv != null && HomesteadController.CountItemInInventory(inv, item) > 0;
+	}
+
+	private static bool HasCookedFood(Inventory inv)
+	{
+		foreach (ItemDrop.ItemData item in inv.GetAllItems())
+		{
+			string text = item?.m_dropPrefab?.name;
+			if (text != null && CookCatalog.IsMade(text))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ---------------------------------------------------------------- counting
+
+	private Inventory Bag => _humanoid?.GetInventory();
+
+	// in the chests in range and the bag
+	private int Count(string item)
+	{
+		int num = HomesteadController.CountItemInInventory(Bag, item);
+		foreach (Container chest in _chests)
+		{
+			if (chest != null)
+			{
+				num += HomesteadController.CountItemInInventory(chest.GetInventory(), item);
+			}
+		}
+		return num;
+	}
+
+	// how many of an ingredient may be used: raw ones keep Cooking.IngredientReserve back
+	private int Usable(string item)
+	{
+		int num = Count(item);
+		return CookCatalog.IsMade(item) ? num : (num - Reserve);
+	}
+
+	private bool IngredientsOk(Recipe recipe)
+	{
+		foreach (Piece.Requirement req in recipe.m_resources)
+		{
+			if (req?.m_resItem != null && req.GetAmount(1) > 0 && Usable(req.m_resItem.gameObject.name) < req.GetAmount(1))
 			{
 				return false;
 			}
@@ -1230,301 +1249,778 @@ public class CookController : MonoBehaviour
 		return true;
 	}
 
-	private bool FindNextIngredientChest()
+	private static bool Known(Recipe recipe)
 	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
+		Player localPlayer = Player.m_localPlayer;
+		if (localPlayer == null)
+		{
+			return true;
+		}
+		string text = recipe.m_item?.m_itemData?.m_shared?.m_name;
+		return text != null && localPlayer.IsRecipeKnown(text);
+	}
+
+	// ---------------------------------------------------------------- stations
+
+	private void Scan()
+	{
+		if (Time.time >= _unreachableClearAt)
+		{
+			_unreachable.Clear();
+			_unreachableClearAt = Time.time + 60f;
+		}
+		_chests.Clear();
+		_stations.Clear();
+		_cookers.Clear();
+		_fermenters.Clear();
+		_pieces.Clear();
+		Vector3 position = base.transform.position;
+		Piece.GetAllPiecesInRadius(position, Range, _pieces);
+		foreach (Piece piece in _pieces)
+		{
+			if (piece == null)
+			{
+				continue;
+			}
+			Container container = piece.GetComponentInChildren<Container>();
+			if (container != null && container.GetInventory() != null && container.gameObject != base.gameObject && !_chests.Contains(container))
+			{
+				_chests.Add(container);
+			}
+			CookingStation cookingStation = piece.GetComponent<CookingStation>();
+			if (cookingStation != null && cookingStation.GetComponent<ZNetView>()?.GetZDO() != null)
+			{
+				_cookers.Add(cookingStation);
+			}
+			Fermenter fermenter = piece.GetComponent<Fermenter>();
+			if (fermenter != null && fermenter.GetComponent<ZNetView>()?.GetZDO() != null)
+			{
+				_fermenters.Add(fermenter);
+			}
+			CraftingStation craftingStation = piece.GetComponent<CraftingStation>();
+			if (craftingStation != null && CookCatalog.IsCookingStation(craftingStation.m_name))
+			{
+				_stations.Add(craftingStation);
+			}
+		}
+	}
+
+	private bool Usable(Component c)
+	{
+		if (c == null || (_ai != null && _ai.IsPositionBlacklisted(c.transform.position)))
 		{
 			return false;
 		}
-		while (_ingredientIndex < _ingredientList.Count)
+		float value;
+		return !_stationProblemUntil.TryGetValue(c.GetInstanceID(), out value) || Time.time >= value;
+	}
+
+	private CraftingStation FindStation(Recipe recipe)
+	{
+		CraftingStation best = null;
+		float bestDist = float.MaxValue;
+		foreach (CraftingStation station in _stations)
 		{
-			(string prefab, int needed) tuple = _ingredientList[_ingredientIndex];
-			string item = tuple.prefab;
-			int item2 = tuple.needed;
-			int num = HomesteadController.CountItemInInventory(inventory, item);
-			if (num >= item2)
+			if (station == null || recipe.m_craftingStation == null || station.m_name != recipe.m_craftingStation.m_name || station.GetLevel() < recipe.GetRequiredStationLevel(1) || !Usable(station) || !StationReady(station, out var _))
 			{
-				_ingredientIndex++;
 				continue;
 			}
-			_targetChest = FindChestWithItem(item);
-			if (_targetChest != null)
+			float num = Vector3.Distance(base.transform.position, station.transform.position);
+			if (num < bestDist)
+			{
+				best = station;
+				bestDist = num;
+			}
+		}
+		return best;
+	}
+
+	// what a player needs to use it: a roof and a fire, where the station asks for them
+	private static bool StationReady(CraftingStation station, out string why)
+	{
+		why = "";
+		if (station.m_craftRequireRoof && station.m_roofCheckPoint != null)
+		{
+			Cover.GetCoverForPoint(station.m_roofCheckPoint.position, out var coverPercentage, out var underRoof);
+			if (!underRoof || coverPercentage < 0.7f)
+			{
+				why = "needs a roof";
+				return false;
+			}
+		}
+		if (station.m_craftRequireFire && s_haveFire != null && !(bool)s_haveFire.GetValue(station))
+		{
+			why = "needs a fire";
+			return false;
+		}
+		return true;
+	}
+
+	private CookingStation FindCooker(string from, bool needFree)
+	{
+		foreach (CookingStation cooker in _cookers)
+		{
+			if (cooker == null || !Usable(cooker) || (needFree && CountSlots(cooker, -1) == 0))
+			{
+				continue;
+			}
+			foreach (CookingStation.ItemConversion conv in cooker.m_conversion)
+			{
+				if (conv?.m_from != null && conv.m_from.gameObject.name == from)
+				{
+					return cooker;
+				}
+			}
+		}
+		return null;
+	}
+
+	private bool HasHeat(CookingStation cooker, bool orFuelInReach)
+	{
+		if (cooker.m_requireFire && s_isFireLit != null && (bool)s_isFireLit.Invoke(cooker, null))
+		{
+			return true;
+		}
+		if (cooker.m_useFuel)
+		{
+			return Fuel(cooker) >= 1f || (orFuelInReach && cooker.m_fuelItem != null && Count(cooker.m_fuelItem.gameObject.name) > 0);
+		}
+		return !cooker.m_requireFire;
+	}
+
+	private static float Fuel(CookingStation cooker)
+	{
+		return cooker.GetComponent<ZNetView>()?.GetZDO()?.GetFloat(ZDOVars.s_fuel) ?? 0f;
+	}
+
+	// status: -1 = empty slots, 0 = cooking, 1 = done, 2 = burnt
+	private static int CountSlots(CookingStation cooker, int status)
+	{
+		ZDO zDO = cooker.GetComponent<ZNetView>()?.GetZDO();
+		if (zDO == null || cooker.m_slots == null)
+		{
+			return 0;
+		}
+		int num = 0;
+		for (int i = 0; i < cooker.m_slots.Length; i++)
+		{
+			string text = zDO.GetString("slot" + i);
+			if (status < 0)
+			{
+				if (text == "")
+				{
+					num++;
+				}
+			}
+			else if (text != "" && zDO.GetInt("slotstatus" + i) == status)
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	private static int CountCooking(CookingStation cooker, string from)
+	{
+		ZDO zDO = cooker.GetComponent<ZNetView>()?.GetZDO();
+		if (zDO == null || cooker.m_slots == null)
+		{
+			return 0;
+		}
+		int num = 0;
+		for (int i = 0; i < cooker.m_slots.Length; i++)
+		{
+			if (zDO.GetString("slot" + i) == from && zDO.GetInt("slotstatus" + i) == 0)
+			{
+				num++;
+			}
+		}
+		return num;
+	}
+
+	private static Vector3 DropPoint(CookingStation cooker)
+	{
+		return (cooker.m_spawnPoint != null) ? cooker.m_spawnPoint.position : cooker.transform.position;
+	}
+
+	// 0 = empty, 1 = fermenting, 2 = ready
+	private static int FermenterState(Fermenter fermenter)
+	{
+		ZDO zDO = fermenter.GetComponent<ZNetView>()?.GetZDO();
+		if (zDO == null || string.IsNullOrEmpty(zDO.GetString(ZDOVars.s_content)))
+		{
+			return 0;
+		}
+		long @long = zDO.GetLong(ZDOVars.s_startTime, 0L);
+		if (@long == 0L || ZNet.instance == null)
+		{
+			return 1;
+		}
+		return ((ZNet.instance.GetTime() - new DateTime(@long)).TotalSeconds > (double)fermenter.m_fermentationDuration) ? 2 : 1;
+	}
+
+	private static bool Accepts(Fermenter fermenter, string item)
+	{
+		foreach (Fermenter.ItemConversion conv in fermenter.m_conversion)
+		{
+			if (conv?.m_from != null && conv.m_from.gameObject.name == item)
 			{
 				return true;
 			}
-			Log("No chest has ingredient \"" + item + "\"");
-			return false;
 		}
 		return false;
 	}
 
-	private void ClearFollowForMovement()
+	private void Claim(Fermenter f)
 	{
-		if (_ai != null)
+		Unclaim();
+		_claimedId = f.GetInstanceID();
+		s_claimed.Add(_claimedId);
+	}
+
+	private void Unclaim()
+	{
+		if (_claimedId != 0)
 		{
-			_ai.SetFollowTarget(null);
-			Log("Cleared follow target — CookController driving movement");
+			s_claimed.Remove(_claimedId);
+			_claimedId = 0;
 		}
 	}
 
-	private void ResetStuck()
-	{
-		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-	}
+	// ---------------------------------------------------------------- picking things up
 
-	private Container FindChestWithItem(string prefab)
+	private void PickUpDrops(Vector3 center, float radius, bool ledger)
 	{
-		Container result = null;
-		float num = float.MaxValue;
-		foreach (Container nearbyChest in _nearbyChests)
+		if (s_itemMask < 0)
 		{
-			if (nearbyChest == null || nearbyChest.IsInUse())
-			{
-				continue;
-			}
-			Inventory inventory = nearbyChest.GetInventory();
-			if (inventory != null && HomesteadController.CountItemInInventory(inventory, prefab) > 0)
-			{
-				float num2 = Vector3.Distance(base.transform.position, nearbyChest.transform.position);
-				if (num2 < num)
-				{
-					num = num2;
-					result = nearbyChest;
-				}
-			}
+			s_itemMask = LayerMask.GetMask("item");
 		}
-		return result;
-	}
-
-	private void UpdateStuck(float dt, string target, float dist)
-	{
-		_stuckCheckTimer += dt;
-		if (_stuckCheckTimer < 1f)
+		Inventory bag = Bag;
+		if (bag == null)
 		{
 			return;
 		}
-		_stuckCheckTimer = 0f;
-		float num = Vector3.Distance(base.transform.position, _stuckCheckPos);
-		_stuckCheckPos = base.transform.position;
-		if (num < 0.5f)
+		int num = Physics.OverlapSphereNonAlloc(center, radius, s_drops, s_itemMask);
+		for (int i = 0; i < num; i++)
 		{
-			_stuckTimer += 1f;
-			if (_stuckTimer > 10f)
+			ItemDrop drop = s_drops[i]?.GetComponentInParent<ItemDrop>();
+			ZNetView nv = drop?.GetComponent<ZNetView>();
+			if (drop == null || drop.m_itemData == null || nv == null || nv.GetZDO() == null)
 			{
-				Log($"Stuck moving to {target} (dist={dist:F1}m) — aborting");
-				Abort("stuck moving to " + target);
+				continue;
 			}
+			string text = drop.m_itemData.m_dropPrefab?.name ?? Utils.GetPrefabName(drop.gameObject);
+			// only what came off the stations: cooked food, mead, coal from burnt food
+			if (!CookCatalog.IsMade(text) && !CookCatalog.IsMead(text) && text != "Coal")
+			{
+				continue;
+			}
+			if (!bag.CanAddItem(drop.m_itemData, drop.m_itemData.m_stack))
+			{
+				continue;
+			}
+			int stack = drop.m_itemData.m_stack;
+			bag.AddItem(drop.m_itemData);
+			nv.ClaimOwnership();
+			nv.Destroy();
+			if (ledger)
+			{
+				AddLedger(text, stack);
+			}
+			Log($"Picked up {stack}x {Name(text)}");
+		}
+	}
+
+	// ---------------------------------------------------------------- what it made (kept on the companion)
+
+	private void LoadLedger()
+	{
+		_ledgerLoaded = true;
+		_ledger.Clear();
+		string text = _nview?.GetZDO()?.GetString(LedgerHash, "") ?? "";
+		foreach (string part in text.Split(';'))
+		{
+			int num = part.LastIndexOf(':');
+			if (num > 0 && int.TryParse(part.Substring(num + 1), out var result) && result > 0)
+			{
+				_ledger[part.Substring(0, num)] = result;
+			}
+		}
+	}
+
+	private void SaveLedger()
+	{
+		StringBuilder stringBuilder = new StringBuilder();
+		foreach (KeyValuePair<string, int> item in _ledger)
+		{
+			if (item.Value > 0)
+			{
+				stringBuilder.Append(item.Key).Append(':').Append(item.Value)
+					.Append(';');
+			}
+		}
+		_nview?.GetZDO()?.Set(LedgerHash, stringBuilder.ToString());
+	}
+
+	private void AddLedger(string item, int n)
+	{
+		_ledger[item] = LedgerOf(item) + n;
+		SaveLedger();
+	}
+
+	private void TakeFromLedger(string item, int n)
+	{
+		int num = LedgerOf(item) - n;
+		if (num > 0)
+		{
+			_ledger[item] = num;
 		}
 		else
 		{
-			_stuckTimer = 0f;
+			_ledger.Remove(item);
 		}
+		SaveLedger();
 	}
 
-	private void CloseCurrentChest()
+	private int LedgerOf(string item)
 	{
-		if (_chestOpened && _targetChest != null)
-		{
-			_targetChest.SetInUse(inUse: false);
-		}
-		_chestOpened = false;
+		return _ledger.TryGetValue(item, out var value) ? value : 0;
 	}
 
-	private Fermenter FindEmptyFermenter()
+	// what it made and still carries (the ledger can't be more than what's in the bag)
+	private int LedgerCarried()
 	{
-		foreach (Fermenter nearbyFermenter in _nearbyFermenters)
+		Inventory bag = Bag;
+		if (bag == null)
 		{
-			if (!(nearbyFermenter == null) && !s_claimedFermenters.Contains(nearbyFermenter.GetInstanceID()) && GetFermenterStatus(nearbyFermenter) == FermenterStatus.Empty && (_meadBasePrefab == null || FermenterAccepts(nearbyFermenter, _meadBasePrefab)))
+			return 0;
+		}
+		int num = 0;
+		List<string> list = null;
+		foreach (KeyValuePair<string, int> item in _ledger)
+		{
+			int num2 = HomesteadController.CountItemInInventory(bag, item.Key);
+			if (num2 < item.Value)
 			{
-				return nearbyFermenter;
+				if (list == null)
+				{
+					list = new List<string>();
+				}
+				list.Add(item.Key);
 			}
+			num += Mathf.Min(num2, item.Value);
 		}
-		return null;
+		if (list != null)
+		{
+			// eaten, given away or dropped: forget what's no longer carried
+			foreach (string item2 in list)
+			{
+				int num3 = HomesteadController.CountItemInInventory(bag, item2);
+				if (num3 > 0)
+				{
+					_ledger[item2] = num3;
+				}
+				else
+				{
+					_ledger.Remove(item2);
+				}
+			}
+			SaveLedger();
+		}
+		return num;
 	}
 
-	private void ClaimFermenter(Fermenter f)
-	{
-		UnclaimFermenter();
-		_claimedFermenterId = f?.GetInstanceID() ?? 0;
-		if (_claimedFermenterId != 0)
-		{
-			s_claimedFermenters.Add(_claimedFermenterId);
-		}
-	}
+	// ---------------------------------------------------------------- ending a task
 
 	private void Finish()
 	{
-		Log("Finish — restoring follow target");
-		UnclaimFermenter();
-		CloseAnyChest();
-		_targetCauldron = null;
-		_targetFermenter = null;
-		_targetChest = null;
-		_outputChest = null;
-		_selectedRecipe = null;
-		_meadBasePrefab = null;
-		_ingredientList.Clear();
+		Unclaim();
+		CloseChest();
+		_task = null;
+		_phase = CookPhase.Idle;
+		_scanTimer = 1f;
+	}
+
+	private void Abort(string reason)
+	{
+		Log("Stopped - " + reason + " (was " + (_task?.Describe() ?? "idle") + ")");
+		Unclaim();
+		CloseChest();
+		_task = null;
+		_chest = null;
 		_phase = CookPhase.Idle;
 		_scanTimer = 5f;
-		RestoreFollow();
-	}
-
-	private string FindMeadBaseInInventory(Inventory inv)
-	{
-		return FindMeadBaseInInventoryInternal(inv);
-	}
-
-	private string FindMeadBaseInInventoryInternal(Inventory inv)
-	{
-		List<ItemDrop.ItemData> allItems = inv.GetAllItems();
-		foreach (ItemDrop.ItemData item in allItems)
-		{
-			string text = item.m_dropPrefab?.name;
-			if (text != null && IsFermenterInput(text))
-			{
-				return text;
-			}
-		}
-		return null;
-	}
-
-	private FermenterStatus GetFermenterStatus(Fermenter fermenter)
-	{
-		ZNetView component = fermenter.GetComponent<ZNetView>();
-		if (component == null || component.GetZDO() == null)
-		{
-			return FermenterStatus.Empty;
-		}
-		string value = component.GetZDO().GetString(ZDOVars.s_content);
-		if (string.IsNullOrEmpty(value))
-		{
-			return FermenterStatus.Empty;
-		}
-		long num = component.GetZDO().GetLong(ZDOVars.s_startTime, 0L);
-		if (num == 0L)
-		{
-			return FermenterStatus.Fermenting;
-		}
-		DateTime dateTime = new DateTime(num);
-		double totalSeconds = (ZNet.instance.GetTime() - dateTime).TotalSeconds;
-		if (!(totalSeconds > (double)fermenter.m_fermentationDuration))
-		{
-			return FermenterStatus.Fermenting;
-		}
-		return FermenterStatus.Ready;
-	}
-
-	private static bool FermenterAccepts(Fermenter fermenter, string prefabName)
-	{
-		foreach (Fermenter.ItemConversion item in fermenter.m_conversion)
-		{
-			if (item?.m_from != null && item.m_from.gameObject.name == prefabName)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private void PickUpNearbyDrops(Vector3 center)
-	{
-		if (_itemLayerMask < 0)
-		{
-			_itemLayerMask = LayerMask.GetMask("item");
-		}
-		int num = Physics.OverlapSphereNonAlloc(center, 3f, _dropScanBuffer, _itemLayerMask);
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
-		{
-			return;
-		}
-		for (int i = 0; i < num; i++)
-		{
-			Collider collider = _dropScanBuffer[i];
-			if (collider == null)
-			{
-				continue;
-			}
-			ItemDrop componentInParent = collider.GetComponentInParent<ItemDrop>();
-			if (!(componentInParent == null) && componentInParent.m_itemData != null)
-			{
-				ZNetView component = componentInParent.GetComponent<ZNetView>();
-				if (!(component == null) && component.GetZDO() != null && inventory.CanAddItem(componentInParent.m_itemData, componentInParent.m_itemData.m_stack))
-				{
-					inventory.AddItem(componentInParent.m_itemData);
-					component.ClaimOwnership();
-					component.Destroy();
-					Log($"Picked up {componentInParent.m_itemData.m_stack}x \"{componentInParent.m_itemData.m_shared?.m_name}\"");
-				}
-			}
-		}
-	}
-
-	private Container FindChestWithSpace()
-	{
-		Container result = null;
-		float num = float.MaxValue;
-		foreach (Container nearbyChest in _nearbyChests)
-		{
-			if (nearbyChest == null || nearbyChest.IsInUse())
-			{
-				continue;
-			}
-			Inventory inventory = nearbyChest.GetInventory();
-			if (inventory != null && inventory.GetEmptySlots() > 0)
-			{
-				float num2 = Vector3.Distance(base.transform.position, nearbyChest.transform.position);
-				if (num2 < num)
-				{
-					num = num2;
-					result = nearbyChest;
-				}
-			}
-		}
-		return result;
-	}
-
-	private bool IsStorableOutput(ItemDrop.ItemData item)
-	{
-		if (item == null)
-		{
-			return false;
-		}
-		ItemDrop.ItemData.SharedData shared = item.m_shared;
-		if (shared == null)
-		{
-			return false;
-		}
-		if (shared.m_itemType != ItemDrop.ItemData.ItemType.Consumable && shared.m_itemType != ItemDrop.ItemData.ItemType.Material)
-		{
-			return false;
-		}
-		if (item.m_equipped)
-		{
-			return false;
-		}
-		bool flag = shared.m_food > 0f || shared.m_foodStamina > 0f;
-		bool flag2 = item.m_dropPrefab != null && IsFermenterInput(item.m_dropPrefab.name);
-		return flag || flag2;
 	}
 
 	private void RestoreFollow()
 	{
-		if (!(_ai == null))
+		if (_setup != null && _ai != null && _setup.GetFollow() && Player.m_localPlayer != null && _ai.GetFollowTarget() == null)
 		{
-			bool flag = _setup != null && _setup.GetFollow();
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
+			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+		}
+	}
+
+	private void Say(TaskKind kind)
+	{
+		if (_talk == null)
+		{
+			return;
+		}
+		string text;
+		switch (kind)
+		{
+		case TaskKind.Craft:
+		case TaskKind.Grill:
+			text = "hc_speech_cook_cooking";
+			break;
+		case TaskKind.Fill:
+			text = "hc_speech_cook_fermenter";
+			break;
+		case TaskKind.Tap:
+			text = "hc_speech_cook_tapping";
+			break;
+		case TaskKind.Store:
+			text = "hc_speech_cook_storing";
+			break;
+		default:
+			return;
+		}
+		_talk.Say(ModLocalization.Loc(text));
+	}
+
+	private void Log(string msg)
+	{
+		CompanionsPlugin.Log.LogInfo("[Cook|" + (_character?.m_name ?? "?") + "] " + msg);
+	}
+
+	internal static string Name(string prefab)
+	{
+		if (string.IsNullOrEmpty(prefab))
+		{
+			return "?";
+		}
+		string text = ObjectDB.instance?.GetItemPrefab(prefab)?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name;
+		return (text != null) ? Loc(text) : prefab;
+	}
+
+	internal static string Loc(string token)
+	{
+		if (string.IsNullOrEmpty(token))
+		{
+			return "?";
+		}
+		return Localization.instance?.Localize(token) ?? token;
+	}
+}
+
+// What can be cooked, from the game's own data (mods included): cauldron / prep table recipes, cooking station and oven
+// conversions, fermenter conversions. Built once; also writes OfflineCompanionsReborn.Cooking.txt with the names to use
+// in the Cooking settings.
+internal static class CookCatalog
+{
+	internal static readonly List<Recipe> Recipes = new List<Recipe>();
+
+	private static readonly Dictionary<string, string> s_convTo = new Dictionary<string, string>();
+
+	private static readonly Dictionary<string, string> s_meadOf = new Dictionary<string, string>();
+
+	private static readonly HashSet<string> s_meads = new HashSet<string>();
+
+	private static readonly HashSet<string> s_made = new HashSet<string>();
+
+	private static readonly HashSet<string> s_stationNames = new HashSet<string>();
+
+	private static readonly Dictionary<string, Recipe> s_recipeFor = new Dictionary<string, Recipe>();
+
+	private static bool s_built;
+
+	private static string s_foodsKey;
+
+	private static readonly HashSet<string> s_allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+	private static readonly HashSet<string> s_deny = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+	private static bool s_all;
+
+	private static string s_focusKey;
+
+	private static string s_focusStage;
+
+	private static readonly List<string> s_focus = new List<string>();
+
+	private static readonly string[] s_stages = new string[8] { "start", "eikthyr", "gdking", "bonemass", "dragon", "goblinking", "queen", "fader" };
+
+	internal static void Ensure()
+	{
+		if (s_built || ObjectDB.instance == null || ObjectDB.instance.m_recipes == null || ObjectDB.instance.m_recipes.Count == 0)
+		{
+			return;
+		}
+		s_built = true;
+		try
+		{
+			foreach (Fermenter fermenter in Resources.FindObjectsOfTypeAll<Fermenter>())
 			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
+				if (fermenter?.m_conversion == null)
+				{
+					continue;
+				}
+				foreach (Fermenter.ItemConversion conv in fermenter.m_conversion)
+				{
+					if (conv?.m_from != null && conv.m_to != null)
+					{
+						s_meadOf[conv.m_from.gameObject.name] = conv.m_to.gameObject.name;
+						s_meads.Add(conv.m_to.gameObject.name);
+					}
+				}
 			}
-			else if (flag && Player.m_localPlayer != null)
+			foreach (CookingStation cooker in Resources.FindObjectsOfTypeAll<CookingStation>())
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				if (cooker?.m_conversion == null)
+				{
+					continue;
+				}
+				foreach (CookingStation.ItemConversion conv2 in cooker.m_conversion)
+				{
+					if (conv2?.m_from != null && conv2.m_to != null)
+					{
+						s_convTo[conv2.m_from.gameObject.name] = conv2.m_to.gameObject.name;
+						s_made.Add(conv2.m_to.gameObject.name);
+					}
+				}
 			}
+			foreach (Recipe recipe in ObjectDB.instance.m_recipes)
+			{
+				if (recipe == null || !recipe.m_enabled || recipe.m_item == null || recipe.m_craftingStation == null)
+				{
+					continue;
+				}
+				string name = recipe.m_item.gameObject.name;
+				ItemDrop.ItemData.SharedData shared = recipe.m_item.m_itemData?.m_shared;
+				if (shared == null)
+				{
+					continue;
+				}
+				bool flag = Value(shared) > 0f || s_meadOf.ContainsKey(name) || (s_convTo.TryGetValue(name, out var value) && Value(value) > 0f);
+				if (flag && !s_meads.Contains(name))
+				{
+					Recipes.Add(recipe);
+					s_made.Add(name);
+					s_stationNames.Add(recipe.m_craftingStation.m_name);
+					if (!s_recipeFor.ContainsKey(name))
+					{
+						s_recipeFor[name] = recipe;
+					}
+				}
+			}
+			WriteReference();
+			CompanionsPlugin.Log.LogInfo($"[Cook] {Recipes.Count} recipes, {s_convTo.Count} cooking station items, {s_meadOf.Count} mead bases");
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Cook] couldn't read the cooking recipes: " + ex.Message);
+		}
+	}
+
+	internal static bool IsCookingStation(string stationName)
+	{
+		return s_stationNames.Contains(stationName);
+	}
+
+	internal static bool IsMade(string item)
+	{
+		return s_made.Contains(item);
+	}
+
+	internal static bool IsMeadBase(string item)
+	{
+		return s_meadOf.ContainsKey(item);
+	}
+
+	internal static bool IsMead(string item)
+	{
+		return s_meads.Contains(item);
+	}
+
+	internal static string MeadOf(string meadBase)
+	{
+		return s_meadOf.TryGetValue(meadBase, out var value) ? value : null;
+	}
+
+	internal static Recipe RecipeFor(string item)
+	{
+		return s_recipeFor.TryGetValue(item, out var value) ? value : null;
+	}
+
+	// the food a crafted item ends up as: itself, or what a cooking station / oven turns it into
+	internal static string FinalFood(string item)
+	{
+		if (Value(item) > 0f && !IsMeadBase(item))
+		{
+			return item;
+		}
+		if (s_convTo.TryGetValue(item, out var value) && Value(value) > 0f)
+		{
+			return value;
+		}
+		return null;
+	}
+
+	internal static float Value(string item)
+	{
+		ItemDrop.ItemData.SharedData sharedData = ObjectDB.instance?.GetItemPrefab(item)?.GetComponent<ItemDrop>()?.m_itemData?.m_shared;
+		return (sharedData != null) ? Value(sharedData) : 0f;
+	}
+
+	private static float Value(ItemDrop.ItemData.SharedData s)
+	{
+		if (s.m_itemType != ItemDrop.ItemData.ItemType.Consumable)
+		{
+			return 0f;
+		}
+		return s.m_food + s.m_foodStamina + s.m_foodEitr;
+	}
+
+	internal static bool Allowed(string item)
+	{
+		string text = ModConfig.CookFoods?.Value ?? "*";
+		if (text != s_foodsKey)
+		{
+			s_foodsKey = text;
+			s_allow.Clear();
+			s_deny.Clear();
+			s_all = false;
+			foreach (string part in text.Split(','))
+			{
+				string text2 = part.Trim();
+				if (text2 == "*")
+				{
+					s_all = true;
+				}
+				else if (text2.StartsWith("-"))
+				{
+					s_deny.Add(text2.Substring(1).Trim());
+				}
+				else if (text2.Length > 0)
+				{
+					s_allow.Add(text2);
+				}
+			}
+		}
+		string text3 = CookController.Name(item);
+		if (s_deny.Contains(item) || s_deny.Contains(text3))
+		{
+			return false;
+		}
+		return s_all || s_allow.Contains(item) || s_allow.Contains(text3);
+	}
+
+	// the mead bases to work on now: the MeadFocus entry for the last boss beaten (or the closest one before it)
+	internal static List<string> Focus()
+	{
+		string text = ModConfig.CookMeadFocus?.Value ?? "";
+		string stage = Stage();
+		if (text == s_focusKey && stage == s_focusStage)
+		{
+			return s_focus;
+		}
+		s_focusKey = text;
+		s_focusStage = stage;
+		s_focus.Clear();
+		Dictionary<string, string> dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (string part in text.Split(';'))
+		{
+			int num = part.IndexOf(':');
+			if (num > 0)
+			{
+				dictionary[part.Substring(0, num).Trim()] = part.Substring(num + 1);
+			}
+		}
+		for (int num2 = Array.IndexOf(s_stages, stage); num2 >= 0; num2--)
+		{
+			if (!dictionary.TryGetValue(s_stages[num2], out var value))
+			{
+				continue;
+			}
+			foreach (string part2 in value.Split(','))
+			{
+				string text2 = part2.Trim();
+				if (text2.Length > 0)
+				{
+					if (IsMeadBase(text2))
+					{
+						s_focus.Add(text2);
+					}
+					else
+					{
+						CompanionsPlugin.Log.LogWarning("[Cook] MeadFocus: \"" + text2 + "\" isn't a mead base (see OfflineCompanionsReborn.Cooking.txt)");
+					}
+				}
+			}
+			break;
+		}
+		CompanionsPlugin.Log.LogInfo("[Cook] Mead focus (" + stage + "): " + ((s_focus.Count > 0) ? string.Join(", ", s_focus) : "none"));
+		return s_focus;
+	}
+
+	private static string Stage()
+	{
+		ZoneSystem instance = ZoneSystem.instance;
+		if (instance == null)
+		{
+			return "start";
+		}
+		for (int num = s_stages.Length - 1; num > 0; num--)
+		{
+			if (instance.GetGlobalKey("defeated_" + s_stages[num]))
+			{
+				return s_stages[num];
+			}
+		}
+		return "start";
+	}
+
+	private static void WriteReference()
+	{
+		try
+		{
+			StringBuilder stringBuilder = new StringBuilder();
+			stringBuilder.AppendLine("Offline Companions Reborn - names for the [Cooking] settings. Written at every start from the game's own data, mods included.");
+			stringBuilder.AppendLine();
+			stringBuilder.AppendLine("FOODS (Cooking > Foods)  name = in-game name  (health + stamina + eitr, where it's made)");
+			SortedDictionary<string, string> sortedDictionary = new SortedDictionary<string, string>();
+			foreach (Recipe recipe in Recipes)
+			{
+				string name = recipe.m_item.gameObject.name;
+				if (!IsMeadBase(name) && Value(name) > 0f)
+				{
+					sortedDictionary[name] = $"{name} = {CookController.Name(name)}  ({Value(name):F0}, {CookController.Loc(recipe.m_craftingStation.m_name)})";
+				}
+			}
+			foreach (KeyValuePair<string, string> item in s_convTo)
+			{
+				if (Value(item.Value) > 0f)
+				{
+					sortedDictionary[item.Value] = $"{item.Value} = {CookController.Name(item.Value)}  ({Value(item.Value):F0}, from {CookController.Name(item.Key)} on a cooking station / oven)";
+				}
+			}
+			foreach (string value in sortedDictionary.Values)
+			{
+				stringBuilder.AppendLine("  " + value);
+			}
+			stringBuilder.AppendLine();
+			stringBuilder.AppendLine("MEAD BASES (Cooking > MeadFocus)  name = in-game name -> mead");
+			foreach (KeyValuePair<string, string> item2 in s_meadOf)
+			{
+				stringBuilder.AppendLine($"  {item2.Key} = {CookController.Name(item2.Key)} -> {CookController.Name(item2.Value)}");
+			}
+			stringBuilder.AppendLine();
+			stringBuilder.AppendLine("MEADFOCUS STAGES (the last boss beaten): start, eikthyr, gdking (The Elder), bonemass, dragon (Moder), goblinking (Yagluth), queen (The Queen), fader (Fader)");
+			File.WriteAllText(Path.Combine(Paths.ConfigPath, "OfflineCompanionsReborn.Cooking.txt"), stringBuilder.ToString());
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Cook] couldn't write OfflineCompanionsReborn.Cooking.txt: " + ex.Message);
 		}
 	}
 }
