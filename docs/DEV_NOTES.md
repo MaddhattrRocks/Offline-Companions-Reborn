@@ -27,6 +27,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 
 ## NEXT BUILD
 ### Standing rules (user, 2026-10-04)
+- **Only this mod in the repo** (user, 2026-10-08): notes, logs, changelog, commit messages and PRs cover Offline Companions Reborn and its companions only. Anything else the user brings up (other mods, other tools, their setup) is a tangent: help in the chat, never write it to the repo.
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
