@@ -141,6 +141,9 @@ public class CookController : MonoBehaviour
 
 	private readonly Dictionary<int, float> _stationProblemUntil = new Dictionary<int, float>();
 
+	// a food that couldn't be made just now (an ingredient out of reach, a station problem): leave it a minute
+	private readonly Dictionary<string, float> _skipUntil = new Dictionary<string, float>();
+
 	private readonly Dictionary<string, int> _ledger = new Dictionary<string, int>();
 
 	private bool _ledgerLoaded;
@@ -357,6 +360,11 @@ public class CookController : MonoBehaviour
 		return (carried > 0) ? StoreTask() : null;
 	}
 
+	private bool Skipped(TaskKind kind, string item)
+	{
+		return _skipUntil.TryGetValue(kind + ":" + item, out var value) && Time.time < value;
+	}
+
 	private Task FoodTask()
 	{
 		Task best = null;
@@ -366,7 +374,7 @@ public class CookController : MonoBehaviour
 		{
 			string output = recipe.m_item.gameObject.name;
 			string final = CookCatalog.FinalFood(output);
-			if (final == null || CookCatalog.IsMeadBase(output) || !CookCatalog.Allowed(final) || !Known(recipe))
+			if (final == null || CookCatalog.IsMeadBase(output) || !CookCatalog.Allowed(final) || !Known(recipe) || Skipped(TaskKind.Craft, output))
 			{
 				continue;
 			}
@@ -408,7 +416,7 @@ public class CookController : MonoBehaviour
 				}
 				string from = conv.m_from.gameObject.name;
 				string to = conv.m_to.gameObject.name;
-				if (!CookCatalog.Allowed(to))
+				if (!CookCatalog.Allowed(to) || Skipped(TaskKind.Grill, from))
 				{
 					continue;
 				}
@@ -455,7 +463,7 @@ public class CookController : MonoBehaviour
 		foreach (string mead in CookCatalog.Focus())
 		{
 			Recipe recipe = CookCatalog.RecipeFor(mead);
-			if (recipe == null || !Known(recipe))
+			if (recipe == null || !Known(recipe) || Skipped(TaskKind.Craft, mead))
 			{
 				continue;
 			}
@@ -491,7 +499,7 @@ public class CookController : MonoBehaviour
 		foreach (string mead in list)
 		{
 			string finished = CookCatalog.MeadOf(mead);
-			if (finished == null || Count(finished) >= MeadTarget || Count(mead) <= 0)
+			if (finished == null || Count(finished) >= MeadTarget || Count(mead) <= 0 || Skipped(TaskKind.Fill, mead))
 			{
 				continue;
 			}
@@ -1162,22 +1170,27 @@ public class CookController : MonoBehaviour
 
 	private Container ChestWith(string item)
 	{
-		Container best = null;
-		float bestDist = float.MaxValue;
+		// nearest first, skipping any it can't get to (checked once, remembered for a minute)
+		List<Container> list = new List<Container>();
 		foreach (Container chest in _chests)
 		{
-			if (chest == null || chest.IsInUse() || _unreachable.Contains(chest.GetInstanceID()) || !HasItem(chest.GetInventory(), item))
+			if (chest != null && !chest.IsInUse() && !_unreachable.Contains(chest.GetInstanceID()) && HasItem(chest.GetInventory(), item))
 			{
-				continue;
-			}
-			float num = Vector3.Distance(base.transform.position, chest.transform.position);
-			if (num < bestDist)
-			{
-				best = chest;
-				bestDist = num;
+				list.Add(chest);
 			}
 		}
-		return best;
+		Vector3 position = base.transform.position;
+		list.Sort((Container a, Container b) => Vector3.Distance(position, a.transform.position).CompareTo(Vector3.Distance(position, b.transform.position)));
+		foreach (Container chest2 in list)
+		{
+			if (MHR_Chests.CanReach(position, chest2))
+			{
+				return chest2;
+			}
+			_unreachable.Add(chest2.GetInstanceID());
+			Log($"Skipping chest at {chest2.transform.position:F1} - can't get within reach of it");
+		}
+		return null;
 	}
 
 	// like emptying bags: a chest that already has this food; else one with other cooked food; else the one nearest the
@@ -1257,7 +1270,9 @@ public class CookController : MonoBehaviour
 		int num = HomesteadController.CountItemInInventory(Bag, item);
 		foreach (Container chest in _chests)
 		{
-			if (chest != null)
+			// 1.4.88: only chests it can actually get things from (1.4.88 log: Black Soup tried 13 times for Bloodbag
+			// in a chest it can't reach)
+			if (chest != null && !_unreachable.Contains(chest.GetInstanceID()))
 			{
 				num += HomesteadController.CountItemInInventory(chest.GetInventory(), item);
 			}
@@ -1679,6 +1694,10 @@ public class CookController : MonoBehaviour
 	private void Abort(string reason)
 	{
 		Log("Stopped - " + reason + " (was " + (_task?.Describe() ?? "idle") + ")");
+		if (_task != null && !string.IsNullOrEmpty(_task.Item) && reason != "interrupted" && reason != "mode changed")
+		{
+			_skipUntil[_task.Kind + ":" + _task.Item] = Time.time + 60f;
+		}
 		Unclaim();
 		CloseChest();
 		_task = null;

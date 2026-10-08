@@ -929,14 +929,15 @@ namespace Companions
 
         public static bool LineClear(Vector3 from, Container chest)
         {
-            return LineClear(from, chest, EyeHeight) || LineClear(from, chest, 1.0f);
+            // eyes to the middle, a little higher to the top (a player's camera sits above and behind them), waist height
+            return LineClear(from, chest, EyeHeight, 0.5f) || LineClear(from, chest, 1.9f, 0.9f) || LineClear(from, chest, 1.0f, 0.5f);
         }
 
-        static bool LineClear(Vector3 from, Container chest, float height)
+        static bool LineClear(Vector3 from, Container chest, float height, float target)
         {
             if (chest == null) return false;
             Vector3 a = from + Vector3.up * height;
-            Vector3 b = chest.transform.position + Vector3.up * 0.5f;
+            Vector3 b = chest.transform.position + Vector3.up * target;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
             RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());

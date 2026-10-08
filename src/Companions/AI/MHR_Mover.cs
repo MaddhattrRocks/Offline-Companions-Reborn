@@ -165,11 +165,11 @@ namespace Companions
             // 1.4.82: climbing out of a pit
             if (now < s.ClimbUntil) { Climb(ai, c, s, pos, now, tag); return false; }
 
-            // 1.4.88: never stand in a fire
-            if (EscapeFire(ai)) return false;
-
             // a sidestep / hop in progress
             if (now < s.StepUntil) { Steer(ai, c, s, s.StepDir, s.StepRun, false); return false; }
+
+            // 1.4.88: never stand in a fire
+            if (EscapeFire(ai)) return false;
 
             // waiting on the bank until there's stamina for the swim
             if (s.WaitStamina)
@@ -217,9 +217,21 @@ namespace Companions
                 if (TryWaterJump(ai, c, s, pos, dir, now, tag)) return false;
             }
 
-            // 1.4.88: a fire on the next step (and the goal isn't in it): go round it
+            // 1.4.88: a fire on the next step (and the goal isn't in it): jump over it like a player when it's small
+            // (clear ground 2.5 m on), otherwise go round it
             if (InFire(pos + dir * 0.8f) && !InFire(goal))
             {
+                if (c.IsOnGround() && now >= s.NextHop && !InFire(pos + dir * 2.5f) && !DropAhead(pos, dir, 2.5f, 1.2f))
+                {
+                    s.NextHop = now + 1.0f;
+                    ai.transform.rotation = Quaternion.LookRotation(dir);
+                    c.Jump(false);
+                    Rigidbody rb = ai.GetComponent<Rigidbody>();
+                    if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 6f; v.z = dir.z * 6f; rb.linearVelocity = v; }
+                    s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                    Dbg("[Move|" + tag + "] jumping over a fire at " + Fmt(pos + dir * 1.2f));
+                    return false;
+                }
                 Vector3 round;
                 if (FireExit(pos, dir, out round)) dir = round;
             }
@@ -660,7 +672,7 @@ namespace Companions
         {
             if (ai == null) return false;
             Character c = ai.GetComponent<Character>();
-            if (c == null || c.IsAttached() || c.IsDead()) return false;
+            if (c == null || c.IsAttached() || c.IsDead() || !c.IsOnGround()) return false;   // not mid-jump over one
             Vector3 pos = ai.transform.position;
             if (!InFire(pos)) return false;
             Vector3 dir;

@@ -30,6 +30,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.89 - fixes from the 1.4.88 test (log 0f07e9d9)
+- User: should still jump over a fire if needed; cooking had trouble reaching the cauldron. Relay screenshots work without ReShade.
+- Fire loop: the route to the cauldron crossed a fire pit at (-281, 37.4, -314); EscapeFire stepped him out, the route sent him back, "no closer" ladder. Now in Go: next step in a fire (goal not in one) -> if clear 2.5 m on and no drop, jump over (6 m/s forward, 0.6 s step, "jumping over a fire"); else turn aside. EscapeFire skips while airborne and runs after a hop in progress.
+- Black Soup x13 "no chest in reach has Bloodbag": Count() included chests on the unreachable list; ChestWith picked the nearest chest without a reach check. Now Count() skips unreachable chests, ChestWith checks CanReach nearest-first (marks the rest unreachable for 60 s), and an aborted task's item (Craft/Grill/Fill) is skipped for 60 s (not for interrupted/mode changed).
+- Ledge chest (-273.2, 42.0, -316.6) still "can't get within reach": LineClear now also tries from 1.9 m to the chest top (+0.9) - a player's camera sits above and behind them.
+
 ### 1.4.88 - fix from the 1.4.87 test (log 9f62d4b3)
 - User: smelting OK; cooking made something (log: 5x4 Sausages at the cauldron, 19 put away - one eaten - then 1 more), then Cook off/on and he "freaked out".
 - Cause: Cook off -> ToolKeeper unload of the fetched Entrails -> chest on the ledge at y 42 (he's at 40). `HopLine` samples ground from 1.5 m above the last point, so it never saw the 2.8 m ledge: "flat, 0 hops" -> CanReach/PickApproach accepted the ledge spot -> Mover flipped between Direct (straight at the wall) and the hop bridge for a minute. Fix: HopLine also requires the last sample within 1 m of the target's height.

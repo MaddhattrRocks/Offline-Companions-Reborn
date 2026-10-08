@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.89
+- Companions jump over a small fire in their way, like a player, and only walk round a big one. Fixed a cook getting stuck stepping in and out of a fire pit on the way to the cauldron.
+- Fixed the cook trying the same recipe over and over when an ingredient is only in a chest it can't reach. Such chests no longer count, and a recipe that can't be made is left alone for a minute.
+- Companions check whether they can see a chest from a little higher too (like a player's camera), so more chests on ledges and shelves can be used.
+
 ## 1.4.88
 - Fixed companions running back and forth under a chest up on a ledge (seen when emptying their bags after turning Cook off).
 - Companions keep out of fires: they don't pick a spot in one, walk round one in their way, and step straight out if they end up in one (seen in a tight kitchen, standing in the fire pit).
