@@ -31,6 +31,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.91 - fix from the 1.4.90 test (log a0174312)
+- User: looking better; trouble reaching the fermenter. Log: cooking works (Black Soup, Muckshake, 3x Mead Base: Medium Healing at the Mead Ketill, 3 fermenters filled). The fermenter stand spot was (-273.4, 42.6, -312.9) with him on the floor at 40.4 - the top of the neighbouring fermenter -> stuck ladder until close enough.
+- `MHR_Chests.IsFurniture(col)` (Container, Fermenter, CraftingStation, CookingStation, Smelter, Bed, Chair in the parents): never a stand surface. PickNear (stations, slots, fermenters) now RaycastAll's down and takes the first walkable non-furniture surface that passes the checks; PickApproach (chests) skips furniture too.
+
 ### 1.4.90 - fixes from the 1.4.89 test (log 83a2e597)
 - User: cooking still broken; re-equips all gear when loading in; favours the tower shield again.
 - Cooking: the new "[Chests] No spot to stand" lines showed 59-152 of every chest's candidate spots rejected as "in a fire". `InFire` used EffectArea.Type.Fire - the wide scare radius fire-shy creatures avoid (BaseAI checks it with radius 3), covering the whole kitchen. Now Type.Burning (the flames; what CookingStation.IsFireLit checks), radius 0.3.

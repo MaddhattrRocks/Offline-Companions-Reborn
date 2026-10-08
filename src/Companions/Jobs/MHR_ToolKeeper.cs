@@ -997,7 +997,7 @@ namespace Companions
                     for (int h = 0; h < hits.Length; h++)
                     {
                         RaycastHit hit = hits[h];
-                        if (hit.normal.y < 0.6f || IsChestPart(hit.collider, chest)) continue;
+                        if (hit.normal.y < 0.6f || IsChestPart(hit.collider, chest) || IsFurniture(hit.collider)) continue;
                         Vector3 stand = hit.point;
                         if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) { nHeight++; continue; }
                         if (MHR_Mover.InFire(stand)) { nFire++; continue; }   // 1.4.88
@@ -1061,29 +1061,45 @@ namespace Companions
                 {
                     float ang = k * (360f / dirs) * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
-                    RaycastHit hit;
-                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
-                    if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
-                    Vector3 stand = hit.point;
-                    if (Mathf.Abs(stand.y - cp.y) > maxDy) continue;
-                    if (MHR_Mover.InFire(stand)) continue;   // 1.4.88: not in the fire under the cauldron
-                    if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
-                    if (!ClearTo(stand, cp, piece)) continue;
-                    s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
-                    if (s_path.Count == 0) continue;
-                    Vector3 end = s_path[s_path.Count - 1];
-                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
-                    float score = 0f;
-                    Vector3 prev = me;
-                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
-                    if (score < best) { best = score; spot = stand; found = true; }
+                    // 1.4.91: every surface straight down, skipping furniture tops (1.4.90 log: the stand spot for a
+                    // fermenter was on top of the one next to it, 2.2 m up)
+                    RaycastHit[] hits = Physics.RaycastAll(pt + Vector3.up * 1.6f, Vector3.down, 3.2f + maxDy, Mask());
+                    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                    for (int h = 0; h < hits.Length; h++)
+                    {
+                        RaycastHit hit = hits[h];
+                        if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f || IsFurniture(hit.collider)) continue;
+                        Vector3 stand = hit.point;
+                        if (Mathf.Abs(stand.y - cp.y) > maxDy) continue;
+                        if (MHR_Mover.InFire(stand)) continue;   // 1.4.88: not in the fire under the cauldron
+                        if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
+                        if (!ClearTo(stand, cp, piece)) continue;
+                        s_path.Clear();
+                        if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
+                        if (s_path.Count == 0) continue;
+                        Vector3 end = s_path[s_path.Count - 1];
+                        if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
+                        float score = 0f;
+                        Vector3 prev = me;
+                        for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                        if (score < best) { best = score; spot = stand; found = true; }
+                        break;   // the first walkable surface from the top is the one to stand on
+                    }
                 }
                 if (found) break;
             }
             return found;
         }
         static bool IsPart(Collider col, Piece piece) { return col != null && piece != null && col.GetComponentInParent<Piece>() == piece; }
+        // 1.4.91: the top of a chest, fermenter, station, smelter, bed or chair isn't somewhere to stand
+        public static bool IsFurniture(Collider col)
+        {
+            if (col == null) return false;
+            return col.GetComponentInParent<Container>() != null || col.GetComponentInParent<Fermenter>() != null
+                || col.GetComponentInParent<CraftingStation>() != null || col.GetComponentInParent<CookingStation>() != null
+                || col.GetComponentInParent<Smelter>() != null || col.GetComponentInParent<Bed>() != null
+                || col.GetComponentInParent<Chair>() != null;
+        }
         static bool BlockedNear(Vector3 p, Piece piece)
         {
             int n = Physics.OverlapSphereNonAlloc(p, 0.35f, s_small, Mask());
