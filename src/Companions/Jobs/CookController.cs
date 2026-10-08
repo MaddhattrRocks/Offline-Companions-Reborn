@@ -311,7 +311,7 @@ public class CookController : MonoBehaviour
 			return;
 		}
 		_allDoneNotified = false;
-		Start(task);
+		Begin(task);
 	}
 
 	private Task PickTask()
@@ -583,7 +583,7 @@ public class CookController : MonoBehaviour
 
 	// ---------------------------------------------------------------- running a task
 
-	private void Start(Task task)
+	private void Begin(Task task)
 	{
 		_task = task;
 		_fetchIndex = 0;
@@ -801,7 +801,7 @@ public class CookController : MonoBehaviour
 			Task task = FillTask();
 			if (task != null && task.Item == output)
 			{
-				Start(task);
+				Begin(task);
 				return;
 			}
 		}
