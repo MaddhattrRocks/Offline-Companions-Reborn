@@ -1525,7 +1525,7 @@ public class FarmController : MonoBehaviour
 	// past UseDistance, and moving stops within half a meter of it)
 	private bool AtChestSpot(Container chest, float dist)
 	{
-		if (!_hasApproach || chest != _approachChest || dist > UseDistance + 1f)
+		if (!_hasApproach || chest != _approachChest)
 		{
 			return false;
 		}
@@ -1534,7 +1534,7 @@ public class FarmController : MonoBehaviour
 		{
 			return false;
 		}
-		return MHR_Chests.LineClear(position, chest);
+		return MHR_Chests.InReach(position, chest);
 	}
 
 	private Vector3 ChestGoal(Container chest)

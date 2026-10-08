@@ -33,6 +33,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 ### 1.4.88 - fix from the 1.4.87 test (log 9f62d4b3)
 - User: smelting OK; cooking made something (log: 5x4 Sausages at the cauldron, 19 put away - one eaten - then 1 more), then Cook off/on and he "freaked out".
 - Cause: Cook off -> ToolKeeper unload of the fetched Entrails -> chest on the ledge at y 42 (he's at 40). `HopLine` samples ground from 1.5 m above the last point, so it never saw the 2.8 m ledge: "flat, 0 hops" -> CanReach/PickApproach accepted the ledge spot -> Mover flipped between Direct (straight at the wall) and the hop bridge for a minute. Fix: HopLine also requires the last sample within 1 m of the target's height.
+- Reach like a player (user: can open every chest, the ledge ones from the floor): `MHR_Chests.InReach(feet, chest)` = eye (feet + 1.6) within 4 m of chest centre + 0.5 and a clear line (LineClear now tries eye height, then 1.0 m). PickApproach: stand spots from 1.2 m above to 2.6 m below the chest, radii 1.2/1.7/2.2/2.8, accepted when InReach. Used by CanReach, tool/bag trips (arrival) and the farm's AtChestSpot. (Player: m_maxInteractDistance 5 from the eye to the hit point.)
 - Cooking notes from the log: catalog 130 recipes / 65 cooking-station items / 20 mead bases; mead focus (bonemass) resolved to MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseFrostResist with no unknown-name warnings.
 
 ### Valheim 1.0.17 patch (2026-10-08)

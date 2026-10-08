@@ -297,14 +297,14 @@ namespace Companions
             Vector3 cp = st.Chest.transform.position;
             Vector3 me = cs.transform.position;
             bool atSpot = st.HasSpot && new Vector2(me.x - st.Goal.x, me.z - st.Goal.z).magnitude <= 1.0f && Mathf.Abs(me.y - st.Goal.y) <= 1.5f;
-            bool canReach = distNow <= UseDist && MHR_Chests.LineClear(me, st.Chest);
+            bool canReach = MHR_Chests.InReach(me, st.Chest);
             if (!atSpot && !canReach)
             {
                 if (now >= st.NextSpotPick) PickSpot(cs, st, st.Chest, now);
                 st.NeedMove = true;
                 return;
             }
-            if (!canReach && distNow > UseDist + 1f) { st.NeedMove = true; return; }
+            if (!canReach && distNow > MHR_Chests.EyeReach + 0.5f) { st.NeedMove = true; return; }
             st.NeedMove = false;
             ai.StopMoving();
             ai.LookAtPoint(cp);
@@ -914,10 +914,26 @@ namespace Companions
         }
 
         // nothing solid between someone standing at 'from' and the chest
-        public static bool LineClear(Vector3 from, Container chest)
+        // 1.4.88: reach like a player - Valheim lets you use something within 5 m of your eyes that you can see. Companions
+        // get 4 m from eye height (1.6 m) to the middle of the chest, with a clear line from the eyes or the chest
+        // (user: "I can open all the chests without issue" - the ones on the ledge 2 m up included).
+        public const float EyeHeight = 1.6f, EyeReach = 4f;
+        public static bool InReach(Vector3 feet, Container chest)
         {
             if (chest == null) return false;
-            Vector3 a = from + Vector3.up * 1.0f;
+            Vector3 eye = feet + Vector3.up * EyeHeight;
+            return Vector3.Distance(eye, chest.transform.position + Vector3.up * 0.5f) <= EyeReach && LineClear(feet, chest);
+        }
+
+        public static bool LineClear(Vector3 from, Container chest)
+        {
+            return LineClear(from, chest, EyeHeight) || LineClear(from, chest, 1.0f);
+        }
+
+        static bool LineClear(Vector3 from, Container chest, float height)
+        {
+            if (chest == null) return false;
+            Vector3 a = from + Vector3.up * height;
             Vector3 b = chest.transform.position + Vector3.up * 0.5f;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
@@ -940,7 +956,7 @@ namespace Companions
         public static bool CanReach(Vector3 me, Container chest)
         {
             if (chest == null) return false;
-            if (Vector3.Distance(me, chest.transform.position) <= 2.5f && LineClear(me, chest)) return true;
+            if (InReach(me, chest)) return true;
             int id = chest.GetInstanceID();
             KeyValuePair<float, bool> c;
             if (s_reach.TryGetValue(id, out c) && Time.time - c.Key < 30f) return c.Value;
@@ -960,7 +976,9 @@ namespace Companions
             float best = float.MaxValue; bool found = false;
             List<Vector3> viaDoor = null;
             // 1.4.85: out to 2.2 m (inside the 2-2.5 m use distance) and every 22.5 degrees, for chests in narrow spots
-            float[] radii = { 1.2f, 1.7f, 2.2f };
+            // 1.4.88: also lower down (up to 2.6 m below, e.g. the floor under a ledge) and further out, as long as it's in
+            // reach from eye height like a player (InReach)
+            float[] radii = { 1.2f, 1.7f, 2.2f, 2.8f };
             for (int r = 0; r < radii.Length; r++)
             {
                 for (int k = 0; k < 16; k++)
@@ -968,12 +986,12 @@ namespace Companions
                     float ang = k * 22.5f * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
                     RaycastHit hit;
-                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
+                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 4.5f, Mask())) continue;
                     if (IsChestPart(hit.collider, chest)) continue;
                     Vector3 stand = hit.point;
-                    if (Mathf.Abs(stand.y - cp.y) > 1.2f) continue;
+                    if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) continue;
                     if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
-                    if (!LineClear(stand, chest)) continue;
+                    if (!InReach(stand, chest)) continue;
                     s_path.Clear();
                     if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
                     { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }

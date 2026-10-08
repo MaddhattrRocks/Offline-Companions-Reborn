@@ -3,7 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.4.88
-- Fixed companions running back and forth under a chest up on a ledge they can't reach (seen when emptying their bags after turning Cook off). Such chests are now skipped.
+- Fixed companions running back and forth under a chest up on a ledge (seen when emptying their bags after turning Cook off).
+- Companions reach chests like a player: anything within about 4 m of their eyes that they can see, so chests up on a ledge or a high shelf can be used from the floor below.
 
 ## 1.4.87
 - Cooking rewritten. Companions now use every cooking station like a player: cauldron and food preparation table (with a fire and roof, like you need), cooking station, iron cooking station and oven (they put food on, take it off when it's done, and keep the oven fed with wood). Bread and pies go from the prep table to the oven.
