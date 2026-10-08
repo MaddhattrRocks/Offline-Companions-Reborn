@@ -218,6 +218,7 @@ What was built (all items below):
   - DoorHandler already closes doors behind it (if they were closed) - keep that behaviour in the overhaul.
 
 ## BACKLOG (come back to - check with the user before building any of it)
+- **ValheimDiscordRelay (separate project, user's other mod - come back to it):** black screenshots/death video are caused by ReShade (works without it). Options: ReShade side (disable add-ons that change the output format/depth, no-add-on build) or a relay capture fallback that renders the main camera into a RenderTexture when the backbuffer reads come back black. Needs the 1.3.4 source (GitHub kydl-dev/ValheimDiscordRelay has 1.3.3) and a session with that repo attached for pushing.
 - **Fish job: craft bait (user, 2026-10-07):** when the Fish job moves to MHR_Mover (phase 3 part 3), let the companion craft fishing bait like a player - keep a stock of each bait it needs (configurable target, same style as the Cooking settings: reserve for raw ingredients, batch size). Today it only fetches bait from chests near home (MHR_ToolKeeper K_BAIT); the cooking job never makes bait.
 - **When a job runs out of work (user, 2026-10-07):** don't just stand around - act like a player would. Ideas to discuss: go back to following, tidy/sort chests, top up fires, repair gear, help another job, wander near home. (Related: jobs + Follow together.)
 - **User's to-do notes:** the user has more notes to add (some already covered/fixed) - merge them here when they arrive. Guiding rule: make the companion behave like a player.
