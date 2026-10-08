@@ -2076,6 +2076,13 @@ internal static class CookCatalog
 		return s_made.Contains(item);
 	}
 
+	// 1.4.94: something a cooking station (or iron grill) cooks - how Hunt tells meat from other drops
+	internal static bool IsGrillInput(string item)
+	{
+		Ensure();
+		return s_convTo.ContainsKey(item);
+	}
+
 	internal static bool IsMeadBase(string item)
 	{
 		return s_meadOf.ContainsKey(item);

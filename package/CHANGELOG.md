@@ -2,6 +2,16 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.94
+- Hunt works with Follow on: the companion goes after game near you (FollowRange, 25 m) and keeps up with you when there's nothing close.
+- Hunt with Follow off hunts around where it is: home if it's near home, otherwise where the job was started (Range, 40 m), and walks back there between hunts.
+- Hunt goes after anything that drops meat, modded creatures included; never tamed animals, bosses or companions. New [Hunting] Prey list (* = all, -Name to exclude); the names are in OfflineCompanionsReborn.Hunting.txt.
+- Hunt stops on a creature once you have MeatTarget (100) of each meat it drops, counting the pack and the chests near home. Leather and hides are picked up as a bonus.
+- A hunter that follows you keeps its catch until you're home, then puts it away. With Follow off near home it walks home to unload when its pack is full.
+- Hunt uses a bow first and melee second, and fights anything that attacks it the normal way (blocking and parrying included) before going back to its prey.
+- Hunt no longer stops when there's no bow or arrows away from home; it hunts with its melee weapon.
+- After any kill, a companion goes over and picks up what the creature dropped, waiting for drops that come out of the body. New [Looting] settings; needs Auto Pickup on.
+
 ## 1.4.93
 - Cooks collect honey from beehives around home (within HomeTripRange, 60 m by default; at a camp, within the cooking range): from a full hive, right away when a mead base is waiting on honey, and from any half-full hive when there's nothing else to cook. The honey gets put away with the rest.
 - Fixed the "Setting linear velocity of a kinematic body is not supported" warning while a companion sleeps in a bed.

@@ -1733,8 +1733,9 @@ public class CompanionRadialMenu : MonoBehaviour
 		if (flag)
 		{
 			_companion.SetStayHome(v: false);
-			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off
-			if (MHR_JobRules.HasJob(_companion))
+			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off. 1.4.94: except Hunt, which
+			// hunts near you while following
+			if (MHR_JobRules.HasJob(_companion) && ((_companionNview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0) != CompanionSetup.ModeHunt)
 			{
 				SetActionMode(0);
 				return;
@@ -1759,6 +1760,7 @@ public class CompanionRadialMenu : MonoBehaviour
 			_companion.GetComponent<FarmController>()?.NotifyActionModeChanged();
 			_companion.GetComponent<FishController>()?.NotifyActionModeChanged();
 			_companion.GetComponent<CookController>()?.NotifyActionModeChanged();
+			_companion.GetComponent<HuntController>()?.NotifyActionModeChanged();
 			CompanionAI component = _companion.GetComponent<CompanionAI>();
 			if (component != null)
 			{

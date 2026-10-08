@@ -122,9 +122,10 @@ namespace Companions
             st.LastMode = mode; st.LastStayHome = stayHome;
             // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
             // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
-            // with tin ore, bone fragments, meat... and he kept it all until a job was picked)
+            // with tin ore, bone fragments, meat... and he kept it all until a job was picked). 1.4.94: a hunter that
+            // follows you keeps its catch until you're home, then puts it away the same way.
             bool atHome = cs.HasHomePosition() && AtHome(cs);
-            if (atHome && !st.WasAtHome && mode == 0 && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
+            if (atHome && !st.WasAtHome && (mode == 0 || mode == 7) && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
                 LogDebug("Back home - will empty bags");
@@ -198,6 +199,8 @@ namespace Companions
                 float cd;
                 if (st.KindCooldown.TryGetValue(kind, out cd) && now < cd) continue;
                 ItemDrop.ItemData broken = BrokenOfKind(inv, kind, launcher);
+                // 1.4.94: Hunt is bow first, melee second - no bow (or arrows) away from home isn't a reason to stop
+                if (!nearHome && mode == 7) continue;
                 if (!nearHome)
                 {
                     // too far to go home for it: say so, stop the job for now and follow
@@ -839,7 +842,8 @@ namespace Companions
             ZDO zdo = nv != null ? nv.GetZDO() : null;
             if (mode != 0)
             {
-                if (cs.GetFollow())
+                // 1.4.94: Hunt works with Follow on (hunts near you) or off (hunts around where it is)
+                if (mode != CompanionSetup.ModeHunt && cs.GetFollow())
                 {
                     cs.SetFollow(false);
                     if (zdo != null) zdo.Set(FollowPausedHash, true);

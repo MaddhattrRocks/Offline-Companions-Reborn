@@ -92,7 +92,32 @@ public class CompanionCombatAI : MonoBehaviour
 
 	internal bool IsEngaged => _engaged;
 
-	internal bool HuntMode { get; set; }
+	// 1.4.94: hunting only counts while the target is the prey. Something that attacks us mid-hunt is fought the normal
+	// way (blocking, parrying, leash), like a player would.
+	private Character _huntPrey;
+
+	internal bool HuntMode
+	{
+		get
+		{
+			return _huntPrey != null && _targetCreature == _huntPrey;
+		}
+		set
+		{
+			_huntPrey = value ? _targetCreature : null;
+		}
+	}
+
+	internal Character HuntPrey => _huntPrey;
+
+	internal void EngagePrey(Character prey)
+	{
+		Engage(prey);
+		if (_engaged && _targetCreature == prey)
+		{
+			_huntPrey = prey;
+		}
+	}
 
 	internal bool IsRecalled => _recallTimer > 0f;
 
@@ -335,8 +360,12 @@ public class CompanionCombatAI : MonoBehaviour
 			{
 				_recallIgnored = null;
 			}
-			if (_engaged && (_targetCreature == null || _targetCreature.GetHealth() <= 0f))
+			if (_engaged && (_targetCreature == null || _targetCreature.GetHealth() <= 0f || (HuntMode && attacker != _targetCreature)))
 			{
+				if (HuntMode && attacker != _targetCreature)
+				{
+					CompanionsPlugin.Log.LogDebug("[Combat] " + attacker.m_name + " attacked while hunting " + _targetCreature.m_name + " - fighting it first");
+				}
 				_targetCreature = attacker;
 				_lastKnownTargetPos = attacker.transform.position;
 				_beenAtLastPos = false;
@@ -423,8 +452,9 @@ public class CompanionCombatAI : MonoBehaviour
 				character = null;
 			}
 			// 1.4.83: switching targets mid-fight follows the same rule as starting one: only something that's after us
-			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business)
-			if (character != null && character != _targetCreature && !HuntMode && !MHR_Threat.IsAfterUs(character))
+			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business). 1.4.94: hunting too -
+			// a hunter goes after its prey and whatever attacks, not every creature around
+			if (character != null && character != _targetCreature && !MHR_Threat.IsAfterUs(character))
 			{
 				character = null;
 			}

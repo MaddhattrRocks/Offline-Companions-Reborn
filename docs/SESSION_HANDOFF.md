@@ -1,4 +1,4 @@
-# Session handoff (2026-10-05)
+# Session handoff (2026-10-08)
 
 Paste this into a new session to pick up where we left off. Details per version are in `docs/DEV_NOTES.md` (NEXT BUILD section, newest first) and `package/CHANGELOG.md`.
 
@@ -9,7 +9,11 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.87 pushed, not yet tested
+## Current state: 1.4.94 pushed, not yet tested (1.4.86-1.4.94 on the branch, no PR yet)
+- 1.4.88-1.4.93: Cook test fixes (fermenter RPC, fire spots, chest reach, mead plan by boss, beehives). Cook is done apart from testing the honey collecting.
+- 1.4.94: Hunt redone (Follow on = hunt near the player; off = around home/start spot; anything that drops meat via [Hunting] Prey; MeatTarget 100; bow first; defends itself) and every kill gets looted (MHR_Loot, [Looting]). Next jobs: Fish (bait crafting), then Homestead (rename).
+
+## Previous: 1.4.87
 - 1.4.87: Cook rewritten to the agreed design (all cooking stations like a player, best known food, reserves/targets, boss-based mead focus, ledger so his own food isn't stored, [Cooking] settings, reference file OfflineCompanionsReborn.Cooking.txt). The user still has to review the MeadFocus defaults. Expect several refinement rounds.
 
 ## Previous: 1.4.86 pushed, not yet tested
@@ -27,7 +31,7 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Bags: emptied when arriving home with no job (and after loading in at home), not only on a job change.
 
 ## Backlog (talk through with the user before building)
-- **Jobs + Follow together:** field jobs (Wood/Stone/Ore...) should keep following the player and work what's nearby; home jobs turn Follow off (current rule for all jobs). User: with Ore and no ore around he just stood there.
+- **Jobs + Follow together:** field jobs (Wood/Stone/Ore...) should keep following the player and work what's nearby; home jobs turn Follow off (current rule for all jobs except Hunt since 1.4.94). User: with Ore and no ore around he just stood there.
 - **Command wheel revisit** (Rename, guard/patrol, late-game features; maybe a sub-menu) and a **rename fallback** via the vanilla TextInput dialog (SeneaL_UI blocks the panel's name box).
 - Movement phase 3 part 2 (Smelt, Cook, Homestead on MHR_Mover), part 3 (Hunt, Fish), phase 4 (remove old per-job stuck code and DoorHandler).
 - Combat polish, ship-seat kinematic warnings, config cleanup, release packaging; older items in DEV_NOTES BACKLOG.

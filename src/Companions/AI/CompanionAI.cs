@@ -2011,6 +2011,12 @@ public class CompanionAI : BaseAI
 		{
 			return true;
 		}
+		// 1.4.94: go and pick up what the last kill dropped
+		if (MHR_Loot.Drive(this, dt))
+		{
+			ClearFollowMovementOverrides();
+			return true;
+		}
 		ZDO zDO = m_nview?.GetZDO();
 		if (zDO != null && !MHR_ToolKeeper.IsBusy(this))
 		{
