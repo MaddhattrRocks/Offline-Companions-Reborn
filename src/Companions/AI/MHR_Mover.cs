@@ -603,6 +603,10 @@ namespace Companions
                 if (rise > 0.35f) hops++;
                 prev = hit.point;
             }
+            // 1.4.88: and it has to actually end up where the target is. Sampling from just above the feet can't see a
+            // ledge higher than that, so a chest up on one looked like "flat all the way, 0 hops" (1.4.87 log: back and
+            // forth under the ledge chest for a minute after the job was turned off)
+            if (Mathf.Abs(prev.y - to.y) > 1.0f) return false;
             return hops <= 10;
         }
 
