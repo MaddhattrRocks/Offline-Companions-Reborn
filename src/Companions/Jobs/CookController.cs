@@ -1515,15 +1515,30 @@ public class CookController : MonoBehaviour
 			{
 				_fermenters.Add(fermenter);
 			}
-			Beehive beehive = piece.GetComponent<Beehive>();
-			if (beehive != null && beehive.GetComponent<ZNetView>()?.GetZDO() != null)
-			{
-				_hives.Add(beehive);
-			}
+
 			CraftingStation craftingStation = piece.GetComponent<CraftingStation>();
 			if (craftingStation != null && CookCatalog.IsCookingStation(craftingStation.m_name))
 			{
 				_stations.Add(craftingStation);
+			}
+		}
+		// 1.4.93: beehives are often out in the yard, away from the kitchen (user): anywhere within HomeTripRange of
+		// home while he's near home; at a camp, within the cooking range around him
+		Vector3 center = position;
+		float radius = Range;
+		if (_setup != null && _setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup))
+		{
+			center = _setup.GetHomePosition();
+			radius = MHR_ToolKeeper.HomeRange();
+		}
+		_pieces.Clear();
+		Piece.GetAllPiecesInRadius(center, radius, _pieces);
+		foreach (Piece piece2 in _pieces)
+		{
+			Beehive beehive = (piece2 != null) ? piece2.GetComponent<Beehive>() : null;
+			if (beehive != null && beehive.GetComponent<ZNetView>()?.GetZDO() != null)
+			{
+				_hives.Add(beehive);
 			}
 		}
 	}
