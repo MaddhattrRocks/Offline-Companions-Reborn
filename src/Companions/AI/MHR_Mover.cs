@@ -165,6 +165,9 @@ namespace Companions
             // 1.4.82: climbing out of a pit
             if (now < s.ClimbUntil) { Climb(ai, c, s, pos, now, tag); return false; }
 
+            // 1.4.88: never stand in a fire
+            if (EscapeFire(ai)) return false;
+
             // a sidestep / hop in progress
             if (now < s.StepUntil) { Steer(ai, c, s, s.StepDir, s.StepRun, false); return false; }
 
@@ -212,6 +215,13 @@ namespace Companions
             {
                 s.NextWaterPeek = now + 0.2f;
                 if (TryWaterJump(ai, c, s, pos, dir, now, tag)) return false;
+            }
+
+            // 1.4.88: a fire on the next step (and the goal isn't in it): go round it
+            if (InFire(pos + dir * 0.8f) && !InFire(goal))
+            {
+                Vector3 round;
+                if (FireExit(pos, dir, out round)) dir = round;
             }
 
             float runDist = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
@@ -616,6 +626,54 @@ namespace Companions
             RaycastHit hit;
             if (Physics.Raycast(pos + dir * 0.7f + Vector3.up * 2f, Vector3.down, out hit, 2.5f, Mask()) && hit.point.y > pos.y + 0.35f && hit.point.y < pos.y + 1.3f) return true;
             return Physics.Raycast(pos + Vector3.up * 0.4f, dir, 0.7f, Mask()) && !Physics.Raycast(pos + Vector3.up * 1.4f, dir, 1.0f, Mask());
+        }
+
+        // ---------- fire ----------
+        // 1.4.88: don't stand or walk in a fire (user: twice he stood in the fire pit and caught fire). Valheim marks
+        // fires with an EffectArea of type Fire - the same one creatures with m_avoidFire keep out of.
+        public static bool InFire(Vector3 p)
+        {
+            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Fire, 0.4f) != null; }
+            catch { return false; }
+        }
+
+        // the nearest way out: a direction 1.5 m away that isn't in a fire and has ground
+        static bool FireExit(Vector3 pos, Vector3 prefer, out Vector3 dir)
+        {
+            dir = Vector3.zero;
+            prefer.y = 0f;
+            if (prefer.sqrMagnitude < 0.01f) prefer = Vector3.forward;
+            prefer.Normalize();
+            for (int i = 0; i < 8; i++)
+            {
+                float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45f;
+                Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
+                if (!InFire(pos + d * 1.5f) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
+            }
+            return false;
+        }
+
+        static readonly Dictionary<int, float> s_fireLog = new Dictionary<int, float>();
+
+        // called before anything else steers the companion: standing in a fire -> step out of it
+        public static bool EscapeFire(CompanionAI ai)
+        {
+            if (ai == null) return false;
+            Character c = ai.GetComponent<Character>();
+            if (c == null || c.IsAttached() || c.IsDead()) return false;
+            Vector3 pos = ai.transform.position;
+            if (!InFire(pos)) return false;
+            Vector3 dir;
+            if (!FireExit(pos, ai.transform.forward, out dir)) return false;
+            ai.MoveTowards(dir, false);
+            int id = ai.gameObject.GetInstanceID();
+            float last;
+            if (!s_fireLog.TryGetValue(id, out last) || Time.time - last > 10f)
+            {
+                s_fireLog[id] = Time.time;
+                Dbg("[Move] standing in a fire at " + Fmt(pos) + " - stepping out");
+            }
+            return true;
         }
 
         // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)

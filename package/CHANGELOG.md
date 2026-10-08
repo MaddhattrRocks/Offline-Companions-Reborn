@@ -4,6 +4,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 
 ## 1.4.88
 - Fixed companions running back and forth under a chest up on a ledge (seen when emptying their bags after turning Cook off).
+- Companions keep out of fires: they don't pick a spot in one, walk round one in their way, and step straight out if they end up in one (seen in a tight kitchen, standing in the fire pit).
 - Companions reach chests like a player: anything within about 4 m of their eyes that they can see, so chests up on a ledge or a high shelf can be used from the floor below.
 
 ## 1.4.87

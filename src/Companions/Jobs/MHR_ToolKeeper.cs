@@ -59,6 +59,8 @@ namespace Companions
         public static bool Drive(CompanionAI ai, float dt)
         {
             if (ai == null) return false;
+            // 1.4.88: out of a fire before following, idling or anything else
+            if (MHR_Mover.EscapeFire(ai)) return true;
             CompanionSetup cs = ai.GetComponent<CompanionSetup>();
             if (cs == null) return false;
             State st;
@@ -990,6 +992,7 @@ namespace Companions
                     if (IsChestPart(hit.collider, chest)) continue;
                     Vector3 stand = hit.point;
                     if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) continue;
+                    if (MHR_Mover.InFire(stand)) continue;   // 1.4.88
                     if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
                     if (!InReach(stand, chest)) continue;
                     s_path.Clear();
@@ -1052,6 +1055,7 @@ namespace Companions
                     if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
                     Vector3 stand = hit.point;
                     if (Mathf.Abs(stand.y - cp.y) > maxDy) continue;
+                    if (MHR_Mover.InFire(stand)) continue;   // 1.4.88: not in the fire under the cauldron
                     if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
                     if (!ClearTo(stand, cp, piece)) continue;
                     s_path.Clear();

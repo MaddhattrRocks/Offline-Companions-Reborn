@@ -331,6 +331,7 @@ namespace Companions
             if (!Physics.Raycast(new Vector3(w.x, pp.y + 2.5f, w.z), Vector3.down, out hit, 6f, GroundMask())) return false;
             if (hit.normal.y < 0.6f || Mathf.Abs(hit.point.y - pp.y) > 2.5f) return false;
             if (MHR_Water.DepthAt(hit.point) > 1.0f) return false;
+            if (MHR_Mover.InFire(hit.point)) return false;   // 1.4.88: not in the fire pit
             g = hit.point;
             return true;
         }
