@@ -324,6 +324,13 @@ public class CompanionFood : MonoBehaviour
 					{
 						num *= CompanionRestedBuff.HealthRegenMultiplier;
 					}
+					// 1.4.95: wet, cold, meads and other status effects change regen like they do for a player
+					if (ModConfig.StatusEffectsOnRegen?.Value ?? true)
+					{
+						float mult = 1f;
+						_character.GetSEMan()?.ModifyHealthRegen(ref mult);
+						num *= mult;
+					}
 					float health = _character.GetHealth();
 					_character.Heal(num);
 					float health2 = _character.GetHealth();

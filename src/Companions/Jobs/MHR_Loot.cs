@@ -14,7 +14,9 @@ namespace Companions
         {
             public Vector3 Pos; public float Time; public string Name;
             public HashSet<int> Before = new HashSet<int>();
+            public HashSet<int> Seen = new HashSet<int>();
             public bool SawDrop; public float LastDrop; public float NextBodyCheck; public bool Body;
+            public float Start; public float ArrivedAt = -1f;
         }
         class State { public Kill Current; public readonly List<Kill> Queue = new List<Kill>(); public ItemDrop Target; public float TargetSince; public float NextLog; }
 
@@ -68,7 +70,9 @@ namespace Companions
             {
                 if (st.Queue.Count == 0) return false;
                 st.Current = st.Queue[0]; st.Queue.RemoveAt(0); st.Target = null;
-                st.Current.Time = Mathf.Max(st.Current.Time, Time.time - 2f);
+                // 1.4.95: timers count from when it sets off, not from the kill (1.4.94: "nothing dropped" a second
+                // after setting off for a Neck 15 m away, before it got anywhere near)
+                st.Current.Start = Time.time;
                 Log("Going to pick up what " + Loc(st.Current.Name) + " dropped (" + Vector3.Distance(ai.transform.position, st.Current.Pos).ToString("F0") + " m away)");
             }
             Kill k = st.Current;
@@ -85,7 +89,7 @@ namespace Companions
             else if (Player.m_localPlayer != null && cs != null && cs.GetFollow() && ai.GetFollowTarget() == Player.m_localPlayer.gameObject &&
                      Vector3.Distance(Player.m_localPlayer.transform.position, k.Pos) > MaxDist()) why = "you've moved on";
             else if (inv.GetTotalWeight() >= CompanionTierData.MaxCarryWeight || inv.GetEmptySlots() == 0 && !RoomForAny(inv, k)) why = "pack is full";
-            else if (Time.time - k.Time > Wait() + 15f) why = "took too long";
+            else if (Time.time - k.Start > Wait() + 25f) why = "took too long";
             if (why != null) { Finish(ai, st, "stopped picking up (" + why + ")"); return false; }
 
             // the body may still be lying there; its drops come out when it fades
@@ -112,14 +116,14 @@ namespace Companions
             }
             if (st.Target == null)
             {
-                st.Target = NextDrop(k, me, inv);
+                st.Target = NextDrop(k, me, inv, ai.GetComponent<Character>());
                 st.TargetSince = Time.time;
                 if (st.Target != null) { k.SawDrop = true; k.LastDrop = Time.time; }
             }
             if (st.Target != null)
             {
                 Vector3 tp = st.Target.transform.position;
-                if (Vector3.Distance(me, tp) <= 1.6f)
+                if (new Vector2(me.x - tp.x, me.z - tp.z).magnitude <= 1.6f && Mathf.Abs(me.y - tp.y) <= 2f)
                 {
                     string name = st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?";
                     int count = st.Target.m_itemData != null ? st.Target.m_itemData.m_stack : 0;
@@ -135,11 +139,21 @@ namespace Companions
                 return true;
             }
 
-            // nothing to pick up right now: done, or wait by the body for its drops
-            float age = Time.time - k.Time;
-            bool done = (k.SawDrop && Time.time - k.LastDrop > 1.5f && !k.Body) || (!k.SawDrop && !k.Body && age > 3f) || age > Wait();
+            // nothing to pick up right now: done, or go to the body and wait there for its drops
+            float flat = new Vector2(me.x - k.Pos.x, me.z - k.Pos.z).magnitude;
+            Character self = ai.GetComponent<Character>();
+            bool deep = MHR_Water.WouldSwim(self, k.Pos);
+            if (k.ArrivedAt < 0f && (flat <= 4f || (deep && flat <= Radius() + 3f))) k.ArrivedAt = Time.time;
+            bool there = k.ArrivedAt >= 0f;
+            bool done = (k.SawDrop && Time.time - k.LastDrop > 1.5f && !k.Body)
+                     || (!k.SawDrop && !k.Body && there && Time.time - k.ArrivedAt > 2f)
+                     || (there && Time.time - k.ArrivedAt > Wait());
             if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped"); return false; }
-            if (Vector3.Distance(me, k.Pos) > 3f) MHR_Mover.Go(ai, dt, k.Pos, 2f, true, "Loot");
+            if (!there)
+            {
+                MHR_Mover.Go(ai, dt, k.Pos, 2f, true, "Loot");
+                if (MHR_Mover.GaveUp(ai)) { Finish(ai, st, "stopped picking up (can't get to the body)"); return false; }
+            }
             else ai.StopMoving();
             return true;
         }
@@ -178,14 +192,25 @@ namespace Companions
             return false;
         }
 
-        static ItemDrop NextDrop(Kill k, Vector3 me, Inventory inv)
+        // 1.4.95: wades in for drops in shallow water, but doesn't swim for them (user: tries not to get wet if he
+        // doesn't need to). Drops it has seen that float off are still followed (within MaxDistance of the kill).
+        static ItemDrop NextDrop(Kill k, Vector3 me, Inventory inv, Character self)
         {
-            int n = Physics.OverlapSphereNonAlloc(k.Pos, Radius(), s_buf, Mask());
+            int n = Physics.OverlapSphereNonAlloc(k.Pos, k.Seen.Count > 0 ? MaxDist() : Radius(), s_buf, Mask());
             ItemDrop best = null; float bd = float.MaxValue;
             for (int i = 0; i < n && i < s_buf.Length; i++)
             {
                 ItemDrop d = DropOf(s_buf[i]);
                 if (d == null || k.Before.Contains(d.GetInstanceID()) || d.InTar()) continue;
+                bool seen = k.Seen.Contains(d.GetInstanceID());
+                if (!seen && Vector3.Distance(d.transform.position, k.Pos) > Radius()) continue;
+                if (MHR_Water.WouldSwim(self, d.transform.position))
+                {
+                    k.Before.Add(d.GetInstanceID());
+                    LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is in deep water - leaving it");
+                    continue;
+                }
+                k.Seen.Add(d.GetInstanceID());
                 if (d.m_itemData == null || !inv.CanAddItem(d.m_itemData, 1)) continue;
                 if (inv.GetTotalWeight() + d.m_itemData.GetWeight() > CompanionTierData.MaxCarryWeight) continue;
                 float dist = Vector3.Distance(me, d.transform.position);

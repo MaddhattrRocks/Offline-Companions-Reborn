@@ -189,6 +189,13 @@ public class CompanionStamina : MonoBehaviour
 						num6 += CompanionRestedBuff.StaminaRegenAdditiveBonus;
 					}
 					float num7 = RegenRate * num6;
+					// 1.4.95: wet, cold, meads and other status effects change regen like they do for a player
+					if (_character != null && (ModConfig.StatusEffectsOnRegen?.Value ?? true))
+					{
+						float mult = 1f;
+						_character.GetSEMan()?.ModifyStaminaRegen(ref mult);
+						num7 *= mult;
+					}
 					Stamina = Mathf.Min(num2, Stamina + num7 * deltaTime);
 				}
 			}

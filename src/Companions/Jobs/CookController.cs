@@ -1103,12 +1103,109 @@ public class CookController : MonoBehaviour
 		Vector3 center = (fermenter != null && fermenter.m_outputPoint != null) ? fermenter.m_outputPoint.position : base.transform.position;
 		if (_task.Hive != null)
 		{
-			center = (_task.Hive.m_spawnPoint != null) ? _task.Hive.m_spawnPoint.position : _task.Hive.transform.position;
-			_hiveDrop = (_task.Hive.m_honeyItem != null) ? _task.Hive.m_honeyItem.gameObject.name : "Honey";
+			UpdateHoneyPickup(dt);
+			return;
 		}
-		PickUpDrops(center, 4f, ledger: true);
 		_hiveDrop = null;
+		PickUpDrops(center, 4f, ledger: true);
 		Finish();
+	}
+
+	// 1.4.95: honey rolls off a hive on a slope (user: "sometimes the honey is more behind the hive"). Walk to each
+	// honey on the ground near the hive and pick it up like a player, instead of only what lands within 4 m.
+	private ItemDrop _honeyTarget;
+
+	private float _honeyTargetSince;
+
+	private readonly HashSet<int> _honeySkip = new HashSet<int>();
+
+	private void UpdateHoneyPickup(float dt)
+	{
+		Beehive hive = _task.Hive;
+		Vector3 center = (hive.m_spawnPoint != null) ? hive.m_spawnPoint.position : hive.transform.position;
+		_hiveDrop = (hive.m_honeyItem != null) ? hive.m_honeyItem.gameObject.name : "Honey";
+		if (_timer < 2.1f)
+		{
+			_honeySkip.Clear();
+			_honeyTarget = null;
+		}
+		PickUpDrops(base.transform.position + Vector3.up * 0.5f, 1.8f, ledger: true);
+		if (_timer > 30f)
+		{
+			Log("Leaving the rest of the honey - took too long to get to it");
+			EndHoney();
+			return;
+		}
+		if (_honeyTarget != null)
+		{
+			ZNetView nv = _honeyTarget.GetComponent<ZNetView>();
+			if (nv == null || !nv.IsValid())
+			{
+				_honeyTarget = null;
+			}
+			else if (Time.time - _honeyTargetSince > 10f || (_ai != null && MHR_Mover.GaveUp(_ai)))
+			{
+				Log($"Can't get to the honey at {_honeyTarget.transform.position:F1} - leaving it");
+				_honeySkip.Add(_honeyTarget.GetInstanceID());
+				_honeyTarget = null;
+				if (_ai != null)
+				{
+					MHR_Mover.Release(_ai);
+				}
+			}
+		}
+		if (_honeyTarget == null)
+		{
+			_honeyTarget = NearestHoney(center, 10f);
+			_honeyTargetSince = Time.time;
+			if (_honeyTarget == null)
+			{
+				EndHoney();
+				return;
+			}
+		}
+		MHR_Nav.Move(_ai, dt, _honeyTarget.transform.position, 0.6f, run: false, "Cook");
+	}
+
+	private void EndHoney()
+	{
+		_hiveDrop = null;
+		_honeyTarget = null;
+		_ai?.StopMoving();
+		Finish();
+	}
+
+	private ItemDrop NearestHoney(Vector3 center, float radius)
+	{
+		if (s_itemMask < 0)
+		{
+			s_itemMask = LayerMask.GetMask("item");
+		}
+		Inventory bag = Bag;
+		ItemDrop best = null;
+		float bestDist = float.MaxValue;
+		int num = Physics.OverlapSphereNonAlloc(center, radius, s_drops, s_itemMask);
+		for (int i = 0; i < num; i++)
+		{
+			ItemDrop drop = s_drops[i]?.GetComponentInParent<ItemDrop>();
+			ZNetView nv = drop?.GetComponent<ZNetView>();
+			if (drop == null || drop.m_itemData == null || nv == null || !nv.IsValid() || _honeySkip.Contains(drop.GetInstanceID()))
+			{
+				continue;
+			}
+			string text = drop.m_itemData.m_dropPrefab?.name ?? Utils.GetPrefabName(drop.gameObject);
+			if (text != _hiveDrop || bag == null || !bag.CanAddItem(drop.m_itemData, drop.m_itemData.m_stack))
+			{
+				continue;
+			}
+			float d = Vector3.Distance(base.transform.position, drop.transform.position);
+			if (d < bestDist)
+			{
+				bestDist = d;
+				best = drop;
+			}
+		}
+		return best;
 	}
 
 	private void UpdateStoring(float dt)
