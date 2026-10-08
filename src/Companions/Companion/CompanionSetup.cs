@@ -631,6 +631,7 @@ public class CompanionSetup : MonoBehaviour
 			AddStarterGear(zDO);
 			int num = zDO.GetInt(ActionModeHash);
 			CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Initialized — mode={0} appearance={1} ", num, string.IsNullOrEmpty(text) ? "default" : "saved") + $"pos={base.transform.position:F1}");
+			_instantEquipUntil = Time.time + 10f;
 			_initialized = true;
 		}
 	}
@@ -1022,13 +1023,19 @@ public class CompanionSetup : MonoBehaviour
 				}
 				break;
 			// 1.4.83: carry the best shield with a one-hander, like a player (it was only picked up once a fight started)
+			// 1.4.90: the best one for parrying, the same pick the combat code makes when he's healthy and not surrounded
+			// (ShieldLogic) - not the highest block power, which is always the tower shield (user: "favoring the tower
+			// shield again"). The combat code still swaps to the tower shield when he's hurt or outnumbered.
 			case ItemDrop.ItemData.ItemType.Shield:
-				if (item.GetBaseBlockPower() > num4)
+			{
+				float shieldScore = item.m_shared.m_timedBlockBonus * 1000f + item.GetBaseBlockPower();
+				if (shieldScore > num4)
 				{
 					itemData4 = item;
-					num4 = item.GetBaseBlockPower();
+					num4 = shieldScore;
 				}
 				break;
+			}
 			case ItemDrop.ItemData.ItemType.Trinket:
 				if (armor > num10)
 				{
@@ -1642,12 +1649,30 @@ public class CompanionSetup : MonoBehaviour
 		}
 	}
 
+	// 1.4.90: right after loading in, gear goes straight on - a player loads in already dressed (user: on loading the
+	// companion visibly re-equipped everything, one piece at a time)
+	private float _instantEquipUntil;
+
 	private void QueueEquip(ItemDrop.ItemData item)
 	{
-		if (item != null)
+		if (item == null)
 		{
-			_equipQueue.Add(item);
+			return;
 		}
+		if (Time.time < _instantEquipUntil && _humanoid != null)
+		{
+			_equipping = true;
+			try
+			{
+				_humanoid.EquipItem(item, triggerEquipEffects: false);
+			}
+			finally
+			{
+				_equipping = false;
+			}
+			return;
+		}
+		_equipQueue.Add(item);
 	}
 
 	internal void ClearEquipQueue()

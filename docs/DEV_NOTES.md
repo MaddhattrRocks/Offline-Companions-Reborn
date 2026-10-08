@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.90 - fixes from the 1.4.89 test (log 83a2e597)
+- User: cooking still broken; re-equips all gear when loading in; favours the tower shield again.
+- Cooking: the new "[Chests] No spot to stand" lines showed 59-152 of every chest's candidate spots rejected as "in a fire". `InFire` used EffectArea.Type.Fire - the wide scare radius fire-shy creatures avoid (BaseAI checks it with radius 3), covering the whole kitchen. Now Type.Burning (the flames; what CookingStation.IsFireLit checks), radius 0.3.
+- Shield: CompanionSetup.AutoEquipBest's shield pick (1.4.83) used GetBaseBlockPower -> tower shield. Now m_timedBlockBonus * 1000 + block power (best parry), the same default as ShieldLogic.SelectShield; combat still swaps to the highest block when hurt/outnumbered.
+- Load: the inventory arrives in two steps and every item went through the animated equip queue (equipping anim + equip effect each). QueueEquip now equips instantly (no effects) for 10 s after "[Setup] Initialized".
+
 ### 1.4.89 - fixes from the 1.4.88 test (log 0f07e9d9)
 - User: should still jump over a fire if needed; cooking had trouble reaching the cauldron.
 - Fire loop: the route to the cauldron crossed a fire pit at (-281, 37.4, -314); EscapeFire stepped him out, the route sent him back, "no closer" ladder. Now in Go: next step in a fire (goal not in one) -> if clear 2.5 m on and no drop, jump over (6 m/s forward, 0.6 s step, "jumping over a fire"); else turn aside. EscapeFire skips while airborne and runs after a hop in progress.

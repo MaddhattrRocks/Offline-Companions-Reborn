@@ -641,11 +641,13 @@ namespace Companions
         }
 
         // ---------- fire ----------
-        // 1.4.88: don't stand or walk in a fire (user: twice he stood in the fire pit and caught fire). Valheim marks
-        // fires with an EffectArea of type Fire - the same one creatures with m_avoidFire keep out of.
+        // 1.4.88: don't stand or walk in a fire (user: twice he stood in the fire pit and caught fire).
+        // 1.4.90: the flames themselves - EffectArea type Burning (what cooking stations check, what sets you alight).
+        // 1.4.88-89 used type Fire, the wide area fire-shy creatures keep away from: it covered the whole kitchen, so
+        // almost every spot by a chest counted as "in a fire" and cooking couldn't reach anything (1.4.89 log).
         public static bool InFire(Vector3 p)
         {
-            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Fire, 0.4f) != null; }
+            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f) != null; }
             catch { return false; }
         }
 
