@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.93 - from the 1.4.92 test (log 34e9d1f0)
+- User: mostly good; not making mead because of honey (log: all three priority bases "needs 10 Honey, 23 in reach and 20 are kept back"). Asked for beehive harvesting (at least for Cook; also a good idle action), a speech line for it (-> BACKLOG speech overhaul), and the bed kinematic warning (someone reported it; chairs were fixed in 1.4.76, ship seats wait for the boat review).
+- Cook: TaskKind.Hive. Scan collects Beehive pieces. HiveTask(idle:false) after rescue/tap: nearest hive with honey that's full (s_level >= m_maxHoney) or any honey when a priority base's Honey requirement is above Usable("Honey"); HiveTask(idle:true) last of all (nothing to cook/store): any hive at least half full. At the hive: "interact", InvokeRPC("RPC_Extract") (spawns the honey at m_spawnPoint), then CollectingDrops picks up the hive's m_honeyItem (ledger -> stored).
+- Bed: CompanionRest.FinalizeSleep no longer sets isKinematic; gravity off, the bed piece's colliders ignored (IgnoreCollision), position/rotation pinned in FixedUpdate + LateUpdate while sleeping (PinToBed); wake restores collisions and gravity. Ship seats (CompanionAI ~1072) still kinematic - boat review.
+
 ### 1.4.92 (cont.) - mead plan reviewed with the user
 - Boss order: Eikthyr -> The Elder -> Bonemass -> Moder -> Yagluth -> The Queen -> Fader -> Kall Fimbulbringer. Agreed table (last beaten -> priority bases): start: HealthMinor, StaminaMinor; eikthyr: HealthMinor, StaminaMinor, PoisonResist; gdking: PoisonResist, HealthMedium, StaminaMinor; bonemass: FrostResist, HealthMedium, StaminaMedium; dragon: HealthMedium, StaminaMedium, Tasty, BarleyWineBase; goblinking: HealthMajor, StaminaMedium, EitrMinor, Lightfoot; queen: BarleyWineBase, HealthMajor, StaminaLingering, HealthLingering, EitrMinor; fader and kall: FrostResist, HealthMajor, HealthLingering, StaminaLingering, EitrMinor. Some later base names unverified - unknown names are logged.
 - Priority, not exclusive: PickTask = rescue/tap, store >= 10, Fill (priority bases, then any base in bag/chests), Brew(priority), Food, Brew(any other known base), store.
@@ -240,6 +245,9 @@ What was built (all items below):
   - DoorHandler already closes doors behind it (if they were closed) - keep that behaviour in the overhaul.
 
 ## BACKLOG (come back to - check with the user before building any of it)
+- **Speech overhaul (user, 1.4.93 - not critical yet):** companions should say when something blocks their job, e.g. "I need honey for mead", "No room in the chests", "The cauldron needs a fire". Review all speech lines at the same time.
+- **Idle actions (user, 1.4.93):** when a job is done or waiting (fermenting, cooking timers), do useful things like a player - collecting honey from beehives is the first candidate (Cook already does it when it has nothing else to do). Which jobs besides Cook should collect honey: open.
+- **Ship seats still kinematic** (CompanionAI.SitOnShip ~1072): same warning as beds - fix in the boat review.
 - **Fish job: craft bait (user, 2026-10-07):** when the Fish job moves to MHR_Mover (phase 3 part 3), let the companion craft fishing bait like a player - keep a stock of each bait it needs (configurable target, same style as the Cooking settings: reserve for raw ingredients, batch size). Today it only fetches bait from chests near home (MHR_ToolKeeper K_BAIT); the cooking job never makes bait.
 - **When a job runs out of work (user, 2026-10-07):** don't just stand around - act like a player would. Ideas to discuss: go back to following, tidy/sort chests, top up fires, repair gear, help another job, wander near home. (Related: jobs + Follow together.)
 - **User's to-do notes:** the user has more notes to add (some already covered/fixed) - merge them here when they arrive. Guiding rule: make the companion behave like a player.

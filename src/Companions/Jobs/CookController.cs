@@ -42,7 +42,8 @@ public class CookController : MonoBehaviour
 		Rescue,
 		Fill,
 		Tap,
-		Store
+		Store,
+		Hive
 	}
 
 	private class Task
@@ -56,6 +57,8 @@ public class CookController : MonoBehaviour
 		public CookingStation Cooker;
 
 		public Fermenter Fermenter;
+
+		public Beehive Hive;
 
 		public string Item;
 
@@ -81,6 +84,8 @@ public class CookController : MonoBehaviour
 				return "tap a fermenter";
 			case TaskKind.Store:
 				return "put away " + Name(Item);
+			case TaskKind.Hive:
+				return "collect honey from a beehive";
 			default:
 				return "nothing";
 			}
@@ -133,6 +138,8 @@ public class CookController : MonoBehaviour
 
 	private readonly List<Fermenter> _fermenters = new List<Fermenter>();
 
+	private readonly List<Beehive> _hives = new List<Beehive>();
+
 	private readonly List<Piece> _pieces = new List<Piece>();
 
 	private readonly HashSet<int> _unreachable = new HashSet<int>();
@@ -165,6 +172,8 @@ public class CookController : MonoBehaviour
 	private int _claimedId;
 
 	private static readonly Collider[] s_drops = new Collider[48];
+
+	private string _hiveDrop;
 
 	private static int s_itemMask = -1;
 
@@ -334,6 +343,13 @@ public class CookController : MonoBehaviour
 				return new Task { Kind = TaskKind.Tap, Fermenter = fermenter };
 			}
 		}
+		// 1b) 1.4.93: honey from the beehives - when a hive is full, or when a priority mead base is short of honey
+		// (user: "The NPC should be able to harvest bee hives to collect honey")
+		Task hive = HiveTask(idle: false);
+		if (hive != null)
+		{
+			return hive;
+		}
 		// 2) a full bag of things it made: put them away first
 		int carried = LedgerCarried();
 		if (carried >= 10)
@@ -362,8 +378,64 @@ public class CookController : MonoBehaviour
 		{
 			return task4;
 		}
-		// 6) nothing to make: put away what it made
-		return (carried > 0) ? StoreTask() : null;
+		// 6) nothing to make: put away what it made, then empty any beehive with honey in it
+		return ((carried > 0) ? StoreTask() : null) ?? HiveTask(idle: true);
+	}
+
+	private static int HoneyIn(Beehive hive)
+	{
+		return hive.GetComponent<ZNetView>()?.GetZDO()?.GetInt(ZDOVars.s_level) ?? 0;
+	}
+
+	// a beehive worth emptying: full, or (not idle) honey is what a priority mead base is waiting for; idle: any honey
+	private Task HiveTask(bool idle)
+	{
+		bool needHoney = false;
+		if (!idle)
+		{
+			foreach (string mead in CookCatalog.Focus())
+			{
+				Recipe recipe = CookCatalog.RecipeFor(mead);
+				if (recipe == null)
+				{
+					continue;
+				}
+				foreach (Piece.Requirement req in recipe.m_resources)
+				{
+					if (req?.m_resItem != null && req.m_resItem.gameObject.name == "Honey" && Usable("Honey") < req.GetAmount(1))
+					{
+						needHoney = true;
+					}
+				}
+			}
+		}
+		Beehive best = null;
+		float bestDist = float.MaxValue;
+		foreach (Beehive hive in _hives)
+		{
+			if (hive == null || !Usable(hive) || Skipped(TaskKind.Hive, hive.GetInstanceID().ToString()))
+			{
+				continue;
+			}
+			int honey = HoneyIn(hive);
+			// idle: at least half full, so it isn't walking over for every drop
+			if (honey <= 0 || (!idle && !needHoney && honey < hive.m_maxHoney) || (idle && honey * 2 < hive.m_maxHoney))
+			{
+				continue;
+			}
+			float num = Vector3.Distance(base.transform.position, hive.transform.position);
+			if (num < bestDist)
+			{
+				best = hive;
+				bestDist = num;
+			}
+		}
+		return (best != null) ? new Task
+		{
+			Kind = TaskKind.Hive,
+			Hive = best,
+			Item = best.GetInstanceID().ToString()
+		} : null;
 	}
 
 	private bool Skipped(TaskKind kind, string item)
@@ -803,6 +875,18 @@ public class CookController : MonoBehaviour
 			_zanim?.SetTrigger("interact");
 			Enter(CookPhase.Fermenting);
 			break;
+		case TaskKind.Hive:
+		{
+			_zanim?.SetTrigger("interact");
+			int honey = HoneyIn(_task.Hive);
+			if (honey > 0)
+			{
+				_task.Hive.GetComponent<ZNetView>()?.InvokeRPC("RPC_Extract");
+				Log($"Collected {honey}x {Name("Honey")} from the beehive");
+			}
+			Enter(CookPhase.CollectingDrops);
+			break;
+		}
 		default:
 			Finish();
 			break;
@@ -1017,7 +1101,13 @@ public class CookController : MonoBehaviour
 		}
 		Fermenter fermenter = _task.Fermenter;
 		Vector3 center = (fermenter != null && fermenter.m_outputPoint != null) ? fermenter.m_outputPoint.position : base.transform.position;
+		if (_task.Hive != null)
+		{
+			center = (_task.Hive.m_spawnPoint != null) ? _task.Hive.m_spawnPoint.position : _task.Hive.transform.position;
+			_hiveDrop = (_task.Hive.m_honeyItem != null) ? _task.Hive.m_honeyItem.gameObject.name : "Honey";
+		}
 		PickUpDrops(center, 4f, ledger: true);
+		_hiveDrop = null;
 		Finish();
 	}
 
@@ -1092,6 +1182,8 @@ public class CookController : MonoBehaviour
 		case TaskKind.Fill:
 		case TaskKind.Tap:
 			return _task.Fermenter;
+		case TaskKind.Hive:
+			return _task.Hive;
 		default:
 			return null;
 		}
@@ -1107,6 +1199,10 @@ public class CookController : MonoBehaviour
 		if (component is CookingStation cookingStation)
 		{
 			return cookingStation.m_name;
+		}
+		if (component is Beehive beehive)
+		{
+			return beehive.m_name;
 		}
 		return "$piece_fermenter";
 	}
@@ -1394,6 +1490,7 @@ public class CookController : MonoBehaviour
 		_stations.Clear();
 		_cookers.Clear();
 		_fermenters.Clear();
+		_hives.Clear();
 		_pieces.Clear();
 		Vector3 position = base.transform.position;
 		Piece.GetAllPiecesInRadius(position, Range, _pieces);
@@ -1417,6 +1514,11 @@ public class CookController : MonoBehaviour
 			if (fermenter != null && fermenter.GetComponent<ZNetView>()?.GetZDO() != null)
 			{
 				_fermenters.Add(fermenter);
+			}
+			Beehive beehive = piece.GetComponent<Beehive>();
+			if (beehive != null && beehive.GetComponent<ZNetView>()?.GetZDO() != null)
+			{
+				_hives.Add(beehive);
 			}
 			CraftingStation craftingStation = piece.GetComponent<CraftingStation>();
 			if (craftingStation != null && CookCatalog.IsCookingStation(craftingStation.m_name))
@@ -1632,8 +1734,8 @@ public class CookController : MonoBehaviour
 				continue;
 			}
 			string text = drop.m_itemData.m_dropPrefab?.name ?? Utils.GetPrefabName(drop.gameObject);
-			// only what came off the stations: cooked food, mead, coal from burnt food
-			if (!CookCatalog.IsMade(text) && !CookCatalog.IsMead(text) && text != "Coal")
+			// only what came off the stations: cooked food, mead, coal from burnt food (and honey from a hive)
+			if (!CookCatalog.IsMade(text) && !CookCatalog.IsMead(text) && text != "Coal" && text != _hiveDrop)
 			{
 				continue;
 			}

@@ -346,6 +346,71 @@ public class CompanionRest : MonoBehaviour
 		_instances.Remove(this);
 	}
 
+	private bool _bedPinned;
+
+	private Vector3 _bedPinPos;
+
+	private Quaternion _bedPinRot;
+
+	private Collider[] _bedCols;
+
+	// keep the sleeping companion on the bed (see FinalizeSleep)
+	private void PinToBed()
+	{
+		if (!_bedPinned || !_isSleeping)
+		{
+			return;
+		}
+		base.transform.position = _bedPinPos;
+		base.transform.rotation = _bedPinRot;
+		if (_body != null && !_body.isKinematic)
+		{
+			_body.position = _bedPinPos;
+			_body.linearVelocity = Vector3.zero;
+			_body.useGravity = false;
+		}
+	}
+
+	private void IgnoreBed(Bed bed, bool ignore)
+	{
+		Collider component = GetComponent<CapsuleCollider>();
+		if (ignore)
+		{
+			if (bed == null)
+			{
+				return;
+			}
+			Piece componentInParent = bed.GetComponentInParent<Piece>();
+			_bedCols = ((componentInParent != null) ? componentInParent.GetComponentsInChildren<Collider>() : bed.GetComponentsInChildren<Collider>());
+		}
+		if (component == null || _bedCols == null)
+		{
+			return;
+		}
+		Collider[] bedCols = _bedCols;
+		foreach (Collider collider in bedCols)
+		{
+			if (collider != null)
+			{
+				Physics.IgnoreCollision(component, collider, ignore);
+			}
+		}
+		if (!ignore)
+		{
+			_bedCols = null;
+		}
+	}
+
+	private void LateUpdate()
+	{
+		PinToBed();
+	}
+
+	private void FixedUpdate()
+	{
+		PinToBed();
+	}
+
 	private void Update()
 	{
 		if (_nview == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
@@ -945,12 +1010,18 @@ public class CompanionRest : MonoBehaviour
 		Transform transform = ((_bedTarget.m_spawnPoint != null) ? _bedTarget.m_spawnPoint : _bedTarget.transform);
 		base.transform.position = transform.position;
 		base.transform.rotation = transform.rotation;
+		// 1.4.93: not kinematic (the game sets every character's velocity each physics tick, and on a kinematic body
+		// that's the Unity warning "Setting linear velocity of a kinematic body is not supported" - user report). Like
+		// seated companions: gravity off, the bed's own colliders ignored, held on the bed every frame (PinToBed).
+		_bedPinPos = transform.position;
+		_bedPinRot = transform.rotation;
+		IgnoreBed(_bedTarget, ignore: true);
+		_bedPinned = true;
 		if (_body != null)
 		{
 			_body.position = transform.position;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 			_body.useGravity = false;
-			_body.isKinematic = true;
 		}
 		CompanionsPlugin.Log.LogDebug($"[Rest] FinalizeSleep anim — HasPlayerAnims={HasPlayerAnims} " + $"canWearArmor={_setup?.CanWearArmor()} zanim={_zanim != null}");
 		if (_zanim != null && HasPlayerAnims)
@@ -1083,11 +1154,13 @@ public class CompanionRest : MonoBehaviour
 		{
 			_nview.GetZDO().Set(ZDOVars.s_inBed, value: false);
 		}
+		_bedPinned = false;
+		IgnoreBed(null, ignore: false);
 		if (_body != null)
 		{
 			_body.isKinematic = false;
 			_body.useGravity = true;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 			if (bedTarget != null)
 			{
 				_body.position = base.transform.position;
