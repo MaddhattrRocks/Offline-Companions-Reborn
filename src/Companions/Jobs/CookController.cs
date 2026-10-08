@@ -458,24 +458,81 @@ public class CookController : MonoBehaviour
 		return best;
 	}
 
+	// 1.4.92: why each focus base isn't being brewed, logged when it changes (1.4.91 log: no brewing, no reason given)
+	private readonly Dictionary<string, string> _brewWhy = new Dictionary<string, string>();
+
+	private void BrewWhy(string mead, string why)
+	{
+		if (!_brewWhy.TryGetValue(mead, out var value) || value != why)
+		{
+			_brewWhy[mead] = why;
+			Log("Mead base " + Name(mead) + ": " + why);
+		}
+	}
+
 	private Task BrewTask()
 	{
 		foreach (string mead in CookCatalog.Focus())
 		{
 			Recipe recipe = CookCatalog.RecipeFor(mead);
-			if (recipe == null || !Known(recipe) || Skipped(TaskKind.Craft, mead))
+			if (recipe == null)
+			{
+				BrewWhy(mead, "no recipe for it");
+				continue;
+			}
+			if (!Known(recipe))
+			{
+				BrewWhy(mead, "you don't know the recipe yet");
+				continue;
+			}
+			if (Skipped(TaskKind.Craft, mead))
 			{
 				continue;
 			}
 			string finished = CookCatalog.MeadOf(mead);
-			if (Count(mead) >= BaseTarget || (finished != null && Count(finished) >= MeadTarget))
+			int have = Count(mead);
+			if (have >= BaseTarget)
 			{
+				BrewWhy(mead, $"enough ({have} of {BaseTarget} bases)");
+				continue;
+			}
+			int done = (finished != null) ? Count(finished) : 0;
+			if (finished != null && done >= MeadTarget)
+			{
+				BrewWhy(mead, $"enough {Name(finished)} ({done} of {MeadTarget})");
 				continue;
 			}
 			CraftingStation station = FindStation(recipe);
-			if (station != null && IngredientsOk(recipe))
+			if (station == null)
 			{
-				return CraftTask(recipe, station, mead, BaseTarget - Count(mead));
+				BrewWhy(mead, "no usable " + Loc(recipe.m_craftingStation?.m_name) + " in range (needs the right level, a fire and a roof)");
+				continue;
+			}
+			string shortOf = ShortIngredient(recipe);
+			if (shortOf != null)
+			{
+				BrewWhy(mead, shortOf);
+				continue;
+			}
+			BrewWhy(mead, "brewing");
+			return CraftTask(recipe, station, mead, BaseTarget - have);
+		}
+		return null;
+	}
+
+	// the first ingredient that would go below the reserve, as a sentence for the log
+	private string ShortIngredient(Recipe recipe)
+	{
+		foreach (Piece.Requirement req in recipe.m_resources)
+		{
+			if (req?.m_resItem == null || req.GetAmount(1) <= 0)
+			{
+				continue;
+			}
+			string item = req.m_resItem.gameObject.name;
+			if (Usable(item) < req.GetAmount(1))
+			{
+				return CookCatalog.IsMade(item) ? $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach" : $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach and {Reserve} are kept back";
 			}
 		}
 		return null;
