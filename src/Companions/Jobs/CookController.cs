@@ -922,7 +922,9 @@ public class CookController : MonoBehaviour
 		{
 			if (FermenterState(fermenter) == 0 && HomesteadController.ConsumeOneFromInventory(Bag, _task.Item))
 			{
-				nv?.InvokeRPC("RPC_AddItem", _task.Item);
+				// 1.4.91: the game's fermenter takes the item's hash and a cheated flag (sending the name did nothing -
+				// user: "It never succeeded. The fermenter is still empty.")
+				nv?.InvokeRPC("RPC_AddItem", _task.Item.GetStableHashCode(), false);
 				TakeFromLedger(_task.Item, 1);
 				Log("Put " + Name(_task.Item) + " in the fermenter");
 			}
@@ -1497,7 +1499,8 @@ public class CookController : MonoBehaviour
 	private static int FermenterState(Fermenter fermenter)
 	{
 		ZDO zDO = fermenter.GetComponent<ZNetView>()?.GetZDO();
-		if (zDO == null || string.IsNullOrEmpty(zDO.GetString(ZDOVars.s_content)))
+		// 1.4.91: the content is stored as the item's hash (an int), like Fermenter.GetContent reads it
+		if (zDO == null || zDO.GetInt(ZDOVars.s_content) == 0)
 		{
 			return 0;
 		}
