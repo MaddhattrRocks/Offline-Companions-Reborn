@@ -344,8 +344,8 @@ public class CookController : MonoBehaviour
 				return task;
 			}
 		}
-		// 3) mead: fill an empty fermenter, brew a focus base
-		Task task2 = FillTask() ?? BrewTask();
+		// 3) mead: fill an empty fermenter (priority bases first), brew a priority base for the next boss
+		Task task2 = FillTask() ?? BrewTask(focus: true);
 		if (task2 != null)
 		{
 			return task2;
@@ -356,7 +356,13 @@ public class CookController : MonoBehaviour
 		{
 			return task3;
 		}
-		// 5) nothing to make: put away what it made
+		// 5) 1.4.92: any other mead base the player knows (the priority list sets the order, it doesn't limit it)
+		Task task4 = BrewTask(focus: false);
+		if (task4 != null)
+		{
+			return task4;
+		}
+		// 6) nothing to make: put away what it made
 		return (carried > 0) ? StoreTask() : null;
 	}
 
@@ -463,6 +469,11 @@ public class CookController : MonoBehaviour
 
 	private void BrewWhy(string mead, string why)
 	{
+		// only the priority list is explained in the log (all twenty-odd bases would be noise)
+		if (!CookCatalog.Focus().Contains(mead))
+		{
+			return;
+		}
 		if (!_brewWhy.TryGetValue(mead, out var value) || value != why)
 		{
 			_brewWhy[mead] = why;
@@ -470,10 +481,15 @@ public class CookController : MonoBehaviour
 		}
 	}
 
-	private Task BrewTask()
+	private Task BrewTask(bool focus)
 	{
-		foreach (string mead in CookCatalog.Focus())
+		List<string> focusList = CookCatalog.Focus();
+		foreach (string mead in focus ? focusList : CookCatalog.MeadBases)
 		{
+			if (!focus && focusList.Contains(mead))
+			{
+				continue;
+			}
 			Recipe recipe = CookCatalog.RecipeFor(mead);
 			if (recipe == null)
 			{
@@ -540,17 +556,13 @@ public class CookController : MonoBehaviour
 
 	private Task FillTask()
 	{
-		Inventory bag = Bag;
+		// priority bases first, then any other mead base in the bag or the chests (1.4.92)
 		List<string> list = new List<string>(CookCatalog.Focus());
-		if (bag != null)
+		foreach (string text in CookCatalog.MeadBases)
 		{
-			foreach (ItemDrop.ItemData item in bag.GetAllItems())
+			if (!list.Contains(text))
 			{
-				string text = item?.m_dropPrefab?.name;
-				if (text != null && CookCatalog.IsMeadBase(text) && !list.Contains(text))
-				{
-					list.Add(text);
-				}
+				list.Add(text);
 			}
 		}
 		foreach (string mead in list)
@@ -1862,7 +1874,6 @@ internal static class CookCatalog
 
 	private static readonly List<string> s_focus = new List<string>();
 
-	private static readonly string[] s_stages = new string[8] { "start", "eikthyr", "gdking", "bonemass", "dragon", "goblinking", "queen", "fader" };
 
 	internal static void Ensure()
 	{
@@ -1935,6 +1946,8 @@ internal static class CookCatalog
 			CompanionsPlugin.Log.LogWarning("[Cook] couldn't read the cooking recipes: " + ex.Message);
 		}
 	}
+
+	internal static List<string> MeadBases => new List<string>(s_meadOf.Keys);
 
 	internal static bool IsCookingStation(string stationName)
 	{
@@ -2029,11 +2042,40 @@ internal static class CookCatalog
 		return s_all || s_allow.Contains(item) || s_allow.Contains(text3);
 	}
 
-	// the mead bases to work on now: the MeadFocus entry for the last boss beaten (or the closest one before it)
+	// the mead bases to work on first: the MeadFocus entry for the last boss beaten. 1.4.92: the entries are in the
+	// order the player beats the bosses; a boss is named by (part of) its name or its defeated key, so new and modded
+	// bosses work too (bosses are read from the game's own data, see Bosses)
 	internal static List<string> Focus()
 	{
 		string text = ModConfig.CookMeadFocus?.Value ?? "";
-		string stage = Stage();
+		List<KeyValuePair<string, string>> list = new List<KeyValuePair<string, string>>();
+		foreach (string part in text.Split(';'))
+		{
+			int num = part.IndexOf(':');
+			if (num > 0)
+			{
+				list.Add(new KeyValuePair<string, string>(part.Substring(0, num).Trim(), part.Substring(num + 1)));
+			}
+		}
+		// the last entry (in the player's order) whose boss is beaten; "start" when none is
+		string stage = null;
+		string value = null;
+		foreach (KeyValuePair<string, string> item in list)
+		{
+			if (item.Key.Equals("start", StringComparison.OrdinalIgnoreCase))
+			{
+				if (stage == null)
+				{
+					stage = item.Key;
+					value = item.Value;
+				}
+			}
+			else if (Beaten(item.Key))
+			{
+				stage = item.Key;
+				value = item.Value;
+			}
+		}
 		if (text == s_focusKey && stage == s_focusStage)
 		{
 			return s_focus;
@@ -2041,21 +2083,8 @@ internal static class CookCatalog
 		s_focusKey = text;
 		s_focusStage = stage;
 		s_focus.Clear();
-		Dictionary<string, string> dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-		foreach (string part in text.Split(';'))
+		if (value != null)
 		{
-			int num = part.IndexOf(':');
-			if (num > 0)
-			{
-				dictionary[part.Substring(0, num).Trim()] = part.Substring(num + 1);
-			}
-		}
-		for (int num2 = Array.IndexOf(s_stages, stage); num2 >= 0; num2--)
-		{
-			if (!dictionary.TryGetValue(s_stages[num2], out var value))
-			{
-				continue;
-			}
 			foreach (string part2 in value.Split(','))
 			{
 				string text2 = part2.Trim();
@@ -2071,27 +2100,99 @@ internal static class CookCatalog
 					}
 				}
 			}
-			break;
 		}
-		CompanionsPlugin.Log.LogInfo("[Cook] Mead focus (" + stage + "): " + ((s_focus.Count > 0) ? string.Join(", ", s_focus) : "none"));
+		CompanionsPlugin.Log.LogInfo("[Cook] Mead priority (" + (stage ?? "no entry") + "): " + ((s_focus.Count > 0) ? string.Join(", ", s_focus) : "none"));
 		return s_focus;
 	}
 
-	private static string Stage()
+	// bosses from the game's data (mods included): the key their death sets, prefab and display name
+	private class Boss
 	{
-		ZoneSystem instance = ZoneSystem.instance;
-		if (instance == null)
+		public string Key;
+
+		public string Prefab;
+
+		public string Name;
+	}
+
+	private static List<Boss> s_bosses;
+
+	private static List<Boss> Bosses()
+	{
+		if (s_bosses != null)
 		{
-			return "start";
+			return s_bosses;
 		}
-		for (int num = s_stages.Length - 1; num > 0; num--)
+		List<Boss> list = new List<Boss>();
+		try
 		{
-			if (instance.GetGlobalKey("defeated_" + s_stages[num]))
+			foreach (Character character in Resources.FindObjectsOfTypeAll<Character>())
 			{
-				return s_stages[num];
+				if (character == null || !character.m_boss || string.IsNullOrEmpty(character.m_defeatSetGlobalKey) || list.Exists((Boss b) => b.Key == character.m_defeatSetGlobalKey))
+				{
+					continue;
+				}
+				list.Add(new Boss
+				{
+					Key = character.m_defeatSetGlobalKey,
+					Prefab = character.gameObject.name,
+					Name = CookController.Loc(character.m_name)
+				});
 			}
 		}
-		return "start";
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Cook] couldn't read the bosses: " + ex.Message);
+		}
+		if (list.Count > 0)
+		{
+			s_bosses = list;
+		}
+		return list;
+	}
+
+	private static string Norm(string s)
+	{
+		StringBuilder stringBuilder = new StringBuilder();
+		foreach (char c in s ?? "")
+		{
+			if (char.IsLetterOrDigit(c))
+			{
+				stringBuilder.Append(char.ToLowerInvariant(c));
+			}
+		}
+		return stringBuilder.ToString();
+	}
+
+	// is the boss this MeadFocus entry names beaten (world key, or the player's own key on "player-based" worlds)?
+	private static bool Beaten(string label)
+	{
+		string text = Norm(label);
+		if (text.Length == 0)
+		{
+			return false;
+		}
+		List<string> keys = new List<string>();
+		foreach (Boss boss in Bosses())
+		{
+			string text2 = Norm(boss.Key);
+			if (text2 == text || text2 == "defeated" + text || text2.EndsWith(text) || Norm(boss.Name).Contains(text) || Norm(boss.Prefab).Contains(text))
+			{
+				keys.Add(boss.Key);
+			}
+		}
+		if (keys.Count == 0)
+		{
+			keys.Add("defeated_" + label.Trim().ToLowerInvariant());
+		}
+		foreach (string key in keys)
+		{
+			if ((ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(key)) || (Player.m_localPlayer != null && Player.m_localPlayer.HaveUniqueKey(key)))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void WriteReference()
@@ -2129,7 +2230,11 @@ internal static class CookCatalog
 				stringBuilder.AppendLine($"  {item2.Key} = {CookController.Name(item2.Key)} -> {CookController.Name(item2.Value)}");
 			}
 			stringBuilder.AppendLine();
-			stringBuilder.AppendLine("MEADFOCUS STAGES (the last boss beaten): start, eikthyr, gdking (The Elder), bonemass, dragon (Moder), goblinking (Yagluth), queen (The Queen), fader (Fader)");
+			stringBuilder.AppendLine("BOSSES (Cooking > MeadFocus: name a boss by any part of its name or key; start = none beaten yet)");
+			foreach (Boss boss in Bosses())
+			{
+				stringBuilder.AppendLine($"  {boss.Name}  (key {boss.Key}, prefab {boss.Prefab})");
+			}
 			File.WriteAllText(Path.Combine(Paths.ConfigPath, "OfflineCompanionsReborn.Cooking.txt"), stringBuilder.ToString());
 		}
 		catch (Exception ex)
