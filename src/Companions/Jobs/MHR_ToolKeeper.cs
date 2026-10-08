@@ -982,31 +982,39 @@ namespace Companions
             // 1.4.88: also lower down (up to 2.6 m below, e.g. the floor under a ledge) and further out, as long as it's in
             // reach from eye height like a player (InReach)
             float[] radii = { 1.2f, 1.7f, 2.2f, 2.8f };
+            int nGround = 0, nHeight = 0, nFire = 0, nBlocked = 0, nReach = 0, nRoute = 0;
             for (int r = 0; r < radii.Length; r++)
             {
                 for (int k = 0; k < 16; k++)
                 {
                     float ang = k * 22.5f * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
-                    RaycastHit hit;
-                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 4.5f, Mask())) continue;
-                    if (IsChestPart(hit.collider, chest)) continue;
-                    Vector3 stand = hit.point;
-                    if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) continue;
-                    if (MHR_Mover.InFire(stand)) continue;   // 1.4.88
-                    if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
-                    if (!InReach(stand, chest)) continue;
-                    s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
-                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
-                    // 1.4.67: the route has to actually end at the spot, not just somewhere near it
-                    Vector3 end = s_path[s_path.Count - 1];
-                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
-                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
-                    float score = 0f;
-                    Vector3 prev = me;
-                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
-                    if (score < best) { best = score; spot = stand; found = true; }
+                    // 1.4.89: every surface straight down, not just the first - next to a ledge chest the first one is the
+                    // ledge itself and the floor below (where a player stands to open it) was never looked at
+                    RaycastHit[] hits = Physics.RaycastAll(pt + Vector3.up * 1.6f, Vector3.down, 4.5f, Mask());
+                    if (hits.Length == 0) { nGround++; continue; }
+                    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                    for (int h = 0; h < hits.Length; h++)
+                    {
+                        RaycastHit hit = hits[h];
+                        if (hit.normal.y < 0.6f || IsChestPart(hit.collider, chest)) continue;
+                        Vector3 stand = hit.point;
+                        if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) { nHeight++; continue; }
+                        if (MHR_Mover.InFire(stand)) { nFire++; continue; }   // 1.4.88
+                        if (Blocked(stand + Vector3.up * 1.0f, chest)) { nBlocked++; continue; }
+                        if (!InReach(stand, chest)) { nReach++; continue; }
+                        s_path.Clear();
+                        if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
+                        { nRoute++; if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
+                        // 1.4.67: the route has to actually end at the spot, not just somewhere near it
+                        Vector3 end = s_path[s_path.Count - 1];
+                        if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
+                        { nRoute++; if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
+                        float score = 0f;
+                        Vector3 prev = me;
+                        for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                        if (score < best) { best = score; spot = stand; found = true; }
+                    }
                 }
                 if (found) break;
             }
@@ -1020,6 +1028,8 @@ namespace Companions
                     if (MHR_Mover.ReachableViaDoor(me, viaDoor[i])) { spot = viaDoor[i]; found = true; break; }
                 }
             }
+            // 1.4.89: why no spot worked, so a chest the player can open but the companion can't shows the reason
+            if (!found && CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Chests] No spot to stand by the chest at " + Fmt(cp) + ": " + nGround + " no ground, " + nHeight + " too high/low, " + nFire + " in a fire, " + nBlocked + " no room, " + nReach + " out of reach/sight, " + nRoute + " no route");
             return found;
         }
 
