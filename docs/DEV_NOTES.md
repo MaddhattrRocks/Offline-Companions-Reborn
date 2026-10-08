@@ -30,6 +30,9 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### Valheim 1.0.17 patch (2026-10-08)
+- User sent the new assembly_valheim.dll. Whole-assembly decompile diff vs 1.0.16: only Version (1.0.16 -> 1.0.17), ItemDrop/Inventory/VariantDialog (invalid item style variants reset to 0, icon index guard) and ZDOMan (dirty-chunk save guard). Nothing the mod uses or patches by name changed; 1.4.87 compiles against it.
+
 ### 1.4.87 - Cook rewrite (agreed design in the BACKLOG entry "Cook redesign")
 - `Jobs/CookController.cs` rewritten. Task picker every 4 s (scan of chests, crafting stations, cooking stations, fermenters within Cooking.Range round the companion): 1) Rescue (a cooking station slot done/burnt) 2) Tap a ready fermenter 3) Store if carrying >= 10 things it made 4) Fill an empty fermenter (focus bases + any base in the bag; finished mead < MeadTarget) 5) Brew a focus base (< MeadBaseTarget, its mead < MeadTarget) 6) Best food (value = food + stamina + eitr): cauldron/prep-table recipes the player knows (`Player.IsRecipeKnown`), food (or what the oven makes of it) below FoodTarget, ingredients ok; or a cooking-station conversion (n = min(free slots, target room, usable raw)); finishing a made item gets +0.5 7) Store what it made.
 - Reserve: `Usable(item)` = count in range chests + bag, minus IngredientReserve for raw items (not the output of any cooking recipe/conversion).
