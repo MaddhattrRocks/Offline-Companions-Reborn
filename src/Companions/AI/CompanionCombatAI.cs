@@ -110,6 +110,57 @@ public class CompanionCombatAI : MonoBehaviour
 
 	internal Character HuntPrey => _huntPrey;
 
+	// 1.4.96: sneak up on game that hasn't noticed us yet (user: "try and sneak if they see a deer so as to not spook
+	// it"), like a player: crouched, no running, until it's alerted or something else is the target
+	private bool _stalking;
+
+	private float _nextStalkLog;
+
+	private void UpdateStalk()
+	{
+		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && Unaware(_targetCreature);
+		if (stalk == _stalking)
+		{
+			return;
+		}
+		_stalking = stalk;
+		_ai.MHR_SetCrouch(stalk);
+		if (stalk)
+		{
+			_character.SetRun(run: false);
+		}
+		if (Time.time >= _nextStalkLog)
+		{
+			_nextStalkLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
+		}
+	}
+
+	private void StopStalk()
+	{
+		if (_stalking)
+		{
+			_stalking = false;
+			_ai.MHR_SetCrouch(false);
+		}
+	}
+
+	// skittish game (deer, hares, anything that runs when it notices you) that hasn't noticed anyone yet
+	private static bool Unaware(Character c)
+	{
+		if (c == null)
+		{
+			return false;
+		}
+		BaseAI ai = c.GetBaseAI();
+		if (ai == null || ai.IsAlerted() || ai.GetTargetCreature() != null)
+		{
+			return false;
+		}
+		MonsterAI monsterAI = ai as MonsterAI;
+		return ai is AnimalAI || (monsterAI != null && monsterAI.m_fleeIfNotAlerted);
+	}
+
 	internal void EngagePrey(Character prey)
 	{
 		Engage(prey);
@@ -179,6 +230,7 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		_ai.m_targetCreature = _targetCreature;
 		_ai.m_targetStatic = _targetStatic;
+		UpdateStalk();
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();
 		if (healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
@@ -278,7 +330,7 @@ public class CompanionCombatAI : MonoBehaviour
 						{
 							lastKnownTargetPos += velocity * _interceptTime;
 						}
-						_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: true);
+						_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: !_stalking);
 						if (_timeSinceAttacking > 15f)
 						{
 							_unableToAttackTargetTimer = 15f;
@@ -309,7 +361,7 @@ public class CompanionCombatAI : MonoBehaviour
 							_unableToAttackTargetTimer = 15f;
 						}
 					}
-					else if (_ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: true))
+					else if (_ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: !_stalking))
 					{
 						_beenAtLastPos = true;
 					}
@@ -399,6 +451,7 @@ public class CompanionCombatAI : MonoBehaviour
 			ClearBlock();
 			_parryAttackCount = 0;
 			HuntMode = false;
+			StopStalk();
 		}
 	}
 

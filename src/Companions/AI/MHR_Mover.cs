@@ -778,23 +778,28 @@ namespace Companions
         static bool TryWaterJump(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag)
         {
             float lim = MHR_Water.SwimLimit(c);
-            float waterAt = -1f, landAt = -1f;
+            // 1.4.96: shallow water too (user: a player jumps a small river or pond rather than run through it)
+            float wade = ModConfig.JumpWaterDepth != null ? ModConfig.JumpWaterDepth.Value : 0.3f;
+            float maxGap = ModConfig.JumpWaterWidth != null ? ModConfig.JumpWaterWidth.Value : 3f;
+            float waterAt = -1f, landAt = -1f; bool swim = false;
             for (float d = 0.5f; d <= 6.0f; d += 0.5f)
             {
                 Vector3 p = pos + dir * d;
                 float depth = MHR_Water.DepthAt(p);
-                if (waterAt < 0f) { if (depth > lim) waterAt = d; else if (d > 1.5f) return false; }
-                else if (depth < 0.3f) { landAt = d; break; }
+                if (waterAt < 0f) { if (depth > wade) waterAt = d; else if (d > 1.5f) return false; }
+                else if (depth < Mathf.Min(wade, 0.3f)) { landAt = d; break; }
+                if (waterAt >= 0f && depth > lim) swim = true;
             }
             if (waterAt < 0f) return false;
-            if (landAt > 0f && landAt - waterAt <= 3.0f && landAt <= 4.5f)
+            if (landAt > 0f && landAt - waterAt <= maxGap && landAt <= maxGap + 1.5f && MHR_Water.GroundAt(pos + dir * landAt) < pos.y + 1.0f)
             {
-                // a stream we can clear: jump it and stay dry
+                // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.5f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                Dbg("[Move|" + tag + "] jumping the stream at " + Fmt(pos + dir * waterAt));
+                Dbg("[Move|" + tag + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
                 return true;
             }
+            if (!swim) { s.NextWaterPeek = now + 1.0f; return false; }   // too wide to jump but shallow: wade through
             if (s.TooTired && waterAt <= 1.5f)
             {
                 s.WaitStamina = true; s.WaitStart = now; Halt(ai, c, s);

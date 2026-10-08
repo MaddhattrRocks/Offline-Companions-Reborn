@@ -16,7 +16,7 @@ namespace Companions
             public HashSet<int> Before = new HashSet<int>();
             public HashSet<int> Seen = new HashSet<int>();
             public bool SawDrop; public float LastDrop; public float NextBodyCheck; public bool Body;
-            public float Start; public float ArrivedAt = -1f;
+            public float Start; public float ArrivedAt = -1f; public float LastDrive;
         }
         class State { public Kill Current; public readonly List<Kill> Queue = new List<Kill>(); public ItemDrop Target; public float TargetSince; public float NextLog; }
 
@@ -50,7 +50,7 @@ namespace Companions
             if (st.Current != null && Vector3.Distance(st.Current.Pos, pos) < 1f) return;
             for (int i = 0; i < st.Queue.Count; i++) if (Vector3.Distance(st.Queue[i].Pos, pos) < 1f) return;
             Kill k = new Kill { Pos = pos, Time = Time.time, Name = victim.m_name };
-            int n = Physics.OverlapSphereNonAlloc(pos, Radius() + 2f, s_buf, Mask());
+            int n = Physics.OverlapSphereNonAlloc(pos, Radius() * 2f + 2f, s_buf, Mask());
             for (int i = 0; i < n && i < s_buf.Length; i++)
             {
                 ItemDrop d = DropOf(s_buf[i]);
@@ -72,10 +72,18 @@ namespace Companions
                 st.Current = st.Queue[0]; st.Queue.RemoveAt(0); st.Target = null;
                 // 1.4.95: timers count from when it sets off, not from the kill (1.4.94: "nothing dropped" a second
                 // after setting off for a Neck 15 m away, before it got anywhere near)
-                st.Current.Start = Time.time;
+                st.Current.Start = Time.time; st.Current.LastDrive = Time.time;
                 Log("Going to pick up what " + Loc(st.Current.Name) + " dropped (" + Vector3.Distance(ai.transform.position, st.Current.Pos).ToString("F0") + " m away)");
             }
             Kill k = st.Current;
+            // 1.4.96: a fight in between (1.4.95 test: Neck, then a boar straight after) doesn't use up its time
+            if (Time.time - k.LastDrive > 0.5f)
+            {
+                float gap = Time.time - k.LastDrive;
+                k.Start += gap; if (k.ArrivedAt >= 0f) k.ArrivedAt += gap; k.LastDrive = Time.time;
+                LogDebug("back to what " + Loc(k.Name) + " dropped");
+            }
+            k.LastDrive = Time.time;
             CompanionSetup cs = ai.GetComponent<CompanionSetup>();
             Humanoid hum = ai.GetComponent<Humanoid>();
             Inventory inv = hum != null ? hum.GetInventory() : null;
@@ -103,7 +111,8 @@ namespace Companions
                     {
                         if (r == null || !r.m_dropItems) continue;
                         Vector3 bp = r.GetAverageBodyPosition();
-                        if (Vector3.Distance(bp, k.Pos) < Radius() + 3f) { k.Body = true; break; }
+                        // 1.4.96: follow a body that slides down a slope or floats off; its drops come out where it ends up
+                        if (Vector3.Distance(bp, k.Pos) < Radius() + 3f) { k.Body = true; k.Pos = bp; break; }
                     }
                 }
                 catch { }
@@ -148,7 +157,7 @@ namespace Companions
             bool done = (k.SawDrop && Time.time - k.LastDrop > 1.5f && !k.Body)
                      || (!k.SawDrop && !k.Body && there && Time.time - k.ArrivedAt > 2f)
                      || (there && Time.time - k.ArrivedAt > Wait());
-            if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped"); return false; }
+            if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped" + Around(k)); return false; }
             if (!there)
             {
                 MHR_Mover.Go(ai, dt, k.Pos, 2f, true, "Loot");
@@ -170,6 +179,14 @@ namespace Companions
                 ZNetView nv = ai.GetComponent<ZNetView>();
                 if (cs != null && nv != null && nv.GetZDO() != null) cs.ApplyFollowMode(nv.GetZDO().GetInt(CompanionSetup.ActionModeHash, 0), true);
             }
+        }
+
+        // for the log when nothing was found: what's lying around that it left alone (already there before the kill)
+        static string Around(Kill k)
+        {
+            int n = Physics.OverlapSphereNonAlloc(k.Pos, Radius() * 2f, s_buf, Mask()), before = 0;
+            for (int i = 0; i < n && i < s_buf.Length; i++) { ItemDrop d = DropOf(s_buf[i]); if (d != null && k.Before.Contains(d.GetInstanceID())) before++; }
+            return before > 0 ? " (" + before + " item(s) nearby were already lying there before the kill)" : "";
         }
 
         static ItemDrop DropOf(Collider col)
@@ -196,14 +213,15 @@ namespace Companions
         // doesn't need to). Drops it has seen that float off are still followed (within MaxDistance of the kill).
         static ItemDrop NextDrop(Kill k, Vector3 me, Inventory inv, Character self)
         {
-            int n = Physics.OverlapSphereNonAlloc(k.Pos, k.Seen.Count > 0 ? MaxDist() : Radius(), s_buf, Mask());
+            float look = k.ArrivedAt >= 0f ? Radius() * 2f : Radius();
+            int n = Physics.OverlapSphereNonAlloc(k.Pos, k.Seen.Count > 0 ? MaxDist() : look, s_buf, Mask());
             ItemDrop best = null; float bd = float.MaxValue;
             for (int i = 0; i < n && i < s_buf.Length; i++)
             {
                 ItemDrop d = DropOf(s_buf[i]);
                 if (d == null || k.Before.Contains(d.GetInstanceID()) || d.InTar()) continue;
                 bool seen = k.Seen.Contains(d.GetInstanceID());
-                if (!seen && Vector3.Distance(d.transform.position, k.Pos) > Radius()) continue;
+                if (!seen && Vector3.Distance(d.transform.position, k.Pos) > look) continue;
                 if (MHR_Water.WouldSwim(self, d.transform.position))
                 {
                     k.Before.Add(d.GetInstanceID());

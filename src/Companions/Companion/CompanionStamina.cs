@@ -37,7 +37,32 @@ public class CompanionStamina : MonoBehaviour
 
 	public bool IsRunning { get; set; }
 
-	public bool IsCrouching { get; set; }
+	// 1.4.96: crouching counts like it does for a player (CompanionSneak): quiet footsteps, harder to spot
+	private bool _crouching;
+
+	public bool IsCrouching
+	{
+		get
+		{
+			return _crouching;
+		}
+		set
+		{
+			_crouching = value;
+			Character character = (_character != null) ? _character : GetComponent<Character>();
+			if (character != null)
+			{
+				if (value)
+				{
+					CompanionSneak.Crouching.Add(character);
+				}
+				else
+				{
+					CompanionSneak.Crouching.Remove(character);
+				}
+			}
+		}
+	}
 
 	private static float RegenRate => ModConfig.StaminaRegenRate.Value;
 
@@ -219,6 +244,10 @@ public class CompanionStamina : MonoBehaviour
 
 	private void OnDestroy()
 	{
+		if (_character != null)
+		{
+			CompanionSneak.Crouching.Remove(_character);
+		}
 		if (_initialized)
 		{
 			SaveToZDO();
