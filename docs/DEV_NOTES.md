@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.140 - lining up with doorways (user, 2026-10-09)
+- User (1.4.139 test): closing and reopening is quick and fine; can the pathing avoid walking into the open door in the first place?
+- Cause: the route map ignores doors ("doors don't block"), so routes cut across a doorway at an angle and clip an open leaf.
+- MHR_Mover.DoorwayLine (every Go, not swimming): DoorwayOnRoute every 0.4 s - doors within 5 m (s_doorCols) whose doorway plane (door.transform = middle of the doorway, forward = through it) the route crosses within the next ~6 m, within 1.3 m of the middle and > 0.5 m before it. Then: on our side and > 0.25 m off the centre line -> steer to the centre line 0.8-1.4 m in front; lined up / in the doorway -> steer to 1.4 m past it. Done once 0.9 m past (or > 5 m away / 2.5 m up or down): PassDoor cleared, route re-planned. Closed-door peek still opens it on the way (rays towards the centre-line target).
+- Reset clears PassDoor.
+
 ### 1.4.139 - from the 1.4.138 test (log 5976ced3)
 - User: handles the door much better, still gets stuck on it (didn't used to).
 - Log: no stuck-ladder lines at all. Each pass: "closed the $piece_wooddoor ... open towards us", "couldn't open $piece_wooddoor" (still swinging shut - Door.CanInteract false), "opened" on the next 0.4 s peek, walk through, "closed ... behind us". About 1-1.5 s stood at the door.

@@ -33,6 +33,7 @@ namespace Companions
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
             public bool Direct; public float NextHop, NoDirectUntil;
+            public Door PassDoor; public float PassSide, NextDoorwayCheck;
         }
         class Opened { public Door Door; public float At; }
 
@@ -209,6 +210,9 @@ namespace Companions
                 if (s.HasShore) target = s.Shore;
             }
 
+            // 1.4.140: line up with a doorway on the way and walk straight through it, like a player
+            if (!c.IsSwimming()) target = DoorwayLine(s, pos, target, now, tag);
+
             // a closed door right ahead: open it before walking into it
             if (now >= s.NextDoorPeek)
             {
@@ -303,7 +307,7 @@ namespace Companions
         {
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-            s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false;
+            s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
@@ -1074,6 +1078,91 @@ namespace Companions
             if (!Physics.Raycast(from, d.normalized, out hit, len, LayerMask.GetMask("piece", "Default"))) return null;
             Door door = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
             return Usable(door) ? door : null;
+        }
+
+        // ---------- doorways ----------
+        // 1.4.140: the route map ignores doors, so a route can cut across a doorway at an angle and clip the leaf of an open
+        // door (user: "path around the open door properly"). When the route ahead goes through a doorway, first get onto the
+        // line straight out from the middle of the doorway, then walk through along it - the open leaf hangs off to one side
+        // of that line. door.transform is the middle of the doorway; its forward axis points through it.
+        static Vector3 DoorwayLine(S s, Vector3 pos, Vector3 target, float now, string tag)
+        {
+            if (s.PassDoor == null && now >= s.NextDoorwayCheck)
+            {
+                s.NextDoorwayCheck = now + 0.4f;
+                float side;
+                Door d = DoorwayOnRoute(s, pos, out side);
+                if (d != null) { s.PassDoor = d; s.PassSide = side; Dbg("[Move|" + tag + "] lining up with the " + d.m_name + " at " + Fmt(d.transform.position)); }
+            }
+            Door door = s.PassDoor;
+            if (door == null) return target;
+            if (!door || door.GetComponent<ZNetView>() == null || !door.GetComponent<ZNetView>().IsValid()) { s.PassDoor = null; return target; }
+            Vector3 ctr = door.transform.position;
+            Vector3 f = door.transform.forward; f.y = 0f;
+            if (f.sqrMagnitude < 0.01f) { s.PassDoor = null; return target; }
+            f.Normalize();
+            Vector3 rel = pos - ctr; rel.y = 0f;
+            float along = Vector3.Dot(rel, f) * s.PassSide;           // > 0: still on our side
+            float across = Vector3.Dot(rel, new Vector3(f.z, 0f, -f.x));
+            if (along < -0.9f || rel.magnitude > 5f || Mathf.Abs(pos.y - ctr.y) > 2.5f)
+            {
+                // through (or gone elsewhere): a fresh route from here, so it doesn't turn back for a corner it skipped
+                s.PassDoor = null; s.NextDoorwayCheck = now + 1.0f; s.NextPlan = 0f;
+                return target;
+            }
+            Vector3 outSide = f * s.PassSide;
+            if (along > 0.35f && Mathf.Abs(across) > 0.25f)
+            {
+                // not lined up yet: go to the point on the centre line in front of the doorway
+                Vector3 p = ctr + outSide * Mathf.Clamp(along, 0.8f, 1.4f);
+                return new Vector3(p.x, pos.y, p.z);
+            }
+            // lined up (or in the doorway): straight through to the other side
+            Vector3 q = ctr - outSide * 1.4f;
+            return new Vector3(q.x, pos.y, q.z);
+        }
+
+        // a door whose doorway the route crosses within the next few meters; side = which side of it we're on
+        static Door DoorwayOnRoute(S s, Vector3 pos, out float side)
+        {
+            side = 0f;
+            if (s.Path.Count == 0) return null;
+            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, 5f, s_doorCols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
+            Door best = null; float bestT = float.MaxValue;
+            HashSet<int> seen = new HashSet<int>();
+            for (int i = 0; i < n; i++)
+            {
+                Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
+                if (d == null || !seen.Add(d.GetInstanceID())) continue;
+                Vector3 ctr = d.transform.position;
+                if (Mathf.Abs(ctr.y - pos.y) > 2.5f) continue;
+                Vector3 f = d.transform.forward; f.y = 0f;
+                if (f.sqrMagnitude < 0.01f) continue;
+                f.Normalize();
+                // walk the route from here through the next few corners (up to ~6 m) and look for the crossing
+                Vector3 a = pos; float walked = 0f;
+                for (int k = Mathf.Clamp(s.Corner, 0, s.Path.Count - 1); k < s.Path.Count && walked < 6f; k++)
+                {
+                    Vector3 b = s.Path[k];
+                    float da = Vector3.Dot(new Vector3(a.x - ctr.x, 0f, a.z - ctr.z), f);
+                    float db = Vector3.Dot(new Vector3(b.x - ctr.x, 0f, b.z - ctr.z), f);
+                    if (da * db < 0f || Mathf.Abs(db) < 0.05f)
+                    {
+                        float t = Mathf.Abs(da) / Mathf.Max(0.001f, Mathf.Abs(da) + Mathf.Abs(db));
+                        Vector3 x = Vector3.Lerp(a, b, t);
+                        Vector3 lat = x - ctr; lat.y = 0f;
+                        if (lat.magnitude <= 1.3f && Mathf.Abs(da) > 0.5f)
+                        {
+                            float at = walked + Vector3.Distance(a, x);
+                            if (at < bestT) { bestT = at; best = d; side = Mathf.Sign(da); }
+                        }
+                        break;
+                    }
+                    walked += Vector3.Distance(a, b);
+                    a = b;
+                }
+            }
+            return best;
         }
 
         // 1.4.136: an open door's leaf right in front of us on the way to the next corner
