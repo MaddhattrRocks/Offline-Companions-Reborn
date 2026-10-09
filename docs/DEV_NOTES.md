@@ -31,11 +31,14 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.127 - piles count toward job limits (user, 2026-10-09)
+- MHR_GatherRules.Stock (pack + chests within 40 m of home) also adds m_resources[0].m_amount for every pile (UpkeepController.IsPile, now internal) in the same 40 m whose material matches. Used by AllowTarget, AllowLoose and Forage's ForageUnderAmount. Cached 10 s per item as before.
+
 ### 1.4.126 - wood and stone piles (user, 2026-10-09)
 - User picks: next to existing piles only (never a new pile spot of its own); keep some in the chests (PileKeep 100, per item with PileItems Name:Number).
 - New Jobs/UpkeepPiles.cs (UpkeepController is partial now). Pile = player-built piece whose prefab name has "stack" or "pile", one resource, no Container/Fireplace/CraftingStation/Bed/Door. Kinds come from the piles in the work area (prefab from ZNetScene). Order each scan: repair -> fuel -> put back -> piles -> sort.
 - PlanPiles: chest total of the material minus keep, in whole piles; takes as many as it can carry from the chest holding the most (PileTake chest step), then PileBuild: spot = beside an existing pile (+-local x/z by its size from its Box/Mesh colliders, same rotation) or on top (not above ~3.2 m); free = OverlapBox (shrunk, lifted) hits nothing solid; sides need support under the bottom within 0.3 m; inside the area; crafting station in range of the spot (unless NoWorkbench); ward access. Walks to PickApproachPoint, hammer in hand, then Player.PlacePiece's steps: Instantiate with TerrainModifier trigger, SetCreator(player, platform user), WearNTear.OnPlaced, attack anim, m_placeEffect; removes the material from the pack, stamina and hammer wear. Spot unreachable 3 s / gave up -> another spot; no spot -> that kind waits 10 min. Leftovers go back via the put-away step.
-- Note: material in piles isn't counted by the gather jobs' stock (chests + pack) - Wood/Stone jobs may gather more to reach their limits. Revisit if it matters.
+- Material in piles counts toward the gather jobs' stock since 1.4.127.
 
 ### 1.4.125 - from the 1.4.124 test (log 8d01cde8)
 - User: worked better, still got stuck after a while. Also wants Repair and Restock to make wood and stone piles while sorting (design to agree first).

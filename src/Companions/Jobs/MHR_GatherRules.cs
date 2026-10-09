@@ -129,6 +129,7 @@ namespace Companions
         }
 
         // ---------- stock counting ----------
+        static readonly List<Piece> s_piles = new List<Piece>();
         internal static int Stock(Component c, string item)
         {
             float t;
@@ -145,6 +146,16 @@ namespace Companions
                 if (box == null) continue;
                 if (box.GetComponentInParent<Character>() != null || box.GetComponent<TombStone>() != null) continue;
                 if (box.GetInventory() != null) total += CountIn(box.GetInventory(), item);
+            }
+            // 1.4.127: what's stacked in wood/stone piles counts too (user) - each pile holds what it was built from
+            s_piles.Clear();
+            Piece.GetAllPiecesInRadius(center, 40f, s_piles);
+            for (int i = 0; i < s_piles.Count; i++)
+            {
+                Piece p = s_piles[i];
+                if (!UpkeepController.IsPile(p)) continue;
+                Piece.Requirement req = p.m_resources[0];
+                if (string.Equals(req.m_resItem.gameObject.name, item, StringComparison.OrdinalIgnoreCase)) total += req.m_amount;
             }
             s_countTime[item] = Time.time; s_countVal[item] = total;
             return total;

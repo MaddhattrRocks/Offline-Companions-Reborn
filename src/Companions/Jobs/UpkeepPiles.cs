@@ -154,7 +154,7 @@ public partial class UpkeepController
 		return new List<PileKind>(kinds.Values);
 	}
 
-	private static bool IsPile(Piece p)
+	internal static bool IsPile(Piece p)
 	{
 		if (p == null || !p.IsPlacedByPlayer() || p.m_resources == null || p.m_resources.Length != 1 || p.m_resources[0].m_resItem == null)
 		{
