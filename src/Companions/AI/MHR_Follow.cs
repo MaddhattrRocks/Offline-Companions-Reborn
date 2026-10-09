@@ -590,7 +590,7 @@ namespace Companions
                 if (rest != null && (rest.IsResting || rest.IsSleeping || rest.IsNavigating)) { why = "resting"; keepAnim = s.SitFloor; }
                 else if (f == null || f.GetInstanceID() != s.TargetId) why = "not following";
                 else if (ai.IsInCombat) why = "fight";
-                else if (mode != 0 || cs.GetStayHome()) why = "new orders";
+                else if (mode != 0 && !MHR_JobRules.KeepsFollow(mode)) why = "new orders";
                 else if (MHR_ToolKeeper.IsBusy(cs)) why = "trip";
                 else if (rc != null && rc.IsActive) why = "repairs";
                 else if (Time.time - s.LastUpdate > 1f) why = "busy";

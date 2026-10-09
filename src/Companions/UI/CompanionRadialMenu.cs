@@ -1731,7 +1731,7 @@ public class CompanionRadialMenu : MonoBehaviour
 			_companion.SetStayHome(v: false);
 			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off. 1.4.94: except Hunt, which
 			// hunts near you while following
-			if (MHR_JobRules.HasJob(_companion) && ((_companionNview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0) != CompanionSetup.ModeHunt)
+			if (MHR_JobRules.HasJob(_companion) && !MHR_JobRules.KeepsFollow((_companionNview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0))
 			{
 				SetActionMode(0);
 				return;

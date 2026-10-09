@@ -187,6 +187,13 @@ public class HarvestController : MonoBehaviour
 
 	public bool IsActive => _state != HarvestState.Idle;
 
+	// 1.4.120: with Follow on, only what's within [Harvest] FollowRange of the player (targets of opportunity, like Hunt);
+	// with Follow off, anything within 40 m of the player as before
+	private float PlayerRange()
+	{
+		return (_setup != null && _setup.GetFollow() && !_isDirectedHarvest) ? (ModConfig.HarvestFollowRange?.Value ?? 20f) : 40f;
+	}
+
 	internal bool IsMoving => _state == HarvestState.Moving;
 
 	internal bool IsAttacking => _state == HarvestState.Attacking;
@@ -553,6 +560,15 @@ public class HarvestController : MonoBehaviour
 			{
 				_ai?.StopMoving();
 			}
+			return;
+		}
+		// 1.4.120: following and you've moved on - leave the tree/rock/plant and catch up, like Hunt leaves its prey
+		if (_state != HarvestState.Idle && !_isDirectedHarvest && _setup != null && _setup.GetFollow() && Player.m_localPlayer != null &&
+			Vector3.Distance(base.transform.position, Player.m_localPlayer.transform.position) > PlayerRange() + 15f)
+		{
+			Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up");
+			ResetToIdle();
+			RestoreLoadout();
 			return;
 		}
 		_heartbeatTimer -= Time.deltaTime;
@@ -2334,7 +2350,7 @@ public class HarvestController : MonoBehaviour
 				if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
 				{
 					float num10 = Vector3.Distance(Player.m_localPlayer.transform.position, harvestCandidateWithType.transform.position);
-					if (num10 > 40f)
+					if (num10 > PlayerRange())
 					{
 						continue;
 					}
@@ -2457,7 +2473,7 @@ public class HarvestController : MonoBehaviour
 			if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
 			{
 				float num5 = Vector3.Distance(Player.m_localPlayer.transform.position, gameObject2.transform.position);
-				if (num5 > 40f)
+				if (num5 > PlayerRange())
 				{
 					continue;
 				}
