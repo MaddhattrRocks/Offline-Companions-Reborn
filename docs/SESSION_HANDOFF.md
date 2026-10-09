@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.98 pushed, not yet tested (1.4.86-1.4.98 on the branch, no PR yet)
+## Current state: 1.4.99 pushed, not yet tested (1.4.86-1.4.99 on the branch, no PR yet)
+- 1.4.99: close-enough jumps into shallow water, chained jumps, looser gap/water rules for shortcuts.
 - 1.4.98: jumps use the companion's run speed, Jump skill and stamina (MHR_Jump); jumps cost stamina. Skills/stats review added to the backlog.
 - 1.4.97: no swimming for loot, no crouch in water, shortcuts with 3 m drops / 1.5 m gap leaps, cook keeps collected honey. Bed kinematic fix confirmed.
 - 1.4.96: hunters sneak up on skittish game (real stealth for crouching companions), jump narrow shallow water, loot survives a fight in between kills.

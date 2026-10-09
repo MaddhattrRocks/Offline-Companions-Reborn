@@ -652,11 +652,12 @@ namespace Companions
                     // landing after a jump: not higher than we can jump up to while leaping across
                     if (rise > 0.3f) { s_hopWhy = "the far side of the gap at " + Fmt(p) + " is too high"; return false; }
                     // 1.4.98: and within what this companion can jump right now (speed, Jump skill, stamina)
-                    if (c != null && (!MHR_Jump.CanAfford(c) || gap + 0.6f > MHR_Jump.Reach(c, d, rise))) { s_hopWhy = "the gap at " + Fmt(p) + " is too wide to jump" + (MHR_Jump.CanAfford(c) ? "" : " (out of stamina)"); return false; }
+                    if (c != null && (!MHR_Jump.CanAfford(c) || gap + 0.25f > MHR_Jump.Reach(c, d, rise))) { s_hopWhy = "the gap at " + Fmt(p) + " is too wide to jump" + (MHR_Jump.CanAfford(c) ? "" : " (out of stamina)"); return false; }
                     hops++; gap = 0f;
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
-                if (MHR_Water.DepthAt(hit.point) > 0.8f) { s_hopWhy = "deep water at " + Fmt(p); return false; }
+                // 1.4.99: with the companion known, only water it would have to swim in rules the line out (it wades or jumps the rest)
+                if (c != null ? MHR_Water.WouldSwim(c, hit.point) : MHR_Water.DepthAt(hit.point) > 0.8f) { s_hopWhy = "deep water at " + Fmt(p); return false; }
                 if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) { s_hopWhy = "something in the way at " + Fmt(p); return false; }
                 if (rise > 0.35f) hops++;
                 prev = hit.point;
@@ -850,9 +851,28 @@ namespace Companions
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
-                s.NextJump = now + 1.5f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                 Dbg("[Move|" + tag + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
                 return true;
+            }
+            // 1.4.99: close enough is good enough (user: "if it can make it most of the way across the water with a jump
+            // into shallow water on the other side its worth the jump. They can always jump again"). Landing somewhere it
+            // can stand counts, as long as it keeps some stamina back for the rest of the way.
+            if (waterAt <= 1.5f && MHR_Jump.HasSpare(c, 0.25f))
+            {
+                float reach = MHR_Jump.Reach(c, dir, 0f);
+                if (reach >= 2f)
+                {
+                    Vector3 l = pos + dir * Mathf.Min(reach, 6f);
+                    float ly = MHR_Water.GroundAt(l);
+                    if (!MHR_Water.WouldSwim(c, l) && ly < pos.y + 0.5f && ly > pos.y - (ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f))
+                    {
+                        Leap(ai, c, dir, 6.5f);
+                        s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                        Dbg("[Move|" + tag + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
+                        return true;
+                    }
+                }
             }
             if (!swim) { s.NextWaterPeek = now + 1.0f; return false; }   // too wide to jump but shallow: wade through
             if (s.TooTired && waterAt <= 1.5f)

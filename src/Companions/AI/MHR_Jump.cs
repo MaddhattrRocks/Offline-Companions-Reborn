@@ -29,6 +29,15 @@ namespace Companions
             return c.HaveStamina(Cost(c));
         }
 
+        // a jump plus this share of its stamina left over (for jumps that don't end on dry ground)
+        public static bool HasSpare(Character c, float share)
+        {
+            if (c == null) return false;
+            CompanionStamina st = c.GetComponent<CompanionStamina>();
+            if (st == null) return CanAfford(c);
+            return st.Stamina >= Cost(c) + share * st.MaxStamina;
+        }
+
         // how fast it runs right now: its run speed, with status effects (meads, wet, cold...), or faster if it's already moving faster
         public static float RunSpeed(Character c, Vector3 dir)
         {
@@ -40,7 +49,7 @@ namespace Companions
         }
 
         // how far (flat meters) a running jump carries it when the landing is `dy` meters above (+) or below (-) the takeoff.
-        // Same numbers as Character.Jump: jump force x (1 + 0.4 x Jump skill), 70% when out of stamina; 80% to be safe.
+        // Same numbers as Character.Jump: jump force x (1 + 0.4 x Jump skill), 70% when out of stamina; 90% of that, close enough.
         public static float Reach(Character c, Vector3 dir, float dy)
         {
             if (c == null) return 2f;
@@ -54,7 +63,7 @@ namespace Companions
             float disc = up * up - 2f * g * dy;
             if (disc < 0f) return 0f;   // can't get that high
             float t = (up + Mathf.Sqrt(disc)) / g;
-            return fwd * t * 0.8f;
+            return fwd * t * 0.9f;   // 1.4.99: close enough (user: it doesn't need to be perfect)
         }
 
         // the running leap itself: run speed going in, then the game's own jump (which keeps it)

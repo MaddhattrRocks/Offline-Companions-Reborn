@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.99
+- Jumps don't have to be perfect: a companion jumps across water when it can land somewhere shallow enough to stand, then jumps again, like a player. It keeps a quarter of its stamina back for these.
+- Shortcuts through water it can wade are no longer ruled out, and gaps are judged a little less strictly.
+
 ## 1.4.98
 - Companions jump like a player: their own run speed (with mead, wet, cold and other speed effects) carries them across, and a higher Jump skill jumps further.
 - Jumping now costs companions stamina like it does a player, and with too little stamina for a full jump they don't try a stream or gap they can't clear; they wade or go round.
