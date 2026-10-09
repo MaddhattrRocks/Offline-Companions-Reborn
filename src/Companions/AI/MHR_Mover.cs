@@ -20,7 +20,7 @@ namespace Companions
             public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             public bool GaveUp; public float GaveUpAt;
-            public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek;
+            public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog;
             public Door RouteDoor; public Vector3 RouteDoorSpot;
             public bool WaitStamina, TooTired; public float NeedStamina, WaitStart, NoWaitUntil;
             public float MainBest; public int Passes; public Vector3 Shore; public bool HasShore; public float NextShore;
@@ -217,6 +217,15 @@ namespace Companions
                 if (TryWaterJump(ai, c, s, pos, dir, now, tag)) return false;
             }
 
+            // 1.4.97: going straight and there's a gap right ahead: leap it
+            if (s.Direct && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(pos, dir))
+            {
+                Leap(ai, c, dir, 6.5f);
+                s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                Dbg("[Move|" + tag + "] jumping the gap at " + Fmt(pos + dir * 0.8f));
+                return false;
+            }
+
             // 1.4.88: a fire on the next step (and the goal isn't in it): jump over it like a player when it's small
             // (clear ground 2.5 m on), otherwise go round it
             if (InFire(pos + dir * 0.8f) && !InFire(goal))
@@ -357,10 +366,16 @@ namespace Companions
             {
                 float straight = Vector3.Distance(pos, goal);
                 float len = Remaining(s, pos);
-                int hops;
+                int hops = 0; s_hopWhy = null;
                 // 1.4.84: also a short way round something low that's in the way (a log, a low wall): a player hops it
                 bool longWay = s.Partial || len > straight * 1.6f + 6f;
-                if (straight < 25f && (longWay || len > straight + 2f) && HopLine(pos, goal, out hops) && (longWay || hops > 0))
+                bool line = straight < 25f && (longWay || len > straight + 2f) && HopLine(pos, goal, out hops);
+                if (!line && straight < 25f && longWay && s_hopWhy != null && now >= s.NextLineLog)
+                {
+                    s.NextLineLog = now + 15f;
+                    Dbg("[Move|" + s.Tag + "] taking the " + len.ToString("F0") + "m way round, not straight (" + straight.ToString("F0") + "m): " + s_hopWhy);
+                }
+                if (line && (longWay || hops > 0))
                 {
                     if (!wasDirect) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
                     s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;
@@ -602,34 +617,70 @@ namespace Companions
             Reset(s, s.Goal, s.GoodPos, now, tag);
         }
 
-        // 1.4.83: the straight line from -> to, every half meter: each step up no more than a hop (1.1 m), no drop over
-        // 2 m, no deep water, and nothing in the way at chest height (walls, doors, fences taller than a hop)
+        // 1.4.83: the straight line from -> to, every half meter: each step up no more than a hop (1.1 m), no big drop,
+        // no deep water, and nothing in the way at chest height (walls, doors, fences taller than a hop).
+        // 1.4.97: drops up to General.MaxDrop (3 m - a player takes those without damage) and gaps up to General.JumpGap
+        // (jumped with a running leap) are fine too (user: jump across to the beehives instead of down the stairs and round)
+        static string s_hopWhy;
         static bool HopLine(Vector3 from, Vector3 to, out int hops)
         {
-            hops = 0;
+            hops = 0; s_hopWhy = null;
+            float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
+            float maxGap = ModConfig.JumpGap != null ? ModConfig.JumpGap.Value : 1.5f;
             Vector3 d = to - from; d.y = 0f;
             float len = d.magnitude;
             if (len < 1.5f) return false;
             d /= len;
             Vector3 prev = from;
+            float gap = 0f;
             for (float x = 0.5f; x <= len + 0.01f; x += 0.5f)
             {
                 Vector3 p = from + d * Mathf.Min(x, len);
                 RaycastHit hit;
                 // 1.4.84: from just above where the feet are, like walking: a roof or an upper floor overhead isn't the ground
-                if (!Physics.Raycast(new Vector3(p.x, prev.y + 1.5f, p.z), Vector3.down, out hit, 4f, Mask())) return false;
-                float rise = hit.point.y - prev.y;
-                if (rise > 1.1f || rise < -2f) return false;
-                if (MHR_Water.DepthAt(hit.point) > 0.8f) return false;
-                if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) return false;
+                bool ground = Physics.Raycast(new Vector3(p.x, prev.y + 1.5f, p.z), Vector3.down, out hit, 2f + maxDrop, Mask());
+                float rise = ground ? hit.point.y - prev.y : -100f;
+                if (!ground || rise < -maxDrop)
+                {
+                    gap += 0.5f;
+                    if (gap > maxGap) { s_hopWhy = "a drop or gap at " + Fmt(p); return false; }
+                    continue;
+                }
+                if (gap > 0f)
+                {
+                    // landing after a jump: not higher than we can jump up to while leaping across
+                    if (rise > 0.3f) { s_hopWhy = "the far side of the gap at " + Fmt(p) + " is too high"; return false; }
+                    hops++; gap = 0f;
+                }
+                if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
+                if (MHR_Water.DepthAt(hit.point) > 0.8f) { s_hopWhy = "deep water at " + Fmt(p); return false; }
+                if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) { s_hopWhy = "something in the way at " + Fmt(p); return false; }
                 if (rise > 0.35f) hops++;
                 prev = hit.point;
             }
+            if (gap > 0f) { s_hopWhy = "it ends over a drop"; return false; }
             // 1.4.88: and it has to actually end up where the target is. Sampling from just above the feet can't see a
             // ledge higher than that, so a chest up on one looked like "flat all the way, 0 hops" (1.4.87 log: back and
             // forth under the ledge chest for a minute after the job was turned off)
-            if (Mathf.Abs(prev.y - to.y) > 1.0f) return false;
+            if (Mathf.Abs(prev.y - to.y) > 1.0f) { s_hopWhy = "it doesn't end up at the target's height"; return false; }
             return hops <= 10;
+        }
+
+        // 1.4.97: on a straight line, a gap right in front with ground on the other side: running leap across
+        static bool GapAhead(Vector3 pos, Vector3 dir)
+        {
+            float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
+            float maxGap = ModConfig.JumpGap != null ? ModConfig.JumpGap.Value : 1.5f;
+            RaycastHit hit;
+            Vector3 p = pos + dir * 0.6f;
+            if (Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 1.5f + maxDrop, Mask())) return false;
+            for (float x = 1.0f; x <= maxGap + 1.0f; x += 0.5f)
+            {
+                Vector3 q = pos + dir * x;
+                if (Physics.Raycast(q + Vector3.up * 1.5f, Vector3.down, out hit, 1.5f + maxDrop, Mask()))
+                    return hit.point.y < pos.y + 0.3f && MHR_Water.DepthAt(hit.point) < 0.8f;
+            }
+            return false;
         }
 
         // something to hop up onto just ahead (a step, a low wall), or a knee-high block
@@ -806,7 +857,7 @@ namespace Companions
                 Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
                 return true;
             }
-            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina)
+            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && tag != "Loot")
             {
                 // wide water we're about to swim: running leap in for a head start
                 Leap(ai, c, dir, 5f);

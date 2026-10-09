@@ -118,7 +118,7 @@ public class CompanionCombatAI : MonoBehaviour
 
 	private void UpdateStalk()
 	{
-		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && Unaware(_targetCreature);
+		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && !_character.IsSwimming() && Unaware(_targetCreature);
 		if (stalk == _stalking)
 		{
 			return;

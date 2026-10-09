@@ -2006,6 +2006,11 @@ public class CompanionAI : BaseAI
 				}
 			}
 		}
+		// 1.4.97: nobody sneaks while swimming
+		if (_companionStamina != null && _companionStamina.IsCrouching && m_character.IsSwimming())
+		{
+			MHR_SetCrouch(sneak: false);
+		}
 		UpdateTorch();
 		if (MHR_ToolKeeper.Drive(this, dt))
 		{
@@ -2939,7 +2944,7 @@ public class CompanionAI : BaseAI
 	// 1.4.76: MHR_Follow - sneak when the player sneaks (MHR_Mover sets walk/run itself)
 	internal void MHR_SetCrouch(bool sneak)
 	{
-		if (sneak && _companionStamina != null && _companionStamina.Stamina <= 0f)
+		if (sneak && ((_companionStamina != null && _companionStamina.Stamina <= 0f) || m_character.IsSwimming()))
 		{
 			sneak = false;
 		}

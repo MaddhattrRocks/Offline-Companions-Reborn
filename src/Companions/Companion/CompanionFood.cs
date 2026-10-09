@@ -491,6 +491,11 @@ public class CompanionFood : MonoBehaviour
 			return false;
 		}
 		string text = item.m_shared?.m_name ?? "?";
+		CookController cook = GetComponent<CookController>();
+		if (cook != null && cook.IsWorkFood(item))
+		{
+			return false;
+		}
 		if (!isRefresh && IsFoodAlreadyActive(item.m_shared.m_name))
 		{
 			CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — already active in another slot");

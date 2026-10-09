@@ -16,7 +16,8 @@ public static class CompanionSneak
 	{
 		private static void Postfix(Character __instance, ref bool __result)
 		{
-			if (!__result && Crouching.Count > 0 && Crouching.Contains(__instance))
+			// 1.4.97: not in the water (1.4.96 test: "sneaking" while swimming)
+			if (!__result && Crouching.Count > 0 && Crouching.Contains(__instance) && !__instance.IsSwimming())
 			{
 				__result = true;
 			}

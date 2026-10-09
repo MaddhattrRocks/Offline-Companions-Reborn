@@ -15,6 +15,7 @@ namespace Companions
             public Vector3 Pos; public float Time; public string Name;
             public HashSet<int> Before = new HashSet<int>();
             public HashSet<int> Seen = new HashSet<int>();
+            public HashSet<int> Skipped = new HashSet<int>();   // in deep water or out of reach (not "already there")
             public bool SawDrop; public float LastDrop; public float NextBodyCheck; public bool Body;
             public float Start; public float ArrivedAt = -1f; public float LastDrive;
         }
@@ -144,15 +145,18 @@ namespace Companions
                     return true;
                 }
                 MHR_Mover.Go(ai, dt, tp, 0.8f, true, "Loot");
-                if (MHR_Mover.GaveUp(ai)) { LogDebug("  can't get to " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " - leaving it"); k.Before.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); }
+                // 1.4.97: never swim for loot (1.4.96 test: took a shortcut through the water to some drops)
+                if (MHR_Mover.RouteSwim(ai) > 0.5f) { LogDebug("  " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " is only reachable by swimming - leaving it"); k.Skipped.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); return true; }
+                if (MHR_Mover.GaveUp(ai)) { LogDebug("  can't get to " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " - leaving it"); k.Skipped.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); }
                 return true;
             }
 
             // nothing to pick up right now: done, or go to the body and wait there for its drops
-            float flat = new Vector2(me.x - k.Pos.x, me.z - k.Pos.z).magnitude;
+            // 1.4.97: a body in (or floating out into) deep water is watched from the bank, not swum to
             Character self = ai.GetComponent<Character>();
-            bool deep = MHR_Water.WouldSwim(self, k.Pos);
-            if (k.ArrivedAt < 0f && (flat <= 4f || (deep && flat <= Radius() + 3f))) k.ArrivedAt = Time.time;
+            Vector3 spot = DrySpot(self, me, k.Pos);
+            float flat = new Vector2(me.x - spot.x, me.z - spot.z).magnitude;
+            if (k.ArrivedAt < 0f && flat <= 4f) k.ArrivedAt = Time.time;
             bool there = k.ArrivedAt >= 0f;
             bool done = (k.SawDrop && Time.time - k.LastDrop > 1.5f && !k.Body)
                      || (!k.SawDrop && !k.Body && there && Time.time - k.ArrivedAt > 2f)
@@ -160,8 +164,9 @@ namespace Companions
             if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped" + Around(k)); return false; }
             if (!there)
             {
-                MHR_Mover.Go(ai, dt, k.Pos, 2f, true, "Loot");
+                MHR_Mover.Go(ai, dt, spot, 2f, true, "Loot");
                 if (MHR_Mover.GaveUp(ai)) { Finish(ai, st, "stopped picking up (can't get to the body)"); return false; }
+                if (MHR_Mover.RouteSwim(ai) > 0.5f) { Finish(ai, st, "stopped picking up (would have to swim)"); return false; }
             }
             else ai.StopMoving();
             return true;
@@ -187,6 +192,22 @@ namespace Companions
             int n = Physics.OverlapSphereNonAlloc(k.Pos, Radius() * 2f, s_buf, Mask()), before = 0;
             for (int i = 0; i < n && i < s_buf.Length; i++) { ItemDrop d = DropOf(s_buf[i]); if (d != null && k.Before.Contains(d.GetInstanceID())) before++; }
             return before > 0 ? " (" + before + " item(s) nearby were already lying there before the kill)" : "";
+        }
+
+        // the last point on the way from me to p that isn't swimming depth
+        static Vector3 DrySpot(Character self, Vector3 me, Vector3 p)
+        {
+            if (!MHR_Water.WouldSwim(self, p)) return p;
+            Vector3 d = me - p; d.y = 0f;
+            float len = d.magnitude;
+            if (len < 0.5f) return me;
+            d /= len;
+            for (float x = 0.5f; x < len; x += 0.5f)
+            {
+                Vector3 q = p + d * x;
+                if (!MHR_Water.WouldSwim(self, q)) { q.y = MHR_Water.GroundAt(q); return q; }
+            }
+            return me;
         }
 
         static ItemDrop DropOf(Collider col)
@@ -219,12 +240,12 @@ namespace Companions
             for (int i = 0; i < n && i < s_buf.Length; i++)
             {
                 ItemDrop d = DropOf(s_buf[i]);
-                if (d == null || k.Before.Contains(d.GetInstanceID()) || d.InTar()) continue;
+                if (d == null || k.Before.Contains(d.GetInstanceID()) || k.Skipped.Contains(d.GetInstanceID()) || d.InTar()) continue;
                 bool seen = k.Seen.Contains(d.GetInstanceID());
                 if (!seen && Vector3.Distance(d.transform.position, k.Pos) > look) continue;
                 if (MHR_Water.WouldSwim(self, d.transform.position))
                 {
-                    k.Before.Add(d.GetInstanceID());
+                    k.Skipped.Add(d.GetInstanceID());
                     LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is in deep water - leaving it");
                     continue;
                 }

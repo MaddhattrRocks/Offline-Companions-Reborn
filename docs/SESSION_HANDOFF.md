@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.96 pushed, not yet tested (1.4.86-1.4.96 on the branch, no PR yet)
+## Current state: 1.4.97 pushed, not yet tested (1.4.86-1.4.97 on the branch, no PR yet)
+- 1.4.97: no swimming for loot, no crouch in water, shortcuts with 3 m drops / 1.5 m gap leaps, cook keeps collected honey. Bed kinematic fix confirmed.
 - 1.4.96: hunters sneak up on skittish game (real stealth for crouching companions), jump narrow shallow water, loot survives a fight in between kills.
 - 1.4.95: loot timing fix (+ shallow water, no swimming), cook walks to each honey, status effects (Wet etc.) slow companion regen.
 - 1.4.88-1.4.93: Cook test fixes (fermenter RPC, fire spots, chest reach, mead plan by boss, beehives). Cook is done apart from testing the honey collecting.

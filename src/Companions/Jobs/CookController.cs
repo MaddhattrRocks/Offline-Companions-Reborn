@@ -879,6 +879,9 @@ public class CookController : MonoBehaviour
 		{
 			_zanim?.SetTrigger("interact");
 			int honey = HoneyIn(_task.Hive);
+			_honeyHave = CountIn(Bag, (_task.Hive.m_honeyItem != null) ? _task.Hive.m_honeyItem.gameObject.name : "Honey");
+			_honeySkip.Clear();
+			_honeyTarget = null;
 			if (honey > 0)
 			{
 				_task.Hive.GetComponent<ZNetView>()?.InvokeRPC("RPC_Extract");
@@ -1124,12 +1127,16 @@ public class CookController : MonoBehaviour
 		Beehive hive = _task.Hive;
 		Vector3 center = (hive.m_spawnPoint != null) ? hive.m_spawnPoint.position : hive.transform.position;
 		_hiveDrop = (hive.m_honeyItem != null) ? hive.m_honeyItem.gameObject.name : "Honey";
-		if (_timer < 2.1f)
+		PickUpDrops(base.transform.position + Vector3.up * 0.5f, 1.8f, ledger: false);
+		// 1.4.97: whatever honey ends up in the bag is work honey, however it got there (the companion's auto pickup
+		// grabs it as it walks up) - so it's put away and not eaten (1.4.96 log: ate one of the honeys it collected)
+		int have = CountIn(Bag, _hiveDrop);
+		if (have > _honeyHave)
 		{
-			_honeySkip.Clear();
-			_honeyTarget = null;
+			AddLedger(_hiveDrop, have - _honeyHave);
+			Log($"Picked up {have - _honeyHave}x {Name(_hiveDrop)}");
 		}
-		PickUpDrops(base.transform.position + Vector3.up * 0.5f, 1.8f, ledger: true);
+		_honeyHave = have;
 		if (_timer > 30f)
 		{
 			Log("Leaving the rest of the honey - took too long to get to it");
@@ -1167,10 +1174,45 @@ public class CookController : MonoBehaviour
 		MHR_Nav.Move(_ai, dt, _honeyTarget.transform.position, 0.6f, run: false, "Cook");
 	}
 
+	private int _honeyHave;
+
+	private static int CountIn(Inventory inv, string prefab)
+	{
+		int n = 0;
+		if (inv != null && prefab != null)
+		{
+			foreach (ItemDrop.ItemData item in inv.GetAllItems())
+			{
+				if (item?.m_dropPrefab != null && item.m_dropPrefab.name == prefab)
+				{
+					n += item.m_stack;
+				}
+			}
+		}
+		return n;
+	}
+
+	// 1.4.97: food the cook made or collected for the kitchen (its ledger) isn't eaten; only copies beyond that are
+	internal bool IsWorkFood(ItemDrop.ItemData item)
+	{
+		string name = item?.m_dropPrefab?.name;
+		if (name == null)
+		{
+			return false;
+		}
+		if (!_ledgerLoaded)
+		{
+			LoadLedger();
+		}
+		int ledger = LedgerOf(name);
+		return ledger > 0 && CountIn(Bag, name) <= ledger;
+	}
+
 	private void EndHoney()
 	{
 		_hiveDrop = null;
 		_honeyTarget = null;
+		_honeySkip.Clear();
 		_ai?.StopMoving();
 		Finish();
 	}
