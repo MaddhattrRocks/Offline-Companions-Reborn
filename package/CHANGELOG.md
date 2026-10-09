@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.112
+- Fixed companions getting stuck floating in the water: while swimming they could get stuck steering at a point right under them and never try to get out.
+- The fisher never fishes from the water: if it slips in, it reels in and climbs back out to its spot first.
+- Fishing spots are at least a meter back from the water's edge, so it doesn't slip in while fishing.
+
 ## 1.4.111
 - The fisher gets its breath back before each cast: it waits until its stamina is nearly full, so it doesn't start reeling a fish on an empty bar.
 - While fishing, companions eat their most stamina-rich food first, and near home they fetch a few stamina foods from the chests if they have none (and put back what's left after the job).

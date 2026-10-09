@@ -155,6 +155,7 @@ namespace Companions
 
             // steering target: a detour point, the door we're routing through, or the path
             if (now >= s.NextPlan || s.Path.Count == 0) Plan(ai, c, s, pos, now);
+            s_swimming = c.IsSwimming();
             AdvanceCorner(s, pos);
             float remain = Remaining(s, pos);
             if (s.NewLeg) { s.NewLeg = false; s.Best = remain; }
@@ -209,7 +210,14 @@ namespace Companions
             if (now >= s.NextDoorPeek) { s.NextDoorPeek = now + 0.4f; Door ahead = DoorAhead(pos, target); if (ahead != null) { OpenDoor(ai, c, ahead, tag); Halt(ai, c, s); return false; } }
 
             Vector3 dir = target - pos; dir.y = 0f;
-            if (dir.sqrMagnitude < 0.0001f) { Halt(ai, c, s); return false; }
+            if (dir.sqrMagnitude < 0.04f && s.Corner < s.Path.Count - 1) { s.Corner++; target = NextCorner(s, pos); dir = target - pos; dir.y = 0f; }
+            if (dir.sqrMagnitude < 0.0001f)
+            {
+                // right on top of where we're steering: let the stuck checks run instead of standing here forever
+                Halt(ai, c, s);
+                if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
+                return false;
+            }
             dir.Normalize();
 
             // water on the next stretch: jump narrow streams, take a running leap into wide water
@@ -439,12 +447,16 @@ namespace Companions
             return Pathfinding.instance != null && Pathfinding.instance.GetPath(from, to, path, agent, requireFull, true, false) && path.Count > 0;
         }
 
+        // 1.4.112: swimming, the route's corners are on the ground under the water (or on the surface) - only the flat
+        // distance counts. 1.4.111 test: the first corner was right below him, never "reached" because of the height,
+        // so he steered at a point under his feet, stood still in the water and never even ran the stuck checks.
+        static bool s_swimming;
         static void AdvanceCorner(S s, Vector3 pos)
         {
             while (s.Corner < s.Path.Count - 1)
             {
                 Vector3 p = s.Path[s.Corner];
-                if (Flat(pos, p) < 0.6f && Mathf.Abs(pos.y - p.y) < 1.6f) s.Corner++;
+                if (Flat(pos, p) < 0.6f && (s_swimming || Mathf.Abs(pos.y - p.y) < 1.6f)) s.Corner++;
                 else break;
             }
         }

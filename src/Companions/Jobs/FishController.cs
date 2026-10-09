@@ -443,6 +443,14 @@ public class FishController : MonoBehaviour
 				{
 					continue;
 				}
+				// 1.4.112: not right on the edge (1.4.111 test: slipped into the water from its spot) - dry ground 1 m
+				// towards the water too
+				Vector3 toWater = best - top;
+				toWater.y = 0f;
+				if (toWater.sqrMagnitude > 0.01f && (!Top(top + toWater.normalized * 1f, wl, out var edge) || edge.y < wl + 0.1f))
+				{
+					continue;
+				}
 				if (Physics.CheckCapsule(top + Vector3.up * 0.6f, top + Vector3.up * 1.6f, 0.3f, LayerMask.GetMask("Default", "static_solid", "piece")) || MHR_Mover.InFire(top))
 				{
 					continue;
@@ -616,6 +624,14 @@ public class FishController : MonoBehaviour
 	private void UpdateCasting()
 	{
 		_ai.StopMoving();
+		// 1.4.112: never fish from the water (1.4.111 test: slipped in by the bank and kept fishing while swimming) -
+		// back to the bank first
+		if (_character.IsSwimming() || Flat(base.transform.position, _stand) > 2.5f || base.transform.position.y < _stand.y - 1.2f)
+		{
+			LogDebug("Not on the fishing spot any more - going back to it");
+			Enter(FishState.Moving);
+			return;
+		}
 		// 1.4.111: rest before casting until stamina is nearly full (user: "they should wait to cast until their stamina
 		// has filled up") - reeling a fish in with an empty bar loses it
 		CompanionStamina st = GetComponent<CompanionStamina>();
@@ -717,6 +733,13 @@ public class FishController : MonoBehaviour
 	private void UpdateWaiting()
 	{
 		_ai.StopMoving();
+		if (_character.IsSwimming())
+		{
+			LogDebug("Fell in - reeling in and getting out");
+			ReelOff();
+			Enter(FishState.Moving);
+			return;
+		}
 		FishingFloat ff = MHR_FishingFloat.Of(_character);
 		if (ff == null)
 		{

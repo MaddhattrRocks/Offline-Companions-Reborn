@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.112 - from the 1.4.111 test (log 4dbb8fb5)
+- User: fell in the water, fished from the water, swam off to fight something, now floating in the water saying fishing lines - stuck.
+- Log: rested ("Getting my breath back (91/102)"), cast, "Hooked a Pike" at (-335.9, 27.9, -309) - already in the water by the spot (stand was (-334.5, 30.0, -308.6) right at the edge). A Neck: combat swapped to the crossbow (float destroyed: "Failed to find fishing rod top"), killed it. Then "[Move|Fish] ... route=full (2 corners), swimming, no closer for 58s, standing still 27s" at (-334.1, 27.8, -319.9) for minutes, then the same as Follow - no stuck steps at all.
+- Cause: AdvanceCorner only passes a corner within 0.6 m flat AND 1.6 m in height; swimming, the route's first corner is on the ground under the water (or the surface) - never passed, so target ~ his own position, dir ~ 0 -> Halt + return before the stuck checks, forever. Now: swimming, corners pass on the flat distance alone; a corner within 0.2 m flat is skipped; if there's still no direction, the stuck checks run from there.
+- Fish: Casting goes back to Moving if he's swimming, > 2.5 m from the spot or > 1.2 m below it; Waiting: swimming -> reel off, back to the spot. MapShore: also needs dry ground 1 m from the spot towards the water (not right on the edge).
+
 ### 1.4.111 - from the 1.4.108 test (log de7393ed - the user's build was still 1.4.108, so 1.4.109/1.4.110 weren't in it)
 - User: the NPC sprints and jumps into the water too often (for a Neck's drops, round a fence sticking into the water) - only when swimming across; the stay-dry rule failed (1.4.110 wasn't in that build). Fishing now: found where to stand much faster ("Mapped 2 places", went straight there), caught a Perch and a Pike, skill went up. Stamina check looked like it failed (1.4.109 wasn't in that build). Asked: wait to cast until stamina is full; prefer stamina food when fishing, get it if possible.
 - FishController.UpdateCasting: waits (looking at the water) while stamina < 90% of max ("Getting my breath back before casting").
