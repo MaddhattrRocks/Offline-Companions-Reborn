@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.131
+- Cook job keeps its heat going: the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven are kept at [Cooking] FuelLevel (50%) - when one drops below half of that it's topped back up, one piece at a time. Fuel from its pack or the chests, or a wood pile taken down with a hammer ([Cooking] UsePiles).
+- When cooking in the oven it now fills it to FuelLevel instead of a flat 3 pieces.
+- (Repair and Restock only fuels fires, torches, braziers and hot tubs - never kilns, smelters or the oven.)
+
 ## 1.4.130
 - Smelt job: when the chests have no wood for the kiln (or no fuel for a smelter), it takes down a pile of it with a hammer, like a player, picks up the material and uses that. Needs a hammer in its pack; [Smelting] UsePiles turns it off.
 

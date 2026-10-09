@@ -390,6 +390,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> SmeltUsePiles;
 
+	internal static ConfigEntry<float> CookFuelLevel;
+
+	internal static ConfigEntry<bool> CookUsePiles;
+
 	internal static ConfigEntry<int> UpkeepPileKeep;
 
 	internal static ConfigEntry<string> UpkeepPileItems;
@@ -556,6 +560,8 @@ internal static class ModConfig
 		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
 		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
 		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
+		CookFuelLevel = Bind(cfg, "Cooking", "FuelLevel", 0.5f, "Cook job: keeps the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven at this share of full (0.5 = 50%). When one drops below half of that it tops it back up. Only enough to cook with - Repair and Restock fills fires further if it's on.", new AcceptableValueRange<float>(0.1f, 1f));
+		CookUsePiles = Bind(cfg, "Cooking", "UsePiles", true, "Cook job: with no fuel in the chests, take down a pile of it (Stack of Wood...) with a hammer, like a player. Needs a hammer in its pack.");
 		SmeltUsePiles = Bind(cfg, "Smelting", "UsePiles", true, "When the chests have none of what a smelter or kiln needs (wood for the kiln, fuel...), the Smelt job takes down a pile of it (Stack of Wood...) with a hammer, like a player, and uses that. Needs a hammer in its pack.");
 		UpkeepPiles = Bind(cfg, "RepairAndRestock", "Piles", true, "Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.");
 		UpkeepPileKeep = Bind(cfg, "RepairAndRestock", "PileKeep", 100, "How many of each material stay in the chests for building: what's above this goes into piles, and when the chests drop below it a pile is taken down (with the hammer, like a player) and the material put back in the chests.", new AcceptableValueRange<int>(0, 10000));

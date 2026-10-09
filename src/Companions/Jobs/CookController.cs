@@ -21,7 +21,7 @@ namespace Companions;
 //   going while the finished mead is below MeadTarget, taps finished fermenters.
 // - Takes finished food off any cooking station in range before it burns.
 // - Puts away exactly what it made (a ledger kept on the companion), not food it was given to eat.
-public class CookController : MonoBehaviour
+public partial class CookController : MonoBehaviour
 {
 	internal enum CookPhase
 	{
@@ -32,7 +32,8 @@ public class CookController : MonoBehaviour
 		Cooking,
 		Fermenting,
 		CollectingDrops,
-		Storing
+		Storing,
+		TakingPile
 	}
 
 	private enum TaskKind
@@ -44,7 +45,9 @@ public class CookController : MonoBehaviour
 		Fill,
 		Tap,
 		Store,
-		Hive
+		Hive,
+		Stoke,
+		Pile
 	}
 
 	private class Task
@@ -60,6 +63,10 @@ public class CookController : MonoBehaviour
 		public Fermenter Fermenter;
 
 		public Beehive Hive;
+
+		public Fireplace Fire;
+
+		public Piece Pile;
 
 		public string Item;
 
@@ -87,6 +94,10 @@ public class CookController : MonoBehaviour
 				return "put away " + Name(Item);
 			case TaskKind.Hive:
 				return "collect honey from a beehive";
+			case TaskKind.Stoke:
+				return "add " + Count + "x " + Name(Item) + " to the " + Loc(Fire != null ? Fire.m_name : Cooker?.m_name);
+			case TaskKind.Pile:
+				return "take down a pile for " + Name(Item);
 			default:
 				return "nothing";
 			}
@@ -295,6 +306,9 @@ public class CookController : MonoBehaviour
 			case CookPhase.Storing:
 				UpdateStoring(dt);
 				break;
+			case CookPhase.TakingPile:
+				UpdateTakingPile();
+				break;
 			}
 		}
 		catch (Exception ex)
@@ -355,6 +369,12 @@ public class CookController : MonoBehaviour
 		if (hive != null)
 		{
 			return hive;
+		}
+		// 1c) 1.4.131: keep the fires under the cooking spots and the oven at [Cooking] FuelLevel (user)
+		Task stoke = StokeTask();
+		if (stoke != null)
+		{
+			return stoke;
 		}
 		// 2) a full bag of things it made: put them away first
 		int carried = LedgerCarried();
@@ -529,7 +549,7 @@ public class CookController : MonoBehaviour
 				AddFetch(task, from, n);
 				if (cooker.m_useFuel && cooker.m_fuelItem != null)
 				{
-					int fuelNeed = Mathf.Clamp(3 - Mathf.FloorToInt(Fuel(cooker)), 0, 3);
+					int fuelNeed = Mathf.Max(0, FuelTarget(cooker.m_maxFuel) - Mathf.FloorToInt(Fuel(cooker)));
 					int fuelHave = Count(cooker.m_fuelItem.gameObject.name);
 					if (fuelNeed > 0 && fuelHave > 0)
 					{
@@ -755,7 +775,12 @@ public class CookController : MonoBehaviour
 		}
 		Log("Going to " + task.Describe());
 		Say(task.Kind);
-		if (task.Kind == TaskKind.Store)
+		if (task.Kind == TaskKind.Pile)
+		{
+			_pileTaker = new MHR_PileTaker(task.Pile, "Cook");
+			Enter(CookPhase.TakingPile);
+		}
+		else if (task.Kind == TaskKind.Store)
 		{
 			_chest = StoreChest(task.Item);
 			Enter(CookPhase.Storing);
@@ -876,6 +901,10 @@ public class CookController : MonoBehaviour
 			break;
 		case TaskKind.Rescue:
 			Enter(CookPhase.Cooking);
+			break;
+		case TaskKind.Stoke:
+			Stoke();
+			Finish();
 			break;
 		case TaskKind.Fill:
 		case TaskKind.Tap:
@@ -1004,7 +1033,7 @@ public class CookController : MonoBehaviour
 		{
 			string fuel = cooker.m_fuelItem.gameObject.name;
 			int added = 0;
-			while (Fuel(cooker) + added < cooker.m_maxFuel && added < 3 && MHR_Items.ConsumeOneFromInventory(bag, fuel))
+			while (Fuel(cooker) + added < FuelTarget(cooker.m_maxFuel) && MHR_Items.ConsumeOneFromInventory(bag, fuel))
 			{
 				nv.InvokeRPC("RPC_AddFuel");
 				added++;
@@ -1330,6 +1359,8 @@ public class CookController : MonoBehaviour
 			return _task.Fermenter;
 		case TaskKind.Hive:
 			return _task.Hive;
+		case TaskKind.Stoke:
+			return (_task.Fire != null) ? (Component)_task.Fire : _task.Cooker;
 		default:
 			return null;
 		}
@@ -1350,6 +1381,10 @@ public class CookController : MonoBehaviour
 		{
 			return beehive.m_name;
 		}
+		if (component is Fireplace fireplace)
+		{
+			return fireplace.m_name;
+		}
 		return "$piece_fermenter";
 	}
 
@@ -1359,6 +1394,10 @@ public class CookController : MonoBehaviour
 		if (_task.Cooker != null && (_task.Kind == TaskKind.Grill || _task.Kind == TaskKind.Rescue))
 		{
 			return (_task.Cooker.m_addFoodSwitch != null) ? _task.Cooker.m_addFoodSwitch.transform.position : _task.Cooker.transform.position;
+		}
+		if (_task.Kind == TaskKind.Stoke && _task.Cooker != null && _task.Cooker.m_addFuelSwitch != null)
+		{
+			return _task.Cooker.m_addFuelSwitch.transform.position;
 		}
 		if (_task.Fermenter != null && (_task.Kind == TaskKind.Fill || _task.Kind == TaskKind.Tap))
 		{
@@ -2076,6 +2115,7 @@ public class CookController : MonoBehaviour
 
 	private void Finish()
 	{
+		DropPileTaker();
 		Unclaim();
 		CloseChest();
 		_task = null;
@@ -2090,6 +2130,7 @@ public class CookController : MonoBehaviour
 		{
 			_skipUntil[_task.Kind + ":" + _task.Item] = Time.time + 60f;
 		}
+		DropPileTaker();
 		Unclaim();
 		CloseChest();
 		_task = null;
