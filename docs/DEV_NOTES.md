@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.124 - from the 1.4.123 test (log cc9c58c4)
+- User: Repair and Restock doesn't work - the companion stands there.
+- Run 1: "Repairing the Wood Pole 1 m at (-267.9, 39.4, -311.6)", one [Move|Upkeep] line (2.2 m left), then nothing. Approach fell back to the piece's position with dist 1.5 (no PickApproachPiece spot); MHR_Mover arrived (Halt, no more logs) but PieceInReach stayed false - only the nearest surface point was checked and Clear() was blocked by the floor/wall touching the pole (pole at y 39.4 under the floor at 40.0). It would only have given up after GiveUp (90 s).
+- Run 2: EquipItem($item_hammer) -> true, then -> FALSE every frame: Humanoid.GetCurrentWeapon() only returns weapons (ItemData.IsWeapon excludes Tool), so "is the hammer in hand" was never true. Now IsItemEquiped(hammer); PutHammerAway unequips any equipped build tool from the pack.
+- PieceInReach: per collider, nearest point and bounds centre; the nearest within Reach with a clear line wins. Clear() ignores hits within 0.5 m of the target point; reports the blocking piece's name. Arrived at the approach spot but not in reach for 3 s -> skip 5 min with the reason. Same 3 s rule for fires.
+
 ### 1.4.123 - loose pickups early game only (user, 2026-10-09)
 - User: not just when the companion has no axe - when there's no better axe at home, the player has no bronze-or-better axe, or there's no way to make one (no forge at home). Pickups should help early game, not run all the time.
 - HarvestController.EarlyGame() (cached 30 s, logs when it changes): false if an Axes-skill item with chop damage other than AxeStone/AxeFlint is in the companion's pack, the player's pack or any chest within HomeTripRange of home (30 m of the companion without a home), or a "$piece_forge" station is in that area. LooseOn = PickUpLoose && EarlyGame (the companion's own axe no longer matters).

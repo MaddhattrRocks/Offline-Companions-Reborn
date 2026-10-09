@@ -261,6 +261,8 @@ public class UpkeepController : MonoBehaviour
 		_nextAct = 0f;
 		_hasSpot = false;
 		_nextSpotPick = 0f;
+		_arrived = false;
+		_arrivedAt = 0f;
 		MHR_Mover.Release(_ai);
 	}
 
@@ -414,12 +416,28 @@ public class UpkeepController : MonoBehaviour
 			if (!Approach(_piece.transform.position, _piece))
 			{
 				Skip(_piece, 300f, "No way to get to " + PieceName(_piece) + " - leaving it for now");
+				return;
+			}
+			if (_arrived)
+			{
+				if (_arrivedAt == 0f)
+				{
+					_arrivedAt = Time.time;
+				}
+				else if (Time.time - _arrivedAt > 3f)
+				{
+					Skip(_piece, 300f, "Can't see or reach " + PieceName(_piece) + " from where it can stand" + (_lastBlocker != null ? " (" + _lastBlocker + " is in the way)" : " (too far)") + " - leaving it for now");
+				}
+			}
+			else
+			{
+				_arrivedAt = 0f;
 			}
 			return;
 		}
 		_ai.StopMoving();
 		MHR_Mover.Release(_ai);
-		if (_humanoid.GetCurrentWeapon() != hammer)
+		if (!_humanoid.IsItemEquiped(hammer))
 		{
 			_setup.SuppressAutoEquip = true;
 			_holdingHammer = true;
@@ -527,10 +545,17 @@ public class UpkeepController : MonoBehaviour
 			return;
 		}
 		_holdingHammer = false;
-		ItemDrop.ItemData w = _humanoid.GetCurrentWeapon();
-		if (w?.m_shared?.m_buildPieces != null)
+		// 1.4.124: the game doesn't count a hammer as a weapon (GetCurrentWeapon skips tools) - find it in the pack
+		Inventory inv = _humanoid.GetInventory();
+		if (inv != null)
 		{
-			_humanoid.UnequipItem(w);
+			foreach (ItemDrop.ItemData it in inv.GetAllItems())
+			{
+				if (it?.m_shared?.m_buildPieces != null && _humanoid.IsItemEquiped(it))
+				{
+					_humanoid.UnequipItem(it);
+				}
+			}
 		}
 		if (_setup != null && _setup.SuppressAutoEquip)
 		{
@@ -540,27 +565,49 @@ public class UpkeepController : MonoBehaviour
 	}
 
 	// within reach of the piece like a player: the nearest part of it within Reach of the eyes, nothing big in between
+	// 1.4.124: several points on the piece (nearest surface point and middle of each part); the nearest one that's in
+	// reach with a clear line wins. 1.4.123 test: a pole set under the floor only had its nearest point checked, the
+	// floor touching it blocked the line, and the companion stood next to it doing nothing.
 	private bool PieceInReach(Vector3 feet, WearNTear w, out Vector3 aim)
 	{
 		Vector3 eye = feet + Vector3.up * MHR_Chests.EyeHeight;
 		aim = w.transform.position;
 		float best = float.MaxValue;
+		bool found = false;
+		_lastBlocker = null;
 		foreach (Collider col in w.GetComponentsInChildren<Collider>())
 		{
 			if (col == null || !col.enabled || col.isTrigger)
 			{
 				continue;
 			}
-			Vector3 p = col.ClosestPoint(eye);
-			float d = Vector3.Distance(eye, p);
-			if (d < best)
+			Vector3 near = col.ClosestPoint(eye);
+			Vector3 mid = col.bounds.center;
+			for (int k = 0; k < 2; k++)
 			{
-				best = d;
-				aim = p;
+				Vector3 p = k == 0 ? near : mid;
+				float d = Vector3.Distance(eye, p);
+				if (d > Reach || d >= best)
+				{
+					continue;
+				}
+				string blocker;
+				if (d < 1.5f || Clear(eye, p, w, out blocker))
+				{
+					best = d;
+					aim = p;
+					found = true;
+				}
+				else if (_lastBlocker == null)
+				{
+					_lastBlocker = blocker;
+				}
 			}
 		}
-		return best <= Reach && (best < 1.5f || Clear(eye, aim, w));
+		return found;
 	}
+
+	private string _lastBlocker;
 
 	// ---- restock ----
 
@@ -728,6 +775,19 @@ public class UpkeepController : MonoBehaviour
 			if (!Approach(_fire.transform.position, _fire))
 			{
 				Skip(_fire, 300f, "No way to get to " + PieceName(_fire) + " - leaving it for now");
+				return;
+			}
+			if (!_arrived)
+			{
+				_arrivedAt = 0f;
+			}
+			else if (_arrivedAt == 0f)
+			{
+				_arrivedAt = Time.time;
+			}
+			else if (Time.time - _arrivedAt > 3f)
+			{
+				Skip(_fire, 300f, "Can't reach " + PieceName(_fire) + " from where it can stand - leaving it for now");
 			}
 			return;
 		}
@@ -1279,6 +1339,10 @@ public class UpkeepController : MonoBehaviour
 
 	// ---- moving ----
 
+	private bool _arrived;
+
+	private float _arrivedAt;
+
 	private bool Approach(Vector3 target, Component piece)
 	{
 		Vector3 me = base.transform.position;
@@ -1297,7 +1361,7 @@ public class UpkeepController : MonoBehaviour
 				_hasSpot = true;
 			}
 		}
-		MHR_Nav.Move(_ai, Time.deltaTime, _spot, _spot == target ? 1.5f : 0.6f, run: true, Tag);
+		_arrived = MHR_Nav.Move(_ai, Time.deltaTime, _spot, _spot == target ? 1.5f : 0.6f, run: true, Tag);
 		return !MHR_Mover.GaveUp(_ai);
 	}
 
@@ -1313,6 +1377,14 @@ public class UpkeepController : MonoBehaviour
 	// nothing big and solid between the eyes and the spot (the target itself, people and small clutter don't count)
 	private static bool Clear(Vector3 eye, Vector3 point, Component target)
 	{
+		string blocker;
+		return Clear(eye, point, target, out blocker);
+	}
+
+	// 1.4.124: something hit right at the target point (a floor or wall touching the piece) doesn't count as in the way
+	private static bool Clear(Vector3 eye, Vector3 point, Component target, out string blocker)
+	{
+		blocker = null;
 		if (s_mask == -1)
 		{
 			s_mask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
@@ -1331,11 +1403,17 @@ public class UpkeepController : MonoBehaviour
 			{
 				continue;
 			}
+			if (len - hit.distance < 0.5f)
+			{
+				continue;
+			}
 			Vector3 size = col.bounds.size;
 			if (Mathf.Max(size.x, Mathf.Max(size.y, size.z)) < 1.2f)
 			{
 				continue;
 			}
+			Piece bp = col.GetComponentInParent<Piece>();
+			blocker = bp != null ? (MHR_List.Local(bp.m_name) ?? bp.name) : col.name;
 			return false;
 		}
 		return true;
