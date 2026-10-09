@@ -127,7 +127,7 @@ public class HarvestController : MonoBehaviour
 
 	private float _chestScanTimer;
 
-	private readonly Collider[] _scanBuffer = new Collider[1024];
+	private readonly Collider[] _scanBuffer = new Collider[4096];
 
 	private readonly Collider[] _dropBuffer = new Collider[128];
 
@@ -185,7 +185,92 @@ public class HarvestController : MonoBehaviour
 
 	public bool IsInGatherMode { get; private set; }
 
-	public bool IsActive => _state != HarvestState.Idle;
+	public bool IsActive => _state != HarvestState.Idle || _goingBack;
+
+	// 1.4.121: with Follow off it works an area, like Hunt (user): around home when the job starts near home, otherwise
+	// around where it was started, whether or not you're nearby. With nothing left it walks back to the middle.
+	private Vector3 _anchor;
+
+	private bool _hasAnchor;
+
+	private bool _anchorAtHome;
+
+	private int _anchorMode;
+
+	private bool _wasFollow;
+
+	private bool _goingBack;
+
+	private static float AreaRange => ModConfig.HarvestRange?.Value ?? 40f;
+
+	private bool Following => _setup != null && _setup.GetFollow();
+
+	private void UpdateAnchor(int mode)
+	{
+		bool follow = Following;
+		if (follow != _wasFollow || mode != _anchorMode)
+		{
+			_wasFollow = follow;
+			_anchorMode = mode;
+			_hasAnchor = false;
+			if (_goingBack)
+			{
+				_goingBack = false;
+				MHR_Mover.Release(_ai);
+			}
+		}
+		if (follow || _isDirectedHarvest || _hasAnchor)
+		{
+			return;
+		}
+		_hasAnchor = true;
+		_anchorAtHome = _setup != null && _setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup);
+		_anchor = _anchorAtHome ? _setup.GetHomePosition() : base.transform.position;
+		LogInfo("Working around " + (_anchorAtHome ? "home" : "here") + " " + MHR_Mover.Fmt(_anchor) + ", up to " + AreaRange.ToString("F0") + " m out");
+	}
+
+	private bool InWorkArea(Vector3 p)
+	{
+		if (Following || _isDirectedHarvest || !_hasAnchor)
+		{
+			return Player.m_localPlayer == null || Vector3.Distance(Player.m_localPlayer.transform.position, p) <= PlayerRange();
+		}
+		return Vector3.Distance(_anchor, p) <= AreaRange;
+	}
+
+	private Vector3 ScanCenter()
+	{
+		return (!Following && !_isDirectedHarvest && _hasAnchor) ? _anchor : base.transform.position;
+	}
+
+	private float ScanRad()
+	{
+		return (!Following && !_isDirectedHarvest && _hasAnchor) ? AreaRange : ScanRadius;
+	}
+
+	private void UpdateGoingBack()
+	{
+		if (!_goingBack)
+		{
+			return;
+		}
+		if (Following || Vector3.Distance(base.transform.position, _anchor) <= 5f)
+		{
+			_goingBack = false;
+			_ai?.StopMoving();
+			MHR_Mover.Release(_ai);
+			return;
+		}
+		MHR_Mover.Go(_ai, Time.deltaTime, _anchor, 4f, true, "Gather");
+		if (MHR_Mover.GaveUp(_ai))
+		{
+			LogInfo("Can't get back to the work area - working from here");
+			_anchor = base.transform.position;
+			_anchorAtHome = false;
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
+		}
+	}
 
 	// 1.4.120: with Follow on, only what's within [Harvest] FollowRange of the player (targets of opportunity, like Hunt);
 	// with Follow off, anything within 40 m of the player as before
@@ -539,6 +624,7 @@ public class HarvestController : MonoBehaviour
 		{
 			EnterGatherMode();
 		}
+		UpdateAnchor(mode);
 		if (IsOverweight())
 		{
 			if (!(_ai != null) || !(_ai.PendingDepositContainer != null))
@@ -580,6 +666,7 @@ public class HarvestController : MonoBehaviour
 		switch (_state)
 		{
 		case HarvestState.Idle:
+			UpdateGoingBack();
 			UpdateIdle(mode);
 			break;
 		case HarvestState.Moving:
@@ -607,6 +694,12 @@ public class HarvestController : MonoBehaviour
 	{
 		Log($"EXIT gather mode — was state={_state} " + "target=\"" + ((_target != null) ? _target.name : "null") + "\" " + $"toolEquipped={_toolEquipped}");
 		IsInGatherMode = false;
+		_hasAnchor = false;
+		if (_goingBack)
+		{
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
+		}
 		ResetToIdle();
 		RestoreLoadout();
 		bool flag = _setup != null && _setup.GetFollow();
@@ -723,7 +816,17 @@ public class HarvestController : MonoBehaviour
 		if (gameObject == null)
 		{
 			LogInfo("Scan found 0 valid targets — staying idle");
+			if (!_goingBack && !Following && !_isDirectedHarvest && _hasAnchor && Vector3.Distance(base.transform.position, _anchor) > 8f)
+			{
+				LogInfo("Nothing left nearby - walking back to the middle of the work area");
+				_goingBack = true;
+			}
 			return;
+		}
+		if (_goingBack)
+		{
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
 		}
 		if (mode == 5)
 		{
@@ -2284,7 +2387,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return ScanForPickable();
 		}
-		int num = Physics.OverlapSphereNonAlloc(base.transform.position, ScanRadius, _scanBuffer);
+		int num = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer);
 		bool flag = num >= _scanBuffer.Length;
 		if (num > _scanBuffer.Length)
 		{
@@ -2338,22 +2441,9 @@ public class HarvestController : MonoBehaviour
 				{
 					continue;
 				}
-				if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
+				if (!InWorkArea(harvestCandidateWithType.transform.position))
 				{
-					float num9 = Vector3.Distance(_setup.GetHomePosition(), harvestCandidateWithType.transform.position);
-					float homeRadius = _setup.GetHomeRadius();
-					if (num9 > homeRadius)
-					{
-						continue;
-					}
-				}
-				if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
-				{
-					float num10 = Vector3.Distance(Player.m_localPlayer.transform.position, harvestCandidateWithType.transform.position);
-					if (num10 > PlayerRange())
-					{
-						continue;
-					}
+					continue;
 				}
 				num3++;
 				float num11 = Vector3.Distance(base.transform.position, harvestCandidateWithType.transform.position);
@@ -2430,7 +2520,7 @@ public class HarvestController : MonoBehaviour
 
 	private GameObject ScanForPickable()
 	{
-		int num = Physics.OverlapSphereNonAlloc(base.transform.position, ScanRadius, _scanBuffer);
+		int num = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer);
 		if (num > _scanBuffer.Length)
 		{
 			num = _scanBuffer.Length;
@@ -2462,21 +2552,9 @@ public class HarvestController : MonoBehaviour
 			{
 				continue;
 			}
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
+			if (!InWorkArea(gameObject2.transform.position))
 			{
-				float num4 = Vector3.Distance(_setup.GetHomePosition(), gameObject2.transform.position);
-				if (num4 > 50f)
-				{
-					continue;
-				}
-			}
-			if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
-			{
-				float num5 = Vector3.Distance(Player.m_localPlayer.transform.position, gameObject2.transform.position);
-				if (num5 > PlayerRange())
-				{
-					continue;
-				}
+				continue;
 			}
 			num3++;
 			float num6 = Vector3.Distance(base.transform.position, gameObject2.transform.position);

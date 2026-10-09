@@ -292,6 +292,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestFollowRange;
 
+	internal static ConfigEntry<float> HarvestRange;
+
 	internal static ConfigEntry<float> HarvestScanInterval;
 
 	internal static ConfigEntry<float> HarvestAttackInterval;
@@ -492,7 +494,8 @@ internal static class ModConfig
 		StaminaSwimDrain = Bind(cfg, "Stamina", "SwimDrainRate", 10f, "Stamina drain per second while swimming", new AcceptableValueRange<float>(1f, 30f));
 		StaminaRegenDelay = Bind(cfg, "Stamina", "RegenDelay", 1f, "Seconds after stamina use before regen starts", new AcceptableValueRange<float>(0.1f, 5f));
 		HarvestScanRadius = Bind(cfg, "Harvest", "ScanRadius", 30f, "Resource scan radius", new AcceptableValueRange<float>(5f, 100f));
-		HarvestFollowRange = Bind(cfg, "Harvest", "FollowRange", 20f, "Wood, Stone, Ore and Forage with Follow on: a tree, rock or plant has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off it works anything within 40 m of you.)", new AcceptableValueRange<float>(5f, 60f));
+		HarvestRange = Bind(cfg, "Harvest", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
+		HarvestFollowRange = Bind(cfg, "Harvest", "FollowRange", 20f, "Wood, Stone, Ore and Forage with Follow on: a tree, rock or plant has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range.)", new AcceptableValueRange<float>(5f, 60f));
 		HarvestScanInterval = Bind(cfg, "Harvest", "ScanInterval", 4f, "Seconds between resource scans", new AcceptableValueRange<float>(1f, 30f));
 		HarvestAttackInterval = Bind(cfg, "Harvest", "AttackInterval", 2.5f, "Seconds between harvest swings", new AcceptableValueRange<float>(0.5f, 5f));
 		HarvestOverweightThreshold = Bind(cfg, "Harvest", "OverweightThreshold", 298f, "Stop gathering at this carry weight", new AcceptableValueRange<float>(50f, 500f));

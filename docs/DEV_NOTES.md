@@ -31,10 +31,16 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.121 - gathering with Follow off works an area (user, 2026-10-09)
+- User: yes, make the gather jobs work like Hunt with Follow off too.
+- HarvestController: UpdateAnchor(mode) each frame - anchor reset on a Follow change or a mode change (and on leaving gather mode); set when Follow is off: home if home set and NearHome, else the current position. InWorkArea(p): Follow on / directed / no anchor -> within PlayerRange of the player; else within [Harvest] Range (40 m) of the anchor (replaces the 40 m-of-player and old StayHome filters in both scans). Scans centre on the anchor with radius Range when Follow is off (scan buffer 1024 -> 4096 colliders for the bigger sphere in a base).
+- Scan finds nothing and it's > 8 m from the anchor -> _goingBack: MHR_Mover.Go to the anchor (tag "Gather") until within 5 m; a found target, Follow on, or GaveUp (anchor moves to where it is) ends it. IsActive includes _goingBack so CompanionAI doesn't override the walk.
+- Note: far from the player the zone unloads, so work out there still pauses until you come back (BACKLOG: keep a working companion's area loaded).
+
 ### 1.4.120 - gathering with Follow (user, 2026-10-09)
 - User: Wood, Ore, Stone and Forage should behave like Hunt - targets of opportunity, no longer turning Follow off automatically.
 - MHR_JobRules.KeepsFollow(mode): Hunt + modes 1/2/3/5. OnJobSet only turns Follow off for other jobs; the radial's Follow only turns other jobs off; MHR_Follow doesn't stand a sitting companion up for these modes ("new orders").
-- HarvestController.PlayerRange(): Follow on -> [Harvest] FollowRange (20 m) of the player for wood/stone/ore scans and the forage scan; Follow off -> 40 m as before (Follow-off gathering otherwise unchanged; Hunt-style anchoring around home/start point not done - ask if wanted). Following and the player is more than FollowRange + 15 m away -> ResetToIdle (restores follow) and RestoreLoadout. ResetToIdle already set the follow target back when idle.
+- HarvestController.PlayerRange(): Follow on -> [Harvest] FollowRange (20 m) of the player for wood/stone/ore scans and the forage scan; Follow off -> 40 m as before (Hunt-style area: 1.4.121). Following and the player is more than FollowRange + 15 m away -> ResetToIdle (restores follow) and RestoreLoadout. ResetToIdle already set the follow target back when idle.
 - ToolKeeper: arriving home also empties bags for gather modes with Follow on (was modes 0 and 7). Overweight while following still uses DropOff (home chests near home, otherwise a chest/cart/ship within 30 m).
 
 ### 1.4.119 - cooking appliance switches, sorting anywhere (user, 2026-10-09)

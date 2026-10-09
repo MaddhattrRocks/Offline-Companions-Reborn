@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.120 pushed, not yet tested (1.4.86-1.4.120 on the branch, no PR yet)
+## Current state: 1.4.121 pushed, not yet tested (1.4.86-1.4.121 on the branch, no PR yet)
+- 1.4.121: gather jobs with Follow off work an area (home or start point, [Harvest] Range 40 m) like Hunt.
 - 1.4.120: Wood/Stone/Ore/Forage keep Follow and work targets of opportunity near you (FollowRange 20 m).
 - 1.4.119: per-appliance Cook switches; Repair and Restock sorts wherever it was started.
 - 1.4.118: RepairBelow default 0.75; per-kind refuel switches (fires, hearths, braziers, standing torches, wall torches, hot tubs, other).
