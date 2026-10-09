@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.147 tested good (orders vs jobs, ordered sit by the fire during Smelt; idle seen working)
+## Current state: 1.4.148 pushed, not yet tested (1.4.147 tested good). PR #6 open (1.4.141+). Next: config file review/clean-up, then public release.
+- 1.4.148: ship seats no longer kinematic (no Unity warning flood while seated on a ship).
 - 1.4.147: all jobs (and Upkeep, Idle) also wait for ship boarding, the door command and ordered sit/sleep.
 - 1.4.146: a repair the player orders at a station goes ahead of the job (jobs pause for it).
 - 1.4.145: all jobs wait for orders (move/cart/deposit/tombstone); gear repair waits for loot pickup and orders, gives up on unreachable stations, skips items no station can fix for [Repair] NoStationWait.

@@ -624,8 +624,10 @@ public class CompanionAI : BaseAI
 			_body.position = position;
 			_body.linearVelocity = Vector3.zero;
 			ResetLiquidState();
+			// 1.4.148: not kinematic - Character.UpdateWalking sets the body's velocity every physics tick, and on a kinematic
+			// body that's a Unity warning each time. Gravity off, the ship's colliders ignored, pinned to the seat (PinToShip).
+			_body.isKinematic = false;
 			_body.useGravity = false;
-			_body.isKinematic = true;
 		}
 		bool flag = _setup != null && _setup.CanWearArmor();
 		if (_zanim != null && flag)
@@ -735,19 +737,37 @@ public class CompanionAI : BaseAI
 			DetachFromShip();
 			return;
 		}
+		PinToShip();
+	}
+
+	// keeps the seated companion on its ship seat as the ship moves (every frame and every physics tick)
+	private void PinToShip()
+	{
+		if (!_isOnShip || _attachedShip == null || m_nview == null || !m_nview.IsOwner())
+		{
+			return;
+		}
 		Vector3 vector = _attachedShip.transform.TransformPoint(_shipLocalPos);
 		Quaternion rotation = _attachedShip.transform.rotation * _shipLocalRot;
 		base.transform.position = vector;
 		base.transform.rotation = rotation;
-		if (_body != null)
+		if (_body != null && !_body.isKinematic)
 		{
 			_body.position = vector;
+			_body.useGravity = false;
 			Rigidbody component = _attachedShip.GetComponent<Rigidbody>();
-			if (component != null)
-			{
-				_body.linearVelocity = component.GetPointVelocity(vector);
-			}
+			_body.linearVelocity = component != null ? component.GetPointVelocity(vector) : Vector3.zero;
 		}
+	}
+
+	private void FixedUpdate()
+	{
+		PinToShip();
+	}
+
+	private void LateUpdate()
+	{
+		PinToShip();
 	}
 
 	internal void SetPendingShipBoard(Ship ship, Chair chair)
