@@ -227,7 +227,7 @@ public class HarvestController : MonoBehaviour
 	{
 		if (Following || _isDirectedHarvest || !_hasAnchor)
 		{
-			return Player.m_localPlayer == null || Vector3.Distance(Player.m_localPlayer.transform.position, p) <= PlayerRange();
+			return MHR_Owner.Of(this) == null || Vector3.Distance(MHR_Owner.Of(this).transform.position, p) <= PlayerRange();
 		}
 		return Vector3.Distance(_anchor, p) <= AreaRange;
 	}
@@ -513,7 +513,10 @@ public class HarvestController : MonoBehaviour
 					text = text2;
 				}
 			}
-			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_tools_weak", text));
+			if (MHR_Owner.IsMine(this))
+			{
+				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_tools_weak", text));
+			}
 			return;
 		}
 		_directedTarget = target;
@@ -670,8 +673,8 @@ public class HarvestController : MonoBehaviour
 			return;
 		}
 		// 1.4.120: following and you've moved on - leave the tree/rock/plant and catch up, like Hunt leaves its prey
-		if (_state != HarvestState.Idle && !_isDirectedHarvest && _setup != null && _setup.GetFollow() && Player.m_localPlayer != null &&
-			Vector3.Distance(base.transform.position, Player.m_localPlayer.transform.position) > PlayerRange() + 15f)
+		if (_state != HarvestState.Idle && !_isDirectedHarvest && _setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null &&
+			Vector3.Distance(base.transform.position, MHR_Owner.Of(this).transform.position) > PlayerRange() + 15f)
 		{
 			Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up");
 			ResetToIdle();
@@ -724,9 +727,9 @@ public class HarvestController : MonoBehaviour
 		ResetToIdle();
 		RestoreLoadout();
 		bool flag = _setup != null && _setup.GetFollow();
-		if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && MHR_Owner.Of(this) != null)
 		{
-			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			_ai.SetFollowTarget(MHR_Owner.Go(this));
 			Log("Restored follow target to player (Follow=ON)");
 		}
 		else
@@ -1507,9 +1510,9 @@ public class HarvestController : MonoBehaviour
 			Log("ResetToIdle (directed harvest complete) — restored loadout");
 		}
 		bool flag = _setup != null && _setup.GetFollow();
-		if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && MHR_Owner.Of(this) != null)
 		{
-			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			_ai.SetFollowTarget(MHR_Owner.Go(this));
 		}
 		if (state != HarvestState.Idle)
 		{
@@ -2283,9 +2286,9 @@ public class HarvestController : MonoBehaviour
 		_scanTimer = 0f;
 		UnclaimTarget();
 		bool flag = _setup != null && _setup.GetFollow();
-		if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && MHR_Owner.Of(this) != null)
 		{
-			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			_ai.SetFollowTarget(MHR_Owner.Go(this));
 		}
 		Log($"FinishDropCollection — collected {_dropsPickedUp} items, follow={flag}");
 	}
@@ -2567,7 +2570,7 @@ public class HarvestController : MonoBehaviour
 		{
 			why = "it has a bronze-or-better axe";
 		}
-		else if (Player.m_localPlayer != null && HasGoodAxe(Player.m_localPlayer.GetInventory()))
+		else if (MHR_Owner.IsMine(this) && HasGoodAxe(Player.m_localPlayer.GetInventory()))
 		{
 			why = "you have a bronze-or-better axe";
 		}

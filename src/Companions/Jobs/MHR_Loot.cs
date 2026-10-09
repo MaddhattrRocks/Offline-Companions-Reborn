@@ -99,8 +99,8 @@ namespace Companions
             if (inv == null || zdo == null) why = "no pack";
             else if (!zdo.GetBool(CompanionSetup.AutoPickupHash, true)) why = "auto pickup is off";
             else if (Vector3.Distance(me, k.Pos) > MaxDist() + 5f) why = "too far away";
-            else if (Player.m_localPlayer != null && cs != null && cs.GetFollow() && ai.GetFollowTarget() == Player.m_localPlayer.gameObject &&
-                     Vector3.Distance(Player.m_localPlayer.transform.position, k.Pos) > MaxDist()) why = "you've moved on";
+            else if (MHR_Owner.Of(cs) != null && cs != null && cs.GetFollow() && ai.GetFollowTarget() == MHR_Owner.Go(cs) &&
+                     Vector3.Distance(MHR_Owner.Of(cs).transform.position, k.Pos) > MaxDist()) why = "you've moved on";
             else if (inv.GetTotalWeight() >= CompanionTierData.MaxCarryWeight || inv.GetEmptySlots() == 0 && !RoomForAny(inv, k)) why = "pack is full";
             else if (Time.time - k.Start > Wait() + 25f) why = "took too long";
             if (why != null) { Finish(ai, st, "stopped picking up (" + why + ")"); return false; }

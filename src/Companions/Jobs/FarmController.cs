@@ -498,15 +498,15 @@ public class FarmController : MonoBehaviour
 			Abort("chest destroyed while taking seeds");
 			return;
 		}
-		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
-		if (!_chestOpened && _targetChest.IsInUse())
+		// 1.4.150/152: someone has this chest open (here or on another player's game) - don't take it over; opening
+		// it makes this game its owner so the changes are saved (MHR_Chests.Open)
+		if (!_chestOpened && !MHR_Chests.Open(_targetChest))
 		{
 			Abort("someone has the chest open");
 			return;
 		}
 		if (!_chestOpened)
 		{
-			_targetChest.SetInUse(inUse: true);
 			if (_zanim != null)
 			{
 				_zanim.SetTrigger("interact");
@@ -686,15 +686,15 @@ public class FarmController : MonoBehaviour
 			_phase = FarmPhase.Scanning;
 			return;
 		}
-		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
-		if (!_chestOpened && _outputChest.IsInUse())
+		// 1.4.150/152: someone has this chest open (here or on another player's game) - don't take it over; opening
+		// it makes this game its owner so the changes are saved (MHR_Chests.Open)
+		if (!_chestOpened && !MHR_Chests.Open(_outputChest))
 		{
 			_phase = FarmPhase.Scanning;
 			return;
 		}
 		if (!_chestOpened)
 		{
-			_outputChest.SetInUse(inUse: true);
 			if (_zanim != null)
 			{
 				_zanim.SetTrigger("interact");
@@ -1021,9 +1021,9 @@ public class FarmController : MonoBehaviour
 		if (!(_ai == null))
 		{
 			bool flag = _setup != null && _setup.GetFollow();
-			if (flag && Player.m_localPlayer != null)
+			if (flag && MHR_Owner.Of(this) != null)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
 				Log("Restored follow target to player");
 			}
 		}
@@ -1225,7 +1225,8 @@ public class FarmController : MonoBehaviour
 			if (!(tempPiece == null))
 			{
 				Container componentInChildren = tempPiece.GetComponentInChildren<Container>();
-				if (!(componentInChildren == null) && componentInChildren.GetInventory() != null && !(componentInChildren.gameObject == base.gameObject) && !componentInChildren.IsInUse())
+				// 1.4.152: MHR_Chests.Usable - no carts or ships, ward access, private chests only its own player's, not in use
+				if (!(componentInChildren == null) && !(componentInChildren.gameObject == base.gameObject) && MHR_Chests.Usable(componentInChildren, this))
 				{
 					_nearbyChests.Add(componentInChildren);
 				}
@@ -1387,6 +1388,12 @@ public class FarmController : MonoBehaviour
 					continue;
 				}
 				if (_ai != null && _ai.IsPositionBlacklisted(vector))
+				{
+					num7++;
+					continue;
+				}
+				// 1.4.152: planting is building - not inside a ward that doesn't let it in
+				if (!PrivateArea.CheckAccess(vector, 0f, flash: false))
 				{
 					num7++;
 					continue;
@@ -1615,6 +1622,13 @@ public class FarmController : MonoBehaviour
 			if (!(componentInParent == null) && componentInParent.m_itemData != null)
 			{
 				ZNetView component = componentInParent.GetComponent<ZNetView>();
+				// 1.4.152: only a drop this game owns (else ask for it and come back) - two games picking up the same drop
+				// both got a copy
+				if (!(component == null) && component.GetZDO() != null && !componentInParent.CanPickup(autoPickupDelay: false))
+				{
+					componentInParent.RequestOwn();
+					continue;
+				}
 				if (!(component == null) && component.GetZDO() != null && inventory.CanAddItem(componentInParent.m_itemData, componentInParent.m_itemData.m_stack))
 				{
 					inventory.AddItem(componentInParent.m_itemData);
@@ -1691,9 +1705,9 @@ public class FarmController : MonoBehaviour
 		GameObject gameObject = UnityEngine.Object.Instantiate(info.PlantPrefab, pos, quaternion);
 		TerrainModifier.SetTriggerOnPlaced(trigger: false);
 		Piece component = gameObject.GetComponent<Piece>();
-		if (component != null && Player.m_localPlayer != null)
+		if (component != null)
 		{
-			component.SetCreator(Player.m_localPlayer.GetPlayerID(), default(PlatformUserID));
+			component.SetCreator(MHR_Owner.CreatorId(this), default(PlatformUserID));   // 1.4.152: planted for its own player
 			component.m_placeEffect.Create(pos, quaternion, gameObject.transform, 1f, -1, ZDOID.None);
 		}
 		Log($"Planted \"{info.PlantPrefab.name}\" at {pos:F1} " + $"(seeds remaining: {num - 1})");

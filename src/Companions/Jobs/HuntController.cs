@@ -177,9 +177,9 @@ public class HuntController : MonoBehaviour
 
 	private Vector3 Center(bool follow)
 	{
-		if (follow && Player.m_localPlayer != null)
+		if (follow && MHR_Owner.Of(this) != null)
 		{
-			return Player.m_localPlayer.transform.position;
+			return MHR_Owner.Of(this).transform.position;
 		}
 		return _hasAnchor ? _anchor : base.transform.position;
 	}

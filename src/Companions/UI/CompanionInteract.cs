@@ -1059,6 +1059,7 @@ public class CompanionInteract : MonoBehaviour
 		{
 			if (IsOwned(item, localId) && MHR_InScope(item))
 			{
+				MHR_Owner.TakeControl(item);
 				CompanionRest.MHR_StayAwakeForRecall(item);
 				// 1.4.150: you set Follow yourself - a job that had paused it no longer turns it back on/off later
 				MHR_JobRules.FollowSetByPlayer(item);
@@ -1675,6 +1676,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				continue;
 			}
+			MHR_Owner.TakeControl(setup);
 			if (companionTalk == null)
 			{
 				companionTalk = setup.GetComponent<CompanionTalk>();
@@ -1774,7 +1776,19 @@ public class CompanionInteract : MonoBehaviour
 		}
 	}
 
+	// 1.4.152: every command checks IsOwned(...) && MHR_InScope(...) - a companion that answers is taken over by this
+	// game (MHR_Owner.TakeControl), so the order is carried out here and not lost on another player's game
 	internal static bool MHR_InScope(CompanionSetup s)
+	{
+		bool inScope = MHR_InScopeCheck(s);
+		if (inScope)
+		{
+			MHR_Owner.TakeControl(s);
+		}
+		return inScope;
+	}
+
+	private static bool MHR_InScopeCheck(CompanionSetup s)
 	{
 		if (_mhrSuperRecall)
 		{
@@ -1809,6 +1823,9 @@ public class CompanionInteract : MonoBehaviour
 
 	private static void CancelExistingActions(CompanionSetup setup, bool cancelRest = true)
 	{
+		// 1.4.152: an order from its player - that player's game runs the companion from now on, so the order (kept in
+		// memory) is carried out (on another player's game it was silently lost)
+		MHR_Owner.TakeControl(setup);
 		if (cancelRest)
 		{
 			CompanionRest component = setup.GetComponent<CompanionRest>();

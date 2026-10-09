@@ -539,7 +539,8 @@ public class RepairController : MonoBehaviour
 		}
 		// 1.4.133: only a station a player could use right now - under a roof if it needs one, with a fire if it needs one
 		// (user: it repaired at workbenches the player can't use because they have no roof)
-		if (Player.m_localPlayer != null && !station.CheckUsable(Player.m_localPlayer, showMessage: false))
+		Player user = Player.m_localPlayer;
+		if (user != null && !station.CheckUsable(user, showMessage: false))
 		{
 			return false;
 		}

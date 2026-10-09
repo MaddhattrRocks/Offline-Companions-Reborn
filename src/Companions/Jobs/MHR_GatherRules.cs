@@ -481,7 +481,7 @@ namespace Companions
                     if (c.m_privacy == Container.PrivacySetting.Private)
                     {
                         Piece pc = c.GetComponent<Piece>();
-                        if (Player.m_localPlayer == null || pc == null || pc.GetCreator() != Player.m_localPlayer.GetPlayerID()) continue;
+                        if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) continue;
                     }
                     float d = Vector3.Distance(me, c.transform.position);
                     if (d >= bd) continue;

@@ -325,6 +325,11 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		if (!(companion == null))
 		{
+			// 1.4.152: its player opens the wheel - their game runs the companion, so what they pick takes effect
+			if (MHR_Owner.IsMine(companion))
+			{
+				MHR_Owner.TakeControl(companion);
+			}
 			_pendingStance = -1;
 			_animState = AnimState.Closed;
 			_companion = companion;

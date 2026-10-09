@@ -916,6 +916,8 @@ public partial class CookController : MonoBehaviour
 			_honeyTarget = null;
 			if (honey > 0)
 			{
+				// 1.4.152: honey already lying there is someone else's
+				_honeySkip.UnionWith(MHR_Chests.DropsNear(_task.Hive.m_spawnPoint != null ? _task.Hive.m_spawnPoint.position : _task.Hive.transform.position, 4f));
 				_task.Hive.GetComponent<ZNetView>()?.InvokeRPC("RPC_Extract");
 				Log($"Collected {honey}x {Name("Honey")} from the beehive");
 			}
@@ -1488,14 +1490,13 @@ public partial class CookController : MonoBehaviour
 	private bool OpenChest(Container chest, float dt)
 	{
 		// 1.4.150: someone has this chest open - leave it (the task is dropped and planned again later)
-		if (!_chestOpen && chest.IsInUse())
+		if (!_chestOpen && !MHR_Chests.Open(chest))
 		{
 			Abort("someone has the chest open");
 			return false;
 		}
 		if (!_chestOpen)
 		{
-			chest.SetInUse(inUse: true);
 			_chestOpen = true;
 			_zanim?.SetTrigger("interact");
 			_ai?.LookAtPoint(chest.transform.position);
@@ -1673,6 +1674,7 @@ public partial class CookController : MonoBehaviour
 		_hives.Clear();
 		_pieces.Clear();
 		Vector3 position = base.transform.position;
+		MHR_Chests.AddHomeChests(_chests, _setup);   // 1.4.152: the home chests too (see MHR_Chests.AddHomeChests)
 		Piece.GetAllPiecesInRadius(position, Range, _pieces);
 		foreach (Piece piece in _pieces)
 		{
@@ -1681,7 +1683,8 @@ public partial class CookController : MonoBehaviour
 				continue;
 			}
 			Container container = piece.GetComponentInChildren<Container>();
-			if (container != null && container.GetInventory() != null && container.gameObject != base.gameObject && !_chests.Contains(container))
+			// 1.4.152: MHR_Chests.Usable - no carts or ships, ward access, private chests only its own player's, not in use
+			if (container != null && container.gameObject != base.gameObject && !_chests.Contains(container) && MHR_Chests.Usable(container, this))
 			{
 				_chests.Add(container);
 			}
@@ -1783,6 +1786,11 @@ public partial class CookController : MonoBehaviour
 	private bool Usable(Component c)
 	{
 		if (c == null || (_ai != null && _ai.IsPositionBlacklisted(c.transform.position)))
+		{
+			return false;
+		}
+		// 1.4.152: fermenters and beehives are ward-protected for players too
+		if ((c.GetComponent<Fermenter>() != null || c.GetComponent<Beehive>() != null) && !PrivateArea.CheckAccess(c.transform.position, 0f, flash: false))
 		{
 			return false;
 		}
@@ -1995,6 +2003,12 @@ public partial class CookController : MonoBehaviour
 			{
 				continue;
 			}
+			// 1.4.152: only a drop this game owns (else ask for it; picked up next time) - no copies in multiplayer
+			if (!drop.CanPickup(autoPickupDelay: false))
+			{
+				drop.RequestOwn();
+				continue;
+			}
 			int stack = drop.m_itemData.m_stack;
 			bag.AddItem(drop.m_itemData);
 			nv.ClaimOwnership();
@@ -2136,9 +2150,9 @@ public partial class CookController : MonoBehaviour
 
 	private void RestoreFollow()
 	{
-		if (_setup != null && _ai != null && _setup.GetFollow() && Player.m_localPlayer != null && _ai.GetFollowTarget() == null)
+		if (_setup != null && _ai != null && _setup.GetFollow() && MHR_Owner.Of(this) != null && _ai.GetFollowTarget() == null)
 		{
-			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+			_ai.SetFollowTarget(MHR_Owner.Go(this));
 		}
 	}
 

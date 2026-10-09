@@ -302,7 +302,7 @@ public partial class UpkeepController
 		GameObject go = UnityEngine.Object.Instantiate(k.Prefab, _pileSpot, _pileRot);
 		TerrainModifier.SetTriggerOnPlaced(trigger: false);
 		Piece piece = go.GetComponent<Piece>();
-		if (piece != null && Player.m_localPlayer != null)
+		if (piece != null)
 		{
 			PlatformUserID user = default(PlatformUserID);
 			try
@@ -312,7 +312,7 @@ public partial class UpkeepController
 			catch
 			{
 			}
-			piece.SetCreator(Player.m_localPlayer.GetPlayerID(), user);
+			piece.SetCreator(MHR_Owner.CreatorId(this), user);   // 1.4.152: built for its own player
 		}
 		go.GetComponent<WearNTear>()?.OnPlaced();
 		string anim = hammer.m_shared.m_attack?.m_attackAnimation;
@@ -817,6 +817,7 @@ public partial class UpkeepController
 			return;
 		}
 		Vector3 at = pile.transform.position;
+		_pileDropsBefore = MHR_Chests.DropsNear(at, 4f);   // 1.4.152: only what this pile drops is picked up
 		ZNetView nv = pile.GetComponent<ZNetView>();
 		if (!nv.IsOwner())
 		{
@@ -844,6 +845,8 @@ public partial class UpkeepController
 		_spot = at;
 	}
 
+	private HashSet<int> _pileDropsBefore = new HashSet<int>();
+
 	// pick up what fell out (and empty a loot box if the pile left one)
 	private void UpdatePileCollect()
 	{
@@ -865,7 +868,7 @@ public partial class UpkeepController
 		foreach (Collider c in Physics.OverlapSphere(_spot, 4f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
-			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == k.Shared && bag.CanAddItem(d.m_itemData, 1))
+			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == k.Shared && !_pileDropsBefore.Contains(d.GetInstanceID()) && bag.CanAddItem(d.m_itemData, 1))
 			{
 				float dist = Vector3.Distance(me, d.transform.position);
 				if (dist < nd)

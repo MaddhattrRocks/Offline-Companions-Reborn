@@ -462,9 +462,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			component7.SetFollowTarget(null);
 			component7.SetPatrolPointAt(vec);
 		}
-		else if (flag && Player.m_localPlayer != null)
+		else if (flag && MHR_Owner.Of(component7) != null)
 		{
-			component7?.SetFollowTarget(Player.m_localPlayer.gameObject);
+			component7?.SetFollowTarget(MHR_Owner.Go(component7));
 		}
 		comp.PlayResurrectEffects(vector);
 		if (!flag5 || tombZdo.GetInt(CompanionSetup.MHR_TombItemsHash, -1) == 0)

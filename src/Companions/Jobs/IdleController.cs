@@ -461,7 +461,7 @@ public class IdleController : MonoBehaviour
 	{
 		Vector3 me = base.transform.position;
 		float reach = Radius * 2f;
-		Player p = Player.m_localPlayer;
+		Player p = MHR_Owner.Of(this);
 		if (p != null && !p.IsDead() && Vector3.Distance(me, p.transform.position) <= reach && Mathf.Abs(p.transform.position.y - me.y) < 3f)
 		{
 			return p;

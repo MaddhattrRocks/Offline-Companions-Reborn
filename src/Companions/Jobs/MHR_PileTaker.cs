@@ -38,6 +38,8 @@ internal sealed class MHR_PileTaker
 
 	private bool _hammerOut;
 
+	private HashSet<int> _before = new HashSet<int>();
+
 	private const float Reach = 4.5f;
 
 	public MHR_PileTaker(Piece pile, string tag)
@@ -202,6 +204,7 @@ internal sealed class MHR_PileTaker
 			return -1;
 		}
 		_at = Pile.transform.position;
+		_before = MHR_Chests.DropsNear(_at, 4f);   // 1.4.152: only what this pile drops is picked up
 		ZNetView nv = Pile.GetComponent<ZNetView>();
 		if (!nv.IsOwner())
 		{
@@ -270,7 +273,7 @@ internal sealed class MHR_PileTaker
 				continue;
 			}
 			ItemDrop d = c.GetComponentInParent<ItemDrop>();
-			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == Shared && bag.CanAddItem(d.m_itemData, 1))
+			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == Shared && !_before.Contains(d.GetInstanceID()) && bag.CanAddItem(d.m_itemData, 1))
 			{
 				float dist = Vector3.Distance(me, d.transform.position);
 				if (dist < nd)

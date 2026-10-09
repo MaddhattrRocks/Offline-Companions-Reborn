@@ -732,12 +732,13 @@ public class CompanionSetup : MonoBehaviour
 			CompanionsPlugin.Log.LogDebug("[Setup] Claimed orphan companion — set owner to " + text2);
 			text = text2;
 		}
-		if (text != text2)
+		// 1.4.152: another player's companion run by this game follows its own player (when they're loaded here)
+		if (text != text2 && MHR_Owner.Of(this) == null)
 		{
 			if (!_ownerMismatchLogged)
 			{
 				_ownerMismatchLogged = true;
-				CompanionsPlugin.Log.LogWarning("[Setup] Owner mismatch — zdo owner=\"" + text + "\" localId=\"" + text2 + "\" — follow target NOT restored");
+				CompanionsPlugin.Log.LogDebug("[Setup] Another player's companion, its player isn't here — follow target not restored");
 			}
 		}
 		else
@@ -745,8 +746,8 @@ public class CompanionSetup : MonoBehaviour
 			int num = zDO2.GetInt(ActionModeHash);
 			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && num != 4)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
-				CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
+				CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to its player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
 			}
 		}
 	}
@@ -790,9 +791,9 @@ public class CompanionSetup : MonoBehaviour
 		switch (mode)
 		{
 		case 0:
-			if (follow && Player.m_localPlayer != null)
+			if (follow && MHR_Owner.Of(this) != null)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
 			}
 			else
@@ -842,9 +843,9 @@ public class CompanionSetup : MonoBehaviour
 					break;
 				}
 			}
-			if (follow && Player.m_localPlayer != null)
+			if (follow && MHR_Owner.Of(this) != null)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
 			}
 			else
@@ -864,9 +865,9 @@ public class CompanionSetup : MonoBehaviour
 			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {base.transform.position:F1}");
 			break;
 		default:
-			if (follow && Player.m_localPlayer != null)
+			if (follow && MHR_Owner.Of(this) != null)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (default fallback, mode={mode})");
 			}
 			else

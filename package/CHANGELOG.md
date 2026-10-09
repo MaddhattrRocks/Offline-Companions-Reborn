@@ -2,6 +2,17 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.152
+- Multiplayer: a companion run by another player's game still treats you as its player - it follows you, sleeps when you sleep and sits when you sit, not whoever's game is running it.
+- Multiplayer: orders you give your companion always take effect (they were lost when another player's game was running it).
+- Multiplayer: companions no longer lose or duplicate items when they use chests or pick things up.
+- Companions don't use chests someone has open on another player's game, private chests other players built, chests behind a ward they can't open, or carts and ship holds.
+- Companions respect wards for fermenters, beehives and planting, like a player.
+- Crops and wood piles a companion makes are credited to its own player; portal trips with another player's game running the companion now stick.
+- Smelt and Cook also use the chests around home, so they no longer take down the wood piles Repair and Restock just built.
+- Companions only pick up the honey or pile drops from the hive or pile they emptied themselves.
+- Wood, Stone and Ore with Follow on now default to 10 m, like Forage ([Gathering] FollowRange; an existing config keeps its own number).
+
 ## 1.4.151
 - Forage with Follow on now only picks plants within 10 m of you (new [Gathering] ForageFollowRange) - the berries you happen to walk past, not everything around. Wood, Stone and Ore keep FollowRange (20 m).
 

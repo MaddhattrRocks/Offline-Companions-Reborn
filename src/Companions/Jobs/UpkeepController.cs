@@ -1094,7 +1094,7 @@ public partial class UpkeepController : MonoBehaviour
 		List<Container> list = new List<Container>();
 		foreach (Container c in MHR_Chests.Near(Center(), Range()))
 		{
-			if (!Skipped(c) && MHR_ToolKeeper.UsableChest(c) && PrivateArea.CheckAccess(c.transform.position, 0f, flash: false))
+			if (!Skipped(c) && MHR_Chests.Usable(c, this))
 			{
 				list.Add(c);
 			}
@@ -1260,7 +1260,8 @@ public partial class UpkeepController : MonoBehaviour
 		_ai.StopMoving();
 		MHR_Mover.Release(_ai);
 		_ai.LookAtPoint(c.transform.position);
-		if (_nextAct == 0f && c.IsInUse())
+		// 1.4.152: MHR_Chests.Open - in use here or on another player's game, and owned before it's marked in use
+		if (_nextAct == 0f && !MHR_Chests.Open(c))
 		{
 			Skip(c, 30f, "Someone is using the chest");
 			return;
@@ -1268,15 +1269,9 @@ public partial class UpkeepController : MonoBehaviour
 		if (_nextAct == 0f)
 		{
 			// open it like a player: the interact move, the lid, a moment to look in
-			c.SetInUse(inUse: true);
 			_open = c;
 			_nextAct = Time.time + Mathf.Max(0.5f, WorkTime);
 			GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
-			ZNetView cnv = c.GetComponent<ZNetView>();
-			if (!cnv.IsOwner())
-			{
-				cnv.ClaimOwnership();
-			}
 			return;
 		}
 		if (Time.time < _nextAct)

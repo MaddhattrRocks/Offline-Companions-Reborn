@@ -128,7 +128,10 @@ public class CompanionRestedBuff : MonoBehaviour
 			DisplaySE.RemainingTime = num2;
 			string companionName = GetCompanionName();
 			DisplaySE.m_name = companionName + " " + ModLocalization.Loc("hc_msg_rested_suffix");
-			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_rested", companionName, num.ToString()));
+			if (MHR_Owner.IsMine(this))
+			{
+				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_rested", companionName, num.ToString()));
+			}
 			CompanionsPlugin.Log.LogInfo($"[Rested] Applied to \"{companionName}\" — comfort={num} duration={num2:F0}s " + $"hpRegen={_healthRegenMultiplier:F2} stamRegen={_staminaRegenMultiplier:F2} " + $"skillXP=+{_raiseSkillModifier:F2}");
 		}
 	}

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Companions;
@@ -10,6 +11,8 @@ public partial class UpkeepController
 	private Beehive _hive;
 
 	private Vector3 _hiveAt;
+
+	private HashSet<int> _dropsBefore = new HashSet<int>();
 
 	private string _honey;
 
@@ -118,8 +121,9 @@ public partial class UpkeepController
 			return;
 		}
 		GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
-		hive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 		_hiveAt = hive.m_spawnPoint != null ? hive.m_spawnPoint.position : hive.transform.position;
+		_dropsBefore = MHR_Chests.DropsNear(_hiveAt, 3f);   // 1.4.152: only the honey from this hive is picked up
+		hive.GetComponent<ZNetView>().InvokeRPC("RPC_Extract");
 		Enter(Step.HiveCollect);
 	}
 
@@ -141,7 +145,7 @@ public partial class UpkeepController
 		foreach (Collider c in Physics.OverlapSphere(_hiveAt, 3f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
-			if (d == null || d.m_itemData == null || d.m_itemData.m_shared.m_name != _honey || !bag.CanAddItem(d.m_itemData, 1))
+			if (d == null || d.m_itemData == null || d.m_itemData.m_shared.m_name != _honey || _dropsBefore.Contains(d.GetInstanceID()) || !bag.CanAddItem(d.m_itemData, 1))
 			{
 				continue;
 			}
