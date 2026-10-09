@@ -65,6 +65,11 @@ public class RepairController : MonoBehaviour
 
 	private float _moveStart;
 
+	// 1.4.146: this trip is the player's order (DirectRepairAt) - it goes ahead of the job, and the jobs wait for it
+	private bool _direct;
+
+	public bool IsDirect => _direct && _phase != RepairPhase.Idle;
+
 	private const float ScanBackoffInterval = 60f;
 
 	private const float MoveTimeout = 10f;
@@ -148,6 +153,7 @@ public class RepairController : MonoBehaviour
 		_stuckTimer = 0f;
 		_phase = RepairPhase.MovingToStation;
 		_moveStart = Time.time;
+		_direct = true;
 		_lastScanFailed = false;
 		Log($"DirectRepairAt — {_repairQueue.Count} items to repair at \"{station.m_name}\"");
 		return true;
@@ -200,11 +206,12 @@ public class RepairController : MonoBehaviour
 			return;
 		}
 		float deltaTime = Time.deltaTime;
-		if (ShouldAbort())
+		string abortWhy = ShouldAbort();
+		if (abortWhy != null)
 		{
 			if (_phase != RepairPhase.Idle)
 			{
-				Abort("interrupted (combat/harvest/UI)");
+				Abort("interrupted (" + abortWhy + ")");
 			}
 			return;
 		}
@@ -222,36 +229,41 @@ public class RepairController : MonoBehaviour
 		}
 	}
 
-	private bool ShouldAbort()
+	private string ShouldAbort()
 	{
 		if (_ai != null && _ai.IsInCombat)
 		{
-			return true;
+			return "combat";
 		}
-		// 1.4.145: loot pickup and orders steer too
-		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
+		// 1.4.145: loot pickup and other orders steer too
+		if (MHR_Loot.Active(this))
 		{
-			return true;
+			return "picking up loot";
 		}
-		if (_harvest != null && _harvest.IsActive)
+		if (_ai != null && (_ai.PendingMoveTarget.HasValue || _ai.PendingCartAttach != null || _ai.PendingDepositContainer != null || _ai.IsRecoveringTombstone))
 		{
-			return true;
+			return "another order";
 		}
-		if (_smelt != null && _smelt.IsActive)
+		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
-			return true;
+			return "being talked to";
+		}
+		// a repair the player ordered goes ahead of the job (the jobs wait for it: MHR_JobRules.OrderPending)
+		if (IsDirect)
+		{
+			return null;
+		}
+		if ((_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive))
+		{
+			return "the job has work";
 		}
 		// 1.4.144: the other jobs too - with Cook on, both walked at once (forge vs honey/cauldron), fought over the
 		// mover and it stood still. The job's task comes first; the repair trip waits until the job is between tasks.
 		if ((_cook != null && _cook.IsActive) || (_farm != null && _farm.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
 		{
-			return true;
+			return "the job has work";
 		}
-		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
-		{
-			return true;
-		}
-		return false;
+		return null;
 	}
 
 	private void Abort(string reason)
@@ -265,6 +277,7 @@ public class RepairController : MonoBehaviour
 		_targetStation = null;
 		_repairQueue.Clear();
 		_phase = RepairPhase.Idle;
+		_direct = false;
 		_scanTimer = ScanInterval;
 	}
 
@@ -603,6 +616,7 @@ public class RepairController : MonoBehaviour
 		_targetStation = null;
 		_repairQueue.Clear();
 		_phase = RepairPhase.Idle;
+		_direct = false;
 		_scanTimer = 1f;
 	}
 }

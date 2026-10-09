@@ -842,7 +842,10 @@ namespace Companions
         public static bool OrderPending(Component c)
         {
             CompanionAI ai = c != null ? c.GetComponent<CompanionAI>() : null;
-            return ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone);
+            if (ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone)) return true;
+            // 1.4.146: a repair the player ordered at a station
+            RepairController rc = c != null ? c.GetComponent<RepairController>() : null;
+            return rc != null && rc.IsDirect;
         }
 
         public static bool IsJobMode(int mode)
