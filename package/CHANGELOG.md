@@ -3,7 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.4.107
-- Fixed the fisher finding no bank to fish from next to high banks such as a moat: banks, docks and walls up to 10 m above the water count now, and it fishes from where it stands when the fish is within a cast.
+- Fixed the fisher never finding a spot to fish from on a dock or a high bank: it looked for ground from below the dock, so it only saw seabed. Docks, banks and walls up to 10 m above the water count now, and it fishes from where it stands when a fish is within a cast.
 
 ## 1.4.106
 - Fish redone: the companion fishes for real like a player, with the game's own float and the fish actually in the water. Fish come to the float, bite, get hooked when it strikes in time, fight, and can get away or break the line.
