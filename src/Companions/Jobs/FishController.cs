@@ -477,7 +477,7 @@ public class FishController : MonoBehaviour
 		foreach (Shore sh in _shore)
 		{
 			float d = Flat(sh.Stand, target);
-			if (d < 2f || d > 14f)
+			if (d < 2f || d > MaxCast)
 			{
 				continue;
 			}
@@ -567,7 +567,7 @@ public class FishController : MonoBehaviour
 	private bool GoodStand(Vector3 q, Vector3 target, float water)
 	{
 		float d = Flat(q, target);
-		if (d < 2f || d > 14f || q.y > water + 10f || q.y < water - 0.2f)
+		if (d < 2f || d > MaxCast || q.y > water + 10f || q.y < water - 0.2f)
 		{
 			return false;
 		}
@@ -636,7 +636,7 @@ public class FishController : MonoBehaviour
 		{
 			_humanoid.EquipItem(bait);
 		}
-		if (_fish != null && Flat(base.transform.position, _fish.transform.position) > 20f)
+		if (_fish != null && Flat(base.transform.position, _fish.transform.position) > MaxCast + 6f)
 		{
 			LogDebug("The " + _fishName + " has swum off - choosing again");
 			Enter(FishState.Idle);
@@ -677,16 +677,20 @@ public class FishController : MonoBehaviour
 		Enter(FishState.Waiting);
 	}
 
-	// at the fish, but no further than a good cast (14 m) - fish come to a float within 10 m
+	// 1.4.109: a full cast reaches about 24 m (1.4.108 log: "Float out 24 m" at 100%); 20 m leaves room for the line
+	// (the game breaks it past 30 m) and the spots were mostly further than 14 m from the fish
+	private const float MaxCast = 20f;
+
+	// at the fish, but no further than a good cast - fish come to a float within 10 m
 	private Vector3 AimPoint()
 	{
 		Vector3 me = base.transform.position;
 		Vector3 p = (_fish != null) ? _fish.transform.position : (me + base.transform.forward * 8f);
 		Vector3 d = p - me;
 		d.y = 0f;
-		if (d.magnitude > 14f)
+		if (d.magnitude > MaxCast)
 		{
-			p = me + d.normalized * 14f;
+			p = me + d.normalized * MaxCast;
 		}
 		p.y = Level(p, me.y - 1f);
 		return p;

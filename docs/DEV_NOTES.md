@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.109 - from the 1.4.108 test (log e9335e53)
+- User: still took a few minutes to find where to fish; cast, there was a bobber; ran out of stamina and still caught the fish. Progress.
+- Log: "Mapped 19/14 places", "no bank ... 11 fish seen" twice (fish 17-30 m from the mapped places, limit was 14 m), then "Going to fish for Fish2", "diving in" on the way, "Casting at the Fish2 (14 m, 100% cast)", "Float out 24 m, bait FishingBait", "Hooked a Pike", ~3,800 lines later "Caught a Pike". No exceptions.
+- Stamina: StaminaPatches.HaveStamina returned Stamina >= amount; vanilla Player is Stamina > amount, so HaveStamina(0) at 0 stamina said yes and FishingFloat never dropped the fish. Now strict >. UseStamina logs only drains of 0.5+ (the reeling trickle filled the log).
+- Fish: MaxCast 20 m (100% cast landed 24 m out; the game breaks the line past 30 m) for SpotFor, GoodStand, the aim clamp; re-pick when the fish is > 26 m away. Mover: the running dive into wide water only for the Follow tag (jobs walk round or stop).
+
 ### 1.4.108 - from the 1.4.107 test (log e4e0c131)
 - User: not sure the NPC can see the dock; better; did 3 casts in a row; took a good while to go and fish, stood doing nothing for a while.
 - Log: two job starts with "no bank ... 5 fish seen, e.g. Pike at (-334.5, 26.2, -343.6), water 29.7" (fish ~16 m from him on the dock - over the 14 m from-here limit; the search out from each fish found nothing usable), third start found one: "Going to fish for Fish2", walked there (jumped shallow water on the way), "Casting at the Fish2 (26 m, 100% cast)" - the fish had swum off. Then ~300x NullReferenceException in FishingFloat.Setup from Projectile.SpawnOnHit (each FixedUpdate the projectile spawned another float and Setup threw), "The cast didn't come off" x3.

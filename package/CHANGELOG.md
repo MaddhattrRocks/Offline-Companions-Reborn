@@ -2,6 +2,12 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.109
+- Fixed companions counting as having stamina at zero, so a fisher out of stamina still landed its fish (a player loses it). This also applies to anything else that needs stamina.
+- The fisher fishes for fish up to 20 m out (its full cast reaches about 24 m), so it finds somewhere to fish much sooner.
+- Companions only take a running dive into deep water while following you, not on the way to a job.
+- Less log spam from the small stamina drains while reeling.
+
 ## 1.4.108
 - Fixed the fisher's float never coming out: the game's float setup crashed for companions every time the cast hit the water (and kept spawning floats).
 - The fisher finds places to fish from much faster and more reliably: it maps the shore and docks around it that are right next to deep water, and picks the one nearest a fish it wants.

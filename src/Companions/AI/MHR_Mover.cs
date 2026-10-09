@@ -927,7 +927,7 @@ namespace Companions
                 Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
                 return true;
             }
-            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && tag != "Loot")
+            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && tag == FollowTag)
             {
                 // wide water we're about to swim: running leap in for a head start
                 Leap(ai, c, dir, 5f);
