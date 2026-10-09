@@ -313,12 +313,6 @@ public class CompanionSetup : MonoBehaviour
 		return !CompanionTierData.IsDvergerVariant(_nview.GetZDO().GetPrefab());
 	}
 
-	// 1.4.117: Homestead (Stay Home) is retired - its wheel slot is empty now and nothing turns it on
-	internal bool GetStayHome()
-	{
-		return false;
-	}
-
 	internal bool HasHomePosition()
 	{
 		ZDO zDO = _nview?.GetZDO();
@@ -750,7 +744,7 @@ public class CompanionSetup : MonoBehaviour
 		else
 		{
 			int num = zDO2.GetInt(ActionModeHash);
-			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && (!GetStayHome() || !HasHomePosition()) && num != 4)
+			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && num != 4)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
@@ -792,19 +786,12 @@ public class CompanionSetup : MonoBehaviour
 		{
 			return;
 		}
-		bool flag = GetStayHome() && HasHomePosition();
 		bool follow = GetFollow();
-		CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} stayHome={flag} follow={follow} force={force}");
+		CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} follow={follow} force={force}");
 		switch (mode)
 		{
 		case 0:
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → StayHome patrol at {GetHomePosition():F1}");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
@@ -856,13 +843,7 @@ public class CompanionSetup : MonoBehaviour
 					break;
 				}
 			}
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Gather+StayHome patrol at {GetHomePosition():F1}");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
@@ -880,24 +861,11 @@ public class CompanionSetup : MonoBehaviour
 			break;
 		case 4:
 			_ai.SetFollowTarget(null);
-			if (flag)
-			{
-				_ai.SetPatrolPointAt(GetHomePosition());
-			}
-			else
-			{
-				_ai.SetPatrolPoint();
-			}
-			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {(flag ? GetHomePosition() : base.transform.position):F1}");
+			_ai.SetPatrolPoint();
+			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {base.transform.position:F1}");
 			break;
 		default:
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → StayHome patrol (default fallback, mode={mode})");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (default fallback, mode={mode})");
@@ -1790,15 +1758,6 @@ public class CompanionSetup : MonoBehaviour
 	internal void SetIsCommandable(bool value)
 	{
 		(_nview?.GetZDO())?.Set(IsCommandableHash, value ? 1 : 0);
-	}
-
-	internal void SetStayHome(bool v)
-	{
-		_nview?.GetZDO()?.Set(StayHomeHash, v);
-		if (v)
-		{
-			SetFollow(v: false);
-		}
 	}
 
 	internal void SetHomePosition(Vector3 p)

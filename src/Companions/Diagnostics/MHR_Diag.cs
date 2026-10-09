@@ -44,7 +44,7 @@ public static class MHR_Diag
 			}
 			int instanceID = companionSetup.GetInstanceID();
 			ZNetView component = companionSetup.GetComponent<ZNetView>();
-			if (component == null || !component.IsValid() || !component.IsOwner() || !companionSetup.GetFollow() || companionSetup.GetStayHome() || component.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
+			if (component == null || !component.IsValid() || !component.IsOwner() || !companionSetup.GetFollow() || component.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
 			{
 				s_track.Remove(instanceID);
 				continue;

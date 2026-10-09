@@ -159,10 +159,6 @@ public class CompanionAI : BaseAI
 
 	private Vector3 _lastFollowPos = Vector3.positiveInfinity;
 
-	private float _homePatrolTimer;
-
-	private bool _homeStayReset;
-
 	private int _formationSlot = -1;
 
 	private CompanionSetup _setup;
@@ -240,8 +236,6 @@ public class CompanionAI : BaseAI
 	private float _ctxLogTimer;
 
 	private const float SuppressedMoveInterval = 9999f;
-
-	private bool _returningHome;
 
 	private float _furnitureStuckTimer;
 
@@ -947,14 +941,8 @@ public class CompanionAI : BaseAI
 
 	private void RestoreFollowOrPatrol()
 	{
-		bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 		bool flag2 = _setup != null && _setup.GetFollow();
-		if (flag)
-		{
-			SetFollowTarget(null);
-			SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (flag2 && Player.m_localPlayer != null)
+		if (flag2 && Player.m_localPlayer != null)
 		{
 			SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
@@ -1439,73 +1427,6 @@ public class CompanionAI : BaseAI
 		}
 	}
 
-	private bool EnforceHomePatrol(float dt)
-	{
-		if (_setup == null || !_setup.GetStayHome() || !_setup.HasHomePosition())
-		{
-			if (m_randomMoveRange > 10f)
-			{
-				m_randomMoveRange = 4f;
-			}
-			if (m_randomMoveInterval < 100f)
-			{
-				m_randomMoveInterval = 9999f;
-			}
-			_returningHome = false;
-			_homeStayReset = false;
-			return false;
-		}
-		if (m_follow != null)
-		{
-			return false;
-		}
-		bool wander = _setup.GetWander();
-		bool flag = _harvest != null && _harvest.IsInGatherMode;
-		if (wander || flag)
-		{
-			m_randomMoveRange = _setup.GetHomeRadius();
-			if (m_randomMoveInterval > 10f)
-			{
-				m_randomMoveInterval = WanderMoveInterval;
-				ResetRandomMovement();
-			}
-			_returningHome = false;
-			_homeStayReset = false;
-		}
-		else
-		{
-			m_randomMoveRange = 0f;
-			if (m_randomMoveInterval < 100f)
-			{
-				m_randomMoveInterval = 9999f;
-			}
-			if (!_homeStayReset)
-			{
-				_homeStayReset = true;
-				ResetRandomMovement();
-			}
-			float num = Utils.DistanceXZ(base.transform.position, _setup.GetHomePosition());
-			if (num > 3f)
-			{
-				if (!_returningHome)
-				{
-					_returningHome = true;
-				}
-				MoveToPoint(dt, _setup.GetHomePosition(), 2f, num > 10f);
-				return true;
-			}
-			_returningHome = false;
-		}
-		_homePatrolTimer -= dt;
-		if (_homePatrolTimer > 0f)
-		{
-			return false;
-		}
-		_homePatrolTimer = 2f;
-		SetPatrolPointAt(_setup.GetHomePosition());
-		return false;
-	}
-
 	public override bool UpdateAI(float dt)
 	{
 		if (!base.UpdateAI(dt))
@@ -1589,14 +1510,6 @@ public class CompanionAI : BaseAI
 		else if (m_follow == null)
 		{
 			_lastFollowPos = Vector3.positiveInfinity;
-		}
-		if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-		{
-			float num2 = Utils.DistanceXZ(base.transform.position, _setup.GetHomePosition());
-			if (num2 > _setup.GetHomeRadius())
-			{
-				TeleportToHome();
-			}
 		}
 		if (_rest != null && _rest.IsNavigating)
 		{
@@ -1979,10 +1892,7 @@ public class CompanionAI : BaseAI
 				StopMoving();
 				return true;
 			}
-			if (!EnforceHomePatrol(dt))
-			{
-				IdleMovement(dt);
-			}
+			IdleMovement(dt);
 		}
 		return true;
 	}
@@ -2343,7 +2253,7 @@ public class CompanionAI : BaseAI
 		bool flag2 = _rest != null && _rest.IsResting;
 		bool flag3 = _isOnShip || _pendingShip != null;
 		bool flag4 = FreezeTimer > 0f;
-		bool flag5 = m_follow != null || m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || _returningHome;
+		bool flag5 = m_follow != null || m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_doorHandler != null && _doorHandler.IsActive);
 		bool flag6 = _harvest != null && _harvest.IsAttacking;
 		if (flag || flag6 || flag2 || flag3 || flag4 || !flag5)
 		{
@@ -2410,7 +2320,7 @@ public class CompanionAI : BaseAI
 			_lowVelAccum = 0f;
 			return;
 		}
-		bool flag = m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive) || _returningHome;
+		bool flag = m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive);
 		if (!flag && m_follow != null)
 		{
 			float num = Vector3.Distance(base.transform.position, m_follow.transform.position);
@@ -2420,15 +2330,6 @@ public class CompanionAI : BaseAI
 		{
 			_lowVelAccum = 0f;
 			return;
-		}
-		if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-		{
-			float num2 = Vector3.Distance(base.transform.position, _setup.GetHomePosition());
-			if (num2 < 4f)
-			{
-				_lowVelAccum = 0f;
-				return;
-			}
 		}
 		_oscillationTimer += dt;
 		if (_oscillationTimer >= 3f)
@@ -2552,57 +2453,6 @@ public class CompanionAI : BaseAI
 		{
 			m_nview.GetZDO().SetPosition(position);
 		}
-	}
-
-	private void TeleportToHome()
-	{
-		if (_setup == null || !_setup.HasHomePosition())
-		{
-			return;
-		}
-		Vector3 homePosition = _setup.GetHomePosition();
-		Vector3 position = homePosition;
-		for (int i = 0; i < 20; i++)
-		{
-			Vector2 vector = UnityEngine.Random.insideUnitCircle * 3f;
-			Vector3 vector2 = homePosition + new Vector3(vector.x, 0f, vector.y);
-			if (ZoneSystem.instance != null && ZoneSystem.instance.FindFloor(vector2, out var height))
-			{
-				vector2.y = height;
-				position = vector2;
-				break;
-			}
-		}
-		base.transform.position = position;
-		Rigidbody body = _body;
-		if (body != null)
-		{
-			body.position = position;
-			body.linearVelocity = Vector3.zero;
-		}
-		if (m_nview?.GetZDO() != null)
-		{
-			m_nview.GetZDO().SetPosition(position);
-		}
-		ClearTargets();
-		if (IsAlerted())
-		{
-			SetAlerted(alert: false);
-		}
-		_harvest?.NotifyActionModeChanged();
-		_hunt?.NotifyActionModeChanged();
-		_fish?.NotifyActionModeChanged();
-		_cook?.NotifyActionModeChanged();
-		if (_smelt != null)
-		{
-			_smelt.NotifyActionModeChanged();
-		}
-		if (_farm != null)
-		{
-			_farm.NotifyActionModeChanged();
-		}
-		SetFollowTarget(null);
-		SetPatrolPointAt(homePosition);
 	}
 
 	private Character FindHurtAlly()

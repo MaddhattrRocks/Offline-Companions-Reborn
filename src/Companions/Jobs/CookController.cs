@@ -175,10 +175,6 @@ public partial class CookController : MonoBehaviour
 
 	private float _stuckTimer;
 
-	private float _stuckCheckTimer;
-
-	private float _stuckBestDist;
-
 	private static readonly HashSet<int> s_claimed = new HashSet<int>();
 
 	private int _claimedId;
@@ -1468,27 +1464,20 @@ public partial class CookController : MonoBehaviour
 	private void ResetStuck()
 	{
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckBestDist = float.MaxValue;
 	}
+
+	// 1.4.134 (movement phase 4): only the movement decides it's stuck; two minutes per leg at most
+	private string _stuckLeg;
 
 	private void CheckStuck(float dt, float dist, string what)
 	{
-		_stuckCheckTimer += dt;
-		if (_stuckCheckTimer >= 1f)
+		if (what != _stuckLeg)
 		{
-			if (_stuckBestDist - dist < 0.3f && !(_ai != null && MHR_Mover.Progressing(_ai)))
-			{
-				_stuckTimer += _stuckCheckTimer;
-			}
-			else
-			{
-				_stuckBestDist = Mathf.Min(_stuckBestDist, dist);
-				_stuckTimer = 0f;
-			}
-			_stuckCheckTimer = 0f;
+			_stuckLeg = what;
+			_stuckTimer = 0f;
 		}
-		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > 12f)
+		_stuckTimer += dt;
+		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > MHR_Nav.LegTimeout)
 		{
 			Abort("couldn't get to the " + what);
 		}

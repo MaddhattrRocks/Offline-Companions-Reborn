@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
+            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }
@@ -112,14 +112,13 @@ namespace Companions
             // 1.4.70: gear, food and mead the player hands over (through the inventory panel) are the companion's own;
             // anything picked up during work isn't. Everything present at load counts as its own too.
             if (!st.TagInit || CompanionInteractPanel.IsOpenFor(cs)) { st.TagInit = true; TagOwn(inv); }
-            bool stayHome = cs.GetStayHome();
-            if (st.LastMode == -999) { st.LastMode = mode; st.LastStayHome = stayHome; }
-            if (mode != st.LastMode || (stayHome && !st.LastStayHome))
+            if (st.LastMode == -999) st.LastMode = mode;
+            if (mode != st.LastMode)
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
-                LogDebug("Job changed (" + st.LastMode + " -> " + mode + (stayHome && !st.LastStayHome ? ", Homestead" : "") + ") - will empty bags at home");
+                LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
             }
-            st.LastMode = mode; st.LastStayHome = stayHome;
+            st.LastMode = mode;
             // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
             // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
             // with tin ore, bone fragments, meat... and he kept it all until a job was picked). 1.4.94: a hunter that
@@ -870,20 +869,12 @@ namespace Companions
                     if (zdo != null) zdo.Set(FollowPausedHash, true);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Follow turned off");
                 }
-                if (cs.GetStayHome())
-                {
-                    cs.SetStayHome(false);
-                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
-                }
             }
             else if (zdo != null && zdo.GetBool(FollowPausedHash))
             {
                 zdo.Set(FollowPausedHash, false);
-                if (!cs.GetStayHome())
-                {
-                    cs.SetFollow(true);
-                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
-                }
+                cs.SetFollow(true);
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
             }
         }
     }
@@ -1230,10 +1221,8 @@ namespace Companions
             float d = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
             return d > 0f && Vector3.Distance(ai.transform.position, point) > d;
         }
-        public static bool MoveWalk(CompanionAI ai, float dt, Vector3 point, float dist, bool run)
-        {
-            return ai.MoveToPoint(dt, point, dist, run && FarEnoughToRun(ai, point));
-        }
+        // 1.4.134 (movement phase 4): jobs give a leg up when the movement does, or after this long whatever happens
+        public const float LegTimeout = 120f;
 
         public static bool Move(CompanionAI ai, float dt, Vector3 point, float dist, bool run, string tag)
         {

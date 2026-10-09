@@ -47,12 +47,6 @@ public class SmeltController : MonoBehaviour
 
 	private float _stuckTimer;
 
-	private float _stuckCheckTimer;
-
-	private Vector3 _stuckCheckPos;
-
-	private float _stuckBestDist;
-
 	private float _monitorTimer;
 
 	private bool _wasMonitoring;
@@ -94,10 +88,6 @@ public class SmeltController : MonoBehaviour
 	private static int _itemLayerMask = -1;
 
 	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
 
 	private const float MonitorInterval = 3f;
 
@@ -966,10 +956,6 @@ public class SmeltController : MonoBehaviour
 	private void ResetStuck()
 	{
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_stuckBestDist = float.MaxValue;
-		_approachKey = null;
 	}
 
 	// 1.4.86 (movement phase 3 part 2): Smelt moves through MHR_Mover like Farm, and walks to a spot it can actually
@@ -1391,13 +1377,7 @@ public class SmeltController : MonoBehaviour
 		if (!(_ai == null))
 		{
 			bool flag = _setup != null && _setup.GetFollow();
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
-				Log("Restored patrol to home (StayHome active)");
-			}
-			else if (flag && Player.m_localPlayer != null)
+			if (flag && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				Log("Restored follow target to player (Follow=ON)");
@@ -1421,32 +1401,19 @@ public class SmeltController : MonoBehaviour
 		}
 	}
 
+	// 1.4.134 (movement phase 4): only the movement decides it's stuck (see FarmController); two minutes per leg at most
+	private Vector3 _stuckLeg;
+
 	private void UpdateStuckDetection(float dt, string targetName)
 	{
-		_stuckCheckTimer += dt;
-		if (_stuckCheckTimer >= 1f)
+		Vector3 leg = GetCurrentTargetPosition();
+		if (Vector3.Distance(leg, _stuckLeg) > 1.5f)
 		{
-			Vector3 currentTargetPosition = GetCurrentTargetPosition();
-			float num = Vector3.Distance(base.transform.position, currentTargetPosition);
-			// 1.4.86: a route round a building doesn't always get closer as the crow flies; the mover knows if it's getting somewhere
-			if (_stuckBestDist - num < 0.3f && !(_ai != null && MHR_Mover.Progressing(_ai)))
-			{
-				_stuckTimer += _stuckCheckTimer;
-			}
-			else
-			{
-				_stuckBestDist = num;
-				_stuckTimer = 0f;
-			}
-			_stuckCheckPos = base.transform.position;
-			_stuckCheckTimer = 0f;
+			_stuckLeg = leg;
+			_stuckTimer = 0f;
 		}
-		// the movement has worked through its whole stuck ladder - give this target up now
-		if (_ai != null && MHR_Mover.GaveUp(_ai))
-		{
-			_stuckTimer = 10.01f;
-		}
-		if (_stuckTimer > 10f)
+		_stuckTimer += dt;
+		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > MHR_Nav.LegTimeout)
 		{
 			Vector3 currentTargetPosition = GetCurrentTargetPosition();
 			if (currentTargetPosition != Vector3.zero && _ai != null)

@@ -899,16 +899,10 @@ public class CompanionRest : MonoBehaviour
 		if (_ai != null)
 		{
 			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
-			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 			if (valueOrDefault == 4)
 			{
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
-			}
-			else if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
 			}
 			else if (Player.m_localPlayer != null)
 			{
@@ -1069,16 +1063,10 @@ public class CompanionRest : MonoBehaviour
 		if (!(_ai == null))
 		{
 			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
-			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 			if (valueOrDefault == 4)
 			{
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
-			}
-			else if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
 			}
 			else if (Player.m_localPlayer != null)
 			{
@@ -1136,16 +1124,10 @@ public class CompanionRest : MonoBehaviour
 		if (!(_ai == null))
 		{
 			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
-			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 			if (valueOrDefault == 4)
 			{
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
-			}
-			else if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
 			}
 			else if (Player.m_localPlayer != null)
 			{
@@ -1208,16 +1190,10 @@ public class CompanionRest : MonoBehaviour
 		if (!(_ai == null))
 		{
 			int valueOrDefault = (_nview?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash)).GetValueOrDefault();
-			bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 			if (valueOrDefault == 4)
 			{
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
-			}
-			else if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
 			}
 			else if (Player.m_localPlayer != null)
 			{

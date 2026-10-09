@@ -248,10 +248,6 @@ public class DoorHandler : MonoBehaviour
 					return;
 				}
 			}
-			else if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-			{
-				return;
-			}
 		}
 		bool flag2 = !flag && gameObject != null;
 		bool flag3 = flag;

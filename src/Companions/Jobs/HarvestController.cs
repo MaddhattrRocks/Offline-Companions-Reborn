@@ -709,21 +709,14 @@ public class HarvestController : MonoBehaviour
 		ResetToIdle();
 		RestoreLoadout();
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-			Log("Restored patrol to home (StayHome active)");
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 			Log("Restored follow target to player (Follow=ON)");
 		}
 		else
 		{
-			Log("Follow OFF, no StayHome — idle");
+			Log("Follow OFF — idle");
 		}
 	}
 
@@ -1501,19 +1494,13 @@ public class HarvestController : MonoBehaviour
 			Log("ResetToIdle (directed harvest complete) — restored loadout");
 		}
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
 		if (state != HarvestState.Idle)
 		{
-			Log($"ResetToIdle (was {state}) — follow={flag} stayHome={flag2}");
+			Log($"ResetToIdle (was {state}) — follow={flag}");
 		}
 	}
 
@@ -2283,17 +2270,11 @@ public class HarvestController : MonoBehaviour
 		_scanTimer = 0f;
 		UnclaimTarget();
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
-		Log($"FinishDropCollection — collected {_dropsPickedUp} items, follow={flag} stayHome={flag2}");
+		Log($"FinishDropCollection — collected {_dropsPickedUp} items, follow={flag}");
 	}
 
 	private void TryPickupDrop(GameObject dropGO)

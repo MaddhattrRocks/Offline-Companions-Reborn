@@ -1562,29 +1562,9 @@ public class CompanionInteractPanel : MonoBehaviour
 		{
 			return;
 		}
-		bool flag = _companion.GetStayHome() && _companion.HasHomePosition();
-		_homeZoneRow.SetActive(flag);
-		if (flag)
-		{
-			float homeRadius = _companion.GetHomeRadius();
-			if (_homeRadiusSlider != null)
-			{
-				_homeRadiusSlider.SetValueWithoutNotify(homeRadius);
-			}
-			if (_homeRadiusLabel != null)
-			{
-				_homeRadiusLabel.text = $"Home zone: {homeRadius:F0}m";
-			}
-			if (_homeZoneVisual == null)
-			{
-				_homeZoneVisual = _companion.gameObject.GetComponent<HomeZoneVisual>() ?? _companion.gameObject.AddComponent<HomeZoneVisual>();
-			}
-			_homeZoneVisual.Show(_companion.GetHomePosition(), homeRadius);
-		}
-		else
-		{
-			_homeZoneVisual?.Hide();
-		}
+		// 1.4.134: the home-zone row belonged to Homestead (retired in 1.4.117)
+		_homeZoneRow.SetActive(false);
+		_homeZoneVisual?.Hide();
 	}
 
 	private void BuildArmorDisplay(InventoryGui gui)
