@@ -177,6 +177,8 @@ public class CompanionAI : BaseAI
 
 	private UpkeepController _upkeep;
 
+	private IdleController _idle;
+
 	private CookController _cook;
 
 	private DoorHandler _doorHandler;
@@ -358,6 +360,7 @@ public class CompanionAI : BaseAI
 		_hunt = GetComponent<HuntController>();
 		_fish = GetComponent<FishController>();
 		_upkeep = GetComponent<UpkeepController>();
+		_idle = GetComponent<IdleController>();
 		_cook = GetComponent<CookController>();
 		_doorHandler = GetComponent<DoorHandler>();
 		_rest = GetComponent<CompanionRest>();
@@ -1512,7 +1515,7 @@ public class CompanionAI : BaseAI
 			return true;
 		}
 		ZDO zDO = m_nview?.GetZDO();
-		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
+		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive) || (_idle != null && _idle.IsActive))
 		{
 			ClearFollowMovementOverrides();
 			return true;

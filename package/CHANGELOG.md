@@ -2,6 +2,15 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.143
+- New idle behaviour: a companion with nothing to do no longer just stands there - after 10 s it idles near its job until work turns up again.
+- Idle chores: repairs damaged pieces, tops up fires, collects honey and puts away what it carries nearby.
+- Idle rest: sits on a free chair or bench nearby, or on the ground, for a while.
+- Idle wander: strolls about and looks over the stations and chests near its job.
+- Idle company: walks over to you or another companion nearby and chats now and then.
+- Now and then says why it's idle ("Nothing left to chop here.", "Waiting for the crops to grow.").
+- New [Idle] settings: Enabled, StartAfter, Radius, Chores, ChoreRadius, Sit, Wander, Socialize, SpeechInterval.
+
 ## 1.4.142
 - Code clean-up, no change in behaviour: the build has no warnings any more (old Unity names updated, unused leftovers removed).
 
