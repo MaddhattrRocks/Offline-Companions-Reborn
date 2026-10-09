@@ -93,6 +93,13 @@ public class FishController : MonoBehaviour
 
 	private static readonly HarmonyLib.AccessTools.FieldRef<Humanoid, float> s_drawTime = HarmonyLib.AccessTools.FieldRefAccess<Humanoid, float>("m_attackDrawTime");
 
+	// the bait it picked for its last cast (for the float, if the cast didn't carry its ammo)
+	internal static string LastBait(Character c)
+	{
+		FishController fc = (c != null) ? c.GetComponent<FishController>() : null;
+		return fc?._bait;
+	}
+
 	public bool IsActive
 	{
 		get
@@ -320,7 +327,7 @@ public class FishController : MonoBehaviour
 				noBaitFor = noBaitFor ?? (FishCatalog.Local(fish) + " (takes " + FishCatalog.BaitsText(fish) + ")");
 				continue;
 			}
-			if (!BankSpot(fish, out var stand))
+			if (!SpotFor(fish, out var stand))
 			{
 				noBank++;
 				noBankAt = noBankAt ?? (FishCatalog.Local(fish) + " at " + MHR_Mover.Fmt(p) + ", water " + MHR_Water.WaterLevel(p).ToString("F1"));
@@ -366,6 +373,128 @@ public class FishController : MonoBehaviour
 			}
 		}
 		return best;
+	}
+
+	// 1.4.108: the places around the fishing spot where it can stand and fish: dry ground or a dock right next to water
+	// at least 1 m deep, with room to stand. Mapped once a minute (1.4.107 test: searching out from each fish found no
+	// bank from the dock for minutes).
+	private struct Shore
+	{
+		public Vector3 Stand;
+
+		public Vector3 Water;
+	}
+
+	private readonly List<Shore> _shore = new List<Shore>();
+
+	private float _shoreAt = -999f;
+
+	private Vector3 _shoreFor;
+
+	private void MapShore()
+	{
+		if (Time.time - _shoreAt < 60f && Flat(_shoreFor, _anchor) < 2f)
+		{
+			return;
+		}
+		_shoreAt = Time.time;
+		_shoreFor = _anchor;
+		_shore.Clear();
+		float r = Radius() + 6f;
+		float baseWater = MHR_Water.WaterLevel(_anchor);
+		if (baseWater < -1000f)
+		{
+			baseWater = (ZoneSystem.instance != null) ? ZoneSystem.instance.m_waterLevel : 30f;
+		}
+		for (float x = -r; x <= r; x += 2f)
+		{
+			for (float z = -r; z <= r; z += 2f)
+			{
+				if (x * x + z * z > r * r)
+				{
+					continue;
+				}
+				Vector3 p = _anchor + new Vector3(x, 0f, z);
+				float wl = Level(p, baseWater);
+				if (!Top(p, wl, out var top) || top.y < wl + 0.1f || top.y > wl + 10f)
+				{
+					continue;
+				}
+				// water right next to it, deep enough for fish
+				Vector3 best = Vector3.zero;
+				float bestDepth = 0f;
+				for (int i = 0; i < 8; i++)
+				{
+					Vector3 dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
+					Vector3 w = top + dir * 2.5f;
+					float lw = Level(w, baseWater);
+					if (!Top(w, lw, out var bottom))
+					{
+						continue;
+					}
+					float depth = lw - bottom.y;
+					if (depth > bestDepth)
+					{
+						bestDepth = depth;
+						best = new Vector3(w.x, lw, w.z);
+					}
+				}
+				if (bestDepth < 1f)
+				{
+					continue;
+				}
+				if (Physics.CheckCapsule(top + Vector3.up * 0.6f, top + Vector3.up * 1.6f, 0.3f, LayerMask.GetMask("Default", "static_solid", "piece")) || MHR_Mover.InFire(top))
+				{
+					continue;
+				}
+				_shore.Add(new Shore
+				{
+					Stand = top,
+					Water = best
+				});
+			}
+		}
+		LogDebug("Mapped " + _shore.Count + " places to fish from within " + r.ToString("F0") + " m");
+	}
+
+	private static float Level(Vector3 p, float dflt)
+	{
+		float w = MHR_Water.WaterLevel(p);
+		return (w < -1000f) ? dflt : w;
+	}
+
+	// the shore place nearest to us from which this fish is within a cast and in sight
+	private bool SpotFor(Fish fish, out Vector3 stand)
+	{
+		stand = Vector3.zero;
+		MapShore();
+		Vector3 fp = fish.transform.position;
+		float water = Level(fp, fp.y);
+		Vector3 target = new Vector3(fp.x, water, fp.z);
+		Vector3 me = base.transform.position;
+		float best = float.MaxValue;
+		bool found = false;
+		foreach (Shore sh in _shore)
+		{
+			float d = Flat(sh.Stand, target);
+			if (d < 2f || d > 14f)
+			{
+				continue;
+			}
+			float cost = Flat(me, sh.Stand) + d * 0.5f;
+			if (cost >= best)
+			{
+				continue;
+			}
+			if (Physics.Linecast(sh.Stand + Vector3.up * 1.6f, target + Vector3.up * 0.3f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain")))
+			{
+				continue;
+			}
+			best = cost;
+			stand = sh.Stand;
+			found = true;
+		}
+		return found;
 	}
 
 	// a dry spot on the bank (or a dock, a wall) within a cast of the fish: where it stands now if that works, else walk
@@ -507,6 +636,13 @@ public class FishController : MonoBehaviour
 		{
 			_humanoid.EquipItem(bait);
 		}
+		if (_fish != null && Flat(base.transform.position, _fish.transform.position) > 20f)
+		{
+			LogDebug("The " + _fishName + " has swum off - choosing again");
+			Enter(FishState.Idle);
+			_scanTimer = 0.5f;
+			return;
+		}
 		Vector3 aim = AimPoint();
 		_ai.LookAtPoint(aim);
 		if (_character.InAttack() || !_ai.IsLookingAtPoint(aim, 8f) || Time.time - _stateSince < 0.5f)
@@ -541,10 +677,18 @@ public class FishController : MonoBehaviour
 		Enter(FishState.Waiting);
 	}
 
+	// at the fish, but no further than a good cast (14 m) - fish come to a float within 10 m
 	private Vector3 AimPoint()
 	{
-		Vector3 p = (_fish != null) ? _fish.transform.position : (_stand + base.transform.forward * 8f);
-		p.y = MHR_Water.WaterLevel(p);
+		Vector3 me = base.transform.position;
+		Vector3 p = (_fish != null) ? _fish.transform.position : (me + base.transform.forward * 8f);
+		Vector3 d = p - me;
+		d.y = 0f;
+		if (d.magnitude > 14f)
+		{
+			p = me + d.normalized * 14f;
+		}
+		p.y = Level(p, me.y - 1f);
 		return p;
 	}
 

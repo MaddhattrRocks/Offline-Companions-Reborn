@@ -42,19 +42,71 @@ namespace Companions
             return go != null ? go.GetComponent<Character>() : null;
         }
 
+        // 1.4.108: for a companion, Setup is done here instead of by the game. 1.4.107 test: the game's Setup threw a
+        // NullReferenceException every frame when the float hit the water, so no float ever came out and the projectile
+        // kept spawning floats. Same steps as vanilla, nothing assumed: bait name from the ammo (or the bait it has
+        // ready), the rod tip found on the companion, the line length set; if something's missing it says what.
         [HarmonyPatch(typeof(FishingFloat), "Setup")]
         static class Setup_Patch
         {
-            static void Prefix(FishingFloat __instance, Character owner)
+            static bool Prefix(FishingFloat __instance, Character owner, ItemDrop.ItemData ammo)
             {
                 try
                 {
-                    if (owner == null || owner.GetComponent<CompanionSetup>() == null) return;
+                    if (owner == null || owner.GetComponent<CompanionSetup>() == null) return true;
                     ZNetView nv = NView(__instance);
-                    if (nv != null && nv.IsValid()) nv.GetZDO().Set(OwnerHash, owner.GetZDOID());
+                    if (nv == null || !nv.IsValid()) return false;
+                    FishingFloat old = Of(owner);
+                    if (old != null && old != __instance && ZNetScene.instance != null) ZNetScene.instance.Destroy(old.gameObject);
+                    ZDO zdo = nv.GetZDO();
+                    zdo.Set(OwnerHash, owner.GetZDOID());
+                    zdo.Set(ZDOVars.s_rodOwner, owner.GetZDOID().UserID);
+                    string bait = ammo != null && ammo.m_dropPrefab != null ? ammo.m_dropPrefab.name : null;
+                    if (bait == null)
+                    {
+                        Humanoid h = owner as Humanoid;
+                        ItemDrop.ItemData a = h != null ? h.GetAmmoItem() : null;
+                        bait = a != null && a.m_dropPrefab != null ? a.m_dropPrefab.name : FishController.LastBait(owner);
+                    }
+                    if (bait != null) zdo.Set(ZDOVars.s_bait, bait);
+                    Transform tip = FindChild(owner.transform, "_RodTop");
+                    if (tip == null)
+                    {
+                        Warn("no rod tip (_RodTop) on " + owner.m_name + " - the float can't be used");
+                        nv.Destroy();
+                        return false;
+                    }
+                    if (__instance.m_rodLine != null) __instance.m_rodLine.SetPeer(owner.GetZDOID());
+                    LineLength(__instance) = Vector3.Distance(tip.position, __instance.transform.position);
+                    CompanionsPlugin.Log?.LogDebug("[Fish] Float out " + LineLength(__instance).ToString("F0") + " m, bait " + (bait ?? "?") + (ammo == null ? " (the cast came without its ammo)" : ""));
+                    return false;
                 }
-                catch (Exception e) { CompanionsPlugin.Log?.LogDebug("[Fish] float setup: " + e.Message); }
+                catch (Exception e)
+                {
+                    Warn("float setup: " + e.GetType().Name + ": " + e.Message);
+                    try { ZNetView nv = NView(__instance); if (nv != null && nv.IsValid()) nv.Destroy(); } catch { }
+                    return false;
+                }
             }
+        }
+
+        static float s_nextWarn;
+        static void Warn(string msg)
+        {
+            if (Time.time < s_nextWarn) return;
+            s_nextWarn = Time.time + 10f;
+            CompanionsPlugin.Log?.LogWarning("[Fish] " + msg);
+        }
+
+        static Transform FindChild(Transform t, string name)
+        {
+            if (t.name == name) return t;
+            for (int i = 0; i < t.childCount; i++)
+            {
+                Transform r = FindChild(t.GetChild(i), name);
+                if (r != null) return r;
+            }
+            return null;
         }
 
         [HarmonyPatch(typeof(FishingFloat), "GetOwner")]
