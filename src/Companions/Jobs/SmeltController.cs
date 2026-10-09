@@ -1000,7 +1000,7 @@ public class SmeltController : MonoBehaviour
 			return false;
 		}
 		Vector3 position = base.transform.position;
-		return new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.2f;
+		return new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.5f;   // 1.4.135: same height rule as the movement's "arrived"
 	}
 
 	private float MoveDist => _hasApproach ? 0.5f : UseDistance;

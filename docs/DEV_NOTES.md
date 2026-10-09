@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.135 - from the planting test (log 73d58004 - still v1.4.133)
+- User: paused for a few while planting, then fine; everything else fine.
+- Log (1.4.133 build, before part 1): "next plant spot at (-268.1, 38.4, -322.6)" with the companion at (-267.8, 39.3, -320.8): 1.8 m flat, 0.9 m down = 2.03 m 3D. MHR_Mover arrival (flat <= 2, |dy| <= 1.5) -> Halt, no more [Move] lines; FarmController.UpdateMovingToPlantSpot checks Vector3.Distance < UseDistance (2) -> kept "moving"; the old 10 s timer aborted and blacklisted the spot. With 1.4.134's 120 s leg timeout it would have waited two minutes.
+- Fix: Farm's plant-spot and pickable moves also arrive when MHR_Nav.Move* returned true (_moveArrived, cleared in ResetStuck and on arrival). Smelt AtSpot / Cook OnSpot height tolerance 1.2 -> 1.5 m to match the mover's arrival rule.
+
 ### 1.4.134 - movement phase 4, part 1 (user, 2026-10-09)
 - User (1.4.133 test: "most everything is working" - honey collected from 3 hives, no mod warnings): move on to the last part of the rebuild - removing the old movement code from the jobs. Confirmed: phase 4 = delete the old per-job stuck code, DoorHandler and the old steering fallbacks now that every job moves with MHR_Mover.
 - Part 1 (this version): FarmController.UpdateStuckDetection, SmeltController.UpdateStuckDetection and CookController.CheckStuck now only give a leg up on MHR_Mover.GaveUp or MHR_Nav.LegTimeout (120 s per leg, the timer restarts when the target moves > 1.5 m / the leg name changes). Gone: Farm's "moved < 0.5 m in a second" timer (counted door/stamina waits as stuck), Smelt's and Cook's closest-distance timers and their fields. MHR_Nav.MoveWalk (no callers since 1.4.117) removed.

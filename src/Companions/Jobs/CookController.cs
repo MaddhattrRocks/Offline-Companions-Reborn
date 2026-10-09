@@ -1452,7 +1452,7 @@ public partial class CookController : MonoBehaviour
 	private bool OnSpot(float dist)
 	{
 		Vector3 position = base.transform.position;
-		return dist <= UseReach + 1.5f && new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.2f;
+		return dist <= UseReach + 1.5f && new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.5f;   // 1.4.135: as the movement's "arrived"
 	}
 
 	private static bool FarEnough(float dist)

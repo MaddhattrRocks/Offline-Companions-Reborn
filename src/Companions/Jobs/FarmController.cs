@@ -73,6 +73,8 @@ public class FarmController : MonoBehaviour
 
 	private float _stuckTimer;
 
+	private bool _moveArrived;
+
 	private bool _chestOpened;
 
 	private bool _allDoneNotified;
@@ -378,8 +380,10 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetPickable.transform.position);
-		if (num < UseDistance)
+		// 1.4.135: or wherever the movement says it has arrived (it measures flat, up to 1.5 m up/down)
+		if (num < UseDistance || _moveArrived)
 		{
+			_moveArrived = false;
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetPickable.transform.position);
 			_phase = FarmPhase.Harvesting;
@@ -390,6 +394,7 @@ public class FarmController : MonoBehaviour
 		{
 			_shouldRun = num > 8f;
 			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _targetPickable.transform.position, UseDistance, _shouldRun);
+			_moveArrived = moveOk;
 			LogMovement(dt, "pickable", num, moveOk);
 			UpdateStuckDetection(dt, "pickable");
 		}
@@ -556,8 +561,11 @@ public class FarmController : MonoBehaviour
 		if (!(_doorHandler != null) || !_doorHandler.IsActive)
 		{
 			float num = Vector3.Distance(base.transform.position, _plantPosition);
-			if (num < UseDistance)
+			// 1.4.135: or wherever the movement says it has arrived. 1.4.133 test: the plant spot was 1.8 m away and 0.9 m
+			// down (2.03 m straight-line, just over UseDistance): the movement had arrived and stopped, Farm kept waiting.
+			if (num < UseDistance || _moveArrived)
 			{
+				_moveArrived = false;
 				_ai.StopMoving();
 				_ai.LookAtPoint(_plantPosition);
 				_phase = FarmPhase.Planting;
@@ -568,6 +576,7 @@ public class FarmController : MonoBehaviour
 			{
 				_shouldRun = num > 8f;
 				bool moveOk = MHR_Nav.MovePlant(_ai, dt, _plantPosition, UseDistance, _shouldRun);
+				_moveArrived = moveOk;
 				LogMovement(dt, "plant spot", num, moveOk);
 				UpdateStuckDetection(dt, "plant spot");
 			}
@@ -1114,6 +1123,7 @@ public class FarmController : MonoBehaviour
 	private void ResetStuck()
 	{
 		_stuckTimer = 0f;
+		_moveArrived = false;
 	}
 
 	private bool PackNearlyFull()
