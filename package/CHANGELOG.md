@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.115
+- The fisher may stand on a rock again, like a player, as long as there's something to stand on.
+- If it falls off its spot it gets back on; if it falls into the water with a fish on the line, the fish is lost; and if it falls off the same spot twice it fishes from somewhere else for a while.
+
 ## 1.4.114
 - The fisher may stand in shallow water (up to about waist deep) to fish, but prefers dry land.
 - It only fishes from firm footing: level ground at least half a meter all round, so no more hopping onto a small rock and falling off when it casts.

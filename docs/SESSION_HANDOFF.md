@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.114 pushed, not yet tested (1.4.86-1.4.114 on the branch, no PR yet)
+## Current state: 1.4.115 pushed, not yet tested (1.4.86-1.4.115 on the branch, no PR yet)
+- 1.4.115: rock tops allowed again, falls handled (back on / lost fish / avoid the spot after two falls).
 - 1.4.113 test: fishing works really well (user). 1.4.114: wading spots, firm footing, shorter casts preferred.
 - 1.4.112 test: only 1 fishing place mapped (too strict). 1.4.113 relaxes MapShore.
 - 1.4.111 test: stuck floating (swim corner bug), fished from the water. 1.4.112 fixes both, spots off the edge.

@@ -427,12 +427,12 @@ public class FishController : MonoBehaviour
 					continue;
 				}
 				bool wet = top.y < wl + 0.1f;
-				// firm footing: level ground 0.5 m round it, none of it deep water (user: "0.5 m of space would be plenty";
-				// 1.4.113 test: hopped onto a small rock to get closer and fell off it when it cast)
+				// footing: something to stand on 0.3 m round it, none of it deep water. A rock top is fine (user: a player
+				// would balance on a rock too); a point it can't stand on isn't. Falls are handled (see Fell).
 				bool firm = true;
 				for (int k = 0; k < 4 && firm; k++)
 				{
-					Vector3 q = top + Quaternion.Euler(0f, k * 90f, 0f) * Vector3.forward * 0.5f;
+					Vector3 q = top + Quaternion.Euler(0f, k * 90f, 0f) * Vector3.forward * 0.3f;
 					firm = Top(q, wl, out var qt) && Mathf.Abs(qt.y - top.y) < 0.4f && qt.y > wl - WadeDepth;
 				}
 				if (!firm)
@@ -488,6 +488,37 @@ public class FishController : MonoBehaviour
 	// 1.4.114: up to here in the water is fine to stand in (about waist deep is where it would start swimming)
 	private const float WadeDepth = 0.8f;
 
+	// 1.4.115: spots it fell off twice are left alone for a while
+	private readonly Dictionary<Vector3Int, int> _falls = new Dictionary<Vector3Int, int>();
+
+	private readonly Dictionary<Vector3Int, float> _badSpot = new Dictionary<Vector3Int, float>();
+
+	private static Vector3Int Cell(Vector3 p)
+	{
+		return new Vector3Int(Mathf.RoundToInt(p.x), Mathf.RoundToInt(p.y), Mathf.RoundToInt(p.z));
+	}
+
+	private void Fell(string when)
+	{
+		ReelOff();
+		Vector3Int c = Cell(_stand);
+		_falls.TryGetValue(c, out var n);
+		_falls[c] = ++n;
+		if (n >= 2)
+		{
+			_badSpot[c] = Time.time + 300f;
+			_falls.Remove(c);
+			Log("Fell off its fishing spot again (" + when + ") - trying somewhere else");
+			Enter(FishState.Idle);
+			_scanTimer = 0.5f;
+		}
+		else
+		{
+			LogDebug("Fell off its fishing spot (" + when + ") - getting back on");
+			Enter(FishState.Moving);
+		}
+	}
+
 	private bool SpotFor(Fish fish, out Vector3 stand)
 	{
 		return SpotFor(fish, out stand, out _);
@@ -507,6 +538,10 @@ public class FishController : MonoBehaviour
 		bool found = false;
 		foreach (Shore sh in _shore)
 		{
+			if (_badSpot.TryGetValue(Cell(sh.Stand), out var badUntil) && Time.time < badUntil)
+			{
+				continue;
+			}
 			float d = Flat(sh.Stand, target);
 			if (d < 2f || d > MaxCast)
 			{
@@ -652,8 +687,7 @@ public class FishController : MonoBehaviour
 		// back to the bank first
 		if (_character.IsSwimming() || Flat(base.transform.position, _stand) > 2.5f || base.transform.position.y < _stand.y - 1.2f)
 		{
-			LogDebug("Not on the fishing spot any more - going back to it");
-			Enter(FishState.Moving);
+			Fell("before casting");
 			return;
 		}
 		// 1.4.111: rest before casting until stamina is nearly full (user: "they should wait to cast until their stamina
@@ -757,11 +791,9 @@ public class FishController : MonoBehaviour
 	private void UpdateWaiting()
 	{
 		_ai.StopMoving();
-		if (_character.IsSwimming())
+		if (_character.IsSwimming() || base.transform.position.y < _stand.y - 1.2f)
 		{
-			LogDebug("Fell in - reeling in and getting out");
-			ReelOff();
-			Enter(FishState.Moving);
+			Fell("waiting for a bite");
 			return;
 		}
 		FishingFloat ff = MHR_FishingFloat.Of(_character);
@@ -826,6 +858,18 @@ public class FishController : MonoBehaviour
 	private void UpdateReeling()
 	{
 		_ai.StopMoving();
+		if (_character.IsSwimming())
+		{
+			// can't reel while swimming - the fish is lost, like for a player
+			if (_hooked != null)
+			{
+				Log("Fell in with a " + _hookedName + " on the line - lost it");
+			}
+			_hooked = null;
+			_hookedName = null;
+			Fell("reeling");
+			return;
+		}
 		FishingFloat ff = MHR_FishingFloat.Of(_character);
 		if (ff == null)
 		{

@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.115 - rocks are fine (user, 2026-10-09)
+- User: balancing on a rock is something a player would do - fine; just reduce falling off and behave correctly when it does.
+- MapShore footing: 4 points 0.3 m round (was 0.5 m), level within 0.4 m, not deep water - rock tops count again, needle points don't.
+- FishController.Fell(when): reel off; count falls per spot (1 m cell); first fall -> back to the spot (Moving); second -> spot skipped for 5 min, choose again. Called from Casting (swimming / off the spot / > 1.2 m below it), Waiting (swimming or below the spot), Reeling (swimming: the fish is lost - no reeling while swimming, as for a player).
+
 ### 1.4.114 - from the 1.4.113 test (log 0c222470)
 - User: "It did really well this time. Really really well." Thoughts: it jumped on a rock to get closer to the fish and fell in, then fell off the rock when it cast. Standing in the water a little is fine, not enough to swim (less than waist deep), prefer dry land; 0.5 m of space is plenty; prefer casting to closer fish.
 - Log (v1.4.113): "Mapped 79 places", walked straight to a spot, casts of 10-24 m, hooked Pike/Perch/Pike/Perch, two got away, caught a Pike and a Perch, rested between casts (stamina 5-30 of ~75).
