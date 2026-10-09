@@ -341,7 +341,7 @@ public partial class UpkeepController
 	// growing the row into the main path; next to a wall or the back of the furnace is fine, by its ports isn't).
 	//  - rejected: narrows a walkway (something 0.1-1.6 m away on a side - too tight to walk past), or within reach of
 	//    a door, portal, bed, chair, smelter/kiln port, crafting station, cooking spot, fermenter, beehive or chest
-	//  - better: sides backed by a wall, another pile or something solid; on top of a pile is fine too
+	//  - better: sides backed by a wall, another pile or something solid (never on top of a pile - 1.4.132)
 	//  - a little worse the further it is from the piles it's next to
 	private bool PileSpot(PileKind k)
 	{
@@ -368,8 +368,7 @@ public partial class UpkeepController
 				new Vector3(half.x * 2f + 0.02f, 0f, 0f),
 				new Vector3(-half.x * 2f - 0.02f, 0f, 0f),
 				new Vector3(0f, 0f, half.z * 2f + 0.02f),
-				new Vector3(0f, 0f, -half.z * 2f - 0.02f),
-				new Vector3(0f, half.y * 2f + 0.02f, 0f)
+				new Vector3(0f, 0f, -half.z * 2f - 0.02f)
 			};
 			for (int i = 0; i < offsets.Length; i++)
 			{
@@ -379,12 +378,9 @@ public partial class UpkeepController
 				{
 					continue;
 				}
-				bool top = i == 4;
-				if (top && pos.y + center.y + half.y - GroundBelow(pos) > 3.2f)
-				{
-					continue;   // not stacked higher than it can reach
-				}
-				if (!SpotFree(k, pos, rot) || (!top && !Supported(pos, rot, center, half)))
+				// 1.4.132: never on top of another pile - 1.4.131 test: a Stone Pile put on top of one broke (piles can't
+				// carry each other); only beside, on the ground or floor
+				if (!SpotFree(k, pos, rot) || !Supported(pos, rot, center, half))
 				{
 					continue;
 				}
@@ -393,21 +389,13 @@ public partial class UpkeepController
 					rejectedUse++;
 					continue;
 				}
-				float score = 0f;
-				if (top)
+				int backed;
+				if (!SidesOk(pile, pos, rot, center, half, out backed))
 				{
-					score = 1.5f;
+					rejectedPath++;
+					continue;
 				}
-				else
-				{
-					int backed;
-					if (!SidesOk(pile, pos, rot, center, half, out backed))
-					{
-						rejectedPath++;
-						continue;
-					}
-					score = backed * 2f;
-				}
+				float score = backed * 2f;
 				score -= Vector3.Distance(pos, piles[0].transform.position) * 0.05f;
 				if (score > bestScore)
 				{
@@ -672,6 +660,10 @@ public partial class UpkeepController
 		if (!Physics.Raycast(bottom + Vector3.up * 0.5f, Vector3.down, out hit, 1.0f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain")))
 		{
 			return false;
+		}
+		if (IsPile(hit.collider.GetComponentInParent<Piece>()))
+		{
+			return false;   // 1.4.132: resting on another pile breaks it
 		}
 		return Mathf.Abs(hit.point.y - bottom.y) <= 0.3f;
 	}

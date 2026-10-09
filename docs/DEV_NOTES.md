@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.132 - from the 1.4.131 test (log cb20727b)
+- User: mostly working; a Stone Pile placed on top of another pile broke - they can't be stacked.
+- Log: piles beside each other at y 35.3, then "Pile spot (-284.7, 36.8, -328.7) (score 1.4)" - the on-top candidate (1.5 m up); built twice there (the first attempt was interrupted by gear repair). Take-down worked: "Chests are down to 79 Wood (keeping 100) - taking down the Wood Stack", 50 Wood put back.
+- PileSpot: the on-top offset is gone; Supported() also rejects a spot whose support under the bottom is another pile.
+
 ### 1.4.131 - Cook stokes fires and the oven (user, 2026-10-09)
 - User: Repair and Restock shouldn't fill kilns, only fires - confirmed (PlanFuel only looks at Fireplace; kilns/smelters are Smelter, the oven is a CookingStation). Cook should refill fires and ovens, only enough to cook with (25-50%).
 - New Jobs/CookFuel.cs (CookController partial). HeatSources: ovens (CookingStation m_useFuel) and Fireplaces within 2.5 m of a CookingStation with m_requireFire or a cooking CraftingStation with m_craftRequireFire (spit, iron cooking station, cauldron). StokeTask (priority after rescue/tap/hive, before food): fuel < half of FuelTarget (ceil(max x FuelLevel), min 1) or < 1 -> TaskKind.Stoke (fetch the fuel, walk to the fire / the oven's fuel switch, consume + RPC_AddFuel one at a time up to FuelTarget) - or, with none in the pack or chests, TaskKind.Pile (CookPhase.TakingPile with MHR_PileTaker, then rescan). Grill's oven top-up now goes to FuelTarget (was a flat 3). [Cooking] FuelLevel 0.5, UsePiles on.
