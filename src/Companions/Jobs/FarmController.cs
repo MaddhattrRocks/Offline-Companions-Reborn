@@ -188,6 +188,7 @@ public class FarmController : MonoBehaviour
 	private void OnDestroy()
 	{
 		UnclaimPickable();
+		CloseAnyOpenChest();
 	}
 
 	private void UnclaimPickable()
@@ -203,11 +204,14 @@ public class FarmController : MonoBehaviour
 	{
 		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
 		{
+			// 1.4.150: a chest it had open is closed while it's away (the lid stayed open)
+			CloseAnyOpenChest();
 			return;
 		}
 		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
 		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
+			CloseAnyOpenChest();
 			return;
 		}
 		if (ShouldAbort())
@@ -494,6 +498,12 @@ public class FarmController : MonoBehaviour
 			Abort("chest destroyed while taking seeds");
 			return;
 		}
+		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
+		if (!_chestOpened && _targetChest.IsInUse())
+		{
+			Abort("someone has the chest open");
+			return;
+		}
 		if (!_chestOpened)
 		{
 			_targetChest.SetInUse(inUse: true);
@@ -529,7 +539,12 @@ public class FarmController : MonoBehaviour
 			if (!(itemData?.m_dropPrefab == null) && !(itemData.m_dropPrefab.name != _seedPrefabToTake))
 			{
 				int num3 = Mathf.Min(itemData.m_stack, _seedAmountToTake - num);
-				if (!inventory2.HaveEmptySlot() && inventory2.GetItem(itemData.m_shared.m_name) == null)
+				// 1.4.150: only as many as really fit (a part stack with no free slot lost the rest from the chest)
+				while (num3 > 0 && !inventory2.CanAddItem(itemData, num3))
+				{
+					num3--;
+				}
+				if (num3 <= 0)
 				{
 					Log($"  No inventory space — stopping at {num} seeds");
 					break;
@@ -668,6 +683,12 @@ public class FarmController : MonoBehaviour
 			{
 				_chestOpened = false;
 			}
+			_phase = FarmPhase.Scanning;
+			return;
+		}
+		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
+		if (!_chestOpened && _outputChest.IsInUse())
+		{
 			_phase = FarmPhase.Scanning;
 			return;
 		}
@@ -1651,6 +1672,17 @@ public class FarmController : MonoBehaviour
 		{
 			Log("No seeds left — cannot plant");
 			return;
+		}
+		// 1.4.150: the spot may have been planted since it was picked (two farmers in one zone) - look again
+		int near = Physics.OverlapSphereNonAlloc(pos, info.GrowRadius * 0.5f, _spacingBuffer, _spaceMask);
+		for (int i = 0; i < near; i++)
+		{
+			Collider c = _spacingBuffer[i];
+			if (c != null && (c.GetComponent<Plant>() != null || c.GetComponent<Pickable>() != null || c.GetComponent<Piece>() != null))
+			{
+				Log($"Something was planted at {pos:F1} meanwhile — picking another spot");
+				return;
+			}
 		}
 		RemoveItemByPrefab(inventory, info.SeedPrefabName, 1);
 		MHR_SeedRules.OnPlanted(this, info.SeedPrefabName);

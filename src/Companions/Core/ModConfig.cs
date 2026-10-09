@@ -664,16 +664,18 @@ internal static class ModConfig
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));
 		TombstoneNavTimeout = Bind(cfg, "Advanced", "TombstoneNavTimeout", 120f, "Death: seconds a companion keeps trying to get to its tombstone before giving up.", new AcceptableValueRange<float>(10f, 600f));
 
-		// 1.4.149: settings moved/renamed in the config clean-up keep the values players set; leftovers are removed
-		MigrateAndClean(cfg);
+		// 1.4.149: settings moved/renamed in the config clean-up keep the values players set; leftovers are removed.
+		// 1.4.150: the fix-ups below only run on such an upgrade (a file from before the clean-up), not on every start -
+		// "*" for ForageItems or 40/90 for the view are fine choices once someone makes them on purpose.
+		bool upgraded = MigrateAndClean(cfg);
 		// 1.4.149: ViewRange/ViewAngle were never applied (20 m / 120 were hard-coded); a file still holding the old
 		// unused defaults (40 / 90) gets the values companions have always really used, so nothing changes in game
-		if (Mathf.Approximately(ViewRange.Value, 40f) && Mathf.Approximately(ViewAngle.Value, 90f))
+		if (upgraded && Mathf.Approximately(ViewRange.Value, 40f) && Mathf.Approximately(ViewAngle.Value, 90f))
 		{
 			ViewRange.Value = 20f;
 			ViewAngle.Value = 120f;
 		}
-		if (ForageItems.Value.Trim() == "*")
+		if (upgraded && ForageItems.Value.Trim() == "*")
 		{
 			ForageItems.Value = (string)ForageItems.DefaultValue;
 		}
@@ -763,14 +765,14 @@ internal static class ModConfig
 	// BepInEx keeps every line of the .cfg it doesn't have a setting for ("orphaned") and writes it back on every save.
 	// Values under an old name are copied to the new setting, then all leftovers (old names, removed settings, the old
 	// Homestead and Door sections) are dropped and the file is saved clean.
-	private static void MigrateAndClean(ConfigFile cfg)
+	private static bool MigrateAndClean(ConfigFile cfg)
 	{
 		try
 		{
 			Dictionary<ConfigDefinition, string> orphans = AccessTools.Property(typeof(ConfigFile), "OrphanedEntries")?.GetValue(cfg, null) as Dictionary<ConfigDefinition, string>;
 			if (orphans == null || orphans.Count == 0)
 			{
-				return;
+				return false;
 			}
 			int moved = 0;
 			foreach (string[] m in s_moved)
@@ -792,10 +794,12 @@ internal static class ModConfig
 			orphans.Clear();
 			cfg.Save();
 			CompanionsPlugin.Log?.LogInfo($"[Config] Cleaned up the config file: {moved} setting(s) moved to their new names, {dropped} old line(s) removed");
+			return true;
 		}
 		catch (Exception ex)
 		{
 			CompanionsPlugin.Log?.LogWarning("[Config] Couldn't clean up old settings: " + ex.Message);
+			return false;
 		}
 	}
 

@@ -1060,6 +1060,8 @@ public class CompanionInteract : MonoBehaviour
 			if (IsOwned(item, localId) && MHR_InScope(item))
 			{
 				CompanionRest.MHR_StayAwakeForRecall(item);
+				// 1.4.150: you set Follow yourself - a job that had paused it no longer turns it back on/off later
+				MHR_JobRules.FollowSetByPlayer(item);
 				if (!item.GetFollow())
 				{
 					item.SetFollow(v: true);
@@ -1704,7 +1706,10 @@ public class CompanionInteract : MonoBehaviour
 			if (component2?.GetZDO() != null && component2.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
 			{
 				component2.GetZDO().Set(CompanionSetup.ActionModeHash, 0);
+				// 1.4.150: the job's off - Follow comes back if the job had turned it off (same rule as the wheel)
+				MHR_JobRules.OnJobSet(setup, 0);
 			}
+			setup.GetComponent<DoorHandler>()?.Cancel();
 			setup.GetComponent<HarvestController>()?.NotifyActionModeChanged();
 			CompanionRest component3 = setup.GetComponent<CompanionRest>();
 			if (component3 != null)
@@ -1826,6 +1831,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		setup.GetComponent<HarvestController>()?.CancelDirectedTarget();
+		setup.GetComponent<DoorHandler>()?.Cancel();
 		RepairController component3 = setup.GetComponent<RepairController>();
 		if (component3 != null && component3.IsActive)
 		{
@@ -1853,6 +1859,7 @@ public class CompanionInteract : MonoBehaviour
 			if (component?.GetZDO() != null)
 			{
 				component.GetZDO().Set(CompanionSetup.ActionModeHash, 0);
+				MHR_JobRules.OnJobSet(setup, 0);
 				if (companionTalk == null)
 				{
 					companionTalk = setup.GetComponent<CompanionTalk>();

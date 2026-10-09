@@ -24,6 +24,13 @@ internal static class WaterSafety
 
 	private static FieldInfo _characterField;
 
+	// 1.4.150: heading for the shore to get out of the water - jobs wait (they pulled it back out and it could drown)
+	internal static bool Active(Component c)
+	{
+		Character ch = c != null ? c.GetComponent<Character>() : null;
+		return ch != null && _shoreTarget.ContainsKey(ch.GetInstanceID());
+	}
+
 	internal static bool Tick(BaseAI ai, float dt)
 	{
 		try

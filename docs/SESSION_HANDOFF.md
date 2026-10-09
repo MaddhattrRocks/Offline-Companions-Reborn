@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.149 pushed, not yet tested (1.4.147 tested good). PR #6 open (1.4.141+). Next: test the config migration, then release prep (README highlights, public repo).
+## Current state: 1.4.150 pushed, not yet tested (1.4.147 tested good; 1.4.149 config being checked by the user). PR #6 open (1.4.141+). Next: test, then release blockers A-C from the audit (multiplayer ownership, chest ownership/wards, piles) - see DEV_NOTES BACKLOG - then release prep.
+- 1.4.150: full-mod conflict audit - 14 groups of fixes (steering, items, follow flags, chests, patches).
 - 1.4.149: config clean-up - regrouped sections, old values carried over, 22 dead settings removed, descriptions rewritten, [Advanced] section, ViewRange/ViewAngle work.
 - 1.4.148: ship seats no longer kinematic (no Unity warning flood while seated on a ship).
 - 1.4.147: all jobs (and Upkeep, Idle) also wait for ship boarding, the door command and ordered sit/sleep.

@@ -272,7 +272,8 @@ public static class CombatPatches
 	{
 		private static bool Prefix(Character character)
 		{
-			if (character == null || character.IsPlayer())
+			// 1.4.150: companions only - it blocked every creature's ground effects (and Aoe.OnHit uses the result)
+			if (character == null || character.IsPlayer() || character.GetComponent<CompanionSetup>() == null)
 			{
 				return true;
 			}

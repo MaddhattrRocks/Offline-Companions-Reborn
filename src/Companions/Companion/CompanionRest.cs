@@ -907,9 +907,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && Player.m_localPlayer != null ? Player.m_localPlayer.gameObject : null);
 			}
 		}
 	}
@@ -976,6 +977,21 @@ public class CompanionRest : MonoBehaviour
 
 	internal static bool MHR_ShouldPauseWork(Component c)
 	{
+		// 1.4.150: also while swimming for the shore, seated on a ship, or sitting by a fire
+		if (c != null && WaterSafety.Active(c))
+		{
+			return true;
+		}
+		CompanionAI shipAi = c != null ? c.GetComponent<CompanionAI>() : null;
+		if (shipAi != null && shipAi.IsOnShip)
+		{
+			return true;
+		}
+		CompanionRest sitting = c != null ? c.GetComponent<CompanionRest>() : null;
+		if (sitting != null && sitting._isSitting)
+		{
+			return true;
+		}
 		if (!MHR_ToolKeeper.IsBusy(c))
 		{
 			if (!(c == null))
@@ -1071,9 +1087,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && Player.m_localPlayer != null ? Player.m_localPlayer.gameObject : null);
 			}
 		}
 	}
@@ -1132,9 +1149,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && Player.m_localPlayer != null ? Player.m_localPlayer.gameObject : null);
 			}
 		}
 	}
@@ -1198,9 +1216,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && Player.m_localPlayer != null ? Player.m_localPlayer.gameObject : null);
 			}
 		}
 	}

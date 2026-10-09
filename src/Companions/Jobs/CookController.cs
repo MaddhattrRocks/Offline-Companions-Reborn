@@ -1487,6 +1487,12 @@ public partial class CookController : MonoBehaviour
 
 	private bool OpenChest(Container chest, float dt)
 	{
+		// 1.4.150: someone has this chest open - leave it (the task is dropped and planned again later)
+		if (!_chestOpen && chest.IsInUse())
+		{
+			Abort("someone has the chest open");
+			return false;
+		}
 		if (!_chestOpen)
 		{
 			chest.SetInUse(inUse: true);

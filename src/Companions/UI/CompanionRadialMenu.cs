@@ -1726,6 +1726,7 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		bool flag = !_companion.GetFollow();
 		_companion.SetFollow(flag);
+		MHR_JobRules.FollowSetByPlayer(_companion);
 		if (flag)
 		{
 			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off. 1.4.94: except Hunt, which

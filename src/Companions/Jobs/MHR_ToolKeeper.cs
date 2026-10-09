@@ -133,6 +133,8 @@ namespace Companions
 
             if (st.Phase != 0) { UpdateTrip(cs, st, ai, hum, inv, zdo, mode, now, dt); return; }
             if (now < st.NextDecide) return;
+            // 1.4.150: no new trip while an order is being carried out (starting one released the order's route)
+            if (MHR_JobRules.OtherOrder(cs)) return;
             st.NextDecide = now + 1f;
 
             CompanionRest rest = cs.GetComponent<CompanionRest>();
@@ -257,7 +259,7 @@ namespace Companions
 
         static void EndTrip(CompanionSetup cs, State st, CompanionAI ai, int mode)
         {
-            if (st.Chest != null) { try { st.Chest.SetInUse(false); } catch { } }
+            // 1.4.150: no SetInUse(false) here - the trip never sets it, and clearing it hid the player's open chest from the others
             st.Phase = 0; st.Chest = null; st.Station = null; st.ReturnEntry = null; st.NeedMove = false;
             ai.StopMoving();
             MHR_Mover.Release(ai);
@@ -876,6 +878,14 @@ namespace Companions
         {
             return mode == CompanionSetup.ModeHunt || mode == CompanionSetup.ModeGatherWood || mode == CompanionSetup.ModeGatherStone ||
                    mode == CompanionSetup.ModeGatherOre || mode == CompanionSetup.ModeForage;
+        }
+
+        // 1.4.150: the player switched Follow on/off themselves - forget that a job had paused it
+        public static void FollowSetByPlayer(CompanionSetup cs)
+        {
+            ZNetView nv = cs != null ? cs.GetComponent<ZNetView>() : null;
+            ZDO zdo = nv != null ? nv.GetZDO() : null;
+            if (zdo != null && zdo.GetBool(FollowPausedHash)) zdo.Set(FollowPausedHash, false);
         }
 
         public static void OnJobSet(CompanionSetup cs, int mode)

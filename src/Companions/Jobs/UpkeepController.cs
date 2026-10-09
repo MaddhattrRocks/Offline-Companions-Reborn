@@ -93,6 +93,11 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			Stop();
 			EndIdleChore();
+			// 1.4.150: cut short with fuel (or the like) still in the pack - it goes back with the next bag-emptying at home
+			if (_carried.Count > 0)
+			{
+				MHR_ToolKeeper.RequestUnload(_setup);
+			}
 		}
 	}
 

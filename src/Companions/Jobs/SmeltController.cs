@@ -148,6 +148,7 @@ public class SmeltController : MonoBehaviour
 	private void OnDestroy()
 	{
 		UnclaimSmelter();
+		CloseAnyOpenChest();
 	}
 
 	private void UnclaimSmelter()
@@ -163,11 +164,14 @@ public class SmeltController : MonoBehaviour
 	{
 		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
 		{
+			// 1.4.150: a chest it had open is closed while it's away (the lid stayed open)
+			CloseAnyOpenChest();
 			return;
 		}
 		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
 		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
+			CloseAnyOpenChest();
 			return;
 		}
 		if (ShouldAbort())
@@ -513,6 +517,12 @@ public class SmeltController : MonoBehaviour
 			Abort("chest destroyed while taking");
 			return;
 		}
+		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
+		if (!_chestOpened && _targetChest.IsInUse())
+		{
+			Abort("someone has the chest open");
+			return;
+		}
 		if (!_chestOpened)
 		{
 			_targetChest.SetInUse(inUse: true);
@@ -657,9 +667,17 @@ public class SmeltController : MonoBehaviour
 			}
 			else
 			{
+				// 1.4.150: out of the pack first - it used to add to the smelter even when the item was no longer there
+				// (e.g. a tool trip had put it back in a chest), duplicating it
+				if (!ConsumeOneFromInventory(_carryingItemPrefab))
+				{
+					Log($"No {_carryingItemPrefab} left in the pack ({_carryingAmount} expected) — rescanning");
+					_carryingAmount = 0;
+					_phase = SmeltPhase.Scanning;
+					return;
+				}
 				component.InvokeRPC("RPC_AddFuel");
 				_targetSmelter.m_fuelAddedEffects.Create(_targetSmelter.transform.position, _targetSmelter.transform.rotation, _targetSmelter.transform, 1f, -1, ZDOID.None);
-				ConsumeOneFromInventory(_carryingItemPrefab);
 				_carryingAmount--;
 				Log($"Inserted fuel — {_carryingAmount} remaining");
 			}
@@ -675,10 +693,16 @@ public class SmeltController : MonoBehaviour
 			}
 			return;
 		}
+		if (!ConsumeOneFromInventory(_carryingItemPrefab))
+		{
+			Log($"No {_carryingItemPrefab} left in the pack ({_carryingAmount} expected) — rescanning");
+			_carryingAmount = 0;
+			_phase = SmeltPhase.Scanning;
+			return;
+		}
 		component.InvokeRPC("RPC_AddOre", _carryingItemPrefab, false);
 		_targetSmelter.m_oreAddedEffects.Create(_targetSmelter.transform.position, _targetSmelter.transform.rotation, null, 1f, -1, ZDOID.None);
 		s_addedOreTime?.SetValue(_targetSmelter, Time.time);
-		ConsumeOneFromInventory(_carryingItemPrefab);
 		_carryingAmount--;
 		Log($"Inserted ore {_carryingItemPrefab} — {_carryingAmount} remaining");
 	}
@@ -809,6 +833,13 @@ public class SmeltController : MonoBehaviour
 				_chestOpened = false;
 			}
 			Log("Output chest gone — back to scanning");
+			_phase = SmeltPhase.Scanning;
+			return;
+		}
+		// 1.4.150: someone has this chest open - don't take it over (items changing in their open chest window)
+		if (!_chestOpened && _outputChest.IsInUse())
+		{
+			Log("Someone has the output chest open — back to scanning");
 			_phase = SmeltPhase.Scanning;
 			return;
 		}
@@ -1506,21 +1537,21 @@ public class SmeltController : MonoBehaviour
 		return false;
 	}
 
-	private void ConsumeOneFromInventory(string prefabName)
+	private bool ConsumeOneFromInventory(string prefabName)
 	{
 		Inventory inventory = _humanoid?.GetInventory();
 		if (inventory == null)
 		{
-			return;
+			return false;
 		}
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
 			if (allItem?.m_dropPrefab != null && allItem.m_dropPrefab.name == prefabName)
 			{
-				inventory.RemoveItem(allItem, 1);
-				break;
+				return inventory.RemoveItem(allItem, 1);
 			}
 		}
+		return false;
 	}
 
 	private static Vector3 GetSmelterOutputPoint(Smelter smelter)

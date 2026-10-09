@@ -1521,6 +1521,8 @@ public class CompanionSetup : MonoBehaviour
 				zDO.Set(MHR_TombItemsHash, inventory4.NrOfItems());
 			}
 			CompanionTombstoneResurrect.WriteRespawnData(zDO, prefabName, companionName, appearance, ownerId, actionMode, actionModeSchema, follow, stayHome, autoPickup, wander, commandable, formationSlot, skillsSerialized, hasHome, homePos, combatStance, hasHomeBed, homeBedPos, inventorySerialized);
+			// 1.4.150: also whether its job had turned Follow off (so turning the job off after a respawn turns it back on)
+			zDO.Set(CompanionTombstoneResurrect.RespawnFollowPausedHash, _nview?.GetZDO()?.GetBool(CompanionTombstoneResurrect.FollowPausedByJobHash) ?? false);
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
 			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");

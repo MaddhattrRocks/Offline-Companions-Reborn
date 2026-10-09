@@ -57,7 +57,8 @@ public static class SleepPatches
 		private static void Postfix()
 		{
 			Player localPlayer = Player.m_localPlayer;
-			if (localPlayer == null || !localPlayer.InBed())
+			// 1.4.150: only the host's game holds the night skip for companions - elsewhere the message was wrong
+			if (localPlayer == null || !localPlayer.InBed() || ZNet.instance == null || !ZNet.instance.IsServer())
 			{
 				return;
 			}

@@ -1363,7 +1363,13 @@ public class CompanionAI : BaseAI
 			{
 				Vector3 position5 = PendingDepositContainer.transform.position;
 				float num7 = Vector3.Distance(base.transform.position, position5);
-				if (num7 < 2f)
+				if (num7 < 2f && !_depositChestOpen && PendingDepositContainer.IsInUse())
+				{
+					// 1.4.150: someone has the chest open - drop the deposit order, it's planned again later
+					CompanionsPlugin.Log.LogInfo("[Deposit] Someone has the chest open - trying again later");
+					CancelPendingDeposit();
+				}
+				else if (num7 < 2f)
 				{
 					StopMoving();
 					LookAtPoint(position5);

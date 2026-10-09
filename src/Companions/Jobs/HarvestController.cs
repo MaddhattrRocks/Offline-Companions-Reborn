@@ -592,7 +592,16 @@ public class HarvestController : MonoBehaviour
 
 	private void Update()
 	{
-		if (CompanionRest.MHR_ShouldPauseWork(this) || MHR_GatherRules.TickDodge(this) || _nview == null || !_nview.IsOwner())
+		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || !_nview.IsOwner())
+		{
+			return;
+		}
+		// 1.4.150: loot pickup and orders come before the stone-pile walk / tree dodge (they all steer)
+		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
+		{
+			return;
+		}
+		if (MHR_GatherRules.TickDodge(this))
 		{
 			return;
 		}
@@ -619,6 +628,12 @@ public class HarvestController : MonoBehaviour
 			EnterGatherMode();
 		}
 		UpdateAnchor(mode);
+		// 1.4.150: in a fight it fights - going overweight mid-fight used to send it to a chest with its back to the enemy
+		if (_ai != null && _ai.IsInCombat)
+		{
+			RestoreLoadout();
+			return;
+		}
 		if (IsOverweight())
 		{
 			if (!(_ai != null) || !(_ai.PendingDepositContainer != null))

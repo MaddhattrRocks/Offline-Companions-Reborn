@@ -148,7 +148,7 @@ public class FishController : MonoBehaviour
 		}
 		if (GetMode() != 9)
 		{
-			if (_state != FishState.Idle)
+			if (_state != FishState.Idle || _rodOut)
 			{
 				ReelOff();
 				_state = FishState.Idle;
@@ -171,7 +171,7 @@ public class FishController : MonoBehaviour
 		if (_combatAI != null && _combatAI.IsEngaged)
 		{
 			// a fight: the float is lost when it swings anyway; start over afterwards
-			if (_state != FishState.Idle)
+			if (_state != FishState.Idle || _rodOut)
 			{
 				ReelOff();
 				_state = FishState.Idle;
@@ -773,6 +773,7 @@ public class FishController : MonoBehaviour
 		if (_setup != null)
 		{
 			_setup.SuppressAutoEquip = true;
+			_rodOut = true;
 		}
 		if (_humanoid.GetCurrentWeapon() != rod)
 		{
@@ -1198,8 +1199,12 @@ public class FishController : MonoBehaviour
 		return n;
 	}
 
+	// 1.4.150: the rod is in hand (stays out between casts) - put it away whenever the job stops, not only mid-cast
+	private bool _rodOut;
+
 	private void RestoreGear()
 	{
+		_rodOut = false;
 		ReelOff();
 		if (_humanoid != null)
 		{

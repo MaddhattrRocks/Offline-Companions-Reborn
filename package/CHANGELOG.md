@@ -2,6 +2,28 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.150
+- Fixed: a patch meant only for companions stopped every creature's attacks from leaving effects on the ground.
+- Fixed: Smelt could put ore or fuel into a smelter that was no longer in its pack (duplicating it).
+- Fixed: waking up, or getting up from the fire, made a worker whose job turned Follow off follow you out of the base.
+- Fixed: a hunter walking home with its catch barely fought back when attacked on the way.
+- Fixed: the open-door order couldn't be replaced by a new order and ran during fights and loot pickup.
+- Fixed: a gathering companion going over its carry weight in a fight walked to a chest with its back to the enemy.
+- Fixed: the walk to the stone pile and the step aside from a falling tree ignored orders and loot pickup.
+- Fixed: after switching away from Fish between casts the companion kept the rod in hand and stopped equipping new gear.
+- Fixed: a second companion could sit down in the chair an idling companion was already sitting in.
+- Fixed: a companion's tombstone didn't float in water or get moved back up if it fell through the ground.
+- Fixed: Cancel and leaving a gathering job didn't turn Follow back on; setting Follow yourself is now remembered over the job's own switch.
+- Fixed: jobs and idling kept going while seated on a ship, swimming for the shore, or sitting by a fire.
+- Fixed: jobs took over a chest you had open (items changing in your chest window) and could clear its "in use" mark.
+- Fixed: Smelt and Farm left a chest lid open when they were interrupted.
+- Fixed: tool trips could start in the middle of an order; idle chatting could follow you away from the job.
+- Fixed: an idle chore cut short kept its fuel in the pack; Farm could lose seeds from the chest with a nearly full pack.
+- Fixed: two farmers in one field could plant on the same spot; the bow could flicker while stalking a bird.
+- Fixed: after a death and respawn, turning the job off didn't turn Follow back on.
+- The "waiting for companions" sleep message only shows on the host, where companions actually hold the night skip.
+- The one-time config fix-ups (ForageItems "*", old ViewRange/ViewAngle) only run when upgrading an old config file.
+
 ## 1.4.149
 - Config clean-up: settings regrouped into clear sections (General, Controls, Follow, Movement, Combat, Food, Stamina, Rest, Death, Looting, GearRepair, one per job, Idle, Speech, Advanced).
 - Settings that moved or were renamed keep the values you set - they're carried over automatically the first time you load in.
