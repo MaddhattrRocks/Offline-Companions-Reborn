@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.128 pushed, not yet tested (1.4.86-1.4.128 on the branch, no PR yet)
+## Current state: 1.4.129 pushed, not yet tested (1.4.86-1.4.129 on the branch, no PR yet)
+- 1.4.129: piles refill the chests (taken down below PileKeep); pile spots scored (no walkways, not by doors/ports/stations, backed by walls preferred).
 - 1.4.127 test: piles work; Forage stuttered after fights (loot pickup and the job both steering) - 1.4.128 makes every job wait for the loot pickup.
 - 1.4.127: pile contents count toward the gather jobs' limits.
 - 1.4.126: Repair and Restock builds wood/stone piles next to existing ones (PileKeep 100 stays in chests).

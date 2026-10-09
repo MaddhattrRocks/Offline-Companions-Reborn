@@ -81,6 +81,14 @@ public partial class UpkeepController
 					from = c;
 				}
 			}
+			// 1.4.129: the other way round (user: piles are a resource too) - chests below the amount kept: take a pile down
+			// and put the material back in the chests. Not while it's still carrying some, and only with room for it.
+			int carried;
+			_carried.TryGetValue(k.Shared, out carried);
+			if (total + carried < keep && carried == 0 && PlanTakeDown(k, total, keep, chests))
+			{
+				return true;
+			}
 			int piles = (total - keep) / Mathf.Max(1, k.Cost);
 			if (piles <= 0 || from == null)
 			{
@@ -329,12 +337,25 @@ public partial class UpkeepController
 
 	// ---- where: right beside (or on top of) one of the same kind ----
 
+	// 1.4.129: every free spot beside (or on top of) a pile of this kind gets a score and the best wins (user: it kept
+	// growing the row into the main path; next to a wall or the back of the furnace is fine, by its ports isn't).
+	//  - rejected: narrows a walkway (something 0.1-1.6 m away on a side - too tight to walk past), or within reach of
+	//    a door, portal, bed, chair, smelter/kiln port, crafting station, cooking spot, fermenter, beehive or chest
+	//  - better: sides backed by a wall, another pile or something solid; on top of a pile is fine too
+	//  - a little worse the further it is from the piles it's next to
 	private bool PileSpot(PileKind k)
 	{
 		Vector3 me = base.transform.position;
 		List<Piece> piles = new List<Piece>(k.Piles);
 		piles.RemoveAll(p => p == null);
 		piles.Sort((a, b) => Vector3.Distance(me, a.transform.position).CompareTo(Vector3.Distance(me, b.transform.position)));
+		if (piles.Count > 24)
+		{
+			piles.RemoveRange(24, piles.Count - 24);
+		}
+		float bestScore = float.MinValue;
+		bool found = false;
+		int rejectedPath = 0, rejectedUse = 0;
 		foreach (Piece pile in piles)
 		{
 			Vector3 center, half;
@@ -358,23 +379,171 @@ public partial class UpkeepController
 				{
 					continue;
 				}
-				if (i == 4 && offsets[i].y + half.y * 2f > 3.2f)
+				bool top = i == 4;
+				if (top && pos.y + center.y + half.y - GroundBelow(pos) > 3.2f)
 				{
 					continue;   // not stacked higher than it can reach
 				}
-				if (!SpotFree(k, pos, rot))
+				if (!SpotFree(k, pos, rot) || (!top && !Supported(pos, rot, center, half)))
 				{
 					continue;
 				}
-				if (i < 4 && !Supported(pos, rot, center, half))
+				if (NearUsedThing(pos + rot * center, half))
 				{
+					rejectedUse++;
 					continue;
 				}
-				_pileSpot = pos;
-				_pileRot = rot;
-				_pileNextTo = pile;
+				float score = 0f;
+				if (top)
+				{
+					score = 1.5f;
+				}
+				else
+				{
+					int backed;
+					if (!SidesOk(pile, pos, rot, center, half, out backed))
+					{
+						rejectedPath++;
+						continue;
+					}
+					score = backed * 2f;
+				}
+				score -= Vector3.Distance(pos, piles[0].transform.position) * 0.05f;
+				if (score > bestScore)
+				{
+					bestScore = score;
+					_pileSpot = pos;
+					_pileRot = rot;
+					_pileNextTo = pile;
+					found = true;
+				}
+			}
+		}
+		if (!found && rejectedPath + rejectedUse > 0)
+		{
+			Log("Every spot beside the " + MHR_List.Local(k.Shared) + " piles would be in the way (" + rejectedPath + " in a walkway, " + rejectedUse + " by a door, station, port or chest)");
+		}
+		else if (found)
+		{
+			LogDebug("Pile spot " + MHR_Mover.Fmt(_pileSpot) + " (score " + bestScore.ToString("F1") + ")");
+		}
+		return found;
+	}
+
+	private static float GroundBelow(Vector3 p)
+	{
+		RaycastHit hit;
+		if (Physics.Raycast(p + Vector3.up * 0.2f, Vector3.down, out hit, 10f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain")))
+		{
+			return hit.point.y;
+		}
+		return p.y;
+	}
+
+	// each open side: something within 0.1 m = backed (good), 0.1-1.6 m = a gap too narrow to walk through (in the way),
+	// further = open. Checked at knee and chest height.
+	private static bool SidesOk(Piece neighbour, Vector3 pos, Quaternion rot, Vector3 center, Vector3 half, out int backed)
+	{
+		backed = 0;
+		Vector3 mid = pos + rot * center;
+		Vector3[] dirs = { rot * Vector3.right, rot * Vector3.left, rot * Vector3.forward, rot * Vector3.back };
+		float[] reach = { half.x, half.x, half.z, half.z };
+		int mask = LayerMask.GetMask("Default", "static_solid", "piece", "terrain", "vehicle");
+		for (int d = 0; d < 4; d++)
+		{
+			float gap = float.MaxValue;
+			foreach (float hgt in new[] { 0.4f, 1.2f })
+			{
+				Vector3 from = new Vector3(mid.x, pos.y + hgt, mid.z) + dirs[d] * (reach[d] + 0.01f);
+				RaycastHit hit;
+				if (Physics.Raycast(from, dirs[d], out hit, 1.6f, mask) && !hit.collider.isTrigger)
+				{
+					Piece hp = hit.collider.GetComponentInParent<Piece>();
+					if (hp != null && hp == neighbour)
+					{
+						gap = 0f;
+						continue;
+					}
+					gap = Mathf.Min(gap, hit.distance);
+				}
+			}
+			if (gap <= 0.1f)
+			{
+				backed++;
+			}
+			else if (gap < 1.6f)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// too close to something people walk up to and use
+	private static bool NearUsedThing(Vector3 mid, Vector3 half)
+	{
+		float r = Mathf.Max(half.x, half.z) + 1.6f;
+		foreach (Collider c in Physics.OverlapSphere(mid, r + 1f, LayerMask.GetMask("Default", "piece", "piece_nonsolid", "static_solid", "vehicle")))
+		{
+			if (c == null)
+			{
+				continue;
+			}
+			Vector3 at;
+			float need;
+			if (UsePoint(c, out at, out need) && Vector3.Distance(new Vector3(at.x, mid.y, at.z), mid) < Mathf.Max(half.x, half.z) + need)
+			{
 				return true;
 			}
+		}
+		return false;
+	}
+
+	// where a thing is used from and how much room that needs
+	private static bool UsePoint(Collider c, out Vector3 at, out float need)
+	{
+		at = c.transform.position;
+		need = 0f;
+		Smelter sm = c.GetComponentInParent<Smelter>();
+		if (sm != null)
+		{
+			// the sides with the ports, not the back
+			float best = float.MaxValue;
+			foreach (Switch sw in new[] { sm.m_addOreSwitch, sm.m_addWoodSwitch, sm.m_emptyOreSwitch })
+			{
+				if (sw == null)
+				{
+					continue;
+				}
+				float d = Vector3.Distance(c.ClosestPoint(sw.transform.position), sw.transform.position);
+				if (d < best)
+				{
+					best = d;
+					at = sw.transform.position;
+				}
+			}
+			need = 1.6f;
+			return best < float.MaxValue;
+		}
+		if (c.GetComponentInParent<Door>() != null || c.GetComponentInParent<TeleportWorld>() != null)
+		{
+			at = c.GetComponentInParent<Piece>() != null ? c.GetComponentInParent<Piece>().transform.position : at;
+			need = 2.0f;
+			return true;
+		}
+		Component used = (Component)c.GetComponentInParent<Bed>() ?? (Component)c.GetComponentInParent<Chair>() ?? (Component)c.GetComponentInParent<CraftingStation>() ?? (Component)c.GetComponentInParent<CookingStation>() ?? (Component)c.GetComponentInParent<Fermenter>() ?? (Component)c.GetComponentInParent<Beehive>() ?? (Component)c.GetComponentInParent<Fireplace>();
+		if (used != null)
+		{
+			at = used.transform.position;
+			need = 1.4f;
+			return true;
+		}
+		Container box = c.GetComponentInParent<Container>();
+		if (box != null && box.GetComponentInParent<Character>() == null)
+		{
+			at = box.transform.position;
+			need = 1.0f;
+			return true;
 		}
 		return false;
 	}
@@ -505,5 +674,251 @@ public partial class UpkeepController
 			return false;
 		}
 		return Mathf.Abs(hit.point.y - bottom.y) <= 0.3f;
+	}
+}
+
+// 1.4.129: taking a pile down to refill the chests - the hammer's remove, like a player: the piece breaks, the material
+// drops (or lands in the little loot box some piles leave), it's picked up and then put back in the chests.
+public partial class UpkeepController
+{
+	private Piece _downPile;
+
+	private float _downAt;
+
+	private bool PlanTakeDown(PileKind k, int total, int keep, List<Container> chests)
+	{
+		bool room = false;
+		foreach (Container c in chests)
+		{
+			if (RoomInByName(c, k.Shared))
+			{
+				room = true;
+				break;
+			}
+		}
+		if (!room)
+		{
+			return false;
+		}
+		// the top of a stack first, then the nearest
+		Vector3 me = base.transform.position;
+		Piece best = null;
+		float bestScore = float.MaxValue;
+		foreach (Piece p in k.Piles)
+		{
+			if (p == null || Skipped(p) || !p.m_canBeRemoved || !PrivateArea.CheckAccess(p.transform.position, 0f, flash: false))
+			{
+				continue;
+			}
+			float score = Vector3.Distance(me, p.transform.position) - (p.transform.position.y - GroundBelow(p.transform.position + Vector3.down * 0.05f)) * 20f;
+			if (score < bestScore)
+			{
+				bestScore = score;
+				best = p;
+			}
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		_pile = k;
+		_downPile = best;
+		Log("Chests are down to " + total + " " + MHR_List.Local(k.Shared) + " (keeping " + keep + ") - taking down the " + MHR_List.Local(best.m_name) + " at " + MHR_Mover.Fmt(best.transform.position));
+		Enter(Step.PileDown);
+		return true;
+	}
+
+	private static bool RoomInByName(Container c, string shared)
+	{
+		Inventory inv = c.GetInventory();
+		if (inv.GetEmptySlots() > 0)
+		{
+			return true;
+		}
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it.m_shared.m_name == shared && it.m_stack < it.m_shared.m_maxStackSize)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void UpdatePileDown()
+	{
+		PileKind k = _pile;
+		Piece pile = _downPile;
+		if (k == null || pile == null || pile.GetComponent<ZNetView>() == null || !pile.GetComponent<ZNetView>().IsValid())
+		{
+			_pile = null;
+			Done("The pile is gone");
+			return;
+		}
+		ItemDrop.ItemData hammer = Hammer();
+		if (hammer == null)
+		{
+			_pile = null;
+			Done("No working hammer - can't take a pile down");
+			return;
+		}
+		Vector3 me = base.transform.position;
+		WearNTear w = pile.GetComponent<WearNTear>();
+		Vector3 aim = pile.transform.position + Vector3.up * 0.4f;
+		bool inReach = w != null ? PieceInReach(me, w, out aim) : PointInReach(me, aim, pile);
+		if (!inReach)
+		{
+			if (Time.time - _stepStart > GiveUp)
+			{
+				_pile = null;
+				Skip(pile, 600f, "Couldn't get within reach of the pile to take it down");
+				return;
+			}
+			if (!Approach(pile.transform.position, pile))
+			{
+				_pile = null;
+				Skip(pile, 600f, "No way to get to the pile");
+				return;
+			}
+			if (!_arrived)
+			{
+				_arrivedAt = 0f;
+			}
+			else if (_arrivedAt == 0f)
+			{
+				_arrivedAt = Time.time;
+			}
+			else if (Time.time - _arrivedAt > 3f)
+			{
+				_pile = null;
+				Skip(pile, 600f, "Can't reach the pile from where it can stand");
+			}
+			return;
+		}
+		_ai.StopMoving();
+		MHR_Mover.Release(_ai);
+		if (!_humanoid.IsItemEquiped(hammer))
+		{
+			_setup.SuppressAutoEquip = true;
+			_holdingHammer = true;
+			_humanoid.EquipItem(hammer);
+			_nextAct = Time.time + 0.6f;
+			return;
+		}
+		_ai.LookAtPoint(aim);
+		if (Time.time < _nextAct || _character.InAttack() || !_ai.IsLookingAtPoint(aim, 15f))
+		{
+			return;
+		}
+		// the game's checks for removing a piece: its crafting station in range, ward access, allowed right now
+		bool noBench = ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(GlobalKeys.NoWorkbench);
+		if (!noBench && pile.m_craftingStation != null && CraftingStation.HaveBuildStationInRange(pile.m_craftingStation.m_name, me) == null)
+		{
+			_pile = null;
+			Skip(pile, 600f, "No " + MHR_List.Local(pile.m_craftingStation.m_name) + " in range to take the pile down");
+			return;
+		}
+		if (!pile.CanBeRemoved())
+		{
+			_pile = null;
+			Skip(pile, 120f, "The pile can't be taken down right now");
+			return;
+		}
+		Vector3 at = pile.transform.position;
+		ZNetView nv = pile.GetComponent<ZNetView>();
+		if (!nv.IsOwner())
+		{
+			nv.ClaimOwnership();
+		}
+		pile.GetComponent<IRemoved>()?.OnRemoved();
+		if (w != null)
+		{
+			w.Remove();
+		}
+		else
+		{
+			pile.DropResources();
+			pile.m_placeEffect.Create(at, pile.transform.rotation, pile.transform, 1f, -1, _character.GetZDOID());
+			ZNetScene.instance.Destroy(pile.gameObject);
+		}
+		string anim = hammer.m_shared.m_attack?.m_attackAnimation;
+		GetComponent<ZSyncAnimation>()?.SetTrigger(!string.IsNullOrEmpty(anim) ? anim : "swing_hammer");   // removing costs no stamina or wear, as for a player
+		k.Piles.Remove(pile);
+		Log("Took down the " + MHR_List.Local(pile.m_name) + " at " + MHR_Mover.Fmt(at));
+		_downAt = Time.time;
+		_spot = at;
+		_downPile = null;
+		Enter(Step.PileCollect);
+		_spot = at;
+	}
+
+	// pick up what fell out (and empty a loot box if the pile left one)
+	private void UpdatePileCollect()
+	{
+		PileKind k = _pile;
+		if (k == null || Time.time - _stepStart > 30f)
+		{
+			_pile = null;
+			Done(null);   // whatever was picked up goes back in the chests with the next put-away
+			return;
+		}
+		if (Time.time - _downAt < 0.6f)
+		{
+			return;
+		}
+		Inventory bag = _humanoid.GetInventory();
+		Vector3 me = base.transform.position;
+		ItemDrop nearest = null;
+		float nd = float.MaxValue;
+		foreach (Collider c in Physics.OverlapSphere(_spot, 4f))
+		{
+			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
+			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == k.Shared && bag.CanAddItem(d.m_itemData, 1))
+			{
+				float dist = Vector3.Distance(me, d.transform.position);
+				if (dist < nd)
+				{
+					nd = dist;
+					nearest = d;
+				}
+				continue;
+			}
+			Container box = c != null ? c.GetComponentInParent<Container>() : null;
+			if (box != null && box.GetComponent<Piece>() == null && box.GetComponentInParent<Character>() == null && box.GetInventory() != null && box.GetInventory().CountItems(k.Shared) > 0 && Vector3.Distance(me, box.transform.position) < 2.5f)
+			{
+				ZNetView bnv = box.GetComponent<ZNetView>();
+				if (bnv != null && !bnv.IsOwner())
+				{
+					bnv.ClaimOwnership();
+				}
+				GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
+				int got = Move(box.GetInventory(), bag, k.Shared, byName: true, int.MaxValue);
+				Took(k.Shared, got);
+				LogDebug("Took " + got + " " + MHR_List.Local(k.Shared) + " out of what the pile left");
+				return;
+			}
+		}
+		if (nearest == null)
+		{
+			_pile = null;
+			Done(null);
+			return;
+		}
+		if (nd > 1.5f)
+		{
+			MHR_Nav.Move(_ai, Time.deltaTime, nearest.transform.position, 1.0f, run: false, Tag);
+			return;
+		}
+		if (!nearest.CanPickup())
+		{
+			nearest.RequestOwn();
+			_ai.StopMoving();
+			return;
+		}
+		int n = nearest.m_itemData.m_stack;
+		if (_humanoid.Pickup(nearest.gameObject, autoequip: false, autoPickupDelay: false))
+		{
+			Took(k.Shared, n);
+		}
 	}
 }

@@ -30,6 +30,8 @@ public partial class UpkeepController : MonoBehaviour
 		Stow,
 		PileTake,
 		PileBuild,
+		PileDown,
+		PileCollect,
 		Home
 	}
 
@@ -206,6 +208,12 @@ public partial class UpkeepController : MonoBehaviour
 		case Step.PileBuild:
 			UpdatePileBuild();
 			break;
+		case Step.PileDown:
+			UpdatePileDown();
+			break;
+		case Step.PileCollect:
+			UpdatePileCollect();
+			break;
 		case Step.Fuel:
 			UpdateFuel();
 			break;
@@ -248,7 +256,7 @@ public partial class UpkeepController : MonoBehaviour
 		_scanTimer = ModConfig.UpkeepScanInterval?.Value ?? 5f;
 		// fuel before putting leftovers back, so fuel fetched for one fire can go in the next one first
 		bool busy = PlanRepair() || PlanFuel() || PlanStow() || PlanPiles() || PlanSort();
-		if (_step != Step.Repair && _step != Step.PileTake && _step != Step.PileBuild)
+		if (_step != Step.Repair && _step != Step.PileTake && _step != Step.PileBuild && _step != Step.PileDown)
 		{
 			PutHammerAway();
 		}
@@ -289,6 +297,7 @@ public partial class UpkeepController : MonoBehaviour
 	private void Stop()
 	{
 		_pile = null;
+		_downPile = null;
 		CloseChest();
 		PutHammerAway();
 		_step = Step.Idle;
