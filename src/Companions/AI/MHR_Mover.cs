@@ -218,7 +218,7 @@ namespace Companions
             }
 
             // 1.4.97: going straight and there's a gap right ahead: leap it
-            if (s.Direct && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(pos, dir))
+            if (s.Direct && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(c, pos, dir))
             {
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
@@ -369,7 +369,7 @@ namespace Companions
                 int hops = 0; s_hopWhy = null;
                 // 1.4.84: also a short way round something low that's in the way (a log, a low wall): a player hops it
                 bool longWay = s.Partial || len > straight * 1.6f + 6f;
-                bool line = straight < 25f && (longWay || len > straight + 2f) && HopLine(pos, goal, out hops);
+                bool line = straight < 25f && (longWay || len > straight + 2f) && HopLine(pos, goal, out hops, c);
                 if (!line && straight < 25f && longWay && s_hopWhy != null && now >= s.NextLineLog)
                 {
                     s.NextLineLog = now + 15f;
@@ -622,7 +622,8 @@ namespace Companions
         // 1.4.97: drops up to General.MaxDrop (3 m - a player takes those without damage) and gaps up to General.JumpGap
         // (jumped with a running leap) are fine too (user: jump across to the beehives instead of down the stairs and round)
         static string s_hopWhy;
-        static bool HopLine(Vector3 from, Vector3 to, out int hops)
+        static bool HopLine(Vector3 from, Vector3 to, out int hops) { return HopLine(from, to, out hops, null); }
+        static bool HopLine(Vector3 from, Vector3 to, out int hops, Character c)
         {
             hops = 0; s_hopWhy = null;
             float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
@@ -650,6 +651,8 @@ namespace Companions
                 {
                     // landing after a jump: not higher than we can jump up to while leaping across
                     if (rise > 0.3f) { s_hopWhy = "the far side of the gap at " + Fmt(p) + " is too high"; return false; }
+                    // 1.4.98: and within what this companion can jump right now (speed, Jump skill, stamina)
+                    if (c != null && (!MHR_Jump.CanAfford(c) || gap + 0.6f > MHR_Jump.Reach(c, d, rise))) { s_hopWhy = "the gap at " + Fmt(p) + " is too wide to jump" + (MHR_Jump.CanAfford(c) ? "" : " (out of stamina)"); return false; }
                     hops++; gap = 0f;
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
@@ -667,7 +670,7 @@ namespace Companions
         }
 
         // 1.4.97: on a straight line, a gap right in front with ground on the other side: running leap across
-        static bool GapAhead(Vector3 pos, Vector3 dir)
+        static bool GapAhead(Character c, Vector3 pos, Vector3 dir)
         {
             float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
             float maxGap = ModConfig.JumpGap != null ? ModConfig.JumpGap.Value : 1.5f;
@@ -678,7 +681,7 @@ namespace Companions
             {
                 Vector3 q = pos + dir * x;
                 if (Physics.Raycast(q + Vector3.up * 1.5f, Vector3.down, out hit, 1.5f + maxDrop, Mask()))
-                    return hit.point.y < pos.y + 0.3f && MHR_Water.DepthAt(hit.point) < 0.8f;
+                    return hit.point.y < pos.y + 0.3f && MHR_Water.DepthAt(hit.point) < 0.8f && MHR_Jump.CanAfford(c) && x <= MHR_Jump.Reach(c, dir, hit.point.y - pos.y);
             }
             return false;
         }
@@ -842,7 +845,8 @@ namespace Companions
                 if (waterAt >= 0f && depth > lim) swim = true;
             }
             if (waterAt < 0f) return false;
-            if (landAt > 0f && landAt - waterAt <= maxGap && landAt <= maxGap + 1.5f && MHR_Water.GroundAt(pos + dir * landAt) < pos.y + 1.0f)
+            float landY = landAt > 0f ? MHR_Water.GroundAt(pos + dir * landAt) : pos.y;
+            if (landAt > 0f && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
@@ -868,14 +872,8 @@ namespace Companions
             return false;
         }
 
-        static void Leap(CompanionAI ai, Character c, Vector3 dir, float speed)
-        {
-            ai.transform.rotation = Quaternion.LookRotation(dir);
-            c.SetRun(true);
-            c.Jump(false);
-            Rigidbody rb = ai.GetComponent<Rigidbody>();
-            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * speed; v.z = dir.z * speed; rb.velocity = v; }
-        }
+        // 1.4.98: its own run speed, Jump skill and stamina (MHR_Jump)
+        static void Leap(CompanionAI ai, Character c, Vector3 dir, float speed) { MHR_Jump.Leap(ai, c, dir); }
 
         static bool FindShore(Character c, Vector3 pos, Vector3 goal, out Vector3 best)
         {
