@@ -2,6 +2,14 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.117
+- Repair, Restock and Homestead were three wheel jobs that didn't really do the work; they're now one job, "Repair and Restock", that walks over and does each task the way a player would.
+- Repair: with a hammer in hand it walks up to each damaged building piece near home and repairs it with a swing (needs the piece's workbench in range and ward access, and costs stamina and hammer wear like a player). If it has no hammer it fetches one from a chest.
+- Restock: fires, torches and braziers low on fuel are topped up one piece at a time, with fuel from its pack or fetched from a chest; any fuel left over goes back in a chest.
+- New chest sorting: each kind of item is carried to the chest near home that already holds the most of it, and part-stacks are merged (needs a home set; only stackable items unless SortGear is on).
+- New [RepairAndRestock] settings: Repair, RepairBelow, Reach, Restock, FuelBelow, Sort, SortItems (* / Name / -Name), SortGear, AwayRadius, ScanInterval, WorkTime, GiveUp.
+- The Restock and Homestead wheel slots are now "Pending" and do nothing when clicked; companions saved on Restock switch to Repair and Restock, and Homestead is turned off (Wander still lets them move around home).
+
 ## 1.4.116
 - After each catch the fisher casts at the closest fish it wants from where it stands, instead of the one it first picked further out.
 - The first cast of a session no longer goes twice as far as needed (it starts from a full cast reaching about 24 m and keeps learning).

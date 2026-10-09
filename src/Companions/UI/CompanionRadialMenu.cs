@@ -89,7 +89,6 @@ public class CompanionRadialMenu : MonoBehaviour
 
 	private const int ActionRepair = 15;
 
-	private const int ActionRestock = 16;
 
 	private const int ActionCook = 17;
 
@@ -269,7 +268,6 @@ public class CompanionRadialMenu : MonoBehaviour
 
 	private const float RepairRadius = 50f;
 
-	private const float RestockRadius = 50f;
 
 	private const float FuelThreshold = 0.5f;
 
@@ -578,7 +576,6 @@ public class CompanionRadialMenu : MonoBehaviour
 		ZDO zDO = _companionNview?.GetZDO();
 		int num = zDO?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
 		bool follow = _companion.GetFollow();
-		bool stayHome = _companion.GetStayHome();
 		bool wander = _companion.GetWander();
 		bool isActive = zDO?.GetBool(CompanionSetup.AutoPickupHash, defaultValue: true) ?? true;
 		bool isCommandable = _companion.GetIsCommandable();
@@ -667,11 +664,11 @@ public class CompanionRadialMenu : MonoBehaviour
 		}
 		_segments.Add(new Segment
 		{
-			Label = ModLocalization.Loc("hc_radial_stayhome"),
-			ActionId = 10,
-			IsToggle = true,
-			IsActive = stayHome,
-			IconColor = new Color(0.35f, 0.6f, 0.9f)
+			// 1.4.117: Homestead is retired - a free slot for later, does nothing when clicked
+			Label = ModLocalization.Loc("hc_radial_pending"),
+			ActionId = PendingA,
+			IsActive = false,
+			IconColor = new Color(0.45f, 0.45f, 0.45f)
 		});
 		_segments.Add(new Segment
 		{
@@ -723,11 +720,11 @@ public class CompanionRadialMenu : MonoBehaviour
 		});
 		_segments.Add(new Segment
 		{
-			Label = ModLocalization.Loc("hc_radial_restock"),
-			ActionId = 16,
-			IsMode = true,
-			IsActive = (num == 16),
-			IconColor = new Color(0.9f, 0.55f, 0.2f)
+			// 1.4.117: Restock is part of Repair and Restock now - a free slot for later, does nothing when clicked
+			Label = ModLocalization.Loc("hc_radial_pending"),
+			ActionId = PendingB,
+			IsActive = false,
+			IconColor = new Color(0.45f, 0.45f, 0.45f)
 		});
 		_innerSegments.Clear();
 		int combatStance = _companion.GetCombatStance();
@@ -1508,13 +1505,12 @@ public class CompanionRadialMenu : MonoBehaviour
 			case 8:
 			case 9:
 			case 15:
-			case 16:
 			case 17:
 				SetActionMode(segment2.ActionId);
 				break;
-			case 10:
-				ToggleStayHome();
-				break;
+			case PendingA:
+			case PendingB:
+				return;   // 1.4.117: empty slots - no action, nothing said
 			case 11:
 				DoSetHome();
 				break;
@@ -1761,44 +1757,7 @@ public class CompanionRadialMenu : MonoBehaviour
 			_companion.GetComponent<FishController>()?.NotifyActionModeChanged();
 			_companion.GetComponent<CookController>()?.NotifyActionModeChanged();
 			_companion.GetComponent<HuntController>()?.NotifyActionModeChanged();
-			CompanionAI component = _companion.GetComponent<CompanionAI>();
-			if (component != null)
-			{
-				component.ResetRepairBuildState();
-				component.ResetRestockState();
-			}
-		}
-	}
-
-	private void ToggleStayHome()
-	{
-		bool stayHome = _companion.GetStayHome();
-		bool flag = !stayHome;
-		_companion.SetStayHome(flag);
-		if (flag)
-		{
-			_companion.SetFollow(v: false);
-		}
-		if (flag && MHR_JobRules.HasJob(_companion))
-		{
-			SetActionMode(0);
-		}
-		if (flag)
-		{
-			if (!_companion.HasHomePosition())
-			{
-				_companion.SetHomePosition(_companion.transform.position);
-			}
-			if (_companionAI != null)
-			{
-				_companionAI.SetFollowTarget(null);
-				_companionAI.SetPatrolPointAt(_companion.GetHomePosition());
-			}
-		}
-		else
-		{
-			int mode = (_companionNview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
-			_companion.ApplyFollowMode(mode);
+			_companion.GetComponent<UpkeepController>()?.NotifyActionModeChanged();
 		}
 	}
 
@@ -1806,11 +1765,6 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		Vector3 position = _companion.transform.position;
 		_companion.SetHomePosition(position);
-		if (_companion.GetStayHome() && _companionAI != null)
-		{
-			_companionAI.SetFollowTarget(null);
-			_companionAI.SetPatrolPointAt(position);
-		}
 		CompanionSetup companion = _companion;
 		Hide();
 		HomeZonePanel.EnsureInstance();
@@ -1988,123 +1942,6 @@ public class CompanionRadialMenu : MonoBehaviour
 		}
 	}
 
-	private void DoRestock()
-	{
-		if (_companion == null)
-		{
-			return;
-		}
-		Inventory inventory = _companion.GetComponent<Humanoid>()?.GetInventory();
-		if (inventory == null)
-		{
-			return;
-		}
-		Vector3 position = _companion.transform.position;
-		List<Piece> list = new List<Piece>();
-		Piece.GetAllPiecesInRadius(position, 50f, list);
-		int num = 0;
-		int num2 = 0;
-		for (int i = 0; i < list.Count; i++)
-		{
-			Fireplace component = list[i].GetComponent<Fireplace>();
-			if (component == null || !component.m_canRefill || component.m_infiniteFuel || component.m_fuelItem == null)
-			{
-				continue;
-			}
-			ZNetView component2 = component.GetComponent<ZNetView>();
-			if (component2 == null || component2.GetZDO() == null)
-			{
-				continue;
-			}
-			float num3 = component2.GetZDO().GetFloat(ZDOVars.s_fuel);
-			float maxFuel = component.m_maxFuel;
-			if (maxFuel <= 0f)
-			{
-				continue;
-			}
-			float num4 = num3 / maxFuel;
-			if (num4 >= 0.5f)
-			{
-				continue;
-			}
-			string prefabName = component.m_fuelItem.gameObject.name;
-			int num5 = Mathf.Max(1, (int)(maxFuel - num3));
-			int num6 = CountItemInInventory(inventory, prefabName);
-			List<Container> list2 = new List<Container>();
-			FindNearbyContainers(position, 20f, list2);
-			for (int j = 0; j < list2.Count; j++)
-			{
-				if (num6 >= num5)
-				{
-					break;
-				}
-				Inventory inventory2 = list2[j].GetInventory();
-				if (inventory2 == null)
-				{
-					continue;
-				}
-				int a = CountItemInInventory(inventory2, prefabName);
-				int num7 = Mathf.Min(a, num5 - num6);
-				if (num7 <= 0)
-				{
-					continue;
-				}
-				for (int k = 0; k < num7; k++)
-				{
-					ConsumeOneFromInventory(inventory2, prefabName);
-				}
-				GameObject gameObject = ObjectDB.instance?.GetItemPrefab(prefabName);
-				if (gameObject != null)
-				{
-					ItemDrop component3 = gameObject.GetComponent<ItemDrop>();
-					if (component3 != null)
-					{
-						inventory.AddItem(gameObject, num7);
-					}
-				}
-				num6 += num7;
-			}
-			int num8 = Mathf.Min(num5, num6);
-			if (num8 <= 0)
-			{
-				continue;
-			}
-			bool flag = false;
-			for (int l = 0; l < num8; l++)
-			{
-				if (!ConsumeOneFromInventory(inventory, prefabName))
-				{
-					break;
-				}
-				component2.InvokeRPC("RPC_AddFuel");
-				num2++;
-				flag = true;
-			}
-			if (flag)
-			{
-				num++;
-				CompanionsPlugin.Log.LogDebug("[Radial] Restock: added fuel to \"" + component.m_name + "\" " + $"({num3:F0}→{num3 + (float)num8:F0}/{maxFuel:F0})");
-			}
-		}
-		CompanionsPlugin.Log.LogInfo($"[Radial] Restock: refueled {num} fires, {num2} total fuel added");
-		if (num > 0)
-		{
-			ZSyncAnimation component4 = _companion.GetComponent<ZSyncAnimation>();
-			if (component4 != null)
-			{
-				component4.SetTrigger("interact");
-			}
-			if (_companionTalk != null)
-			{
-				_companionTalk.Say(ModLocalization.Loc("hc_speech_restock_done"));
-			}
-		}
-		else if (_companionTalk != null)
-		{
-			_companionTalk.Say(ModLocalization.Loc("hc_speech_restock_nothing"));
-		}
-	}
-
 	private static int CountItemInInventory(Inventory inv, string prefabName)
 	{
 		int num = 0;
@@ -2239,6 +2076,11 @@ public class CompanionRadialMenu : MonoBehaviour
 		return _innerDonutSprite;
 	}
 
+	// 1.4.117: the two empty wheel slots (were Homestead and Restock)
+	private const int PendingA = 40;
+
+	private const int PendingB = 41;
+
 	private static string GetRadialTextureName(int actionId)
 	{
 		return actionId switch
@@ -2249,13 +2091,11 @@ public class CompanionRadialMenu : MonoBehaviour
 			3 => "GatherOre", 
 			5 => "GatherForage", 
 			6 => "Smelt", 
-			10 => "StayHome", 
 			11 => "SetHome", 
 			12 => "Wander", 
 			13 => "AutoPickup", 
 			14 => "Command", 
 			15 => "Repair", 
-			16 => "Restock", 
 			7 => "Hunt", 
 			8 => "Farm", 
 			9 => "Fish", 
@@ -2321,6 +2161,12 @@ public class CompanionRadialMenu : MonoBehaviour
 			DrawLine(array, num, num2 - 2f, num2 - 18f, num2 - 2f, num2 - 2f, color, 6f);
 			DrawLine(array, num, num2 + 18f, num2 - 18f, num2 + 18f, num2 - 2f, color, 6f);
 			DrawLine(array, num, num2 - 2f, num2 - 18f, num2 + 18f, num2 - 18f, color, 6f);
+			break;
+		case PendingA:
+		case PendingB:
+			DrawArc(array, num, num2 - 16f, num2, 3f, 0f, 360f, color, 4f);
+			DrawArc(array, num, num2, num2, 3f, 0f, 360f, color, 4f);
+			DrawArc(array, num, num2 + 16f, num2, 3f, 0f, 360f, color, 4f);
 			break;
 		case 16:
 			DrawLine(array, num, num2, num2 - 28f, num2 - 4f, num2 - 14f, color, 4f);

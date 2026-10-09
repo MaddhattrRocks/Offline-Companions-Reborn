@@ -698,7 +698,7 @@ public class CookController : MonoBehaviour
 
 	private void AddFetch(Task task, string item, int amount)
 	{
-		int inBag = HomesteadController.CountItemInInventory(Bag, item);
+		int inBag = MHR_Items.CountItemInInventory(Bag, item);
 		if (amount > inBag)
 		{
 			task.Fetch.Add(new KeyValuePair<string, int>(item, amount));
@@ -714,7 +714,7 @@ public class CookController : MonoBehaviour
 		}
 		foreach (KeyValuePair<string, int> item in _ledger)
 		{
-			if (item.Value <= 0 || HomesteadController.CountItemInInventory(bag, item.Key) <= 0)
+			if (item.Value <= 0 || MHR_Items.CountItemInInventory(bag, item.Key) <= 0)
 			{
 				continue;
 			}
@@ -781,7 +781,7 @@ public class CookController : MonoBehaviour
 			Abort("no inventory");
 			return;
 		}
-		while (_fetchIndex < _task.Fetch.Count && HomesteadController.CountItemInInventory(bag, _task.Fetch[_fetchIndex].Key) >= _task.Fetch[_fetchIndex].Value)
+		while (_fetchIndex < _task.Fetch.Count && MHR_Items.CountItemInInventory(bag, _task.Fetch[_fetchIndex].Key) >= _task.Fetch[_fetchIndex].Value)
 		{
 			_fetchIndex++;
 			_chest = null;
@@ -793,7 +793,7 @@ public class CookController : MonoBehaviour
 			return;
 		}
 		string item = _task.Fetch[_fetchIndex].Key;
-		int need = _task.Fetch[_fetchIndex].Value - HomesteadController.CountItemInInventory(bag, item);
+		int need = _task.Fetch[_fetchIndex].Value - MHR_Items.CountItemInInventory(bag, item);
 		if (_chest == null)
 		{
 			_chest = ChestWith(item);
@@ -815,8 +815,8 @@ public class CookController : MonoBehaviour
 		int taken = 0;
 		while (taken < need)
 		{
-			ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(inv, item);
-			if (itemData == null || !HomesteadController.TransferOne(inv, bag, itemData))
+			ItemDrop.ItemData itemData = MHR_Items.FindItemByPrefab(inv, item);
+			if (itemData == null || !MHR_Items.TransferOne(inv, bag, itemData))
 			{
 				break;
 			}
@@ -917,7 +917,7 @@ public class CookController : MonoBehaviour
 		Recipe recipe = _task.Recipe;
 		foreach (Piece.Requirement req in recipe.m_resources)
 		{
-			if (req?.m_resItem != null && HomesteadController.CountItemInInventory(bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
+			if (req?.m_resItem != null && MHR_Items.CountItemInInventory(bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
 			{
 				Abort("missing " + Name(req.m_resItem.gameObject.name));
 				return;
@@ -929,7 +929,7 @@ public class CookController : MonoBehaviour
 			{
 				for (int i = 0; i < req2.GetAmount(1); i++)
 				{
-					HomesteadController.ConsumeOneFromInventory(bag, req2.m_resItem.gameObject.name);
+					MHR_Items.ConsumeOneFromInventory(bag, req2.m_resItem.gameObject.name);
 				}
 			}
 		}
@@ -977,7 +977,7 @@ public class CookController : MonoBehaviour
 	{
 		foreach (Piece.Requirement req in recipe.m_resources)
 		{
-			if (req?.m_resItem != null && HomesteadController.CountItemInInventory(Bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
+			if (req?.m_resItem != null && MHR_Items.CountItemInInventory(Bag, req.m_resItem.gameObject.name) < req.GetAmount(1))
 			{
 				return false;
 			}
@@ -998,7 +998,7 @@ public class CookController : MonoBehaviour
 		{
 			string fuel = cooker.m_fuelItem.gameObject.name;
 			int added = 0;
-			while (Fuel(cooker) + added < cooker.m_maxFuel && added < 3 && HomesteadController.ConsumeOneFromInventory(bag, fuel))
+			while (Fuel(cooker) + added < cooker.m_maxFuel && added < 3 && MHR_Items.ConsumeOneFromInventory(bag, fuel))
 			{
 				nv.InvokeRPC("RPC_AddFuel");
 				added++;
@@ -1010,7 +1010,7 @@ public class CookController : MonoBehaviour
 		}
 		int put = 0;
 		int free = CountSlots(cooker, -1);
-		while (put < _task.Count && put < free && HomesteadController.ConsumeOneFromInventory(bag, _task.Item))
+		while (put < _task.Count && put < free && MHR_Items.ConsumeOneFromInventory(bag, _task.Item))
 		{
 			nv.InvokeRPC("RPC_AddItem", _task.Item, false);
 			put++;
@@ -1077,7 +1077,7 @@ public class CookController : MonoBehaviour
 		ZNetView nv = fermenter.GetComponent<ZNetView>();
 		if (_task.Kind == TaskKind.Fill)
 		{
-			if (FermenterState(fermenter) == 0 && HomesteadController.ConsumeOneFromInventory(Bag, _task.Item))
+			if (FermenterState(fermenter) == 0 && MHR_Items.ConsumeOneFromInventory(Bag, _task.Item))
 			{
 				// 1.4.91: the game's fermenter takes the item's hash and a cheated flag (sending the name did nothing -
 				// user: "It never succeeded. The fermenter is still empty.")
@@ -1280,12 +1280,12 @@ public class CookController : MonoBehaviour
 		}
 		foreach (string item in items)
 		{
-			int want = Mathf.Min(LedgerOf(item), HomesteadController.CountItemInInventory(bag, item));
+			int want = Mathf.Min(LedgerOf(item), MHR_Items.CountItemInInventory(bag, item));
 			int moved = 0;
 			while (moved < want)
 			{
-				ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(bag, item);
-				if (itemData == null || !inv.CanAddItem(itemData, 1) || !HomesteadController.TransferOne(bag, inv, itemData))
+				ItemDrop.ItemData itemData = MHR_Items.FindItemByPrefab(bag, item);
+				if (itemData == null || !inv.CanAddItem(itemData, 1) || !MHR_Items.TransferOne(bag, inv, itemData))
 				{
 					break;
 				}
@@ -1551,7 +1551,7 @@ public class CookController : MonoBehaviour
 
 	private static bool HasItem(Inventory inv, string item)
 	{
-		return inv != null && HomesteadController.CountItemInInventory(inv, item) > 0;
+		return inv != null && MHR_Items.CountItemInInventory(inv, item) > 0;
 	}
 
 	private static bool HasCookedFood(Inventory inv)
@@ -1574,14 +1574,14 @@ public class CookController : MonoBehaviour
 	// in the chests in range and the bag
 	private int Count(string item)
 	{
-		int num = HomesteadController.CountItemInInventory(Bag, item);
+		int num = MHR_Items.CountItemInInventory(Bag, item);
 		foreach (Container chest in _chests)
 		{
 			// 1.4.88: only chests it can actually get things from (1.4.88 log: Black Soup tried 13 times for Bloodbag
 			// in a chest it can't reach)
 			if (chest != null && !_unreachable.Contains(chest.GetInstanceID()))
 			{
-				num += HomesteadController.CountItemInInventory(chest.GetInventory(), item);
+				num += MHR_Items.CountItemInInventory(chest.GetInventory(), item);
 			}
 		}
 		return num;
@@ -1978,7 +1978,7 @@ public class CookController : MonoBehaviour
 		List<string> list = null;
 		foreach (KeyValuePair<string, int> item in _ledger)
 		{
-			int num2 = HomesteadController.CountItemInInventory(bag, item.Key);
+			int num2 = MHR_Items.CountItemInInventory(bag, item.Key);
 			if (num2 < item.Value)
 			{
 				if (list == null)
@@ -1994,7 +1994,7 @@ public class CookController : MonoBehaviour
 			// eaten, given away or dropped: forget what's no longer carried
 			foreach (string item2 in list)
 			{
-				int num3 = HomesteadController.CountItemInInventory(bag, item2);
+				int num3 = MHR_Items.CountItemInInventory(bag, item2);
 				if (num3 > 0)
 				{
 					_ledger[item2] = num3;

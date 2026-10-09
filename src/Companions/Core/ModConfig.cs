@@ -324,19 +324,29 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RepairUseDistance;
 
-	internal static ConfigEntry<float> HomesteadScanRadius;
+	internal static ConfigEntry<bool> UpkeepRepair;
 
-	internal static ConfigEntry<float> HomesteadScanInterval;
+	internal static ConfigEntry<float> UpkeepRepairBelow;
 
-	internal static ConfigEntry<float> HomesteadFuelThreshold;
+	internal static ConfigEntry<float> UpkeepReach;
 
-	internal static ConfigEntry<float> HomesteadTaskSlotTime;
+	internal static ConfigEntry<bool> UpkeepRestock;
 
-	internal static ConfigEntry<float> HomesteadSmeltSlotTime;
+	internal static ConfigEntry<float> UpkeepFuelBelow;
 
-	internal static ConfigEntry<float> HomesteadScanBackoff;
+	internal static ConfigEntry<bool> UpkeepSort;
 
-	internal static ConfigEntry<float> HomesteadUseDistance;
+	internal static ConfigEntry<string> UpkeepSortItems;
+
+	internal static ConfigEntry<bool> UpkeepSortGear;
+
+	internal static ConfigEntry<float> UpkeepAwayRadius;
+
+	internal static ConfigEntry<float> UpkeepScanInterval;
+
+	internal static ConfigEntry<float> UpkeepWorkTime;
+
+	internal static ConfigEntry<float> UpkeepGiveUp;
 
 	internal static ConfigEntry<float> RestHealRate;
 
@@ -478,13 +488,18 @@ internal static class ModConfig
 		RepairScanInterval = Bind(cfg, "Repair", "ScanInterval", 5f, "Seconds between repair scans", new AcceptableValueRange<float>(1f, 30f));
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
 		RepairUseDistance = Bind(cfg, "Repair", "UseDistance", 2.5f, "Crafting station interaction range", new AcceptableValueRange<float>(1f, 5f));
-		HomesteadScanRadius = Bind(cfg, "Homestead", "ScanRadius", 40f, "Maintenance scan radius from home position", new AcceptableValueRange<float>(10f, 100f));
-		HomesteadScanInterval = Bind(cfg, "Homestead", "ScanInterval", 5f, "Seconds between maintenance scans", new AcceptableValueRange<float>(1f, 30f));
-		HomesteadFuelThreshold = Bind(cfg, "Homestead", "FuelThreshold", 0.5f, "Refuel fires below this fuel %", new AcceptableValueRange<float>(0.1f, 0.9f));
-		HomesteadTaskSlotTime = Bind(cfg, "Homestead", "TaskSlotTime", 60f, "Seconds per task rotation (repair/refuel/sort)", new AcceptableValueRange<float>(10f, 300f));
-		HomesteadSmeltSlotTime = Bind(cfg, "Homestead", "SmeltSlotTime", 60f, "Seconds for smelting turn in rotation", new AcceptableValueRange<float>(10f, 300f));
-		HomesteadScanBackoff = Bind(cfg, "Homestead", "ScanBackoff", 30f, "Extended scan interval when nothing to do", new AcceptableValueRange<float>(5f, 120f));
-		HomesteadUseDistance = Bind(cfg, "Homestead", "UseDistance", 2f, "Interaction range for fires/chests", new AcceptableValueRange<float>(1f, 5f));
+		UpkeepRepair = Bind(cfg, "RepairAndRestock", "Repair", true, "Repair and Restock: repair damaged building pieces near home with a hammer, like a player (one swing per piece; the piece's crafting station has to be in range and a ward has to allow it; costs stamina and hammer wear). A hammer is fetched from a chest if it has none.");
+		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 1f, "Repair pieces below this much health (1 = any damage at all, 0.5 = only pieces at half health or less).", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepReach = Bind(cfg, "RepairAndRestock", "Reach", 4.5f, "How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.", new AcceptableValueRange<float>(2f, 6f));
+		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest.");
+		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepSort = Bind(cfg, "RepairAndRestock", "Sort", true, "Repair and Restock: sort the chests near home (needs a home set), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.");
+		UpkeepSortItems = Bind(cfg, "RepairAndRestock", "SortItems", "*", "Which items get sorted. Comma-separated: * = everything, Name = this one, -Name = never this one (e.g. *, -Coins, -Wood keeps coins and wood where they are). Prefab or in-game names.");
+		UpkeepSortGear = Bind(cfg, "RepairAndRestock", "SortGear", false, "Also sort things that don't stack (weapons, armor, tools). Off: only stackable items are moved.");
+		UpkeepAwayRadius = Bind(cfg, "RepairAndRestock", "AwayRadius", 30f, "With no home set: how far (meters) from where the job was started it repairs and restocks. With a home, the range is [General] HomeTripRange around home.", new AcceptableValueRange<float>(5f, 100f));
+		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
+		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
+		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
 		CookRange = Bind(cfg, "Cooking", "Range", 25f, "How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests.", new AcceptableValueRange<float>(5f, 60f));
 		CookIngredientReserve = Bind(cfg, "Cooking", "IngredientReserve", 20, "A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.", new AcceptableValueRange<int>(0, 1000));
 		CookFoodTarget = Bind(cfg, "Cooking", "FoodTarget", 20, "Cook a food until the chests in range hold this many of it.", new AcceptableValueRange<int>(1, 1000));
@@ -545,7 +560,7 @@ internal static class ModConfig
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Respawn", "AutoRespawnAtWorldSpawnWhenNoBed", defaultValue: false, "When a companion auto-respawns and has no claimed bed, respawn it at the world spawn stones instead of next to its owner");
 		DeathItemRule = Bind(cfg, "Respawn", "DeathItemRule", 0, "What a companion loses when it dies. 0 = Follow the world's death penalty setting, same as a player. 1 = Keep everything. 2 = Keep equipped gear, drop the rest into the tombstone. 3 = Drop everything into the tombstone. The companion's owner's setting is used even if another player's game handles the death.", new AcceptableValueRange<int>(0, 3));
 		TombstoneRecoveryRange = Bind(cfg, "Respawn", "TombstoneRecoveryRange", 50f, "How close a companion needs to be to their own leftover tombstone before they'll walk over and loot it themselves", new AcceptableValueRange<float>(5f, 100f));
-		SleepAtNight = Bind(cfg, "Sleep", "SleepAtNight", defaultValue: true, "At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working or on Homestead. It goes back to its job in the morning.");
+		SleepAtNight = Bind(cfg, "Sleep", "SleepAtNight", defaultValue: true, "At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working. It goes back to its job in the morning.");
 		SleepWhenPlayerSleeps = Bind(cfg, "Sleep", "SleepWhenPlayerSleeps", defaultValue: true, "When you get into a bed, your companions within BedRange of their claimed beds go to bed too, even in the evening. The night skip waits up to 30 seconds for them.");
 		BedRange = Bind(cfg, "Sleep", "BedRange", 50f, "How close (in meters) a companion has to be to its claimed bed for the sleep rules above to send it to bed", new AcceptableValueRange<float>(10f, 200f));
 		RecallRange = Bind(cfg, "Controls", "RecallRange", 40f, "How close (in meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. Set to 0 for no limit.", new AcceptableValueRange<float>(0f, 500f));

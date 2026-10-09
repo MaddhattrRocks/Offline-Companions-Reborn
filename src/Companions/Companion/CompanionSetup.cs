@@ -313,9 +313,10 @@ public class CompanionSetup : MonoBehaviour
 		return !CompanionTierData.IsDvergerVariant(_nview.GetZDO().GetPrefab());
 	}
 
+	// 1.4.117: Homestead (Stay Home) is retired - its wheel slot is empty now and nothing turns it on
 	internal bool GetStayHome()
 	{
-		return _nview?.GetZDO()?.GetBool(StayHomeHash) == true;
+		return false;
 	}
 
 	internal bool HasHomePosition()
@@ -1265,6 +1266,17 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(WanderHash, value: true);
 			zDO.Set(WanderFollowMigratedHash, value: true);
 			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
+		}
+		// 1.4.117: Restock is part of Repair and Restock now, and Homestead is retired
+		if (zDO.GetInt(ActionModeHash) == ModeRestock)
+		{
+			zDO.Set(ActionModeHash, ModeRepairBuildings);
+			CompanionsPlugin.Log.LogInfo("[Setup] Restock job moved to Repair and Restock");
+		}
+		if (zDO.GetBool(StayHomeHash))
+		{
+			zDO.Set(StayHomeHash, value: false);
+			CompanionsPlugin.Log.LogInfo("[Setup] Homestead is retired - turned off (Wander still lets it move around home)");
 		}
 		// 1.4.78: a job and Follow can't both be on (saves from before have both)
 		int mode = zDO.GetInt(ActionModeHash);

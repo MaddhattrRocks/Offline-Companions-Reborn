@@ -112,9 +112,9 @@ public static class MHR_Diag
 			{
 				text2 += "repair-gear ";
 			}
-			if (Active(cs.GetComponent<HomesteadController>()))
+			if (Active(cs.GetComponent<UpkeepController>()))
 			{
-				text2 += "homestead ";
+				text2 += "repair-restock ";
 			}
 			if (text2.Length == 0)
 			{
@@ -166,7 +166,7 @@ public static class MHR_Diag
 		return c != null && c.IsActive;
 	}
 
-	private static bool Active(HomesteadController c)
+	private static bool Active(UpkeepController c)
 	{
 		return c != null && c.IsActive;
 	}

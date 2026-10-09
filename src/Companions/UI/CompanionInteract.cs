@@ -1721,11 +1721,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				component5.NotifyActionModeChanged();
 			}
-			HomesteadController component6 = setup.GetComponent<HomesteadController>();
-			if (component6 != null && component6.IsActive)
-			{
-				component6.CancelDirected();
-			}
+			setup.GetComponent<UpkeepController>()?.NotifyActionModeChanged();
 		}
 		SayRandom(companionTalk, CancelLines);
 		CompanionsPlugin.Log.LogDebug("[Direct] Cancelled all directed commands");
@@ -1840,11 +1836,7 @@ public class CompanionInteract : MonoBehaviour
 		{
 			component4.CancelDirected();
 		}
-		HomesteadController component5 = setup.GetComponent<HomesteadController>();
-		if (component5 != null && component5.IsActive)
-		{
-			component5.CancelDirected();
-		}
+		setup.GetComponent<UpkeepController>()?.NotifyActionModeChanged();
 	}
 
 	private static void ExitGatherMode(IReadOnlyList<CompanionSetup> setups, string localId)

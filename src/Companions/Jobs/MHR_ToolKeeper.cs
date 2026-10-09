@@ -201,6 +201,8 @@ namespace Companions
                 ItemDrop.ItemData broken = BrokenOfKind(inv, kind, launcher);
                 // 1.4.94: Hunt is bow first, melee second - no bow (or arrows) away from home isn't a reason to stop
                 if (!nearHome && mode == 7) continue;
+                // 1.4.117: Repair and Restock still restocks and sorts without a hammer - not a reason to stop and follow
+                if (!nearHome && mode == 15) continue;
                 if (kind == K_FOOD && !nearHome) continue;   // nice to have, not worth going home for
                 if (!nearHome)
                 {
@@ -713,7 +715,7 @@ namespace Companions
         }
 
         // ---- chests ----
-        static bool UsableChest(Container c)
+        internal static bool UsableChest(Container c)
         {
             if (c == null || c.GetInventory() == null) return false;
             if (c.GetComponent<Character>() != null || c.GetComponentInParent<Character>() != null) return false;

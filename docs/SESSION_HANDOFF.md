@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.116 pushed, not yet tested (1.4.86-1.4.116 on the branch, no PR yet)
+## Current state: 1.4.117 pushed, not yet tested (1.4.86-1.4.117 on the branch, no PR yet)
+- 1.4.117: Repair and Restock job (real repair, refuel, like-with-like chest sorting near home); Restock and Homestead wheel slots are "Pending"; Homestead retired.
 - 1.4.115 test: Fish works (user). 1.4.116: recast at the closest fish, better first cast.
 - 1.4.115: rock tops allowed again, falls handled (back on / lost fish / avoid the spot after two falls).
 - 1.4.113 test: fishing works really well (user). 1.4.114: wading spots, firm footing, shorter casts preferred.
