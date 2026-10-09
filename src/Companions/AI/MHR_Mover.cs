@@ -507,7 +507,9 @@ namespace Companions
                     {
                         Door d = DoorNear(pos, 2.6f);
                         if (d != null) { OpenDoor(ai, c, d, tag); s.NextPlan = now + 0.6f; return; }
-                        Door leaf = OpenLeafAhead(pos, target);
+                        // 1.4.137: any open door right next to us when we're stuck (1.4.136 test: the leaf wasn't on the line to
+                        // the next corner, so the look-ahead missed it and he stood there, then hopped round it)
+                        Door leaf = OpenLeafAhead(pos, target) ?? OpenDoorNear(pos, 2.5f);
                         if (leaf != null) { CloseDoor(ai, c, leaf, tag); s.NextPlan = now + 0.6f; return; }
                         Sidestep(ai, c, s, pos, dir, now, tag, why, true);
                         return;
@@ -1088,6 +1090,25 @@ namespace Companions
                 return d;
             }
             return null;
+        }
+
+        // an open door (any part of it) within range, not one we closed in the last few seconds
+        static Door OpenDoorNear(Vector3 pos, float range)
+        {
+            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_cols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
+            Door best = null; float bd = float.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                Collider col = s_cols[i];
+                Door d = col != null ? col.GetComponentInParent<Door>() : null;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
+                float until;
+                if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;
+                float dd = Vector3.Distance(pos + Vector3.up, col.ClosestPoint(pos + Vector3.up));
+                if (dd < bd) { bd = dd; best = d; }
+            }
+            return best;
         }
 
         static void CloseDoor(CompanionAI ai, Character c, Door d, string tag)

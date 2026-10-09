@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.137
+- Still stuck at the open door: the door's leaf wasn't straight ahead, so the look-ahead missed it. When a companion gets stuck it now closes any open door right next to it (and reopens it from its side if that's the way).
+
 ## 1.4.136
 - Companions got stuck for a moment on a door that was already open towards them (opened from the other side). Like a player, they now close it and, if their way is through it, open it again from their side so it swings away.
 

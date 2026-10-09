@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.137 - from the 1.4.136 test (log eb2f6309)
+- User: the door was already open; got really stuck, then past it and smelted. Turned on Cook - it stood there.
+- Log: DoorHandler "1 doors nearby, 0 valid" (open) at (-274.1, 40.0, -308.1); "[Move|Smelt] stuck (standing still 3s) at (-274.9, 40.0, -310.6)" -> step back, "no closer for 8s" -> hop; no "closed the ..." - OpenLeafAhead's rays towards the next corner didn't hit the leaf.
+- Stuck-ladder step 0: after DoorNear (closed) and OpenLeafAhead, OpenDoorNear (any open door with a collider within 2.5 m of chest height, key/ward/8 s cooldown rules) -> CloseDoor.
+- Cook standing there was its own decision: "Nothing to cook right now" - the focus mead bases need 10 Honey, 15 in reach, 20 kept back (IngredientReserve); no food under its target. (Speech for "why I'm idle" is in the BACKLOG speech overhaul.)
+
 ### 1.4.136 - from the 1.4.135 test (log 371b769a)
 - User: keeps getting stuck on a door for a moment, then works round it quickly; everything else good.
 - Log: twice (Farm, then a tool trip) "[Move|...] stuck (standing still 3s) at (-275.2, 40.0, -310.3) - stepping back to the side", then "no closer for 8s - jumping" on the way down to the lower floor; no "opened ..." line - the door was open (DoorAhead/DoorNear only look for closed doors), its leaf in the way.
