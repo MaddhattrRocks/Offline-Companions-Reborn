@@ -157,7 +157,7 @@ public class CompanionCombatAI : MonoBehaviour
 		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, "Combat", run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
 		if (!there && MHR_Mover.GaveUp(_ai))
 		{
-			return _ai.MoveToPoint(dt, point, dist, run);
+			return _ai.GameMoveTo(dt, point, dist, run);
 		}
 		return there;
 	}

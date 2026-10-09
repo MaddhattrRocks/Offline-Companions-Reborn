@@ -7,7 +7,6 @@ namespace Companions;
 
 internal static class WaterSafety
 {
-	private static MethodInfo _moveToPointMethod;
 
 	private static PropertyInfo _staminaProp;
 
@@ -105,15 +104,13 @@ internal static class WaterSafety
 				return false;
 			}
 			Vector3 vector = (Vector3)_shoreTarget[instanceID];
-			if (_moveToPointMethod == null)
-			{
-				_moveToPointMethod = ai.GetType().GetMethod("MoveToPoint", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-			}
-			if (_moveToPointMethod == null)
+			// 1.4.141 (movement phase 4 part 2): swims for the bank through MHR_Mover (was the old MoveToPoint by reflection)
+			CompanionAI cai = ai as CompanionAI;
+			if (cai == null)
 			{
 				return false;
 			}
-			_moveToPointMethod.Invoke(ai, new object[4] { dt, vector, 1f, true });
+			MHR_Mover.Go(cai, dt, vector, 1f, true, "Shore");
 			return true;
 		}
 		catch (Exception ex)

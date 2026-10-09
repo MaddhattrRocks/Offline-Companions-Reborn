@@ -46,29 +46,15 @@ public class RepairController : MonoBehaviour
 
 	private float _stuckTimer;
 
-	private float _stuckCheckTimer;
-
-	private Vector3 _stuckCheckPos;
-
 	private bool _lastScanFailed;
 
 	private readonly List<ItemDrop.ItemData> _repairQueue = new List<ItemDrop.ItemData>();
 
 	private readonly List<ItemDrop.ItemData> _tempWorn = new List<ItemDrop.ItemData>();
 
-	private Vector3 _oscillationCheckPos;
-
-	private float _oscillationTimer;
-
-	private int _oscillationCount;
-
 	private const float ScanBackoffInterval = 60f;
 
 	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
 
 	internal RepairPhase Phase => _phase;
 
@@ -147,11 +133,6 @@ public class RepairController : MonoBehaviour
 		_targetStation = station;
 		ClaimStation();
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_oscillationTimer = 0f;
-		_oscillationCount = 0;
-		_oscillationCheckPos = base.transform.position;
 		_phase = RepairPhase.MovingToStation;
 		_lastScanFailed = false;
 		Log($"DirectRepairAt — {_repairQueue.Count} items to repair at \"{station.m_name}\"");
@@ -369,11 +350,6 @@ public class RepairController : MonoBehaviour
 		_targetStation = craftingStation;
 		ClaimStation();
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_oscillationTimer = 0f;
-		_oscillationCount = 0;
-		_oscillationCheckPos = base.transform.position;
 		_phase = RepairPhase.MovingToStation;
 		Log($"Found {_repairQueue.Count} items to repair at " + $"\"{_targetStation.m_name}\" level={_targetStation.GetLevel()} ({num3:F1}m away)");
 		if (_talk != null)

@@ -31,6 +31,15 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.141 - movement phase 4, part 2 (user, 2026-10-09)
+- After PR #5 (1.4.86-1.4.140) was merged; branch restarted from main.
+- CompanionAI: removed MoveToPoint (context-steering fallback, path-stuck timer, nav "claimed done" retries), ContextSteer, UpdateFallbackStuck, FindBestStrafeAngle, UpdateGroundStuckRecovery (strafe, jump, TeleportToFollowTarget after 5 tries, only active while the old MoveToPoint steered), UpdateProactiveJump (jumped after 2 s below 0.5 m/s with any job active - including while working in place), IsNavMeshFailing/Retrying and ~40 fields/consts. Formation follow no longer falls back to vanilla Follow. _continuousSwimTimer (hazard recovery) is now updated in UpdateAI. Kept: UpdateFurnitureUnstuck (off a bed), hazard recovery, TeleportToFollowTarget (follow warp rule).
+- Combat: ChaseMove's last resort when MHR_Mover has given up is CompanionAI.GameMoveTo (BaseAI.MoveTo) instead of the old MoveToPoint.
+- WaterSafety: shore-seeking moves with MHR_Mover.Go(..., "Shore"); it had been calling MoveToPoint by reflection, which silently stopped working once that was removed.
+- DoorHandler rewritten (654 -> ~140 lines): only DirectOpenDoor (the command) - walk up with MHR_Mover ("Door"), open, ApplyFollowMode; IsValidClosedDoor kept for MHR_Mover. Proactive door scanning, its stuck timers and the approach/pass/close phases removed with the [Door] settings (ScanRadius, InteractDist, ProactiveScanRadius, FollowDistMin, CloseDistance). Jobs still pause while it's active.
+- RepairController's unused stuck/oscillation fields removed.
+- Still vanilla on purpose: idle wander (RandomMovement), combat kiting/strafing. Movement phase 4 done apart from those.
+
 ### 1.4.140 - lining up with doorways (user, 2026-10-09)
 - User (1.4.139 test): closing and reopening is quick and fine; can the pathing avoid walking into the open door in the first place?
 - Cause: the route map ignores doors ("doors don't block"), so routes cut across a doorway at an angle and clip an open leaf.

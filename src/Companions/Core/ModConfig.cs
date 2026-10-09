@@ -438,16 +438,6 @@ internal static class ModConfig
 
 	internal static ConfigEntry<KeyCode> FarmZoneModifier;
 
-	internal static ConfigEntry<float> DoorScanRadius;
-
-	internal static ConfigEntry<float> DoorInteractDist;
-
-	internal static ConfigEntry<float> DoorProactiveScanRadius;
-
-	internal static ConfigEntry<float> DoorFollowDistMin;
-
-	internal static ConfigEntry<float> DoorCloseDistance;
-
 	internal static void Init(ConfigFile cfg)
 	{
 		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 2000, "Gold cost to purchase a companion", new AcceptableValueRange<int>(0, 50000));
@@ -637,11 +627,6 @@ internal static class ModConfig
 		ConfigPanelKey = Bind(cfg, "Controls", "ConfigPanelKey", KeyCode.F8, "Open the in-game config panel");
 		FarmZoneKey = Bind(cfg, "Controls", "FarmZoneKey", KeyCode.Z, "Farm zone placement key (press with modifier to open zone editor)");
 		FarmZoneModifier = Bind(cfg, "Controls", "FarmZoneModifier", KeyCode.LeftAlt, "Modifier key for farm zone placement (hold this + FarmZoneKey)");
-		DoorScanRadius = Bind(cfg, "Door", "ScanRadius", 5f, "Stuck-mode door scan radius", new AcceptableValueRange<float>(2f, 15f));
-		DoorInteractDist = Bind(cfg, "Door", "InteractDist", 2f, "Door interaction range", new AcceptableValueRange<float>(1f, 5f));
-		DoorProactiveScanRadius = Bind(cfg, "Door", "ProactiveScanRadius", 15f, "Proactive door scan radius", new AcceptableValueRange<float>(5f, 30f));
-		DoorFollowDistMin = Bind(cfg, "Door", "FollowDistMin", 4f, "Min distance from target to engage door handler", new AcceptableValueRange<float>(2f, 15f));
-		DoorCloseDistance = Bind(cfg, "Door", "CloseDistance", 3.5f, "Distance past door before closing it", new AcceptableValueRange<float>(1f, 10f));
 		AutoRespawnEnabled = Bind(cfg, "Respawn", "AutoRespawnEnabled", defaultValue: true, "Automatically respawn a dead companion after AutoRespawnDelaySeconds if nobody manually resurrects them from their tombstone first");
 		AutoRespawnDelaySeconds = Bind(cfg, "Respawn", "AutoRespawnDelaySeconds", 300f, "Seconds after death before a companion automatically respawns", new AcceptableValueRange<float>(30f, 3600f));
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Respawn", "AutoRespawnAtWorldSpawnWhenNoBed", defaultValue: false, "When a companion auto-respawns and has no claimed bed, respawn it at the world spawn stones instead of next to its owner");

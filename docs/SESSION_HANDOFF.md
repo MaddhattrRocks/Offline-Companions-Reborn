@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.140 merged to main (PR #5); branch restarted from main. Next: movement phase 4 part 2, then idle behaviours.
+## Current state: 1.4.141 pushed, not yet tested (on top of main after PR #5)
+- 1.4.141: movement phase 4 part 2 - old CompanionAI steering/ground-stuck/proactive jump/teleport removed, WaterSafety and the door command on MHR_Mover, old DoorHandler and [Door] settings gone. Next: idle behaviours (ask the user what they want first).
 - 1.4.140: lines up with doorways before going through (no clipping open door leaves).
 - 1.4.139: quicker retry at doors (close -> reopen).
 - 1.4.138: door search buffer 16 -> 512 colliders (missed the door indoors); closes an open door after 1 s held up.
