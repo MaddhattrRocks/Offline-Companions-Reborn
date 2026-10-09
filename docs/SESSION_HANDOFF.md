@@ -4,12 +4,12 @@ Paste this into a new session to pick up where we left off. Details per version 
 
 ## Repo and workflow
 - Repo: `MaddhattrRocks/Offline-Companions-Reborn` (private, going public soon). Fork of ProfMags' Offline Companions (MIT).
-- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#4 are merged into `main` (C# conversion, 1.4.75, 1.4.76, 1.4.77-1.4.85). After a merge the branch is restarted from `main` under the same name.
+- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#5 are merged into `main` (C# conversion, 1.4.75, 1.4.76, 1.4.77-1.4.85, 1.4.86-1.4.140). After a merge the branch is restarted from `main` under the same name.
 - The user builds the DLL (`dotnet build -c Release` on their PC, paths in the git-ignored `Environment.props`). Sessions only compile-check, never hand over DLLs unless asked. No game files in git.
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.140 pushed, not yet tested (1.4.86-1.4.140 on the branch, no PR yet)
+## Current state: 1.4.140 merged to main (PR #5); branch restarted from main. Next: movement phase 4 part 2, then idle behaviours.
 - 1.4.140: lines up with doorways before going through (no clipping open door leaves).
 - 1.4.139: quicker retry at doors (close -> reopen).
 - 1.4.138: door search buffer 16 -> 512 colliders (missed the door indoors); closes an open door after 1 s held up.
