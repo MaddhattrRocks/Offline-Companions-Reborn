@@ -31,6 +31,13 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.111 - from the 1.4.108 test (log de7393ed - the user's build was still 1.4.108, so 1.4.109/1.4.110 weren't in it)
+- User: the NPC sprints and jumps into the water too often (for a Neck's drops, round a fence sticking into the water) - only when swimming across; the stay-dry rule failed (1.4.110 wasn't in that build). Fishing now: found where to stand much faster ("Mapped 2 places", went straight there), caught a Perch and a Pike, skill went up. Stamina check looked like it failed (1.4.109 wasn't in that build). Asked: wait to cast until stamina is full; prefer stamina food when fishing, get it if possible.
+- FishController.UpdateCasting: waits (looking at the water) while stamina < 90% of max ("Getting my breath back before casting").
+- CompanionFood.FindFoodForSlot: in the Fish job, the edible food with the most m_foodStamina first.
+- MHR_ToolKeeper: K_FOOD (consumable, m_foodStamina > 0 and >= m_food) for mode 9, score = stamina; takes at most 5 from a stack; only near home (no WaitHome, no speech); borrowed, so leftovers go back after the job.
+- Mover dive: also needs swim-depth water in the 6 m scanned ahead (swim) and > 3 m of route swim.
+
 ### 1.4.110 - prefer dry, but swimming is allowed (user, 2026-10-09)
 - User: "The NPC can go in the water. It just should prefer not to if there is a way to get to the destination that is not a long run in another direction."
 - MHR_Mover.Plan: when the route swims (SwimMeters > 0.5), also ask for a full HumanoidAvoidWater route; take it when dryLen <= wetLen x 1.5 + General.DryDetour (30 m) ("going round the water (X m) instead of swimming (Y m)"), else swim ("swimming: the dry way is X m against Y m"). The tired-swimmer fallback stays after that. Running dive: whenever the planned route swims (was Follow only in 1.4.109).

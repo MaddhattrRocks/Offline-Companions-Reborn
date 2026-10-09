@@ -611,9 +611,25 @@ public class FishController : MonoBehaviour
 		}
 	}
 
+	private float _nextRestLog;
+
 	private void UpdateCasting()
 	{
 		_ai.StopMoving();
+		// 1.4.111: rest before casting until stamina is nearly full (user: "they should wait to cast until their stamina
+		// has filled up") - reeling a fish in with an empty bar loses it
+		CompanionStamina st = GetComponent<CompanionStamina>();
+		if (st != null && st.MaxStamina > 0f && st.Stamina < st.MaxStamina * 0.9f)
+		{
+			_ai.LookAtPoint(AimPoint());
+			_stateSince = Time.time;
+			if (Time.time >= _nextRestLog)
+			{
+				_nextRestLog = Time.time + 20f;
+				LogDebug("Getting my breath back before casting (" + st.Stamina.ToString("F0") + "/" + st.MaxStamina.ToString("F0") + " stamina)");
+			}
+			return;
+		}
 		ItemDrop.ItemData rod = FindRod();
 		Inventory inv = _humanoid.GetInventory();
 		ItemDrop.ItemData bait = FindItem(inv, _bait);

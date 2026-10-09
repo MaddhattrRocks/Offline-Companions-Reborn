@@ -955,9 +955,11 @@ namespace Companions
                 Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
                 return true;
             }
-            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && s.RouteSwim > 0.5f)
+            if (landAt < 0f && swim && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && s.RouteSwim > 3f)
             {
-                // wide water we're about to swim: running leap in for a head start
+                // wide water we're about to swim: running leap in for a head start. 1.4.111: only a real swim across
+                // (swim-depth water right ahead, no land within 6 m, 3 m+ of swimming on the route) - not to reach
+                // something just off the bank or round a fence end (1.4.108 test)
                 Leap(ai, c, dir, 5f);
                 s.NextJump = now + 1.5f; s.NextDive = now + 20f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                 Dbg("[Move|" + tag + "] diving in at " + Fmt(pos + dir * waterAt));

@@ -8,7 +8,7 @@ namespace Companions
     // ---- 1.4.62: fetch a missing job tool from a nearby chest, put borrowed ones back ----
     public static class MHR_ToolKeeper
     {
-        const int K_AXE = 1, K_PICK = 2, K_BOW = 3, K_ARROW = 4, K_CULT = 5, K_ROD = 6, K_BAIT = 7, K_HAMMER = 8;
+        const int K_AXE = 1, K_PICK = 2, K_BOW = 3, K_ARROW = 4, K_CULT = 5, K_ROD = 6, K_BAIT = 7, K_HAMMER = 8, K_FOOD = 9;
         const float SearchRadius = 30f, UseDist = 2.5f, TripTimeout = 150f, NoProgressTimeout = 45f;
         static readonly int BorrowHash = "HC_Borrowed".GetStableHashCode();
 
@@ -201,6 +201,7 @@ namespace Companions
                 ItemDrop.ItemData broken = BrokenOfKind(inv, kind, launcher);
                 // 1.4.94: Hunt is bow first, melee second - no bow (or arrows) away from home isn't a reason to stop
                 if (!nearHome && mode == 7) continue;
+                if (kind == K_FOOD && !nearHome) continue;   // nice to have, not worth going home for
                 if (!nearHome)
                 {
                     // too far to go home for it: say so, stop the job for now and follow
@@ -329,7 +330,13 @@ namespace Companions
                 {
                     string prefab = item.m_dropPrefab != null ? item.m_dropPrefab.name : st.Prefab;
                     int count = item.m_stack;
-                    inv.MoveItemToThis(cinv, item);
+                    if (st.Kind == K_FOOD && item.m_stack > 5)
+                    {
+                        // a few to eat, not the whole stack
+                        ItemDrop.ItemData part = item.Clone(); part.m_stack = 5; count = 5;
+                        if (inv.AddItem(part)) cinv.RemoveItem(item, 5);
+                    }
+                    else inv.MoveItemToThis(cinv, item);
                     if (FindByPrefab(inv, prefab) != null)
                     {
                         st.Borrowed.Add(new Entry { Kind = st.Kind, Prefab = prefab, Count = count, Chest = cp });
@@ -392,7 +399,7 @@ namespace Companions
         }
         static ItemDrop.ItemData BrokenOfKind(Inventory inv, int kind, ItemDrop.ItemData launcher)
         {
-            if (kind == K_ARROW || kind == K_BAIT) return null;
+            if (kind == K_ARROW || kind == K_BAIT || kind == K_FOOD) return null;
             List<ItemDrop.ItemData> items = inv.GetAllItems();
             for (int i = 0; i < items.Count; i++)
             {
@@ -599,7 +606,7 @@ namespace Companions
                 case 2: case 3: return new[] { K_PICK };
                 case 7: return new[] { K_BOW, K_ARROW };
                 case 8: return new[] { K_CULT };
-                case 9: return new[] { K_ROD, K_BAIT };
+                case 9: return new[] { K_ROD, K_BAIT, K_FOOD };   // 1.4.111: stamina food for reeling (user)
                 case 15: return new[] { K_HAMMER };
                 default: return null;
             }
@@ -616,7 +623,7 @@ namespace Companions
             switch (kind)
             {
                 case K_AXE: return "an axe"; case K_PICK: return "a pickaxe"; case K_BOW: return "a bow"; case K_ARROW: return "arrows";
-                case K_CULT: return "a cultivator"; case K_ROD: return "a fishing rod"; case K_BAIT: return "bait"; case K_HAMMER: return "a hammer";
+                case K_CULT: return "a cultivator"; case K_ROD: return "a fishing rod"; case K_BAIT: return "bait"; case K_HAMMER: return "a hammer"; case K_FOOD: return "stamina food";
             }
             return "a tool";
         }
@@ -650,6 +657,8 @@ namespace Companions
                            !string.IsNullOrEmpty(s.m_ammoType) && s.m_ammoType == launcher.m_shared.m_ammoType;
                 case K_CULT: return HasPlantPiece(s.m_buildPieces);
                 case K_HAMMER: return s.m_buildPieces != null && s.m_buildPieces.name != null && s.m_buildPieces.name.IndexOf("Hammer", StringComparison.OrdinalIgnoreCase) >= 0;
+                // 1.4.111: food that's mostly stamina (not mead - meads have no food values)
+                case K_FOOD: return s.m_itemType == ItemDrop.ItemData.ItemType.Consumable && s.m_foodStamina > 0f && s.m_foodStamina >= s.m_food;
             }
             return false;
         }
@@ -668,6 +677,7 @@ namespace Companions
         static float Score(ItemDrop.ItemData it, int kind)
         {
             if (kind == K_ARROW || kind == K_BAIT) return it.m_stack;
+            if (kind == K_FOOD) return it.m_shared.m_foodStamina;
             ItemDrop.ItemData.SharedData s = it.m_shared;
             float dmg = kind == K_AXE ? s.m_damages.m_chop : kind == K_PICK ? s.m_damages.m_pickaxe : 0f;
             return s.m_toolTier * 10000f + it.m_quality * 1000f + dmg + (it.m_durability / Mathf.Max(1f, s.m_maxDurability));
@@ -698,6 +708,7 @@ namespace Companions
         static bool FindSame(Inventory inv, ItemDrop.ItemData it) { return inv.GetAllItems().Contains(it); }
         static bool RoomFor(Inventory inv, ItemDrop.ItemData it, int kind)
         {
+            if (kind == K_FOOD) return inv.CanAddItem(it, 1);
             return (kind == K_ARROW || kind == K_BAIT) ? inv.CanAddItem(it, it.m_stack) : inv.HaveEmptySlot();
         }
 

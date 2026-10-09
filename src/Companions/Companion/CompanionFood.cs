@@ -473,6 +473,24 @@ public class CompanionFood : MonoBehaviour
 	private ItemDrop.ItemData FindFoodForSlot(Inventory inv)
 	{
 		List<ItemDrop.ItemData> allItemsInGridOrder = inv.GetAllItemsInGridOrder();
+		// 1.4.111: fishing - the most stamina first (user: "if fishing the NPC should prefer stamina food")
+		int mode = GetComponent<ZNetView>()?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
+		if (mode == CompanionSetup.ModeFish)
+		{
+			ItemDrop.ItemData best = null;
+			for (int j = 0; j < allItemsInGridOrder.Count; j++)
+			{
+				ItemDrop.ItemData it = allItemsInGridOrder[j];
+				if ((best == null || it.m_shared.m_foodStamina > best.m_shared.m_foodStamina) && CanConsumeFoodItem(it))
+				{
+					best = it;
+				}
+			}
+			if (best != null)
+			{
+				return best;
+			}
+		}
 		for (int i = 0; i < allItemsInGridOrder.Count; i++)
 		{
 			ItemDrop.ItemData itemData = allItemsInGridOrder[i];
