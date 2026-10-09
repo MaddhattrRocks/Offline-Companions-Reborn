@@ -475,7 +475,8 @@ namespace Companions
                     if (c.GetComponentInParent<Character>() != null) continue;
                     bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
                     if (mobile && atHome) continue;                   // at home, chests only
-                    if (c.IsInUse()) continue;
+                    if (MHR_Chests.InUse(c)) continue;   // 1.4.153: also open on another player's game
+                    if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) continue;
                     ZNetView nv = c.GetComponent<ZNetView>();
                     if (nv == null || !nv.IsValid()) continue;
                     if (c.m_privacy == Container.PrivacySetting.Private)
