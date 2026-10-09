@@ -232,7 +232,7 @@ public partial class UpkeepController : MonoBehaviour
 		}
 		// 1.4.133: a "go there" order comes first (user: using the command broke Repair and Restock - both steered at once).
 		// It stays there a little while after arriving, then carries on with the chores.
-		if (_ai.PendingMoveTarget.HasValue)
+		if (MHR_JobRules.OrderPending(this))
 		{
 			if (_step != Step.Idle || _holdingHammer)
 			{

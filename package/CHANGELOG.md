@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.147
+- Fixed: a running job could pull a companion away from boarding a ship, opening a door, or sitting by a fire / going to bed when you told it to - every job now waits for these orders too.
+- Repair and Restock and the idle behaviour wait for all your orders, not just "go there".
+
 ## 1.4.146
 - Fixed: ordering a companion to repair at a station was cancelled straight away while its job had a task - your order now goes first and the job waits for it.
 - The repair log now says why a repair trip stopped (combat, loot, another order, being talked to, the job has work).

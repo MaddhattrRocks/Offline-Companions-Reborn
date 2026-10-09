@@ -240,7 +240,7 @@ public class RepairController : MonoBehaviour
 		{
 			return "picking up loot";
 		}
-		if (_ai != null && (_ai.PendingMoveTarget.HasValue || _ai.PendingCartAttach != null || _ai.PendingDepositContainer != null || _ai.IsRecoveringTombstone))
+		if (MHR_JobRules.OtherOrder(this))
 		{
 			return "another order";
 		}

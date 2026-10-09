@@ -841,11 +841,23 @@ namespace Companions
         // CompanionAI walks it with the mover; a job steering at the same time cancels it out every frame, so jobs wait.
         public static bool OrderPending(Component c)
         {
-            CompanionAI ai = c != null ? c.GetComponent<CompanionAI>() : null;
-            if (ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone)) return true;
+            if (OtherOrder(c)) return true;
             // 1.4.146: a repair the player ordered at a station
             RepairController rc = c != null ? c.GetComponent<RepairController>() : null;
             return rc != null && rc.IsDirect;
+        }
+
+        // every order but the ordered repair (which RepairController itself carries out)
+        public static bool OtherOrder(Component c)
+        {
+            if (c == null) return false;
+            CompanionAI ai = c.GetComponent<CompanionAI>();
+            if (ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone || ai.IsBoardingShip)) return true;
+            // 1.4.147: open that door; sit by that fire / sleep in that bed
+            DoorHandler door = c.GetComponent<DoorHandler>();
+            if (door != null && door.IsActive) return true;
+            CompanionRest rest = c.GetComponent<CompanionRest>();
+            return rest != null && rest.IsDirectedOrder;
         }
 
         public static bool IsJobMode(int mode)

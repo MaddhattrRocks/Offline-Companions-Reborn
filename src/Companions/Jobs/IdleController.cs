@@ -134,7 +134,7 @@ public class IdleController : MonoBehaviour
 			why = "busy";
 			return false;
 		}
-		if (_ai.PendingMoveTarget.HasValue || _ai.PendingCartAttach != null || _ai.PendingDepositContainer != null || _ai.IsRecoveringTombstone)
+		if (MHR_JobRules.OrderPending(this))
 		{
 			why = "an order";
 			return false;

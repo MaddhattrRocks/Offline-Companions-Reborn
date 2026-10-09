@@ -124,6 +124,9 @@ public class CompanionRest : MonoBehaviour
 
 	public bool IsNavigating => _navigating;
 
+	// 1.4.147: sitting by a fire / going to bed because the player said so - an order the jobs wait for
+	public bool IsDirectedOrder => _isDirected && (_navigating || _isSitting || _isSleeping);
+
 	public Vector3 NavTarget => _navTarget;
 
 	public bool IsDirectedResting
