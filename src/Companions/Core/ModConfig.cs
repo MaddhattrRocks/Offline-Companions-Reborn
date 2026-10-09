@@ -388,6 +388,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> UpkeepPiles;
 
+	internal static ConfigEntry<bool> SmeltUsePiles;
+
 	internal static ConfigEntry<int> UpkeepPileKeep;
 
 	internal static ConfigEntry<string> UpkeepPileItems;
@@ -554,6 +556,7 @@ internal static class ModConfig
 		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
 		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
 		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
+		SmeltUsePiles = Bind(cfg, "Smelting", "UsePiles", true, "When the chests have none of what a smelter or kiln needs (wood for the kiln, fuel...), the Smelt job takes down a pile of it (Stack of Wood...) with a hammer, like a player, and uses that. Needs a hammer in its pack.");
 		UpkeepPiles = Bind(cfg, "RepairAndRestock", "Piles", true, "Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.");
 		UpkeepPileKeep = Bind(cfg, "RepairAndRestock", "PileKeep", 100, "How many of each material stay in the chests for building: what's above this goes into piles, and when the chests drop below it a pile is taken down (with the hammer, like a player) and the material put back in the chests.", new AcceptableValueRange<int>(0, 10000));
 		UpkeepPileItems = Bind(cfg, "RepairAndRestock", "PileItems", "*", "Which materials go into piles. Comma-separated: * = every material you have piles of, Name = this one, -Name = never this one, Name:Number = keep this many of it in the chests instead of PileKeep. Prefab or in-game names (Wood, Stone, FineWood, RoundLog...).");

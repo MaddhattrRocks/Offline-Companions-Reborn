@@ -17,7 +17,8 @@ public class SmeltController : MonoBehaviour
 		Monitoring,
 		CollectingOutput,
 		MovingToOutputChest,
-		StoringOutput
+		StoringOutput,
+		TakingDownPile
 	}
 
 	private CompanionAI _ai;
@@ -230,6 +231,9 @@ public class SmeltController : MonoBehaviour
 			case SmeltPhase.StoringOutput:
 				UpdateStoringOutput();
 				break;
+			case SmeltPhase.TakingDownPile:
+				UpdateTakingDownPile();
+				break;
 			}
 		}
 	}
@@ -250,6 +254,11 @@ public class SmeltController : MonoBehaviour
 	private void Abort(string reason)
 	{
 		Log($"Aborted — {reason} (phase was {_phase})");
+		if (_pileTaker != null)
+		{
+			_pileTaker.PutAway(_humanoid, _setup);
+			_pileTaker = null;
+		}
 		UnclaimSmelter();
 		CloseAnyOpenChest();
 		_targetSmelter = null;
@@ -1155,6 +1164,14 @@ public class SmeltController : MonoBehaviour
 		}
 		if (container == null || bestPrefab == null)
 		{
+			// 1.4.130: nothing in the chests - a pile of it (e.g. wood for the kiln) will do
+			foreach (Smelter.ItemConversion conv in smelter.m_conversion)
+			{
+				if (conv?.m_from != null && (!flag || conv.m_from.gameObject.name == "Wood") && TryStartPile(conv.m_from.gameObject.name, smelter))
+				{
+					return true;
+				}
+			}
 			return false;
 		}
 		int num9 = num2;
@@ -1266,7 +1283,7 @@ public class SmeltController : MonoBehaviour
 		}
 		if (container == null)
 		{
-			return false;
+			return TryStartPile(fuelPrefab, smelter);   // 1.4.130: or from a pile
 		}
 		int num9 = num2;
 		foreach (Smelter nearbySmelter in _nearbySmelters)
@@ -1301,6 +1318,72 @@ public class SmeltController : MonoBehaviour
 			_talk.Say(ModLocalization.Loc("hc_speech_smelt_fuel"));
 		}
 		return true;
+	}
+
+	// ---- 1.4.130: wood (or any material) from a pile when the chests have none (user) ----
+	private MHR_PileTaker _pileTaker;
+
+	private readonly Dictionary<int, float> _pileSkip = new Dictionary<int, float>();
+
+	private float _nextNoHammerLog;
+
+	private bool TryStartPile(string itemPrefab, Smelter smelter)
+	{
+		if (ModConfig.SmeltUsePiles != null && !ModConfig.SmeltUsePiles.Value)
+		{
+			return false;
+		}
+		Piece pile = MHR_PileTaker.Find(base.transform.position, ScanRadius, itemPrefab, base.transform.position, _pileSkip);
+		if (pile == null)
+		{
+			return false;
+		}
+		if (MHR_PileTaker.Hammer(_humanoid) == null)
+		{
+			if (Time.time >= _nextNoHammerLog)
+			{
+				_nextNoHammerLog = Time.time + 120f;
+				Log("No " + itemPrefab + " in the chests, but there's a pile of it - it needs a hammer to take it down");
+			}
+			return false;
+		}
+		_pileTaker = new MHR_PileTaker(pile, "Smelt");
+		ClearFollowForMovement();
+		_phase = SmeltPhase.TakingDownPile;
+		Log("No " + itemPrefab + " in the chests for \"" + smelter.m_name + "\" - taking down the " + MHR_List.Local(pile.m_name) + " at " + MHR_Mover.Fmt(pile.transform.position));
+		return true;
+	}
+
+	private void UpdateTakingDownPile()
+	{
+		if (_pileTaker == null)
+		{
+			_phase = SmeltPhase.Idle;
+			return;
+		}
+		int r = _pileTaker.Tick(_ai, _humanoid, _setup);
+		if (r == 0)
+		{
+			return;
+		}
+		_pileTaker.PutAway(_humanoid, _setup);
+		if (r < 0)
+		{
+			if (_pileTaker.Pile != null)
+			{
+				_pileSkip[_pileTaker.Pile.GetInstanceID()] = Time.time + 600f;
+			}
+			Log("Gave up on the pile: " + _pileTaker.Why);
+		}
+		else
+		{
+			Log("Took down the pile - picked up " + _pileTaker.Got + " " + MHR_List.Local(_pileTaker.Shared));
+		}
+		_pileTaker = null;
+		_ai?.StopMoving();
+		MHR_Mover.Release(_ai);
+		_phase = SmeltPhase.Idle;
+		_scanTimer = 0.5f;
 	}
 
 	private void RestoreFollow()
