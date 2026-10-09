@@ -1658,6 +1658,10 @@ public class CompanionInteract : MonoBehaviour
 		}
 		SayRandom(companionTalk, MoveLines);
 		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → move to {point:F1}");
+		if (num == 0)
+		{
+			MHR_WhyNotCommanded(setups, localId);
+		}
 	}
 
 	private static void CancelAll(IReadOnlyList<CompanionSetup> setups, string localId)
@@ -1735,6 +1739,38 @@ public class CompanionInteract : MonoBehaviour
 			return false;
 		}
 		return component.GetZDO().GetString(CompanionSetup.OwnerHash) == localId;
+	}
+
+	// 1.4.100: say why nobody answered a command (1.4.99 test: "the command button was not working" - 0 companions)
+	private static void MHR_WhyNotCommanded(IReadOnlyList<CompanionSetup> setups, string localId)
+	{
+		Player localPlayer = Player.m_localPlayer;
+		foreach (CompanionSetup s in setups)
+		{
+			if (s == null)
+			{
+				continue;
+			}
+			string name = s.GetComponent<Character>()?.m_name ?? "?";
+			string why;
+			if (!IsOwned(s, localId))
+			{
+				why = "not yours";
+			}
+			else if (!s.GetIsCommandable())
+			{
+				why = "Command is switched off for it on the wheel";
+			}
+			else if (localPlayer != null && ModConfig.RecallRange != null && ModConfig.RecallRange.Value > 0f)
+			{
+				why = $"it's {Vector3.Distance(s.transform.position, localPlayer.transform.position):F0} m away (RecallRange is {ModConfig.RecallRange.Value:F0} m - hold the command key {ModConfig.SuperRecallHoldTime?.Value ?? 2f:F0}s to call everyone)";
+			}
+			else
+			{
+				why = "unknown";
+			}
+			CompanionsPlugin.Log.LogInfo("[Direct] \"" + name + "\" didn't take the command: " + why);
+		}
 	}
 
 	internal static bool MHR_InScope(CompanionSetup s)

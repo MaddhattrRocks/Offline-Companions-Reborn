@@ -707,41 +707,87 @@ namespace Companions
         }
 
         // the nearest way out: a direction 1.5 m away that isn't in a fire and has ground
+        // 1.4.100: further out too - a hearth's flames reach past 1.5 m from its middle (1.4.99 test: got up from a chair
+        // into the hearth and stood in it, every way out within 1.5 m still counted as fire)
         static bool FireExit(Vector3 pos, Vector3 prefer, out Vector3 dir)
         {
             dir = Vector3.zero;
             prefer.y = 0f;
             if (prefer.sqrMagnitude < 0.01f) prefer = Vector3.forward;
             prefer.Normalize();
-            for (int i = 0; i < 8; i++)
-            {
-                float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45f;
-                Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
-                if (!InFire(pos + d * 1.5f) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
-            }
+            for (float r = 1.5f; r <= 3.6f; r += 1f)
+                for (int i = 0; i < 8; i++)
+                {
+                    float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45f;
+                    Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
+                    if (!InFire(pos + d * r) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
+                }
+            return false;
+        }
+
+        // the nearest spot to stand on that isn't in a fire, not on furniture
+        static bool SafeSpot(Vector3 pos, out Vector3 spot)
+        {
+            spot = pos;
+            for (float r = 1.5f; r <= 5f; r += 0.75f)
+                for (int i = 0; i < 12; i++)
+                {
+                    Vector3 p = pos + Quaternion.Euler(0f, i * 30f, 0f) * Vector3.forward * r;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(p + Vector3.up * 2f, Vector3.down, out hit, 4f, Mask())) continue;
+                    if (Mathf.Abs(hit.point.y - pos.y) > 1.2f || InFire(hit.point) || MHR_Chests.IsFurniture(hit.collider)) continue;
+                    if (MHR_Water.DepthAt(hit.point) > 0.5f) continue;
+                    if (Physics.CheckCapsule(hit.point + Vector3.up * 0.5f, hit.point + Vector3.up * 1.6f, 0.3f, Mask())) continue;
+                    spot = hit.point; return true;
+                }
             return false;
         }
 
         static readonly Dictionary<int, float> s_fireLog = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_fireSince = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_fireJump = new Dictionary<int, float>();
 
-        // called before anything else steers the companion: standing in a fire -> step out of it
+        // called before anything else steers the companion: standing in a fire -> step out of it; jump out if that
+        // doesn't work (like a player), and if it's still in it after a few seconds, put it on the nearest safe spot
         public static bool EscapeFire(CompanionAI ai)
         {
             if (ai == null) return false;
             Character c = ai.GetComponent<Character>();
-            if (c == null || c.IsAttached() || c.IsDead() || !c.IsOnGround()) return false;   // not mid-jump over one
-            Vector3 pos = ai.transform.position;
-            if (!InFire(pos)) return false;
-            Vector3 dir;
-            if (!FireExit(pos, ai.transform.forward, out dir)) return false;
-            ai.MoveTowards(dir, false);
             int id = ai.gameObject.GetInstanceID();
+            if (c == null || c.IsAttached() || c.IsDead()) return false;
+            Vector3 pos = ai.transform.position;
+            if (!InFire(pos)) { s_fireSince.Remove(id); return false; }
+            if (!c.IsOnGround()) return false;   // mid-jump over or out of one
+            float now = Time.time, since;
+            if (!s_fireSince.TryGetValue(id, out since)) { since = now; s_fireSince[id] = now; }
+            Vector3 dir;
+            bool exit = FireExit(pos, ai.transform.forward, out dir);
             float last;
-            if (!s_fireLog.TryGetValue(id, out last) || Time.time - last > 10f)
+            if (!s_fireLog.TryGetValue(id, out last) || now - last > 10f)
             {
-                s_fireLog[id] = Time.time;
-                Dbg("[Move] standing in a fire at " + Fmt(pos) + " - stepping out");
+                s_fireLog[id] = now;
+                Dbg("[Move] standing in a fire at " + Fmt(pos) + " - " + (exit ? "stepping out" : "no clear way out"));
             }
+            if (now - since > 6f)
+            {
+                Vector3 spot;
+                if (SafeSpot(pos, out spot))
+                {
+                    ai.MHR_PlaceAt(spot);
+                    s_fireSince.Remove(id);
+                    Dbg("[Move] still in the fire after 6s - moved to " + Fmt(spot));
+                    return true;
+                }
+            }
+            float lastJump;
+            if (exit && now - since > 1.0f && (!s_fireJump.TryGetValue(id, out lastJump) || now - lastJump > 1.2f))
+            {
+                s_fireJump[id] = now;
+                MHR_Jump.Leap(ai, c, dir);
+                Dbg("[Move] jumping out of the fire");
+                return true;
+            }
+            if (exit) ai.MoveTowards(dir, true);
             return true;
         }
 

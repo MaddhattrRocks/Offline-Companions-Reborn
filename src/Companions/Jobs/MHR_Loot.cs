@@ -41,22 +41,26 @@ namespace Companions
         public static void OnKill(CompanionSetup cs, Character victim)
         {
             if (cs == null || victim == null || victim.IsPlayer() || victim.GetComponent<CompanionSetup>() != null) return;
+            OnKillAt(cs, victim.transform.position, victim.m_name, null);
+        }
+
+        // 1.4.100: also for things that aren't creatures (a shot bird). `before` = items that were lying there before
+        // (null = take a look now)
+        public static void OnKillAt(CompanionSetup cs, Vector3 pos, string name, HashSet<int> before)
+        {
+            if (cs == null) return;
             if (ModConfig.LootKills != null && !ModConfig.LootKills.Value) return;
             CompanionAI ai = cs.GetComponent<CompanionAI>();
             if (ai == null) return;
             int id = ai.GetInstanceID();
             State st;
             if (!s_state.TryGetValue(id, out st)) { st = new State(); s_state[id] = st; }
-            Vector3 pos = victim.transform.position;
             if (st.Current != null && Vector3.Distance(st.Current.Pos, pos) < 1f) return;
             for (int i = 0; i < st.Queue.Count; i++) if (Vector3.Distance(st.Queue[i].Pos, pos) < 1f) return;
-            Kill k = new Kill { Pos = pos, Time = Time.time, Name = victim.m_name };
-            int n = Physics.OverlapSphereNonAlloc(pos, Radius() * 2f + 2f, s_buf, Mask());
-            for (int i = 0; i < n && i < s_buf.Length; i++)
-            {
-                ItemDrop d = DropOf(s_buf[i]);
-                if (d != null) k.Before.Add(d.GetInstanceID());
-            }
+            Kill k = new Kill { Pos = pos, Time = Time.time, Name = name };
+            if (before != null) k.Before.UnionWith(before);
+            else k.Before.UnionWith(ItemsAround(pos));
+
             if (st.Queue.Count > 6) st.Queue.RemoveAt(0);
             st.Queue.Add(k);
         }
@@ -208,6 +212,18 @@ namespace Companions
                 if (!MHR_Water.WouldSwim(self, q)) { q.y = MHR_Water.GroundAt(q); return q; }
             }
             return me;
+        }
+
+        public static HashSet<int> ItemsAround(Vector3 pos)
+        {
+            HashSet<int> set = new HashSet<int>();
+            int n = Physics.OverlapSphereNonAlloc(pos, Radius() * 2f + 2f, s_buf, Mask());
+            for (int i = 0; i < n && i < s_buf.Length; i++)
+            {
+                ItemDrop d = DropOf(s_buf[i]);
+                if (d != null) set.Add(d.GetInstanceID());
+            }
+            return set;
         }
 
         static ItemDrop DropOf(Collider col)

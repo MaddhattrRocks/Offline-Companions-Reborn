@@ -22,7 +22,8 @@ public class HuntController : MonoBehaviour
 		Idle,
 		Hunting,
 		Returning,
-		GoingHome
+		GoingHome,
+		Birding
 	}
 
 	private const float ScanInterval = 2f;
@@ -155,6 +156,9 @@ public class HuntController : MonoBehaviour
 		case HuntState.Hunting:
 			UpdateHunting(follow);
 			break;
+		case HuntState.Birding:
+			UpdateBirding(follow);
+			break;
 		case HuntState.GoingHome:
 			UpdateGoingHome(follow);
 			break;
@@ -245,6 +249,10 @@ public class HuntController : MonoBehaviour
 			return;
 		}
 		Character prey = FindPrey(follow, out string why);
+		if (prey == null && StartBird(follow))
+		{
+			return;
+		}
 		if (prey == null)
 		{
 			if (Time.time >= _nextNothingLog)
@@ -334,6 +342,208 @@ public class HuntController : MonoBehaviour
 		_state = HuntState.Idle;
 		_scanTimer = 1f;
 		_nextCount = 0f;
+	}
+
+	// ---- 1.4.100: birds (user: "add hunting birds as a toggle? They drop feathers that are useful"). Birds aren't
+	// creatures: they're RandomFlyingBird objects that break when hit and drop their DropOnDestroyed table. Like a
+	// player: wait for one to land, sneak within bow range, aim, shoot, then pick up the feathers.
+	private RandomFlyingBird _bird;
+
+	private string _birdName;
+
+	private Vector3 _birdPos;
+
+	private float _birdSince;
+
+	private float _nextShot;
+
+	private float _noBowUntil;
+
+	private HashSet<int> _birdBefore;
+
+	private const float BirdShotRange = 20f;
+
+	private bool StartBird(bool follow)
+	{
+		if (!(ModConfig.HuntBirds?.Value ?? true) || Time.time < _noBowUntil || _humanoid == null)
+		{
+			return false;
+		}
+		Vector3 center = Center(follow);
+		float range = Range(follow);
+		Vector3 me = base.transform.position;
+		RandomFlyingBird best = null;
+		float bestDist = float.MaxValue;
+		foreach (IMonoUpdater updater in RandomFlyingBird.Instances)
+		{
+			RandomFlyingBird bird = updater as RandomFlyingBird;
+			if (bird == null || !Landed(bird))
+			{
+				continue;
+			}
+			Vector3 p = bird.transform.position;
+			if (Vector3.Distance(p, center) > range || Vector3.Distance(p, me) > range + 10f)
+			{
+				continue;
+			}
+			if (_skip.TryGetValue(bird.GetInstanceID(), out var until) && Time.time < until)
+			{
+				continue;
+			}
+			string prefab = BirdPrefab(bird);
+			if (!HuntCatalog.CanHuntBird(prefab) || !NeedsBirdDrop(prefab) || MHR_Water.WouldSwim(_character, p))
+			{
+				continue;
+			}
+			float d = Vector3.Distance(me, p);
+			if (d < bestDist)
+			{
+				bestDist = d;
+				best = bird;
+			}
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		if (WeaponLogic.FindReadyBow(_humanoid, null) == null)
+		{
+			_noBowUntil = Time.time + 60f;
+			LogDebug("A bird has landed nearby, but there's no bow or crossbow with ammo to shoot it");
+			return false;
+		}
+		_bird = best;
+		_birdName = BirdPrefab(best);
+		_birdPos = best.transform.position;
+		_birdBefore = MHR_Loot.ItemsAround(_birdPos);
+		_birdSince = Time.time;
+		_state = HuntState.Birding;
+		MHR_Mover.Release(_ai);
+		Log("Going after a " + _birdName + " that landed " + bestDist.ToString("F0") + " m away" + NeedText(_birdName));
+		return true;
+	}
+
+	private void UpdateBirding(bool follow)
+	{
+		if (_combatAI.IsEngaged)
+		{
+			EndBird();
+			return;
+		}
+		ZNetView nv = (_bird != null) ? _bird.GetComponent<ZNetView>() : null;
+		if (_bird == null || nv == null || !nv.IsValid())
+		{
+			LogDebug("Got the " + _birdName);
+			MHR_Loot.OnKillAt(_setup, _birdPos, _birdName, _birdBefore);
+			EndBird();
+			_nextCount = 0f;
+			return;
+		}
+		_birdPos = _bird.transform.position;
+		if (!Landed(_bird) || Time.time - _birdSince > 30f)
+		{
+			LogDebug("The " + _birdName + (Landed(_bird) ? " - taking too long" : " flew off"));
+			_skip[_bird.GetInstanceID()] = Time.time + 30f;
+			EndBird();
+			return;
+		}
+		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
+		if (weapon == null || weapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow && weapon.m_shared.m_aiAttackRange <= 10f)
+		{
+			ItemDrop.ItemData bow = WeaponLogic.FindReadyBow(_humanoid, null);
+			if (bow == null)
+			{
+				_noBowUntil = Time.time + 60f;
+				EndBird();
+				return;
+			}
+			_humanoid.EquipItem(bow);
+		}
+		Vector3 me = base.transform.position;
+		Vector3 aim = _birdPos + Vector3.up * 0.25f;
+		float dist = Vector3.Distance(me, _birdPos);
+		if (dist > BirdShotRange || !MHR_Mover.CanSee(me + Vector3.up * 1.6f, aim))
+		{
+			// sneak closer so it doesn't fly off
+			_ai.MHR_SetCrouch(ModConfig.HuntSneak?.Value ?? true);
+			MHR_Mover.Go(_ai, Time.deltaTime, _birdPos, BirdShotRange * 0.7f, false, "Hunt", MHR_Mover.SpeedWalk);
+			if (MHR_Mover.GaveUp(_ai))
+			{
+				_skip[_bird.GetInstanceID()] = Time.time + 60f;
+				EndBird();
+			}
+			return;
+		}
+		_ai.StopMoving();
+		_ai.LookAtPoint(aim);
+		if (Time.time < _nextShot || _character.InAttack() || !_ai.IsLookingAtPoint(aim, 3f))
+		{
+			return;
+		}
+		_nextShot = Time.time + 1.5f;
+		Attack attack = _humanoid.GetCurrentWeapon()?.m_shared?.m_attack;
+		bool draw = attack != null && attack.m_bowDraw;
+		if (draw)
+		{
+			attack.m_bowDraw = false;
+		}
+		_character.StartAttack(null, false);
+		if (draw)
+		{
+			attack.m_bowDraw = true;
+		}
+	}
+
+	private void EndBird()
+	{
+		_ai.MHR_SetCrouch(false);
+		_ai.StopMoving();
+		MHR_Mover.Release(_ai);
+		_bird = null;
+		_state = HuntState.Idle;
+		_scanTimer = 1f;
+	}
+
+	private static bool Landed(RandomFlyingBird bird)
+	{
+		Vector3 p = bird.transform.position;
+		return p.y - MHR_Water.GroundAt(p) < 0.8f;
+	}
+
+	private static string BirdPrefab(RandomFlyingBird bird)
+	{
+		ZNetView nv = bird.GetComponent<ZNetView>();
+		ZDO zdo = (nv != null && nv.IsValid()) ? nv.GetZDO() : null;
+		GameObject prefab = (zdo != null && ZNetScene.instance != null) ? ZNetScene.instance.GetPrefab(zdo.GetPrefab()) : null;
+		if (prefab != null)
+		{
+			return prefab.name;
+		}
+		string text = bird.gameObject.name;
+		int num = text.IndexOf("(Clone)", StringComparison.Ordinal);
+		return (num >= 0) ? text.Substring(0, num).Trim() : text;
+	}
+
+	private bool NeedsBirdDrop(string prefab)
+	{
+		int target = ModConfig.HuntFeatherTarget?.Value ?? 100;
+		if (target <= 0)
+		{
+			return true;
+		}
+		List<string> drops = HuntCatalog.MeatsOf(prefab);
+		if (drops == null)
+		{
+			return false;
+		}
+		foreach (string item in drops)
+		{
+			if (!_meatCount.TryGetValue(item, out var have) || have < target)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void UpdateGoingHome(bool follow)
@@ -626,8 +836,35 @@ internal static class HuntCatalog
 					s_meatsOf[prefab.name] = meats;
 				}
 			}
+			// 1.4.100: birds (crows, gulls, modded ones) - what they drop when shot (feathers)
+			foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+			{
+				if (prefab == null || prefab.GetComponent<RandomFlyingBird>() == null)
+				{
+					continue;
+				}
+				DropOnDestroyed dod = prefab.GetComponent<DropOnDestroyed>();
+				if (dod?.m_dropWhenDestroyed?.m_drops == null)
+				{
+					continue;
+				}
+				List<string> drops = new List<string>();
+				foreach (DropTable.DropData d in dod.m_dropWhenDestroyed.m_drops)
+				{
+					if (d.m_item != null && !drops.Contains(d.m_item.name))
+					{
+						drops.Add(d.m_item.name);
+						s_meats.Add(d.m_item.name);
+					}
+				}
+				if (drops.Count > 0)
+				{
+					s_meatsOf[prefab.name] = drops;
+					s_birds.Add(prefab.name);
+				}
+			}
 			WriteReference();
-			CompanionsPlugin.Log.LogInfo($"[Hunt] {s_meatsOf.Count} creatures drop meat ({s_meats.Count} kinds of meat)");
+			CompanionsPlugin.Log.LogInfo($"[Hunt] {s_meatsOf.Count - s_birds.Count} creatures drop meat, {s_birds.Count} kinds of bird ({s_meats.Count} kinds of drops counted)");
 		}
 		catch (Exception ex)
 		{
@@ -639,6 +876,14 @@ internal static class HuntCatalog
 	private static bool LooksLikeMeat(string item)
 	{
 		return CookCatalog.IsGrillInput(item) || item.IndexOf("meat", StringComparison.OrdinalIgnoreCase) >= 0;
+	}
+
+	private static readonly HashSet<string> s_birds = new HashSet<string>();
+
+	internal static bool CanHuntBird(string prefab)
+	{
+		Ensure();
+		return s_birds.Contains(prefab) && Allowed(prefab, prefab);
 	}
 
 	internal static bool IsMeat(string item)
@@ -656,7 +901,7 @@ internal static class HuntCatalog
 	internal static bool CanHunt(Character c, string prefab)
 	{
 		Ensure();
-		if (c.IsPlayer() || c.IsTamed() || c.IsBoss() || c.GetComponent<CompanionSetup>() != null || !s_meatsOf.ContainsKey(prefab))
+		if (c.IsPlayer() || c.IsTamed() || c.IsBoss() || c.GetComponent<CompanionSetup>() != null || !s_meatsOf.ContainsKey(prefab) || s_birds.Contains(prefab))
 		{
 			return false;
 		}
@@ -718,12 +963,13 @@ internal static class HuntCatalog
 			{
 				GameObject prefab = ZNetScene.instance.GetPrefab(kv.Key);
 				Character c = prefab != null ? prefab.GetComponent<Character>() : null;
+				bool bird = s_birds.Contains(kv.Key);
 				List<string> names = new List<string>();
 				foreach (string meat in kv.Value)
 				{
 					names.Add(meat + " = " + CookController.Name(meat));
 				}
-				lines[kv.Key] = kv.Key + " = " + (c != null ? CookController.Loc(c.m_name) : kv.Key) + "  (" + string.Join(", ", names.ToArray()) + ")";
+				lines[kv.Key] = kv.Key + " = " + (c != null ? CookController.Loc(c.m_name) : kv.Key) + (bird ? " (bird, needs Hunting > Birds)" : "") + "  (" + string.Join(", ", names.ToArray()) + ")";
 			}
 			foreach (string line in lines.Values)
 			{
