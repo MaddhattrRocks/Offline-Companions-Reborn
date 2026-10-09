@@ -73,7 +73,7 @@ namespace Companions
             c.SetRun(true);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             float speed = RunSpeed(c, dir);
-            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * speed; v.z = dir.z * speed; rb.velocity = v; }
+            if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * speed; v.z = dir.z * speed; rb.linearVelocity = v; }
             c.Jump(false);
         }
     }

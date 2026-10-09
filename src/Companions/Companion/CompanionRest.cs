@@ -515,7 +515,7 @@ public class CompanionRest : MonoBehaviour
 		if (_body != null)
 		{
 			_body.position = transform.position;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 		}
 		_healTimer -= Time.deltaTime;
 		if (_healTimer <= 0f)
@@ -1244,7 +1244,7 @@ public class CompanionRest : MonoBehaviour
 			Rigidbody component = GetComponent<Rigidbody>();
 			if (!(component == null))
 			{
-				component.velocity = Vector3.zero;
+				component.linearVelocity = Vector3.zero;
 				component.position = base.transform.position;
 			}
 			CompanionsPlugin.Log.LogDebug("[Rest] Got up at the bed's sleeping spot");

@@ -19,7 +19,7 @@ namespace Companions
             public bool SawDrop; public float LastDrop; public float NextBodyCheck; public bool Body;
             public float Start; public float ArrivedAt = -1f; public float LastDrive;
         }
-        class State { public Kill Current; public readonly List<Kill> Queue = new List<Kill>(); public ItemDrop Target; public float TargetSince; public float NextLog; }
+        class State { public Kill Current; public readonly List<Kill> Queue = new List<Kill>(); public ItemDrop Target; public float TargetSince; }
 
         static readonly Dictionary<int, State> s_state = new Dictionary<int, State>();
         static readonly Collider[] s_buf = new Collider[128];
@@ -112,7 +112,7 @@ namespace Companions
                 k.Body = false;
                 try
                 {
-                    foreach (Ragdoll r in UnityEngine.Object.FindObjectsOfType<Ragdoll>())
+                    foreach (Ragdoll r in UnityEngine.Object.FindObjectsByType<Ragdoll>(FindObjectsSortMode.None))
                     {
                         if (r == null || !r.m_dropItems) continue;
                         Vector3 bp = r.GetAverageBodyPosition();

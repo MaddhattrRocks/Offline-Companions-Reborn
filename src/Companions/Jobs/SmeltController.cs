@@ -608,7 +608,6 @@ public class SmeltController : MonoBehaviour
 				UpdateStuckDetection(dt, "smelter");
 				return;
 			}
-			bool flag2 = true;
 		}
 		_ai.StopMoving();
 		_ai.LookAtPoint(smelterInteractPoint);

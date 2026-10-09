@@ -2210,20 +2210,15 @@ internal static class CookCatalog
 
 	private static bool s_built;
 
-	private static string s_foodsKey;
-
 	private static readonly HashSet<string> s_allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 	private static readonly HashSet<string> s_deny = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-	private static bool s_all;
 
 	private static string s_focusKey;
 
 	private static string s_focusStage;
 
 	private static readonly List<string> s_focus = new List<string>();
-
 
 	internal static void Ensure()
 	{

@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
+            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }

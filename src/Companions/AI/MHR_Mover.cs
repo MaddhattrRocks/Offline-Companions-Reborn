@@ -874,7 +874,7 @@ namespace Companions
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
-            if (rb != null) { Vector3 v = rb.velocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.velocity = v; }
+            if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
             s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
             Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - jumping toward " + Fmt(pos + dir * 2f));
         }

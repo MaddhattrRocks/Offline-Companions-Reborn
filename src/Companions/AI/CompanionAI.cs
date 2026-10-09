@@ -129,8 +129,6 @@ public class CompanionAI : BaseAI
 
 	private float _tombstoneNavStuckTime;
 
-	private float _tombstoneScanTotal;
-
 	private float _tombRecoverSnooze;
 
 	private const float TombstoneLootRange = 3f;
@@ -341,7 +339,6 @@ public class CompanionAI : BaseAI
 		{
 			_tombRecoverSnooze = 30f;
 			_pendingTombstone = null;
-			_tombstoneScanTotal = 0f;
 			ClearTombstoneId();
 			RestoreFollowOrPatrol();
 		}
@@ -622,7 +619,7 @@ public class CompanionAI : BaseAI
 		if (_body != null)
 		{
 			_body.position = position;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 			ResetLiquidState();
 			_body.useGravity = false;
 			_body.isKinematic = true;
@@ -672,7 +669,7 @@ public class CompanionAI : BaseAI
 		{
 			_body.isKinematic = false;
 			_body.useGravity = true;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 		}
 		_isOnShip = false;
 		_attachedShip = null;
@@ -687,7 +684,7 @@ public class CompanionAI : BaseAI
 				if (_body != null)
 				{
 					_body.position = position;
-					_body.velocity = Vector3.zero;
+					_body.linearVelocity = Vector3.zero;
 					ResetLiquidState();
 				}
 				flag2 = true;
@@ -712,7 +709,7 @@ public class CompanionAI : BaseAI
 			if (_body != null)
 			{
 				_body.position = position3;
-				_body.velocity = Vector3.zero;
+				_body.linearVelocity = Vector3.zero;
 				ResetLiquidState();
 			}
 		}
@@ -745,7 +742,7 @@ public class CompanionAI : BaseAI
 			Rigidbody component = _attachedShip.GetComponent<Rigidbody>();
 			if (component != null)
 			{
-				_body.velocity = component.GetPointVelocity(vector);
+				_body.linearVelocity = component.GetPointVelocity(vector);
 			}
 		}
 	}
@@ -920,7 +917,6 @@ public class CompanionAI : BaseAI
 				_pendingTombstone = tombStone;
 				_tombstoneNavTimeout = TombstoneNavTimeoutMax;
 				_tombstoneNavStuckTime = 0f;
-				_tombstoneScanTotal = 0f;
 				float num3 = Vector3.Distance(base.transform.position, tombStone.transform.position);
 				if (_talk != null)
 				{
@@ -1062,7 +1058,6 @@ public class CompanionAI : BaseAI
 		_tombstoneNavTimeout = TombstoneNavTimeoutMax;
 		_tombstoneScanTimer = TombstoneScanInterval;
 		_tombstoneNavStuckTime = 0f;
-		_tombstoneScanTotal = 0f;
 		SetFollowTarget(null);
 		if (_talk != null)
 		{
@@ -1204,7 +1199,7 @@ public class CompanionAI : BaseAI
 						if (_body != null)
 						{
 							_body.position = _pendingShipLadder.m_targetPos.position;
-							_body.velocity = Vector3.zero;
+							_body.linearVelocity = Vector3.zero;
 							ResetLiquidState();
 						}
 					}
@@ -1259,7 +1254,7 @@ public class CompanionAI : BaseAI
 					if (_body != null)
 					{
 						_body.position = vector2;
-						_body.velocity = Vector3.zero;
+						_body.linearVelocity = Vector3.zero;
 					}
 					Vector3 vector3 = PendingCartAttach.transform.position - base.transform.position;
 					vector3.y = 0f;

@@ -59,8 +59,6 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 
 	private float _lastInteractTime;
 
-	private float _autoRespawnTimer;
-
 	private bool _autoRespawnDone;
 
 	internal bool _cleanupOnly;

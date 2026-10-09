@@ -773,10 +773,6 @@ internal static class HuntCatalog
 
 	private static bool s_built;
 
-	private static string s_preyKey;
-
-	private static bool s_all;
-
 	private static readonly HashSet<string> s_allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 	private static readonly HashSet<string> s_deny = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

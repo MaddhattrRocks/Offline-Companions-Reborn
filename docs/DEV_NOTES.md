@@ -31,6 +31,9 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.142 - zero build warnings (user, 2026-10-09)
+- User asked about the 29 warnings in their build. Fixed: Rigidbody.velocity -> linearVelocity (MHR_Mover, MHR_Jump, CompanionAI x7, CompanionRest x2, PortalPatches); Object.FindObjectsOfType<Ragdoll>() -> FindObjectsByType(FindObjectsSortMode.None) in MHR_Loot. Removed unused: MHR_ZNetSceneDestroy_Patch flag, SmeltController flag2, CookCatalog s_foodsKey/s_all, HuntCatalog s_preyKey/s_all, ToolKeeper State.UnloadFor, InteractPanel _homeZoneVisual (and its uses), TombstoneResurrect _autoRespawnTimer, Harvest _cachedChest/_terrainHitCount/_forageAll, MHR_Loot State.NextLog, CompanionAI _tombstoneScanTotal. Full rebuild: 0 warnings, 0 errors.
+
 ### 1.4.141 - movement phase 4, part 2 (user, 2026-10-09)
 - After PR #5 (1.4.86-1.4.140) was merged; branch restarted from main.
 - CompanionAI: removed MoveToPoint (context-steering fallback, path-stuck timer, nav "claimed done" retries), ContextSteer, UpdateFallbackStuck, FindBestStrafeAngle, UpdateGroundStuckRecovery (strafe, jump, TeleportToFollowTarget after 5 tries, only active while the old MoveToPoint steered), UpdateProactiveJump (jumped after 2 s below 0.5 m/s with any job active - including while working in place), IsNavMeshFailing/Retrying and ~40 fields/consts. Formation follow no longer falls back to vanilla Follow. _continuousSwimTimer (hazard recovery) is now updated in UpdateAI. Kept: UpdateFurnitureUnstuck (off a bed), hazard recovery, TeleportToFollowTarget (follow warp rule).

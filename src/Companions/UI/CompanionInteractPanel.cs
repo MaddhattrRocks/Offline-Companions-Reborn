@@ -163,8 +163,6 @@ public class CompanionInteractPanel : MonoBehaviour
 
 	private TextMeshProUGUI _homeRadiusLabel;
 
-	private HomeZoneVisual _homeZoneVisual;
-
 	private bool _built;
 
 	private bool _visible;
@@ -827,7 +825,6 @@ public class CompanionInteractPanel : MonoBehaviour
 		}
 		_visible = false;
 		CompanionsPlugin.Log.LogInfo($"[UI] HideInternal reason={reason} closeGui={closeInventoryGuiIfNoTakeover} " + "companionContainer=" + ContainerName(_companionContainer));
-		_homeZoneVisual?.Hide();
 		RestoreGamepadGroups();
 		if (_dragMode)
 		{
@@ -1549,10 +1546,6 @@ public class CompanionInteractPanel : MonoBehaviour
 			{
 				_homeRadiusLabel.text = $"Home zone: {value:F0}m";
 			}
-			if (_homeZoneVisual != null && _companion.HasHomePosition())
-			{
-				_homeZoneVisual.Show(_companion.GetHomePosition(), value);
-			}
 		}
 	}
 
@@ -1564,7 +1557,6 @@ public class CompanionInteractPanel : MonoBehaviour
 		}
 		// 1.4.134: the home-zone row belonged to Homestead (retired in 1.4.117)
 		_homeZoneRow.SetActive(false);
-		_homeZoneVisual?.Hide();
 	}
 
 	private void BuildArmorDisplay(InventoryGui gui)
