@@ -386,6 +386,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> UpkeepGiveUp;
 
+	internal static ConfigEntry<bool> UpkeepPiles;
+
+	internal static ConfigEntry<int> UpkeepPileKeep;
+
+	internal static ConfigEntry<string> UpkeepPileItems;
+
 	internal static ConfigEntry<float> RestHealRate;
 
 	internal static ConfigEntry<float> RestPlayerRange;
@@ -548,6 +554,9 @@ internal static class ModConfig
 		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
 		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
 		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
+		UpkeepPiles = Bind(cfg, "RepairAndRestock", "Piles", true, "Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.");
+		UpkeepPileKeep = Bind(cfg, "RepairAndRestock", "PileKeep", 100, "How many of each material stay in the chests for building; only what's above this goes into piles.", new AcceptableValueRange<int>(0, 10000));
+		UpkeepPileItems = Bind(cfg, "RepairAndRestock", "PileItems", "*", "Which materials go into piles. Comma-separated: * = every material you have piles of, Name = this one, -Name = never this one, Name:Number = keep this many of it in the chests instead of PileKeep. Prefab or in-game names (Wood, Stone, FineWood, RoundLog...).");
 		CookRange = Bind(cfg, "Cooking", "Range", 25f, "How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests.", new AcceptableValueRange<float>(5f, 60f));
 		CookIngredientReserve = Bind(cfg, "Cooking", "IngredientReserve", 20, "A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.", new AcceptableValueRange<int>(0, 1000));
 		CookFoodTarget = Bind(cfg, "Cooking", "FoodTarget", 20, "Cook a food until the chests in range hold this many of it.", new AcceptableValueRange<int>(1, 1000));

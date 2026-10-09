@@ -16,7 +16,7 @@ namespace Companions;
 //    holds the most of it, and part-stacks are merged. Leftovers it fetched go back in a chest.
 // Started near home it works around home (HomeTripRange); anywhere else, around where it was started (AwayRadius).
 // Nothing to do: walks back to the middle of that area and idles.
-public class UpkeepController : MonoBehaviour
+public partial class UpkeepController : MonoBehaviour
 {
 	private enum Step
 	{
@@ -28,6 +28,8 @@ public class UpkeepController : MonoBehaviour
 		SortPut,
 		Tidy,
 		Stow,
+		PileTake,
+		PileBuild,
 		Home
 	}
 
@@ -198,7 +200,11 @@ public class UpkeepController : MonoBehaviour
 		case Step.SortPut:
 		case Step.Tidy:
 		case Step.Stow:
+		case Step.PileTake:
 			UpdateChest();
+			break;
+		case Step.PileBuild:
+			UpdatePileBuild();
 			break;
 		case Step.Fuel:
 			UpdateFuel();
@@ -241,8 +247,8 @@ public class UpkeepController : MonoBehaviour
 		}
 		_scanTimer = ModConfig.UpkeepScanInterval?.Value ?? 5f;
 		// fuel before putting leftovers back, so fuel fetched for one fire can go in the next one first
-		bool busy = PlanRepair() || PlanFuel() || PlanStow() || PlanSort();
-		if (_step != Step.Repair)
+		bool busy = PlanRepair() || PlanFuel() || PlanStow() || PlanPiles() || PlanSort();
+		if (_step != Step.Repair && _step != Step.PileTake && _step != Step.PileBuild)
 		{
 			PutHammerAway();
 		}
@@ -282,6 +288,7 @@ public class UpkeepController : MonoBehaviour
 
 	private void Stop()
 	{
+		_pile = null;
 		CloseChest();
 		PutHammerAway();
 		_step = Step.Idle;
@@ -1182,6 +1189,9 @@ public class UpkeepController : MonoBehaviour
 		Inventory inv = c.GetInventory();
 		switch (_step)
 		{
+		case Step.PileTake:
+			PileTaken(c, inv, bag);
+			return;
 		case Step.FuelFetch:
 		{
 			int got = Move(inv, bag, _key, byName: true, Mathf.Max(1, _amount));
