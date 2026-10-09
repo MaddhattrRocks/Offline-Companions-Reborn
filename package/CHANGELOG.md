@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.116
+- After each catch the fisher casts at the closest fish it wants from where it stands, instead of the one it first picked further out.
+- The first cast of a session no longer goes twice as far as needed (it starts from a full cast reaching about 24 m and keeps learning).
+
 ## 1.4.115
 - The fisher may stand on a rock again, like a player, as long as there's something to stand on.
 - If it falls off its spot it gets back on; if it falls into the water with a fish on the line, the fish is lost; and if it falls off the same spot twice it fishes from somewhere else for a while.

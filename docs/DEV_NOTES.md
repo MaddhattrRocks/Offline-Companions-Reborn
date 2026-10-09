@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.116 - from the 1.4.115 test (log 3f6ef64b)
+- User: "I think its working!" Close fish, but it cast further out than needed. Does * include modded fish?
+- Log: 81 places mapped, Pike/Pike/Perch/Pike hooked, 3 caught, 1 got away, rests between casts. "Casting at the Fish1 (14 m, 100% cast)" -> "Float out 24 m" (initial cast scale 12 m); later casts learned (11 m wanted -> 10 m). After a catch it kept casting at the fish it first chose.
+- Modded fish: FishCatalog reads every ZNetScene prefab with a Fish component, so * covers mods that add real fish (they're also listed in OfflineCompanionsReborn.Fishing.txt). This game has 12 kinds - the vanilla set - so no fish-adding mod here.
+- _castScale starts at 24 m. Landed -> PickFromHere: the closest wanted fish (not hooked, not skipped, allowed, under target, with bait, 2 m-MaxCast away, in sight) from where it stands; else choose a spot again.
+
 ### 1.4.115 - rocks are fine (user, 2026-10-09)
 - User: balancing on a rock is something a player would do - fine; just reduce falling off and behave correctly when it does.
 - MapShore footing: 4 points 0.3 m round (was 0.5 m), level within 0.4 m, not deep water - rock tops count again, needle points don't.

@@ -79,7 +79,9 @@ public class FishController : MonoBehaviour
 
 	private int _haveBefore;
 
-	private float _castScale = 12f;
+	// how far a full cast goes - learned from where the float lands (1.4.115 log: 100% landed 24 m out; starting at 12
+	// made the first cast of every session go twice as far as needed)
+	private float _castScale = 24f;
 
 	private float _nextUnloadTry;
 
@@ -351,6 +353,61 @@ public class FishController : MonoBehaviour
 		_fishName = FishCatalog.PrefabName(bestFish.gameObject);
 		_stand = bestStand;
 		_bait = bestBait;
+		return true;
+	}
+
+	// the closest wanted fish within a cast of where it stands now, in sight, with bait for it
+	private bool PickFromHere()
+	{
+		Inventory inv = _humanoid.GetInventory();
+		Vector3 me = base.transform.position;
+		Fish best = null;
+		string bestBait = null;
+		float bestD = MaxCast;
+		foreach (IMonoUpdater u in Fish.Instances)
+		{
+			Fish fish = u as Fish;
+			if (fish == null || fish.IsHooked())
+			{
+				continue;
+			}
+			Vector3 fp = fish.transform.position;
+			float d = Flat(me, fp);
+			if (d >= bestD || d < 2f)
+			{
+				continue;
+			}
+			if (_skip.TryGetValue(fish.GetInstanceID(), out var until) && Time.time < until)
+			{
+				continue;
+			}
+			string name = FishCatalog.PrefabName(fish.gameObject);
+			if (!FishCatalog.Allowed(name, fish) || !Needs(name))
+			{
+				continue;
+			}
+			string bait = BestBait(fish, inv);
+			if (bait == null)
+			{
+				continue;
+			}
+			float water = Level(fp, fp.y);
+			if (Physics.Linecast(me + Vector3.up * 1.6f, new Vector3(fp.x, water + 0.3f, fp.z), LayerMask.GetMask("Default", "static_solid", "piece", "terrain")))
+			{
+				continue;
+			}
+			bestD = d;
+			best = fish;
+			bestBait = bait;
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		_fish = best;
+		_fishName = FishCatalog.PrefabName(best.gameObject);
+		_bait = bestBait;
+		_stand = me;
 		return true;
 	}
 
@@ -950,8 +1007,9 @@ public class FishController : MonoBehaviour
 		_hookedName = null;
 		_retrieving = false;
 		RefreshCounts();
-		// carry on with the same fish while it's still around and still wanted, else choose again
-		if (_fish != null && !_fish.IsHooked() && Needs(_fishName) && FindItem(_humanoid.GetInventory(), _bait) != null && !PackFull() && Flat(base.transform.position, _fish.transform.position) < 20f)
+		// 1.4.116: from where it stands, cast at the closest fish it wants (user: close fish, but it kept casting at the
+		// one it first picked further out); else choose a spot again
+		if (!PackFull() && PickFromHere())
 		{
 			_castTries = 0;
 			Enter(FishState.Casting);
