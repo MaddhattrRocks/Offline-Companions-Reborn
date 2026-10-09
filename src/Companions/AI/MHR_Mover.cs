@@ -214,14 +214,16 @@ namespace Companions
             {
                 s.NextDoorPeek = now + 0.4f;
                 Door ahead = DoorAhead(pos, target);
-                if (ahead != null) { OpenDoor(ai, c, ahead, tag); Halt(ai, c, s); return false; }
+                // 1.4.139: look again soon - if the door was still swinging shut it couldn't be opened yet (1.4.138 log: close,
+                // "couldn't open", then open 0.4 s later - about a second stood at the door)
+                if (ahead != null) { OpenDoor(ai, c, ahead, tag); if (DoorClosed(ahead)) s.NextDoorPeek = now + 0.15f; Halt(ai, c, s); return false; }
                 // 1.4.136: an open door whose leaf is in the way (opened from the other side, so it swung towards us): close
                 // it like a player would - if the way is through it, the closed door is then opened from this side and
                 // swings away (user: kept getting stuck on a door for a moment)
                 Door leaf = OpenLeafAhead(pos, target);
                 // 1.4.138: held up for a second right by an open door - close it now rather than waiting for the 3 s stuck check
                 if (leaf == null && now - s.AnchorTime > 1.0f) leaf = OpenDoorNear(pos, 2.0f);
-                if (leaf != null) { CloseDoor(ai, c, leaf, tag); Halt(ai, c, s); return false; }
+                if (leaf != null) { CloseDoor(ai, c, leaf, tag); s.NextDoorPeek = now + 0.15f; Halt(ai, c, s); return false; }
             }
 
             Vector3 dir = target - pos; dir.y = 0f;

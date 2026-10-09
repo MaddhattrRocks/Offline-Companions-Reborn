@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.139 - from the 1.4.138 test (log 5976ced3)
+- User: handles the door much better, still gets stuck on it (didn't used to).
+- Log: no stuck-ladder lines at all. Each pass: "closed the $piece_wooddoor ... open towards us", "couldn't open $piece_wooddoor" (still swinging shut - Door.CanInteract false), "opened" on the next 0.4 s peek, walk through, "closed ... behind us". About 1-1.5 s stood at the door.
+- Door peek: after CloseDoor, or an OpenDoor that left it closed, the next peek is 0.15 s away (was 0.4 s).
+- If it still looks stuck: ask what exactly it does there (walks into it / waits / turns) - the old DoorHandler didn't close and reopen doors, it just pushed through.
+
 ### 1.4.138 - from the 1.4.137 test (log 0eb3e1f9)
 - User: still got stuck on that door.
 - Log: first time (Farm) "stuck (standing still 3s) at (-274.9, 40.0, -310.7) - stepping back", then a hop toward (-276.5, 40.0, -311.9) = the doorway - no door found by step 0 although the $piece_wooddoor at (-276.4, 40.9, -311.9) was 1.9 m away. Later (Tools) the peek's OpenLeafAhead closed it, reopened from this side and walked through without stopping.

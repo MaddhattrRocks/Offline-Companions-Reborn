@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.139
+- Shorter stop at doors: after closing a door that was open towards it, the companion tries to open it again every moment instead of waiting, so it goes through as soon as the door has finished swinging shut.
+
 ## 1.4.138
 - The open-door fix sometimes didn't find the door at all: inside a house there are so many walls and beams close by that the door search ran out of room before reaching the door. It now looks much further through the list, and an open door is closed after about a second of being held up next to it instead of three.
 
