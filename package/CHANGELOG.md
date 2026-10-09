@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.136
+- Companions got stuck for a moment on a door that was already open towards them (opened from the other side). Like a player, they now close it and, if their way is through it, open it again from their side so it swings away.
+
 ## 1.4.135
 - Farm paused for a few seconds while planting: it had walked as close to the plant spot as it needed to, but Farm measured the distance differently (straight-line, slope included) and kept waiting. Farm, Smelt and Cook now accept "arrived" the same way the movement does.
 

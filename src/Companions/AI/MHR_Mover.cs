@@ -207,7 +207,17 @@ namespace Companions
             }
 
             // a closed door right ahead: open it before walking into it
-            if (now >= s.NextDoorPeek) { s.NextDoorPeek = now + 0.4f; Door ahead = DoorAhead(pos, target); if (ahead != null) { OpenDoor(ai, c, ahead, tag); Halt(ai, c, s); return false; } }
+            if (now >= s.NextDoorPeek)
+            {
+                s.NextDoorPeek = now + 0.4f;
+                Door ahead = DoorAhead(pos, target);
+                if (ahead != null) { OpenDoor(ai, c, ahead, tag); Halt(ai, c, s); return false; }
+                // 1.4.136: an open door whose leaf is in the way (opened from the other side, so it swung towards us): close
+                // it like a player would - if the way is through it, the closed door is then opened from this side and
+                // swings away (user: kept getting stuck on a door for a moment)
+                Door leaf = OpenLeafAhead(pos, target);
+                if (leaf != null) { CloseDoor(ai, c, leaf, tag); Halt(ai, c, s); return false; }
+            }
 
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.04f && s.Corner < s.Path.Count - 1) { s.Corner++; target = NextCorner(s, pos); dir = target - pos; dir.y = 0f; }
@@ -497,6 +507,8 @@ namespace Companions
                     {
                         Door d = DoorNear(pos, 2.6f);
                         if (d != null) { OpenDoor(ai, c, d, tag); s.NextPlan = now + 0.6f; return; }
+                        Door leaf = OpenLeafAhead(pos, target);
+                        if (leaf != null) { CloseDoor(ai, c, leaf, tag); s.NextPlan = now + 0.6f; return; }
                         Sidestep(ai, c, s, pos, dir, now, tag, why, true);
                         return;
                     }
@@ -1053,6 +1065,42 @@ namespace Companions
             if (!Physics.Raycast(from, d.normalized, out hit, len, LayerMask.GetMask("piece", "Default"))) return null;
             Door door = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
             return Usable(door) ? door : null;
+        }
+
+        // 1.4.136: an open door's leaf right in front of us on the way to the next corner
+        static readonly Dictionary<int, float> s_leafClosed = new Dictionary<int, float>();
+        static Door OpenLeafAhead(Vector3 pos, Vector3 target)
+        {
+            Vector3 flat = target - pos; flat.y = 0f;
+            float len = Mathf.Min(flat.magnitude, 1.6f);
+            if (len < 0.2f) return null;
+            Vector3 dir = flat.normalized;
+            float[] heights = { 0.5f, 1.0f, 1.5f };
+            for (int i = 0; i < heights.Length; i++)
+            {
+                RaycastHit hit;
+                if (!Physics.Raycast(pos + Vector3.up * heights[i], dir, out hit, len, LayerMask.GetMask("piece", "Default", "piece_nonsolid"))) continue;
+                Door d = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
+                float until;
+                if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;   // just did this one
+                return d;
+            }
+            return null;
+        }
+
+        static void CloseDoor(CompanionAI ai, Character c, Door d, string tag)
+        {
+            if (d == null || DoorClosed(d)) return;
+            s_leafClosed[d.GetInstanceID()] = Time.time + 8f;
+            if (s_leafClosed.Count > 200) s_leafClosed.Clear();
+            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
+            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            Humanoid h = c as Humanoid;
+            bool ok = false;
+            try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
+            Dbg("[Move|" + tag + "] " + (ok ? "closed" : "couldn't close") + " the " + d.m_name + " at " + Fmt(d.transform.position) + " - it was open towards us and in the way");
         }
 
         // the closed door that opens the shortest way to the goal, and where to stand to open it

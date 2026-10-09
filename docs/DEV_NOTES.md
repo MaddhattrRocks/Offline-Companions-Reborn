@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.136 - from the 1.4.135 test (log 371b769a)
+- User: keeps getting stuck on a door for a moment, then works round it quickly; everything else good.
+- Log: twice (Farm, then a tool trip) "[Move|...] stuck (standing still 3s) at (-275.2, 40.0, -310.3) - stepping back to the side", then "no closer for 8s - jumping" on the way down to the lower floor; no "opened ..." line - the door was open (DoorAhead/DoorNear only look for closed doors), its leaf in the way.
+- MHR_Mover: OpenLeafAhead (rays at 0.5/1.0/1.5 m towards the next corner, 1.6 m: an open Door, no key, ward access, not closed by us in the last 8 s) checked in the 0.4 s door peek after DoorAhead and at stuck-ladder step 0 after DoorNear -> CloseDoor (Door.Interact toggles it shut). If the route goes through it, the next peek's DoorAhead opens it from this side (Door.Open swings away from the user).
+
 ### 1.4.135 - from the planting test (log 73d58004 - still v1.4.133)
 - User: paused for a few while planting, then fine; everything else fine.
 - Log (1.4.133 build, before part 1): "next plant spot at (-268.1, 38.4, -322.6)" with the companion at (-267.8, 39.3, -320.8): 1.8 m flat, 0.9 m down = 2.03 m 3D. MHR_Mover arrival (flat <= 2, |dy| <= 1.5) -> Halt, no more [Move] lines; FarmController.UpdateMovingToPlantSpot checks Vector3.Distance < UseDistance (2) -> kept "moving"; the old 10 s timer aborted and blacklisted the spot. With 1.4.134's 120 s leg timeout it would have waited two minutes.
