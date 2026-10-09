@@ -281,6 +281,7 @@ public class FishController : MonoBehaviour
 		int noBait = 0;
 		int noBank = 0;
 		string noBaitFor = null;
+		string noBankAt = null;
 		float best = float.MaxValue;
 		Fish bestFish = null;
 		Vector3 bestStand = Vector3.zero;
@@ -322,6 +323,7 @@ public class FishController : MonoBehaviour
 			if (!BankSpot(fish, out var stand))
 			{
 				noBank++;
+				noBankAt = noBankAt ?? (FishCatalog.Local(fish) + " at " + MHR_Mover.Fmt(p) + ", water " + MHR_Water.WaterLevel(p).ToString("F1"));
 				continue;
 			}
 			float d = Flat(me, stand);
@@ -335,7 +337,7 @@ public class FishController : MonoBehaviour
 		}
 		if (bestFish == null)
 		{
-			why = seen == 0 ? ("no fish within " + radius.ToString("F0") + " m") : (enough == seen ? "enough of every fish here" : (noBait > 0 && noBank == 0 ? ("no bait for " + noBaitFor) : "no bank to fish from within a cast"));
+			why = seen == 0 ? ("no fish within " + radius.ToString("F0") + " m") : (enough == seen ? "enough of every fish here" : (noBait > 0 && noBank == 0 ? ("no bait for " + noBaitFor) : ("no bank to fish from within a cast - " + seen + " fish seen, e.g. " + noBankAt)));
 			return false;
 		}
 		_fish = bestFish;
@@ -366,43 +368,90 @@ public class FishController : MonoBehaviour
 		return best;
 	}
 
-	// a dry spot on the bank, within a cast of the fish: walk out from the fish towards where we are (then all round)
-	// until the ground is above the water
+	// a dry spot on the bank (or a dock, a wall) within a cast of the fish: where it stands now if that works, else walk
+	// out from the fish towards where we are (then all round) to the first dry ground.
+	// 1.4.107: banks up to 10 m above the water count (1.4.106 test: the moat walls are more than 4 m high, so every
+	// bank was turned down - "no bank to fish from within a cast"); the ground is found from above, so a dock or a
+	// wall top counts too
 	private bool BankSpot(Fish fish, out Vector3 stand)
 	{
 		stand = Vector3.zero;
 		Vector3 fp = fish.transform.position;
-		Vector3 toMe = base.transform.position - fp;
+		float water = MHR_Water.WaterLevel(fp);
+		if (water < -1000f)
+		{
+			return false;
+		}
+		Vector3 target = new Vector3(fp.x, water, fp.z);
+		Vector3 me = base.transform.position;
+		if (GoodStand(me, target, water))
+		{
+			stand = me;
+			return true;
+		}
+		Vector3 toMe = me - fp;
 		toMe.y = 0f;
 		float a0 = (toMe.sqrMagnitude > 0.01f) ? Mathf.Atan2(toMe.x, toMe.z) * 57.29578f : 0f;
 		for (int i = 0; i < 12; i++)
 		{
 			float ang = a0 + ((i % 2 == 0) ? 1 : (-1)) * ((i + 1) / 2) * 30f;
 			Vector3 dir = Quaternion.Euler(0f, ang, 0f) * Vector3.forward;
-			for (float x = 3f; x <= 14f; x += 1f)
+			for (float x = 2f; x <= 14f; x += 1f)
 			{
 				Vector3 p = fp + dir * x;
-				if (MHR_Water.DepthAt(p) > 0.2f)
+				if (!Top(p, water, out var top))
 				{
 					continue;
 				}
-				Vector3 q = p + dir * 0.8f;
-				float g = MHR_Water.GroundAt(q);
-				q.y = g;
-				float water = MHR_Water.WaterLevel(fp);
-				if (g > water + 4f || MHR_Water.DepthAt(q) > 0.2f || MHR_Mover.InFire(q))
+				if (top.y < water + 0.1f)
 				{
-					break;
+					continue;   // still water (or ground under it)
 				}
-				if (!MHR_Mover.CanSee(q + Vector3.up * 1.6f, new Vector3(fp.x, water + 0.3f, fp.z)))
+				Vector3 q = p + dir * 0.6f;
+				if (Top(q, water, out var qTop) && qTop.y >= water + 0.1f && GoodStand(qTop, target, water))
 				{
-					break;
+					stand = qTop;
+					return true;
 				}
-				stand = q;
-				return true;
+				break;   // the first dry ground this way doesn't work; try another direction
 			}
 		}
 		return false;
+	}
+
+	// the walkable surface at p, found from well above the water (terrain, a dock, a wall top)
+	private static bool Top(Vector3 p, float water, out Vector3 top)
+	{
+		top = p;
+		if (!Physics.Raycast(new Vector3(p.x, water + 30f, p.z), Vector3.down, out var hit, 60f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain")))
+		{
+			return false;
+		}
+		if (hit.normal.y < 0.6f)
+		{
+			return false;
+		}
+		top = hit.point;
+		return true;
+	}
+
+	private bool GoodStand(Vector3 q, Vector3 target, float water)
+	{
+		float d = Flat(q, target);
+		if (d < 2f || d > 14f || q.y > water + 10f || q.y < water - 0.2f)
+		{
+			return false;
+		}
+		if (MHR_Water.WouldSwim(_character, q) || MHR_Mover.InFire(q))
+		{
+			return false;
+		}
+		// room to stand, and a clear line from head height to the water over the fish
+		if (Physics.CheckCapsule(q + Vector3.up * 0.6f, q + Vector3.up * 1.6f, 0.3f, LayerMask.GetMask("Default", "static_solid", "piece")))
+		{
+			return false;
+		}
+		return !Physics.Linecast(q + Vector3.up * 1.6f, target + Vector3.up * 0.3f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain"));
 	}
 
 	// ------------------------------------------------------------------ getting there, casting

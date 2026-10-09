@@ -21,7 +21,7 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	public const string PluginName = "Offline Companions Reborn";
 
-	public const string PluginVersion = "1.4.106";
+	public const string PluginVersion = "1.4.107";
 
 	private static Harmony _harmony;
 
