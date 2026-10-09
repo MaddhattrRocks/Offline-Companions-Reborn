@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.114
+- The fisher may stand in shallow water (up to about waist deep) to fish, but prefers dry land.
+- It only fishes from firm footing: level ground at least half a meter all round, so no more hopping onto a small rock and falling off when it casts.
+- It prefers fish it can reach with a shorter cast.
+
 ## 1.4.113
 - Fixed the fisher finding almost nowhere to fish from (1.4.112 was too strict on beaches): any dry ground or dock with water within 5 m counts again, as long as the water is at least a meter away.
 

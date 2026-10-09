@@ -327,13 +327,13 @@ public class FishController : MonoBehaviour
 				noBaitFor = noBaitFor ?? (FishCatalog.Local(fish) + " (takes " + FishCatalog.BaitsText(fish) + ")");
 				continue;
 			}
-			if (!SpotFor(fish, out var stand))
+			if (!SpotFor(fish, out var stand, out var spotCost))
 			{
 				noBank++;
 				noBankAt = noBankAt ?? (FishCatalog.Local(fish) + " at " + MHR_Mover.Fmt(p) + ", water " + MHR_Water.WaterLevel(p).ToString("F1"));
 				continue;
 			}
-			float d = Flat(me, stand);
+			float d = spotCost;
 			if (d < best)
 			{
 				best = d;
@@ -383,6 +383,8 @@ public class FishController : MonoBehaviour
 		public Vector3 Stand;
 
 		public Vector3 Water;
+
+		public bool Wet;
 	}
 
 	private readonly List<Shore> _shore = new List<Shore>();
@@ -419,7 +421,21 @@ public class FishController : MonoBehaviour
 				}
 				Vector3 p = _anchor + new Vector3(x, 0f, z);
 				float wl = Level(p, baseWater);
-				if (!Top(p, wl, out var top) || top.y < wl + 0.1f || top.y > wl + 10f)
+				// 1.4.114: standing in shallow water is fine (user: "less than waist deep should be ok", prefer dry land)
+				if (!Top(p, wl, out var top) || top.y < wl - WadeDepth || top.y > wl + 10f)
+				{
+					continue;
+				}
+				bool wet = top.y < wl + 0.1f;
+				// firm footing: level ground 0.5 m round it, none of it deep water (user: "0.5 m of space would be plenty";
+				// 1.4.113 test: hopped onto a small rock to get closer and fell off it when it cast)
+				bool firm = true;
+				for (int k = 0; k < 4 && firm; k++)
+				{
+					Vector3 q = top + Quaternion.Euler(0f, k * 90f, 0f) * Vector3.forward * 0.5f;
+					firm = Top(q, wl, out var qt) && Mathf.Abs(qt.y - top.y) < 0.4f && qt.y > wl - WadeDepth;
+				}
+				if (!firm)
 				{
 					continue;
 				}
@@ -432,7 +448,7 @@ public class FishController : MonoBehaviour
 					{
 						Vector3 w = top + dir * d;
 						float lw = Level(w, baseWater);
-						if (Top(w, lw, out var under) && lw - under.y > 0.4f)
+						if (Top(w, lw, out var under) && lw - under.y > WadeDepth)
 						{
 							if (d < nearest)
 							{
@@ -454,7 +470,8 @@ public class FishController : MonoBehaviour
 				_shore.Add(new Shore
 				{
 					Stand = top,
-					Water = water
+					Water = water,
+					Wet = wet
 				});
 			}
 		}
@@ -468,9 +485,19 @@ public class FishController : MonoBehaviour
 	}
 
 	// the shore place nearest to us from which this fish is within a cast and in sight
+	// 1.4.114: up to here in the water is fine to stand in (about waist deep is where it would start swimming)
+	private const float WadeDepth = 0.8f;
+
 	private bool SpotFor(Fish fish, out Vector3 stand)
 	{
+		return SpotFor(fish, out stand, out _);
+	}
+
+	// cheapest place: a short walk, a short cast (user: "prefer casting to closer fish"), dry rather than wet
+	private bool SpotFor(Fish fish, out Vector3 stand, out float cost)
+	{
 		stand = Vector3.zero;
+		cost = float.MaxValue;
 		MapShore();
 		Vector3 fp = fish.transform.position;
 		float water = Level(fp, fp.y);
@@ -485,8 +512,8 @@ public class FishController : MonoBehaviour
 			{
 				continue;
 			}
-			float cost = Flat(me, sh.Stand) + d * 0.5f;
-			if (cost >= best)
+			float c = Flat(me, sh.Stand) + d * 1.5f + (sh.Wet ? 10f : 0f);
+			if (c >= best)
 			{
 				continue;
 			}
@@ -494,10 +521,11 @@ public class FishController : MonoBehaviour
 			{
 				continue;
 			}
-			best = cost;
+			best = c;
 			stand = sh.Stand;
 			found = true;
 		}
+		cost = best;
 		return found;
 	}
 

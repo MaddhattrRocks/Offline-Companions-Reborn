@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.114 - from the 1.4.113 test (log 0c222470)
+- User: "It did really well this time. Really really well." Thoughts: it jumped on a rock to get closer to the fish and fell in, then fell off the rock when it cast. Standing in the water a little is fine, not enough to swim (less than waist deep), prefer dry land; 0.5 m of space is plenty; prefer casting to closer fish.
+- Log (v1.4.113): "Mapped 79 places", walked straight to a spot, casts of 10-24 m, hooked Pike/Perch/Pike/Perch, two got away, caught a Pike and a Perch, rested between casts (stamina 5-30 of ~75).
+- MapShore: stand top may be up to WadeDepth (0.8 m) under the water (Wet, +10 cost); firm footing - 4 points 0.5 m round it level within 0.4 m and not deeper than WadeDepth; the water to fish needs depth > WadeDepth within 1-5 m. SpotFor cost = walk + cast x 1.5 (+10 wet); PickTarget picks by that cost (was walk only).
+
 ### 1.4.113 - from the 1.4.112 test (log 78bd5324)
 - User: something broke again - didn't fish, just said lines about fishing.
 - Log (v1.4.112): "Mapped 1 places to fish from", "Nothing to fish (no bank ... 6/8 fish seen)". 1.4.112's MapShore needed water 1 m deep 2.5 m away AND dry ground 1 m towards it - on that gently sloping beach that left one place.
