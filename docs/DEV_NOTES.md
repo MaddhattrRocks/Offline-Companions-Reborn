@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.119 - cooking appliance switches, sorting anywhere (user, 2026-10-09)
+- User: a toggle for each cooking appliance; sort chests around the companion, not just at home; asked whether Repair and Restock turns Follow off - it does (MHR_JobRules.OnJobSet turns Follow off for every job but Hunt).
+- CookController.ApplianceOn (in the station scan and the beehive scan) by prefab name: meadcauldron/ketill, cauldron, preptable, cookingstation_iron, cookingstation, oven; Fermenter and Beehive by component; other CraftingStations that CookCatalog counts as cooking stations, and anything else with a CookingStation -> OtherStations. Workbenches etc. and chests are untouched.
+- UpkeepController: _atHome is decided when the job starts (home set and NearHome) - area = home + HomeTripRange, else start position + AwayRadius; sorting no longer needs a home; idle walks back to the area's middle (AtHomeRange at home, 10 m elsewhere).
+
 ### 1.4.118 - repair cutoff and refuel kinds (user, 2026-10-09)
 - User: RepairBelow default 0.75; an on/off for refueling each kind - fires, braziers, hearths, standing torches, etc.
 - UpkeepController.RefuelOn sorts a Fireplace by its prefab name: hearth / brazier / groundtorch / walltorch or sconce / bathtub or hottub / fire_pit, firepit, bonfire, campfire; anything else is RefuelOther. [RepairAndRestock] Restock stays the master switch. A config file written by 1.4.117 keeps RepairBelow = 1 until it's changed there.

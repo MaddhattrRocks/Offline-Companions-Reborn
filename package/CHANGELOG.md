@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.119
+- Cook: each cooking appliance can be switched off on its own - Cauldron, PrepTable, MeadKetill, CookingStation, IronCookingStation, Oven, Fermenter, Beehives and OtherStations (modded ones).
+- Repair and Restock now sorts chests wherever it was started, not only at home: started near home it works around home, anywhere else within AwayRadius of where it was started (and goes back there when idle, instead of walking home).
+
 ## 1.4.118
 - Repair and Restock now leaves pieces above 75% health alone by default (RepairBelow 0.75, was 1 = any damage).
 - Each kind of fire can be left alone: RefuelFires, RefuelHearths, RefuelBraziers, RefuelStandingTorches, RefuelWallTorches, RefuelHotTubs and RefuelOther (lanterns, modded fires and the like).

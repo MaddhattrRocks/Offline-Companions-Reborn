@@ -1,7 +1,7 @@
 {
   "name": "Offline_Companions_Reborn",
   "description": "Adds persistent NPC companion allies to Valheim. Valheim 1.0 compatibility update for ProfMags' Offline Companions, with several bug fixes and feature additions. Full credit to ProfMags for the original mod.",
-  "version_number": "1.4.118",
+  "version_number": "1.4.119",
   "website_url": "https://www.patreon.com/cw/MaddHattr",
   "dependencies": []
 }

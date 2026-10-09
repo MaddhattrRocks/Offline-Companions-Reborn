@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.118 pushed, not yet tested (1.4.86-1.4.118 on the branch, no PR yet)
+## Current state: 1.4.119 pushed, not yet tested (1.4.86-1.4.119 on the branch, no PR yet)
+- 1.4.119: per-appliance Cook switches; Repair and Restock sorts wherever it was started.
 - 1.4.118: RepairBelow default 0.75; per-kind refuel switches (fires, hearths, braziers, standing torches, wall torches, hot tubs, other).
 - 1.4.117: Repair and Restock job (real repair, refuel, like-with-like chest sorting near home); Restock and Homestead wheel slots are "Pending"; Homestead retired.
 - 1.4.115 test: Fish works (user). 1.4.116: recast at the closest fish, better first cast.

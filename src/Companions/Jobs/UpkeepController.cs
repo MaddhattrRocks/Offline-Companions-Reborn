@@ -12,9 +12,10 @@ namespace Companions;
 //    piece's crafting station in range and ward access; costs stamina and hammer durability like a player's swing).
 //  - Restock: fires, torches and braziers low on fuel get topped up one piece at a time; fuel comes from the pack or is
 //    fetched from a chest first.
-//  - Sort (only with a home set): like with like - each kind of item is carried to the chest near home that already
+//  - Sort: like with like - each kind of item is carried to the chest in its area that already
 //    holds the most of it, and part-stacks are merged. Leftovers it fetched go back in a chest.
-// Without a home it repairs and restocks around where the job was started. Nothing to do: walks home and idles.
+// Started near home it works around home (HomeTripRange); anywhere else, around where it was started (AwayRadius).
+// Nothing to do: walks back to the middle of that area and idles.
 public class UpkeepController : MonoBehaviour
 {
 	private enum Step
@@ -65,6 +66,8 @@ public class UpkeepController : MonoBehaviour
 	private bool _hasAnchor;
 
 	private Vector3 _anchor;
+
+	private bool _atHome;
 
 	private WearNTear _piece;
 
@@ -147,8 +150,11 @@ public class UpkeepController : MonoBehaviour
 		if (!_hasAnchor)
 		{
 			_hasAnchor = true;
-			_anchor = base.transform.position;
-			Log("Repair and Restock " + (_setup.HasHomePosition() ? "around home " + MHR_Mover.Fmt(_setup.GetHomePosition()) + ", up to " + Range().ToString("F0") + " m out" : "around " + MHR_Mover.Fmt(_anchor) + " (no home set, so no chest sorting), up to " + Range().ToString("F0") + " m out"));
+			// 1.4.119: works around home when started near home, otherwise around where it was started (user: sort the
+			// chests around them, not just at home)
+			_atHome = _setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup);
+			_anchor = _atHome ? _setup.GetHomePosition() : base.transform.position;
+			Log("Repair and Restock around " + (_atHome ? "home " : "here ") + MHR_Mover.Fmt(_anchor) + ", up to " + Range().ToString("F0") + " m out");
 		}
 		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
@@ -196,12 +202,12 @@ public class UpkeepController : MonoBehaviour
 
 	private float Range()
 	{
-		return _setup.HasHomePosition() ? MHR_ToolKeeper.HomeRange() : (ModConfig.UpkeepAwayRadius?.Value ?? 30f);
+		return _atHome ? MHR_ToolKeeper.HomeRange() : (ModConfig.UpkeepAwayRadius?.Value ?? 30f);
 	}
 
 	private Vector3 Center()
 	{
-		return _setup.HasHomePosition() ? _setup.GetHomePosition() : _anchor;
+		return _anchor;
 	}
 
 	private static float Reach => ModConfig.UpkeepReach?.Value ?? 4.5f;
@@ -242,7 +248,7 @@ public class UpkeepController : MonoBehaviour
 			_nextNothingLog = Time.time + 120f;
 			LogDebug("Still nothing to do");
 		}
-		if (_setup.HasHomePosition() && !MHR_ToolKeeper.AtHome(_setup))
+		if (Vector3.Distance(base.transform.position, Center()) > (_atHome ? MHR_ToolKeeper.AtHomeRange() : 10f))
 		{
 			Enter(Step.Home);
 		}
@@ -756,7 +762,7 @@ public class UpkeepController : MonoBehaviour
 
 	private bool PlanSort()
 	{
-		if (!_setup.HasHomePosition() || (ModConfig.UpkeepSort != null && !ModConfig.UpkeepSort.Value))
+		if (ModConfig.UpkeepSort != null && !ModConfig.UpkeepSort.Value)
 		{
 			return false;
 		}
@@ -798,7 +804,7 @@ public class UpkeepController : MonoBehaviour
 			}
 		}
 		Vector3 me = base.transform.position;
-		Vector3 home = _setup.GetHomePosition();
+		Vector3 home = Center();
 		Container bestFrom = null;
 		Container bestTo = null;
 		string bestKey = null;
@@ -1337,16 +1343,16 @@ public class UpkeepController : MonoBehaviour
 
 	private void UpdateHome()
 	{
-		if (!_setup.HasHomePosition() || MHR_ToolKeeper.AtHome(_setup) && Vector3.Distance(base.transform.position, _setup.GetHomePosition()) < 6f)
+		if (Vector3.Distance(base.transform.position, Center()) < 6f)
 		{
-			Done("Back home");
+			Done(_atHome ? "Back home" : "Back where it was working");
 			_scanTimer = ModConfig.UpkeepScanInterval?.Value ?? 5f;
 			return;
 		}
-		MHR_Nav.Move(_ai, Time.deltaTime, _setup.GetHomePosition(), 4f, run: true, Tag);
+		MHR_Nav.Move(_ai, Time.deltaTime, Center(), 4f, run: true, Tag);
 		if (MHR_Mover.GaveUp(_ai) || Time.time - _stepStart > GiveUp * 2f)
 		{
-			Done("Couldn't get home - staying here for now");
+			Done("Couldn't get back - staying here for now");
 			_scanTimer = 30f;
 		}
 	}

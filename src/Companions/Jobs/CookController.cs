@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using BepInEx;
+using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
 
@@ -1645,6 +1646,10 @@ public class CookController : MonoBehaviour
 			{
 				_chests.Add(container);
 			}
+			if (!ApplianceOn(piece))
+			{
+				continue;
+			}
 			CookingStation cookingStation = piece.GetComponent<CookingStation>();
 			if (cookingStation != null && cookingStation.GetComponent<ZNetView>()?.GetZDO() != null)
 			{
@@ -1676,11 +1681,64 @@ public class CookController : MonoBehaviour
 		foreach (Piece piece2 in _pieces)
 		{
 			Beehive beehive = (piece2 != null) ? piece2.GetComponent<Beehive>() : null;
-			if (beehive != null && beehive.GetComponent<ZNetView>()?.GetZDO() != null)
+			if (beehive != null && beehive.GetComponent<ZNetView>()?.GetZDO() != null && ApplianceOn(piece2))
 			{
 				_hives.Add(beehive);
 			}
 		}
+	}
+
+	// 1.4.119: each kind of cooking appliance can be left alone (user: "a toggle for each cooking appliance"), told apart
+	// by the game's piece name. Chests aren't appliances and are always on.
+	private static bool ApplianceOn(Piece piece)
+	{
+		if (piece.GetComponent<CookingStation>() == null && piece.GetComponent<Fermenter>() == null && piece.GetComponent<Beehive>() == null && piece.GetComponent<CraftingStation>() == null)
+		{
+			return true;
+		}
+		string n = Utils.GetPrefabName(piece.gameObject).ToLowerInvariant();
+		ConfigEntry<bool> e;
+		if (n.Contains("meadcauldron") || n.Contains("ketill"))
+		{
+			e = ModConfig.CookMeadKetill;
+		}
+		else if (n.Contains("cauldron"))
+		{
+			e = ModConfig.CookCauldron;
+		}
+		else if (n.Contains("preptable"))
+		{
+			e = ModConfig.CookPrepTable;
+		}
+		else if (n.Contains("cookingstation_iron"))
+		{
+			e = ModConfig.CookIronCookingStation;
+		}
+		else if (n.Contains("cookingstation"))
+		{
+			e = ModConfig.CookCookingStation;
+		}
+		else if (n.Contains("oven"))
+		{
+			e = ModConfig.CookOven;
+		}
+		else if (piece.GetComponent<Fermenter>() != null)
+		{
+			e = ModConfig.CookFermenter;
+		}
+		else if (piece.GetComponent<Beehive>() != null)
+		{
+			e = ModConfig.CookBeehives;
+		}
+		else if (piece.GetComponent<CraftingStation>() != null && piece.GetComponent<CookingStation>() == null && !CookCatalog.IsCookingStation(piece.GetComponent<CraftingStation>().m_name))
+		{
+			return true;   // a workbench, forge... - not a cooking appliance
+		}
+		else
+		{
+			e = ModConfig.CookOtherStations;
+		}
+		return e == null || e.Value;
 	}
 
 	private bool Usable(Component c)

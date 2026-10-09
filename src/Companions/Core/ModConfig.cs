@@ -160,6 +160,24 @@ internal static class ModConfig
 
 	internal static ConfigEntry<string> CookMeadFocus;
 
+	internal static ConfigEntry<bool> CookCauldron;
+
+	internal static ConfigEntry<bool> CookPrepTable;
+
+	internal static ConfigEntry<bool> CookMeadKetill;
+
+	internal static ConfigEntry<bool> CookCookingStation;
+
+	internal static ConfigEntry<bool> CookIronCookingStation;
+
+	internal static ConfigEntry<bool> CookOven;
+
+	internal static ConfigEntry<bool> CookFermenter;
+
+	internal static ConfigEntry<bool> CookBeehives;
+
+	internal static ConfigEntry<bool> CookOtherStations;
+
 	internal static ConfigEntry<bool> StatusEffectsOnRegen;
 
 	internal static ConfigEntry<float> DryDetour;
@@ -514,10 +532,10 @@ internal static class ModConfig
 		RefuelHotTubs = Bind(cfg, "RepairAndRestock", "RefuelHotTubs", true, "Restock: hot tubs.");
 		RefuelOther = Bind(cfg, "RepairAndRestock", "RefuelOther", true, "Restock: anything else that burns fuel and isn't one of the kinds above (lanterns, the jack-o-turnip, things added by other mods).");
 		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
-		UpkeepSort = Bind(cfg, "RepairAndRestock", "Sort", true, "Repair and Restock: sort the chests near home (needs a home set), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.");
+		UpkeepSort = Bind(cfg, "RepairAndRestock", "Sort", true, "Repair and Restock: sort the chests in its area (around home, or around where the job was started), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.");
 		UpkeepSortItems = Bind(cfg, "RepairAndRestock", "SortItems", "*", "Which items get sorted. Comma-separated: * = everything, Name = this one, -Name = never this one (e.g. *, -Coins, -Wood keeps coins and wood where they are). Prefab or in-game names.");
 		UpkeepSortGear = Bind(cfg, "RepairAndRestock", "SortGear", false, "Also sort things that don't stack (weapons, armor, tools). Off: only stackable items are moved.");
-		UpkeepAwayRadius = Bind(cfg, "RepairAndRestock", "AwayRadius", 30f, "With no home set: how far (meters) from where the job was started it repairs and restocks. With a home, the range is [General] HomeTripRange around home.", new AcceptableValueRange<float>(5f, 100f));
+		UpkeepAwayRadius = Bind(cfg, "RepairAndRestock", "AwayRadius", 30f, "Started away from home (or with no home set): how far (meters) from where the job was started it repairs, restocks and sorts. Started near home, the range is [General] HomeTripRange around home.", new AcceptableValueRange<float>(5f, 100f));
 		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
 		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
 		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
@@ -529,6 +547,15 @@ internal static class ModConfig
 		CookStoreWithCookedFood = Bind(cfg, "Cooking", "StoreWithCookedFood", true, "Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.");
 		CookMeadBaseTarget = Bind(cfg, "Cooking", "MeadBaseTarget", 10, "Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.", new AcceptableValueRange<int>(0, 1000));
 		CookMeadTarget = Bind(cfg, "Cooking", "MeadTarget", 20, "Keep fermenters going with a mead base until the chests in range hold this many of the finished mead.", new AcceptableValueRange<int>(0, 1000));
+		CookCauldron = Bind(cfg, "Cooking", "UseCauldron", true, "Cook job: use the cauldron (soups, stews and other crafted food).");
+		CookPrepTable = Bind(cfg, "Cooking", "UsePrepTable", true, "Cook job: use the food preparation table (dough, raw pies and the like).");
+		CookMeadKetill = Bind(cfg, "Cooking", "UseMeadKetill", true, "Cook job: use the mead ketill (mead bases).");
+		CookCookingStation = Bind(cfg, "Cooking", "UseCookingStation", true, "Cook job: use the cooking station / spit over a fire.");
+		CookIronCookingStation = Bind(cfg, "Cooking", "UseIronCookingStation", true, "Cook job: use the iron cooking station.");
+		CookOven = Bind(cfg, "Cooking", "UseOven", true, "Cook job: use the stone oven (bread, pies; it also gets wood).");
+		CookFermenter = Bind(cfg, "Cooking", "UseFermenter", true, "Cook job: use fermenters (filling them with mead bases and tapping the mead).");
+		CookBeehives = Bind(cfg, "Cooking", "UseBeehives", true, "Cook job: use beehives (collecting honey).");
+		CookOtherStations = Bind(cfg, "Cooking", "UseOther", true, "Cook job: use any other cooking station, e.g. one added by another mod.");
 		CookMeadFocus = Bind(cfg, "Cooking", "MeadFocus", "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBasePoisonResist, MeadBaseHealthMedium, MeadBaseStaminaMinor; bonemass: MeadBaseFrostResist, MeadBaseHealthMedium, MeadBaseStaminaMedium; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseTasty, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, MeadBaseLightfoot; queen: BarleyWineBase, MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseHealthLingering, MeadBaseEitrMinor; fader: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor; kall: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor", "Mead bases to brew FIRST, by the last boss beaten, to get ready for the next one (other mead bases you know are still brewed after food, within MeadBaseTarget / MeadTarget). Format: boss: Base, Base; boss: ... in the order you beat them. A boss is its name or part of it (eikthyr, gdking = The Elder, bonemass, dragon = Moder, goblinking = Yagluth, queen, fader, kall = Kall Fimbulbringer, or a modded boss); start = none beaten yet. The bosses your game has, and the mead base names, are listed in OfflineCompanionsReborn.Cooking.txt in the config folder.");
 		StatusEffectsOnRegen = Bind(cfg, "General", "StatusEffectsOnRegen", true, "Status effects change a companion's health and stamina regeneration like they do for a player: Wet and Cold slow it, meads and other buffs change it. Off = companions regenerate at their normal rate whatever the effects.");
 		HuntPrey = Bind(cfg, "Hunting", "Prey", "*", "What the Hunt job goes after: creatures that drop meat (and birds, see Birds). Name:Number with a creature or a meat name gives that meat its own target instead of MeatTarget / FeatherTarget. Tamed animals, bosses and companions are never hunted. The names to use are listed in OfflineCompanionsReborn.Hunting.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
