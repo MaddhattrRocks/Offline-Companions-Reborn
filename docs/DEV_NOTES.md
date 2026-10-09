@@ -31,6 +31,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.118 - repair cutoff and refuel kinds (user, 2026-10-09)
+- User: RepairBelow default 0.75; an on/off for refueling each kind - fires, braziers, hearths, standing torches, etc.
+- UpkeepController.RefuelOn sorts a Fireplace by its prefab name: hearth / brazier / groundtorch / walltorch or sconce / bathtub or hottub / fire_pit, firepit, bonfire, campfire; anything else is RefuelOther. [RepairAndRestock] Restock stays the master switch. A config file written by 1.4.117 keeps RepairBelow = 1 until it's changed there.
+
 ### 1.4.117 - Repair and Restock (user, 2026-10-09)
 - User: combine the wheel's Restock and Repair, add chest sorting, use the new movement and do the real actions instead of faking them; rename Repair to "Repair and Restock"; Restock and Homestead slots become "Pending" (no action, no speech) for later; nothing in Homestead worth keeping (the jobs do it better, Wander already moves them around). Sorting: like with like (user's pick). Scope: near home (user's pick) - chests within HomeTripRange of home; no home = no sorting.
 - New Jobs/UpkeepController.cs (mode 15). Priority each scan: repair -> fuel -> put back leftovers -> sort -> walk home and idle. All movement through MHR_Nav.Move / MHR_Mover (tag "Upkeep"); chests via MHR_Chests.PickApproach / InReach; pieces and fires via PickApproachPiece.

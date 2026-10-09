@@ -332,6 +332,20 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> UpkeepRestock;
 
+	internal static ConfigEntry<bool> RefuelFires;
+
+	internal static ConfigEntry<bool> RefuelHearths;
+
+	internal static ConfigEntry<bool> RefuelBraziers;
+
+	internal static ConfigEntry<bool> RefuelStandingTorches;
+
+	internal static ConfigEntry<bool> RefuelWallTorches;
+
+	internal static ConfigEntry<bool> RefuelHotTubs;
+
+	internal static ConfigEntry<bool> RefuelOther;
+
 	internal static ConfigEntry<float> UpkeepFuelBelow;
 
 	internal static ConfigEntry<bool> UpkeepSort;
@@ -489,9 +503,16 @@ internal static class ModConfig
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
 		RepairUseDistance = Bind(cfg, "Repair", "UseDistance", 2.5f, "Crafting station interaction range", new AcceptableValueRange<float>(1f, 5f));
 		UpkeepRepair = Bind(cfg, "RepairAndRestock", "Repair", true, "Repair and Restock: repair damaged building pieces near home with a hammer, like a player (one swing per piece; the piece's crafting station has to be in range and a ward has to allow it; costs stamina and hammer wear). A hammer is fetched from a chest if it has none.");
-		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 1f, "Repair pieces below this much health (1 = any damage at all, 0.5 = only pieces at half health or less).", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 0.75f, "Repair pieces below this much health (0.75 = 75% or less; 1 = any damage at all). Each repair is one swing that fixes the piece fully, like a player's.", new AcceptableValueRange<float>(0.1f, 1f));
 		UpkeepReach = Bind(cfg, "RepairAndRestock", "Reach", 4.5f, "How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.", new AcceptableValueRange<float>(2f, 6f));
-		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest.");
+		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.");
+		RefuelFires = Bind(cfg, "RepairAndRestock", "RefuelFires", true, "Restock: campfires, fire pits and bonfires.");
+		RefuelHearths = Bind(cfg, "RepairAndRestock", "RefuelHearths", true, "Restock: hearths.");
+		RefuelBraziers = Bind(cfg, "RepairAndRestock", "RefuelBraziers", true, "Restock: braziers (standing and hanging).");
+		RefuelStandingTorches = Bind(cfg, "RepairAndRestock", "RefuelStandingTorches", true, "Restock: standing torches (wood, iron, green, blue, mist).");
+		RefuelWallTorches = Bind(cfg, "RepairAndRestock", "RefuelWallTorches", true, "Restock: sconces and wall torches.");
+		RefuelHotTubs = Bind(cfg, "RepairAndRestock", "RefuelHotTubs", true, "Restock: hot tubs.");
+		RefuelOther = Bind(cfg, "RepairAndRestock", "RefuelOther", true, "Restock: anything else that burns fuel and isn't one of the kinds above (lanterns, the jack-o-turnip, things added by other mods).");
 		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
 		UpkeepSort = Bind(cfg, "RepairAndRestock", "Sort", true, "Repair and Restock: sort the chests near home (needs a home set), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.");
 		UpkeepSortItems = Bind(cfg, "RepairAndRestock", "SortItems", "*", "Which items get sorted. Comma-separated: * = everything, Name = this one, -Name = never this one (e.g. *, -Coins, -Wood keeps coins and wood where they are). Prefab or in-game names.");

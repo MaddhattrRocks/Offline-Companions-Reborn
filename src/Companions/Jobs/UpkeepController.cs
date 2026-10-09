@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BepInEx.Configuration;
 using UnityEngine;
 
 namespace Companions;
@@ -576,7 +577,7 @@ public class UpkeepController : MonoBehaviour
 		for (int i = 0; i < s_pieces.Count; i++)
 		{
 			Fireplace f = s_pieces[i] != null ? s_pieces[i].GetComponent<Fireplace>() : null;
-			if (f == null || !f.m_canRefill || f.m_infiniteFuel || f.m_fuelItem == null || f.m_maxFuel <= 0f || Skipped(f))
+			if (f == null || !f.m_canRefill || f.m_infiniteFuel || f.m_fuelItem == null || f.m_maxFuel <= 0f || Skipped(f) || !RefuelOn(f))
 			{
 				continue;
 			}
@@ -638,6 +639,43 @@ public class UpkeepController : MonoBehaviour
 		Log("Fetching " + need + " " + MHR_List.Local(name) + " from a chest for " + PieceName(best) + " (" + Fuel(best).ToString("F1") + "/" + best.m_maxFuel.ToString("F0") + ")");
 		Enter(Step.FuelFetch);
 		return true;
+	}
+
+	// 1.4.118: each kind of fire can be left alone (user: "one for fires, one for brazier, one for hearth, one for
+	// standing torches, etc."), told apart by the game's piece name
+	private static bool RefuelOn(Fireplace f)
+	{
+		string n = Utils.GetPrefabName(f.gameObject).ToLowerInvariant();
+		ConfigEntry<bool> e;
+		if (n.Contains("hearth"))
+		{
+			e = ModConfig.RefuelHearths;
+		}
+		else if (n.Contains("brazier"))
+		{
+			e = ModConfig.RefuelBraziers;
+		}
+		else if (n.Contains("groundtorch"))
+		{
+			e = ModConfig.RefuelStandingTorches;
+		}
+		else if (n.Contains("walltorch") || n.Contains("sconce"))
+		{
+			e = ModConfig.RefuelWallTorches;
+		}
+		else if (n.Contains("bathtub") || n.Contains("hottub"))
+		{
+			e = ModConfig.RefuelHotTubs;
+		}
+		else if (n.Contains("fire_pit") || n.Contains("firepit") || n.Contains("bonfire") || n.Contains("campfire"))
+		{
+			e = ModConfig.RefuelFires;
+		}
+		else
+		{
+			e = ModConfig.RefuelOther;
+		}
+		return e == null || e.Value;
 	}
 
 	private static float Fuel(Fireplace f)
