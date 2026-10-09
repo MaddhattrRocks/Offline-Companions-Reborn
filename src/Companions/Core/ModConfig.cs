@@ -342,6 +342,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RepairHomeThreshold;
 
+	internal static ConfigEntry<float> RepairNoStationWait;
+
 	internal static ConfigEntry<float> RepairScanRadius;
 
 	internal static ConfigEntry<float> RepairScanInterval;
@@ -402,6 +404,24 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> CookUsePiles;
 
+	internal static ConfigEntry<bool> IdleEnabled;
+
+	internal static ConfigEntry<float> IdleStartAfter;
+
+	internal static ConfigEntry<float> IdleRadius;
+
+	internal static ConfigEntry<bool> IdleChores;
+
+	internal static ConfigEntry<float> IdleChoreRadius;
+
+	internal static ConfigEntry<bool> IdleSit;
+
+	internal static ConfigEntry<bool> IdleWander;
+
+	internal static ConfigEntry<bool> IdleSocialize;
+
+	internal static ConfigEntry<float> IdleSpeechInterval;
+
 	internal static ConfigEntry<int> UpkeepPileKeep;
 
 	internal static ConfigEntry<string> UpkeepPileItems;
@@ -437,16 +457,6 @@ internal static class ModConfig
 	internal static ConfigEntry<KeyCode> FarmZoneKey;
 
 	internal static ConfigEntry<KeyCode> FarmZoneModifier;
-
-	internal static ConfigEntry<float> DoorScanRadius;
-
-	internal static ConfigEntry<float> DoorInteractDist;
-
-	internal static ConfigEntry<float> DoorProactiveScanRadius;
-
-	internal static ConfigEntry<float> DoorFollowDistMin;
-
-	internal static ConfigEntry<float> DoorCloseDistance;
 
 	internal static void Init(ConfigFile cfg)
 	{
@@ -546,6 +556,7 @@ internal static class ModConfig
 		FishBagFull = Bind(cfg, "Fishing", "BagFull", 0.9f, "Near home: when the pack is this full (by weight, or out of free slots) the companion walks home and puts the catch away, then goes back to fishing.", new AcceptableValueRange<float>(0.3f, 1f));
 		RepairDurabilityThreshold = Bind(cfg, "Repair", "DurabilityThreshold", 0.5f, "Repair items below this durability %", new AcceptableValueRange<float>(0.1f, 0.9f));
 		RepairHomeThreshold = Bind(cfg, "Repair", "HomeThreshold", 0.8f, "At home (where a workbench is close by) gear is repaired a bit sooner: below this durability (0.8 = 80%). Away from home DurabilityThreshold applies. 1 = at any wear.", new AcceptableValueRange<float>(0.1f, 1f));
+		RepairNoStationWait = Bind(cfg, "Repair", "NoStationWait", 600f, "When a worn item can't be repaired at any station within reach (say it needs a black forge and there isn't one nearby), or the way to the station failed, that item is left alone for this many seconds before it looks again.", new AcceptableValueRange<float>(30f, 3600f));
 		RepairScanRadius = Bind(cfg, "Repair", "ScanRadius", 20f, "Crafting station scan radius", new AcceptableValueRange<float>(5f, 60f));
 		RepairScanInterval = Bind(cfg, "Repair", "ScanInterval", 5f, "Seconds between repair scans", new AcceptableValueRange<float>(1f, 30f));
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
@@ -596,6 +607,15 @@ internal static class ModConfig
 		CookBeehives = Bind(cfg, "Cooking", "UseBeehives", true, "Cook job: use beehives (collecting honey).");
 		CookOtherStations = Bind(cfg, "Cooking", "UseOther", true, "Cook job: use any other cooking station, e.g. one added by another mod.");
 		CookMeadFocus = Bind(cfg, "Cooking", "MeadFocus", "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBasePoisonResist, MeadBaseHealthMedium, MeadBaseStaminaMinor; bonemass: MeadBaseFrostResist, MeadBaseHealthMedium, MeadBaseStaminaMedium; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseTasty, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, MeadBaseLightfoot; queen: BarleyWineBase, MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseHealthLingering, MeadBaseEitrMinor; fader: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor; kall: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor", "Mead bases to brew FIRST, by the last boss beaten, to get ready for the next one (other mead bases you know are still brewed after food, within MeadBaseTarget / MeadTarget). Format: boss: Base, Base; boss: ... in the order you beat them. A boss is its name or part of it (eikthyr, gdking = The Elder, bonemass, dragon = Moder, goblinking = Yagluth, queen, fader, kall = Kall Fimbulbringer, or a modded boss); start = none beaten yet. The bosses your game has, and the mead base names, are listed in OfflineCompanionsReborn.Cooking.txt in the config folder.");
+		IdleEnabled = Bind(cfg, "Idle", "Enabled", true, "When its job has had nothing to do for a while (and it isn't following you), a companion idles near its job instead of standing still: small chores, sitting down, wandering about, chatting. It stops the moment the job has work again.");
+		IdleStartAfter = Bind(cfg, "Idle", "StartAfter", 10f, "Seconds with nothing to do before it starts idling.", new AcceptableValueRange<float>(1f, 300f));
+		IdleRadius = Bind(cfg, "Idle", "Radius", 8f, "How far (meters) from where its job left it a companion wanders, sits or looks for company while idle.", new AcceptableValueRange<float>(2f, 40f));
+		IdleChores = Bind(cfg, "Idle", "Chores", true, "While idle, do small chores nearby: repair damaged pieces, top up fires, collect honey, put away what it carries (uses the Repair and Restock settings).");
+		IdleChoreRadius = Bind(cfg, "Idle", "ChoreRadius", 15f, "How far (meters) it looks for idle chores.", new AcceptableValueRange<float>(2f, 60f));
+		IdleSit = Bind(cfg, "Idle", "Sit", true, "While idle, sit down for a while - on a free chair or bench nearby, else on the ground.");
+		IdleWander = Bind(cfg, "Idle", "Wander", true, "While idle, stroll about nearby and look over stations and chests.");
+		IdleSocialize = Bind(cfg, "Idle", "Socialize", true, "While idle, go over to you or another companion nearby and chat now and then.");
+		IdleSpeechInterval = Bind(cfg, "Idle", "SpeechInterval", 300f, "At most every this many seconds it says why it's idle (and chats while socializing about half as often). 0 = never.", new AcceptableValueRange<float>(0f, 3600f));
 		StatusEffectsOnRegen = Bind(cfg, "General", "StatusEffectsOnRegen", true, "Status effects change a companion's health and stamina regeneration like they do for a player: Wet and Cold slow it, meads and other buffs change it. Off = companions regenerate at their normal rate whatever the effects.");
 		HuntPrey = Bind(cfg, "Hunting", "Prey", "*", "What the Hunt job goes after: creatures that drop meat (and birds, see Birds). Name:Number with a creature or a meat name gives that meat its own target instead of MeatTarget / FeatherTarget. Tamed animals, bosses and companions are never hunted. The names to use are listed in OfflineCompanionsReborn.Hunting.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
 		HuntMeatTarget = Bind(cfg, "Hunting", "MeatTarget", 100, "Hunt a creature only while one of the meats it drops is under this many (counting the companion's pack and the chests near its home). Leather, hides and other drops are picked up as a bonus. 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
@@ -637,11 +657,6 @@ internal static class ModConfig
 		ConfigPanelKey = Bind(cfg, "Controls", "ConfigPanelKey", KeyCode.F8, "Open the in-game config panel");
 		FarmZoneKey = Bind(cfg, "Controls", "FarmZoneKey", KeyCode.Z, "Farm zone placement key (press with modifier to open zone editor)");
 		FarmZoneModifier = Bind(cfg, "Controls", "FarmZoneModifier", KeyCode.LeftAlt, "Modifier key for farm zone placement (hold this + FarmZoneKey)");
-		DoorScanRadius = Bind(cfg, "Door", "ScanRadius", 5f, "Stuck-mode door scan radius", new AcceptableValueRange<float>(2f, 15f));
-		DoorInteractDist = Bind(cfg, "Door", "InteractDist", 2f, "Door interaction range", new AcceptableValueRange<float>(1f, 5f));
-		DoorProactiveScanRadius = Bind(cfg, "Door", "ProactiveScanRadius", 15f, "Proactive door scan radius", new AcceptableValueRange<float>(5f, 30f));
-		DoorFollowDistMin = Bind(cfg, "Door", "FollowDistMin", 4f, "Min distance from target to engage door handler", new AcceptableValueRange<float>(2f, 15f));
-		DoorCloseDistance = Bind(cfg, "Door", "CloseDistance", 3.5f, "Distance past door before closing it", new AcceptableValueRange<float>(1f, 10f));
 		AutoRespawnEnabled = Bind(cfg, "Respawn", "AutoRespawnEnabled", defaultValue: true, "Automatically respawn a dead companion after AutoRespawnDelaySeconds if nobody manually resurrects them from their tombstone first");
 		AutoRespawnDelaySeconds = Bind(cfg, "Respawn", "AutoRespawnDelaySeconds", 300f, "Seconds after death before a companion automatically respawns", new AcceptableValueRange<float>(30f, 3600f));
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Respawn", "AutoRespawnAtWorldSpawnWhenNoBed", defaultValue: false, "When a companion auto-respawns and has no claimed bed, respawn it at the world spawn stones instead of next to its owner");

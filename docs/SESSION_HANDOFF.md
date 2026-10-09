@@ -4,12 +4,19 @@ Paste this into a new session to pick up where we left off. Details per version 
 
 ## Repo and workflow
 - Repo: `MaddhattrRocks/Offline-Companions-Reborn` (private, going public soon). Fork of ProfMags' Offline Companions (MIT).
-- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#4 are merged into `main` (C# conversion, 1.4.75, 1.4.76, 1.4.77-1.4.85). After a merge the branch is restarted from `main` under the same name.
+- Work branch: `claude/relaxed-archimedes-ecoh6h`. PRs #1-#5 are merged into `main` (C# conversion, 1.4.75, 1.4.76, 1.4.77-1.4.85, 1.4.86-1.4.140). After a merge the branch is restarted from `main` under the same name.
 - The user builds the DLL (`dotnet build -c Release` on their PC, paths in the git-ignored `Environment.props`). Sessions only compile-check, never hand over DLLs unless asked. No game files in git.
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.140 pushed, not yet tested (1.4.86-1.4.140 on the branch, no PR yet)
+## Current state: 1.4.147 tested good (orders vs jobs, ordered sit by the fire during Smelt; idle seen working)
+- 1.4.147: all jobs (and Upkeep, Idle) also wait for ship boarding, the door command and ordered sit/sleep.
+- 1.4.146: a repair the player orders at a station goes ahead of the job (jobs pause for it).
+- 1.4.145: all jobs wait for orders (move/cart/deposit/tombstone); gear repair waits for loot pickup and orders, gives up on unreachable stations, skips items no station can fix for [Repair] NoStationWait.
+- 1.4.144: gear repair trip waits for Cook/Farm/Hunt/Fish tasks (they fought over movement); only items below the threshold pick the repair station.
+- 1.4.143: idle behaviours - near its job: small chores, sit, wander, socialize; says why now and then; [Idle] settings.
+- 1.4.142: build has 0 warnings (no behaviour change).
+- 1.4.141: movement phase 4 part 2 - old CompanionAI steering/ground-stuck/proactive jump/teleport removed, WaterSafety and the door command on MHR_Mover, old DoorHandler and [Door] settings gone. 
 - 1.4.140: lines up with doorways before going through (no clipping open door leaves).
 - 1.4.139: quicker retry at doors (close -> reopen).
 - 1.4.138: door search buffer 16 -> 512 colliders (missed the door indoors); closes an open door after 1 s held up.

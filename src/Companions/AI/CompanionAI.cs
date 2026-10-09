@@ -129,8 +129,6 @@ public class CompanionAI : BaseAI
 
 	private float _tombstoneNavStuckTime;
 
-	private float _tombstoneScanTotal;
-
 	private float _tombRecoverSnooze;
 
 	private const float TombstoneLootRange = 3f;
@@ -179,6 +177,8 @@ public class CompanionAI : BaseAI
 
 	private UpkeepController _upkeep;
 
+	private IdleController _idle;
+
 	private CookController _cook;
 
 	private DoorHandler _doorHandler;
@@ -195,99 +195,13 @@ public class CompanionAI : BaseAI
 
 	private ItemDrop.ItemData _equippedTorch;
 
-	private const int CtxRayCount = 13;
-
-	private const float CtxProbeRange = 6f;
-
-	private const float CtxDangerWeight = 1.8f;
-
-	private const float CtxMinClearance = 0.4f;
-
-	private const float CtxSmoothRate = 8f;
-
-	private Vector3 _ctxSmoothedDir;
-
-	private float _avoidStuckTimer;
-
-	private float _avoidCornerTimer;
-
-	private float _avoidCornerAngle;
-
-	private Vector3 _avoidLastPos;
-
-	private static int _ctxSteerMask;
-
-	private static int _ctxSteerPieceMask;
-
-	private bool _inContextSteerFallback;
-
-	private Vector3 _ctxFallbackStartPos;
-
-	private int _moveToPointActiveFrame;
-
-	private float _pathStuckTimer;
-
-	private const float PathStuckThreshold = 2f;
-
-	private int _navClaimedDoneCount;
-
-	private const int NavClaimedDoneRetryFrames = 15;
-
-	private float _ctxLogTimer;
-
 	private const float SuppressedMoveInterval = 9999f;
 
 	private float _furnitureStuckTimer;
 
 	private const float FurnitureStuckThreshold = 3f;
 
-	private float _proactiveJumpTimer;
-
-	private const float ProactiveJumpCooldown = 5f;
-
-	private const float ProactiveJumpVelThreshold = 0.5f;
-
-	private const float ProactiveJumpBlockedTime = 2f;
-
-	private float _lowVelAccum;
-
-	private int _proactiveJumpAttempts;
-
-	private Vector3 _proactiveJumpStartPos;
-
-	private float _proactiveJumpSuppressTimer;
-
-	private Vector3 _oscillationCheckPos;
-
-	private float _oscillationTimer;
-
-	private int _oscillationCount;
-
-	private float _groundStuckTimer;
-
-	private float _groundStuckRecoveryTimer;
-
-	private float _groundStuckAngle;
-
-	private int _groundStuckAttempts;
-
-	private Vector3 _lastGroundStuckPos;
-
 	private float _continuousSwimTimer;
-
-	private float _groundStuckSuppressTimer;
-
-	private const float GroundStuckThreshold = 2f;
-
-	private const float GroundStuckRecoveryTime = 2.5f;
-
-	private const float GroundStuckVelThreshold = 0.3f;
-
-	private const float GroundStuckResetDist = 3f;
-
-	private const int GroundStuckMaxStrafe = 3;
-
-	private const int GroundStuckMaxBeforeTeleport = 5;
 
 	private readonly Dictionary<Vector3Int, float> _targetBlacklist = new Dictionary<Vector3Int, float>();
 
@@ -296,8 +210,6 @@ public class CompanionAI : BaseAI
 	private const float BlacklistCellSize = 2f;
 
 	private float _blacklistCleanupTimer;
-
-	private static int _strafeProbeMask;
 
 	private const float RSItemTransferDelay = 0.6f;
 
@@ -320,20 +232,6 @@ public class CompanionAI : BaseAI
 	private static float FormationOffset => ModConfig.FormationOffset.Value;
 
 	private static float FormationCatchupDist => ModConfig.FormationCatchupDist.Value;
-
-	internal bool IsNavMeshFailing
-	{
-		get
-		{
-			if (!_inContextSteerFallback)
-			{
-				return _navClaimedDoneCount > 0;
-			}
-			return true;
-		}
-	}
-
-	internal bool IsNavMeshRetrying => _navClaimedDoneCount > 0;
 
 	internal bool IsInCombat
 	{
@@ -443,7 +341,6 @@ public class CompanionAI : BaseAI
 		{
 			_tombRecoverSnooze = 30f;
 			_pendingTombstone = null;
-			_tombstoneScanTotal = 0f;
 			ClearTombstoneId();
 			RestoreFollowOrPatrol();
 		}
@@ -463,6 +360,7 @@ public class CompanionAI : BaseAI
 		_hunt = GetComponent<HuntController>();
 		_fish = GetComponent<FishController>();
 		_upkeep = GetComponent<UpkeepController>();
+		_idle = GetComponent<IdleController>();
 		_cook = GetComponent<CookController>();
 		_doorHandler = GetComponent<DoorHandler>();
 		_rest = GetComponent<CompanionRest>();
@@ -575,7 +473,6 @@ public class CompanionAI : BaseAI
 		}
 		m_targetCreature = null;
 		m_targetStatic = null;
-		_navClaimedDoneCount = 0;
 	}
 
 	private void ClearCreatureTarget()
@@ -583,272 +480,18 @@ public class CompanionAI : BaseAI
 		m_targetCreature = null;
 	}
 
-	private Vector3 ContextSteer(Vector3 goalDir, string reason = null, int maskOverride = 0)
-	{
-		goalDir.y = 0f;
-		if (goalDir.sqrMagnitude < 0.01f)
-		{
-			return base.transform.forward;
-		}
-		goalDir.Normalize();
-		if (Time.frameCount % 2 != 0 && _ctxSmoothedDir.sqrMagnitude > 0.01f)
-		{
-			return _ctxSmoothedDir;
-		}
-		Vector3 centerPoint = m_character.GetCenterPoint();
-		if (_ctxSteerMask == 0)
-		{
-			_ctxSteerMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "terrain", "vehicle", "piece");
-			_ctxSteerPieceMask = _ctxSteerMask;
-		}
-		float num = float.MinValue;
-		float num2 = 0f;
-		Vector3 vector = goalDir;
-		int num3 = 0;
-		float num4 = 6f;
-		Vector3 origin = base.transform.position + Vector3.up * 0.4f;
-		for (int i = 0; i < 13; i++)
-		{
-			float num5 = -90f + (float)i * 15f;
-			Vector3 vector2 = Quaternion.Euler(0f, num5, 0f) * goalDir;
-			int layerMask = ((maskOverride != 0) ? maskOverride : _ctxSteerMask);
-			RaycastHit hitInfo;
-			float num6 = (Physics.Raycast(centerPoint, vector2, out hitInfo, 6f, layerMask) ? hitInfo.distance : 6f);
-			if (Physics.Raycast(origin, vector2, out var hitInfo2, 6f, layerMask))
-			{
-				num6 = Mathf.Min(num6, hitInfo2.distance);
-			}
-			float num7 = Vector3.Dot(vector2, goalDir);
-			float num8 = 0f;
-			if (num6 < 6f)
-			{
-				float num9 = Mathf.Clamp01((num6 - 0.4f) / 5.6f);
-				num8 = 1f - num9;
-				num3++;
-				if (num6 < num4)
-				{
-					num4 = num6;
-				}
-			}
-			float num10 = num7 - 1.8f * num8 * num8;
-			if (num10 > num)
-			{
-				num = num10;
-				num2 = num5;
-				vector = vector2;
-			}
-		}
-		if (_ctxSmoothedDir.sqrMagnitude < 0.01f)
-		{
-			_ctxSmoothedDir = vector;
-		}
-		else
-		{
-			_ctxSmoothedDir = Vector3.Lerp(_ctxSmoothedDir, vector, 8f * Time.deltaTime).normalized;
-		}
-		_ctxLogTimer -= Time.fixedDeltaTime;
-		if (_ctxLogTimer <= 0f)
-		{
-			_ctxLogTimer = 2f;
-		}
-		return _ctxSmoothedDir;
-	}
-
 	// 1.4.104: commands, wheel actions and the smaller moves go through MHR_Mover too (routes, doors, stairs, climbing
 	// out of pits, water) - jog, or run when asked
+	// 1.4.141: the game's own movement, for combat when MHR_Mover has given up for the moment (a fight can't just stand
+	// still). Replaces the old MoveToPoint with its context-steering fallback.
+	internal bool GameMoveTo(float dt, Vector3 point, float dist, bool run)
+	{
+		return MoveTo(dt, point, dist, run);
+	}
+
 	internal bool MHR_Go(float dt, Vector3 point, float dist, bool run, string tag)
 	{
 		return MHR_Mover.Go(this, dt, point, dist, run, tag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
-	}
-
-	internal bool MoveToPoint(float dt, Vector3 point, float dist, bool run)
-	{
-		if (m_character.m_flying)
-		{
-			return MoveTo(dt, point, dist, run);
-		}
-		float num = Utils.DistanceXZ(point, base.transform.position);
-		if (num < dist)
-		{
-			StopMoving();
-			_avoidCornerTimer = 0f;
-			_avoidStuckTimer = 0f;
-			_pathStuckTimer = 0f;
-			_ctxSmoothedDir = Vector3.zero;
-			_inContextSteerFallback = false;
-			return true;
-		}
-		bool flag = !m_character.IsSwimming() && _companionStamina != null && _companionStamina.MaxStamina > 0f && _companionStamina.Stamina / _companionStamina.MaxStamina < 0.5f;
-		if ((m_character.IsSwimming() || m_character.InWater()) && !flag)
-		{
-			if (_inContextSteerFallback)
-			{
-				_inContextSteerFallback = false;
-				_ctxSmoothedDir = Vector3.zero;
-			}
-			Vector3 dir = point - base.transform.position;
-			dir.y = 0f;
-			dir.Normalize();
-			MoveTowards(dir, run: false);
-			return false;
-		}
-		Vector3 goalDir = point - base.transform.position;
-		goalDir.y = 0f;
-		goalDir.Normalize();
-		if (_inContextSteerFallback)
-		{
-			float num2 = Vector3.Distance(base.transform.position, _ctxFallbackStartPos);
-			if (num2 < 2f)
-			{
-				_moveToPointActiveFrame = Time.frameCount;
-				Vector3 dir2 = ContextSteer(goalDir, "fallback_cont", _ctxSteerPieceMask);
-				MoveTowards(dir2, run);
-				UpdateFallbackStuck(dt, goalDir, run);
-				return false;
-			}
-			_inContextSteerFallback = false;
-		}
-		bool flag2 = MoveTo(dt, point, dist, run);
-		if (flag2 && num > dist + 0.5f)
-		{
-			_navClaimedDoneCount++;
-			_moveToPointActiveFrame = Time.frameCount;
-			if (_navClaimedDoneCount < 15)
-			{
-				_ = _navClaimedDoneCount;
-				_ = 1;
-				return false;
-			}
-			_inContextSteerFallback = true;
-			_ctxFallbackStartPos = base.transform.position;
-			_ctxLogTimer = 0f;
-			_navClaimedDoneCount = 0;
-			Vector3 dir3 = ContextSteer(goalDir, "fallback");
-			MoveTowards(dir3, run);
-			UpdateFallbackStuck(dt, goalDir, run);
-			return false;
-		}
-		_navClaimedDoneCount = 0;
-		if (!flag2)
-		{
-			_moveToPointActiveFrame = Time.frameCount;
-			float magnitude = m_character.GetVelocity().magnitude;
-			if (magnitude < 0.3f && !m_character.InAttack())
-			{
-				_ = _pathStuckTimer;
-				_ = 0f;
-				_pathStuckTimer += dt;
-				if (_pathStuckTimer >= 2f)
-				{
-					_inContextSteerFallback = true;
-					_ctxFallbackStartPos = base.transform.position;
-					_ctxLogTimer = 0f;
-					Vector3 dir4 = ContextSteer(goalDir, "pathstuck", _ctxSteerPieceMask);
-					MoveTowards(dir4, run);
-					UpdateFallbackStuck(dt, goalDir, run);
-					return false;
-				}
-			}
-			else
-			{
-				_pathStuckTimer = 0f;
-			}
-			_avoidCornerTimer = 0f;
-			_avoidStuckTimer = 0f;
-		}
-		else
-		{
-			_pathStuckTimer = 0f;
-		}
-		return flag2;
-	}
-
-	private void UpdateFallbackStuck(float dt, Vector3 goalDir, bool run)
-	{
-		if (m_character.InAttack())
-		{
-			return;
-		}
-		bool flag = _avoidCornerTimer > 0f;
-		_avoidCornerTimer -= dt;
-		if (_avoidCornerTimer > 0f)
-		{
-			Vector3 dir = Quaternion.Euler(0f, _avoidCornerAngle, 0f) * base.transform.forward;
-			MoveTowards(dir, run);
-			return;
-		}
-		if (flag)
-		{
-			_ctxFallbackStartPos = base.transform.position;
-			_ctxSmoothedDir = Vector3.zero;
-		}
-		_avoidStuckTimer += dt;
-		if (_avoidStuckTimer > 1.5f)
-		{
-			if (Vector3.Distance(base.transform.position, _avoidLastPos) < 0.3f)
-			{
-				_avoidCornerTimer = 2.5f;
-				_avoidCornerAngle = FindBestStrafeAngle();
-				_ctxSmoothedDir = Vector3.zero;
-				_avoidStuckTimer = 0f;
-			}
-			else
-			{
-				_avoidStuckTimer = 0f;
-				_avoidLastPos = base.transform.position;
-			}
-		}
-	}
-
-	private float FindBestStrafeAngle()
-	{
-		if (_strafeProbeMask == 0)
-		{
-			_strafeProbeMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle");
-		}
-		Vector3 origin = base.transform.position + Vector3.up * 0.5f;
-		float num = 8f;
-		Vector3 rhs = base.transform.forward;
-		if (m_targetCreature != null)
-		{
-			rhs = (m_targetCreature.transform.position - base.transform.position).normalized;
-		}
-		else if (m_targetStatic != null)
-		{
-			rhs = (m_targetStatic.transform.position - base.transform.position).normalized;
-		}
-		else if (m_follow != null)
-		{
-			rhs = (m_follow.transform.position - base.transform.position).normalized;
-		}
-		else if (_farm != null && _farm.IsActive)
-		{
-			rhs = base.transform.forward;
-		}
-		Vector3 normalized = Vector3.Cross(Vector3.up, rhs).normalized;
-		float result = 90f;
-		float num2 = -1f;
-		float[] array = new float[12]
-		{
-			90f, -90f, 45f, -45f, 135f, -135f, 180f, 0f, 22.5f, -22.5f,
-			112.5f, -112.5f
-		};
-		for (int i = 0; i < array.Length; i++)
-		{
-			Vector3 vector = Quaternion.Euler(0f, array[i], 0f) * base.transform.forward;
-			RaycastHit hitInfo;
-			float num3 = ((!Physics.Raycast(origin, vector, out hitInfo, num, _strafeProbeMask)) ? num : hitInfo.distance);
-			float num4 = Mathf.Abs(Vector3.Dot(vector, normalized));
-			float num5 = Mathf.Max(0f, Vector3.Dot(vector, rhs));
-			float num6 = Mathf.Max(0f, 0f - Vector3.Dot(vector, rhs));
-			float num7 = num3 * (0.4f + 0.35f * num4 + 0.25f * num5 - 0.15f * num6);
-			if (num7 > num2)
-			{
-				num2 = num7;
-				result = array[i];
-			}
-		}
-		return result;
 	}
 
 	internal void LookAtPoint(Vector3 point)
@@ -979,7 +622,7 @@ public class CompanionAI : BaseAI
 		if (_body != null)
 		{
 			_body.position = position;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 			ResetLiquidState();
 			_body.useGravity = false;
 			_body.isKinematic = true;
@@ -1029,7 +672,7 @@ public class CompanionAI : BaseAI
 		{
 			_body.isKinematic = false;
 			_body.useGravity = true;
-			_body.velocity = Vector3.zero;
+			_body.linearVelocity = Vector3.zero;
 		}
 		_isOnShip = false;
 		_attachedShip = null;
@@ -1044,7 +687,7 @@ public class CompanionAI : BaseAI
 				if (_body != null)
 				{
 					_body.position = position;
-					_body.velocity = Vector3.zero;
+					_body.linearVelocity = Vector3.zero;
 					ResetLiquidState();
 				}
 				flag2 = true;
@@ -1069,7 +712,7 @@ public class CompanionAI : BaseAI
 			if (_body != null)
 			{
 				_body.position = position3;
-				_body.velocity = Vector3.zero;
+				_body.linearVelocity = Vector3.zero;
 				ResetLiquidState();
 			}
 		}
@@ -1102,7 +745,7 @@ public class CompanionAI : BaseAI
 			Rigidbody component = _attachedShip.GetComponent<Rigidbody>();
 			if (component != null)
 			{
-				_body.velocity = component.GetPointVelocity(vector);
+				_body.linearVelocity = component.GetPointVelocity(vector);
 			}
 		}
 	}
@@ -1277,7 +920,6 @@ public class CompanionAI : BaseAI
 				_pendingTombstone = tombStone;
 				_tombstoneNavTimeout = TombstoneNavTimeoutMax;
 				_tombstoneNavStuckTime = 0f;
-				_tombstoneScanTotal = 0f;
 				float num3 = Vector3.Distance(base.transform.position, tombStone.transform.position);
 				if (_talk != null)
 				{
@@ -1419,7 +1061,6 @@ public class CompanionAI : BaseAI
 		_tombstoneNavTimeout = TombstoneNavTimeoutMax;
 		_tombstoneScanTimer = TombstoneScanInterval;
 		_tombstoneNavStuckTime = 0f;
-		_tombstoneScanTotal = 0f;
 		SetFollowTarget(null);
 		if (_talk != null)
 		{
@@ -1478,16 +1119,22 @@ public class CompanionAI : BaseAI
 		AIGateDiag.Report(_setup, null);
 		bool lowStamina = _companionStamina != null && _companionStamina.MaxStamina > 0f && _companionStamina.Stamina / _companionStamina.MaxStamina < 0.5f;
 		MHR_Water.ApplyAgent(this, lowStamina);
+		if (m_character != null && m_character.IsSwimming())
+		{
+			_continuousSwimTimer += dt;
+		}
+		else
+		{
+			_continuousSwimTimer = 0f;
+		}
 		CleanupBlacklist(dt);
 		AutoPickup(dt);
 		if (!MHR_Mover.OwnsMovement(this))
 		{
 			UpdateFurnitureUnstuck(dt);
-			if (UpdateGroundStuckRecovery(dt))
-			{
-				return true;
-			}
-			UpdateProactiveJump(dt);
+			// 1.4.141 (movement phase 4 part 2): the old ground-stuck recovery (strafe, jump, teleport to the player after five
+			// tries) and the "proactive jump" (jumped whenever it had stood still 2 s with any job on - also while working)
+			// are gone; MHR_Mover's stuck ladder handles getting unstuck. Only the swim clock (hazard recovery) is kept.
 		}
 		if (m_follow != null && _setup != null && _setup.GetFollow())
 		{
@@ -1555,7 +1202,7 @@ public class CompanionAI : BaseAI
 						if (_body != null)
 						{
 							_body.position = _pendingShipLadder.m_targetPos.position;
-							_body.velocity = Vector3.zero;
+							_body.linearVelocity = Vector3.zero;
 							ResetLiquidState();
 						}
 					}
@@ -1610,7 +1257,7 @@ public class CompanionAI : BaseAI
 					if (_body != null)
 					{
 						_body.position = vector2;
-						_body.velocity = Vector3.zero;
+						_body.linearVelocity = Vector3.zero;
 					}
 					Vector3 vector3 = PendingCartAttach.transform.position - base.transform.position;
 					vector3.y = 0f;
@@ -1868,7 +1515,7 @@ public class CompanionAI : BaseAI
 			return true;
 		}
 		ZDO zDO = m_nview?.GetZDO();
-		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
+		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive) || (_idle != null && _idle.IsActive))
 		{
 			ClearFollowMovementOverrides();
 			return true;
@@ -2200,192 +1847,6 @@ public class CompanionAI : BaseAI
 		}
 	}
 
-	private bool UpdateGroundStuckRecovery(float dt)
-	{
-		if (m_character == null)
-		{
-			return false;
-		}
-		if (m_character.IsSwimming())
-		{
-			_continuousSwimTimer += dt;
-		}
-		else
-		{
-			_continuousSwimTimer = 0f;
-		}
-		if (m_character.IsSwimming())
-		{
-			_groundStuckTimer = 0f;
-			return false;
-		}
-		if (_inContextSteerFallback)
-		{
-			_groundStuckTimer = 0f;
-			return false;
-		}
-		if (Time.frameCount - _moveToPointActiveFrame > 2)
-		{
-			_groundStuckTimer = 0f;
-			return false;
-		}
-		_groundStuckSuppressTimer -= dt;
-		if (_groundStuckSuppressTimer > 0f)
-		{
-			_groundStuckTimer = 0f;
-			return false;
-		}
-		if (_groundStuckRecoveryTimer > 0f)
-		{
-			_groundStuckRecoveryTimer -= dt;
-			Vector3 dir = Quaternion.Euler(0f, _groundStuckAngle, 0f) * base.transform.forward;
-			MoveTowards(dir, run: true);
-			if (_groundStuckRecoveryTimer > 2.4f && m_character.IsOnGround() && !m_character.IsSwimming() && _groundStuckAttempts >= 3)
-			{
-				m_character.Jump();
-			}
-			_ = _groundStuckRecoveryTimer;
-			_ = 0f;
-			return true;
-		}
-		float magnitude = m_character.GetVelocity().magnitude;
-		bool flag = m_character.InAttack();
-		bool flag2 = _rest != null && _rest.IsResting;
-		bool flag3 = _isOnShip || _pendingShip != null;
-		bool flag4 = FreezeTimer > 0f;
-		bool flag5 = m_follow != null || m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_doorHandler != null && _doorHandler.IsActive);
-		bool flag6 = _harvest != null && _harvest.IsAttacking;
-		if (flag || flag6 || flag2 || flag3 || flag4 || !flag5)
-		{
-			_groundStuckTimer = 0f;
-			return false;
-		}
-		if (m_follow != null && m_targetCreature == null)
-		{
-			float num = Vector3.Distance(base.transform.position, m_follow.transform.position);
-			if (num < 5f)
-			{
-				_groundStuckTimer = 0f;
-				return false;
-			}
-		}
-		if (_groundStuckAttempts > 0 && Vector3.Distance(base.transform.position, _lastGroundStuckPos) > 3f)
-		{
-			_groundStuckAttempts = 0;
-		}
-		if (magnitude < 0.3f)
-		{
-			_groundStuckTimer += dt;
-		}
-		else
-		{
-			_groundStuckTimer = 0f;
-		}
-		if (_groundStuckTimer < 2f)
-		{
-			return false;
-		}
-		_groundStuckTimer = 0f;
-		_groundStuckAttempts++;
-		_lastGroundStuckPos = base.transform.position;
-		if (_groundStuckAttempts >= 5)
-		{
-			if (m_follow != null)
-			{
-				BlacklistPosition(_lastGroundStuckPos);
-				TeleportToFollowTarget();
-				_groundStuckAttempts = 0;
-				_groundStuckSuppressTimer = 8f;
-				return false;
-			}
-			_groundStuckSuppressTimer = 30f;
-			_groundStuckAttempts = 0;
-			return false;
-		}
-		_groundStuckAngle = FindBestStrafeAngle();
-		_groundStuckRecoveryTimer = 2.5f;
-		return true;
-	}
-
-	private void UpdateProactiveJump(float dt)
-	{
-		if (m_character == null || !m_character.IsOnGround() || m_character.IsSwimming() || m_character.InAttack() || (_harvest != null && _harvest.IsAttacking) || _groundStuckRecoveryTimer > 0f || _inContextSteerFallback)
-		{
-			return;
-		}
-		_proactiveJumpTimer -= dt;
-		_proactiveJumpSuppressTimer -= dt;
-		if (_proactiveJumpSuppressTimer > 0f)
-		{
-			_lowVelAccum = 0f;
-			return;
-		}
-		bool flag = m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive);
-		if (!flag && m_follow != null)
-		{
-			float num = Vector3.Distance(base.transform.position, m_follow.transform.position);
-			flag = num > 5f;
-		}
-		if (!flag)
-		{
-			_lowVelAccum = 0f;
-			return;
-		}
-		_oscillationTimer += dt;
-		if (_oscillationTimer >= 3f)
-		{
-			_oscillationTimer = 0f;
-			float num3 = Vector3.Distance(base.transform.position, _oscillationCheckPos);
-			if (num3 < 3f)
-			{
-				_oscillationCount++;
-				if (_oscillationCount >= 2)
-				{
-					_proactiveJumpSuppressTimer = Mathf.Max(_proactiveJumpSuppressTimer, 15f);
-					_oscillationCount = 0;
-					_lowVelAccum = 0f;
-				}
-			}
-			else
-			{
-				_oscillationCount = 0;
-			}
-			_oscillationCheckPos = base.transform.position;
-		}
-		float magnitude = m_character.GetVelocity().magnitude;
-		if (magnitude < 0.5f)
-		{
-			_lowVelAccum += dt;
-		}
-		else
-		{
-			_lowVelAccum = 0f;
-			if (_proactiveJumpAttempts > 0 && Vector3.Distance(base.transform.position, _proactiveJumpStartPos) > 2f)
-			{
-				_proactiveJumpAttempts = 0;
-			}
-		}
-		if (!(_lowVelAccum >= 2f) || !(_proactiveJumpTimer <= 0f))
-		{
-			return;
-		}
-		_proactiveJumpAttempts++;
-		if (_proactiveJumpAttempts >= 3)
-		{
-			_proactiveJumpSuppressTimer = 30f;
-			_proactiveJumpAttempts = 0;
-			_lowVelAccum = 0f;
-			return;
-		}
-		if (_proactiveJumpAttempts == 1)
-		{
-			_proactiveJumpStartPos = base.transform.position;
-		}
-		m_character.Jump();
-		_proactiveJumpTimer = 5f;
-		_lowVelAccum = 0f;
-	}
-
 	internal void TeleportToFollowTarget()
 	{
 		if (m_follow == null)
@@ -2423,11 +1884,6 @@ public class CompanionAI : BaseAI
 			body.position = position2;
 			body.linearVelocity = Vector3.zero;
 		}
-		_ctxSmoothedDir = Vector3.zero;
-		_pathStuckTimer = 0f;
-		_navClaimedDoneCount = 0;
-		_inContextSteerFallback = false;
-		_ctxFallbackStartPos = Vector3.zero;
 		if (m_nview?.GetZDO() != null)
 		{
 			m_nview.GetZDO().SetPosition(position2);
@@ -2443,11 +1899,6 @@ public class CompanionAI : BaseAI
 			_body.position = position;
 			_body.linearVelocity = Vector3.zero;
 		}
-		_ctxSmoothedDir = Vector3.zero;
-		_pathStuckTimer = 0f;
-		_navClaimedDoneCount = 0;
-		_inContextSteerFallback = false;
-		_ctxFallbackStartPos = Vector3.zero;
 		StopMoving();
 		if (m_nview?.GetZDO() != null)
 		{
@@ -2649,14 +2100,6 @@ public class CompanionAI : BaseAI
 		}
 		bool run = !(flag2 || flag3) && (flag4 || num2 > 10f);
 		MHR_Go(dt, vector2, 1f, run, "Formation");
-		if (_inContextSteerFallback || _navClaimedDoneCount > 0)
-		{
-			_inContextSteerFallback = false;
-			_navClaimedDoneCount = 0;
-			_pathStuckTimer = 0f;
-			_ctxSmoothedDir = Vector3.zero;
-			Follow(target, dt);
-		}
 		ApplyPlayerMovementMatch(flag2, flag3, flag4);
 	}
 

@@ -32,6 +32,14 @@ public class RepairController : MonoBehaviour
 
 	private SmeltController _smelt;
 
+	private CookController _cook;
+
+	private FarmController _farm;
+
+	private HuntController _hunt;
+
+	private FishController _fish;
+
 	private static readonly HashSet<int> s_claimedStations = new HashSet<int>();
 
 	private int _claimedStationId;
@@ -46,29 +54,25 @@ public class RepairController : MonoBehaviour
 
 	private float _stuckTimer;
 
-	private float _stuckCheckTimer;
-
-	private Vector3 _stuckCheckPos;
-
 	private bool _lastScanFailed;
 
 	private readonly List<ItemDrop.ItemData> _repairQueue = new List<ItemDrop.ItemData>();
 
 	private readonly List<ItemDrop.ItemData> _tempWorn = new List<ItemDrop.ItemData>();
 
-	private Vector3 _oscillationCheckPos;
+	// 1.4.145: worn items no station in range can fix, and until when they're left alone ([Repair] NoStationWait)
+	private readonly Dictionary<ItemDrop.ItemData, float> _noStationUntil = new Dictionary<ItemDrop.ItemData, float>();
 
-	private float _oscillationTimer;
+	private float _moveStart;
 
-	private int _oscillationCount;
+	// 1.4.146: this trip is the player's order (DirectRepairAt) - it goes ahead of the job, and the jobs wait for it
+	private bool _direct;
+
+	public bool IsDirect => _direct && _phase != RepairPhase.Idle;
 
 	private const float ScanBackoffInterval = 60f;
 
 	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
 
 	internal RepairPhase Phase => _phase;
 
@@ -147,12 +151,9 @@ public class RepairController : MonoBehaviour
 		_targetStation = station;
 		ClaimStation();
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_oscillationTimer = 0f;
-		_oscillationCount = 0;
-		_oscillationCheckPos = base.transform.position;
 		_phase = RepairPhase.MovingToStation;
+		_moveStart = Time.time;
+		_direct = true;
 		_lastScanFailed = false;
 		Log($"DirectRepairAt — {_repairQueue.Count} items to repair at \"{station.m_name}\"");
 		return true;
@@ -178,6 +179,10 @@ public class RepairController : MonoBehaviour
 		_harvest = GetComponent<HarvestController>();
 		_doorHandler = GetComponent<DoorHandler>();
 		_smelt = GetComponent<SmeltController>();
+		_cook = GetComponent<CookController>();
+		_farm = GetComponent<FarmController>();
+		_hunt = GetComponent<HuntController>();
+		_fish = GetComponent<FishController>();
 	}
 
 	private void OnDestroy()
@@ -201,11 +206,12 @@ public class RepairController : MonoBehaviour
 			return;
 		}
 		float deltaTime = Time.deltaTime;
-		if (ShouldAbort())
+		string abortWhy = ShouldAbort();
+		if (abortWhy != null)
 		{
 			if (_phase != RepairPhase.Idle)
 			{
-				Abort("interrupted (combat/harvest/UI)");
+				Abort("interrupted (" + abortWhy + ")");
 			}
 			return;
 		}
@@ -223,25 +229,41 @@ public class RepairController : MonoBehaviour
 		}
 	}
 
-	private bool ShouldAbort()
+	private string ShouldAbort()
 	{
 		if (_ai != null && _ai.IsInCombat)
 		{
-			return true;
+			return "combat";
 		}
-		if (_harvest != null && _harvest.IsActive)
+		// 1.4.145: loot pickup and other orders steer too
+		if (MHR_Loot.Active(this))
 		{
-			return true;
+			return "picking up loot";
 		}
-		if (_smelt != null && _smelt.IsActive)
+		if (MHR_JobRules.OtherOrder(this))
 		{
-			return true;
+			return "another order";
 		}
 		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
-			return true;
+			return "being talked to";
 		}
-		return false;
+		// a repair the player ordered goes ahead of the job (the jobs wait for it: MHR_JobRules.OrderPending)
+		if (IsDirect)
+		{
+			return null;
+		}
+		if ((_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive))
+		{
+			return "the job has work";
+		}
+		// 1.4.144: the other jobs too - with Cook on, both walked at once (forge vs honey/cauldron), fought over the
+		// mover and it stood still. The job's task comes first; the repair trip waits until the job is between tasks.
+		if ((_cook != null && _cook.IsActive) || (_farm != null && _farm.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
+		{
+			return "the job has work";
+		}
+		return null;
 	}
 
 	private void Abort(string reason)
@@ -255,6 +277,7 @@ public class RepairController : MonoBehaviour
 		_targetStation = null;
 		_repairQueue.Clear();
 		_phase = RepairPhase.Idle;
+		_direct = false;
 		_scanTimer = ScanInterval;
 	}
 
@@ -290,19 +313,38 @@ public class RepairController : MonoBehaviour
 				Log($"Scan: \"{itemData.m_shared.m_name}\" dur={itemData.m_durability:F0}/{maxDurability:F0} ({num:F0}%) " + $"station=\"{arg}\" minLevel={num2} canRepair={itemData.m_shared.m_canBeReparied}");
 			}
 		}
-		bool flag = false;
+		// 1.4.144: only the items below the threshold pick the station - the 56% arbalest (black forge only) sent it to the
+		// forge over and over to top up 96-100% bronze gear (user: "the NPC seems to repair a lot")
+		List<ItemDrop.ItemData> low = new List<ItemDrop.ItemData>();
+		float threshold = MHR_Nav.RepairThreshold(this);
+		float now = Time.time;
+		if (_noStationUntil.Count > 0)
+		{
+			foreach (ItemDrop.ItemData old in new List<ItemDrop.ItemData>(_noStationUntil.Keys))
+			{
+				if (now >= _noStationUntil[old])
+				{
+					_noStationUntil.Remove(old);
+				}
+			}
+		}
 		for (int j = 0; j < _tempWorn.Count; j++)
 		{
 			float maxDurability2 = _tempWorn[j].GetMaxDurability();
-			if (maxDurability2 > 0f && _tempWorn[j].m_durability / maxDurability2 < MHR_Nav.RepairThreshold(this))
+			float until;
+			if (_noStationUntil.TryGetValue(_tempWorn[j], out until) && now < until)
 			{
-				flag = true;
-				break;
+				continue;
+			}
+			if (maxDurability2 > 0f && _tempWorn[j].m_durability / maxDurability2 < threshold)
+			{
+				low.Add(_tempWorn[j]);
 			}
 		}
+		bool flag = low.Count > 0;
 		if (!flag)
 		{
-			Log($"Scan: {_tempWorn.Count} worn items but none below {DurabilityThreshold * 100f:F0}% — skipping");
+			Log($"Scan: {_tempWorn.Count} worn items but none below {threshold * 100f:F0}% that a station nearby can fix — skipping");
 			return;
 		}
 		List<CraftingStation> allCraftingStations = ReflectionHelper.GetAllCraftingStations();
@@ -312,6 +354,7 @@ public class RepairController : MonoBehaviour
 		}
 		CraftingStation craftingStation = null;
 		float num3 = float.MaxValue;
+		HashSet<ItemDrop.ItemData> fixable = new HashSet<ItemDrop.ItemData>();
 		for (int k = 0; k < allCraftingStations.Count; k++)
 		{
 			CraftingStation craftingStation2 = allCraftingStations[k];
@@ -324,16 +367,21 @@ public class RepairController : MonoBehaviour
 			{
 				continue;
 			}
+			// one it just failed to get to doesn't count (one another companion is using still does - it's free again soon)
+			bool usable = _ai == null || !_ai.IsPositionBlacklisted(craftingStation2.transform.position);
 			bool flag2 = false;
-			for (int l = 0; l < _tempWorn.Count; l++)
+			for (int l = 0; l < low.Count; l++)
 			{
-				if (CanRepairAt(craftingStation2, _tempWorn[l]))
+				if (CanRepairAt(craftingStation2, low[l]))
 				{
 					flag2 = true;
-					break;
+					if (usable)
+					{
+						fixable.Add(low[l]);
+					}
 				}
 			}
-			Log($"Scan: station \"{craftingStation2.m_name}\" level={craftingStation2.GetLevel()} " + $"dist={num4:F1}m canRepairAny={flag2}");
+			Log($"Scan: station \"{craftingStation2.m_name}\" level={craftingStation2.GetLevel()} " + $"dist={num4:F1}m canRepairWorn={flag2}");
 			if (flag2 && num4 < num3 && !s_claimedStations.Contains(craftingStation2.GetInstanceID()))
 			{
 				if (_ai != null && _ai.IsPositionBlacklisted(craftingStation2.transform.position))
@@ -345,11 +393,21 @@ public class RepairController : MonoBehaviour
 				num3 = num4;
 			}
 		}
+		// the worn items no usable station in range can fix: leave them alone for a while instead of looking every scan
+		float wait = ModConfig.RepairNoStationWait?.Value ?? 600f;
+		foreach (ItemDrop.ItemData item in low)
+		{
+			if (!fixable.Contains(item))
+			{
+				_noStationUntil[item] = now + wait;
+				Log($"No station within {ScanRadius}m can repair \"{item.m_shared.m_name}\" ({item.m_durability / item.GetMaxDurability() * 100f:F0}%) - not trying again for {wait / 60f:F0} min");
+			}
+		}
 		if (craftingStation == null)
 		{
 			if (!_lastScanFailed)
 			{
-				Log($"Scan: no reachable station can repair any worn items within {ScanRadius}m — backing off {60f}s");
+				Log($"Scan: no reachable station can repair the items below {threshold * 100f:F0}% within {ScanRadius}m — backing off {60f}s");
 			}
 			_lastScanFailed = true;
 			_scanTimer = 60f;
@@ -369,12 +427,8 @@ public class RepairController : MonoBehaviour
 		_targetStation = craftingStation;
 		ClaimStation();
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_oscillationTimer = 0f;
-		_oscillationCount = 0;
-		_oscillationCheckPos = base.transform.position;
 		_phase = RepairPhase.MovingToStation;
+		_moveStart = Time.time;
 		Log($"Found {_repairQueue.Count} items to repair at " + $"\"{_targetStation.m_name}\" level={_targetStation.GetLevel()} ({num3:F1}m away)");
 		if (_talk != null)
 		{
@@ -410,6 +464,13 @@ public class RepairController : MonoBehaviour
 		}
 		Vector3 goal = StationGoal();
 		MHR_Mover.Go(_ai, dt, goal, _hasApproach ? 0.5f : UseDistance, num > 8f, "Repair");
+		// 1.4.145: no way there, or the trip is taking too long -> give up on that station (blacklisted like a stuck trip)
+		if (MHR_Mover.GaveUp(_ai) || Time.time - _moveStart > MHR_Nav.LegTimeout)
+		{
+			_ai.BlacklistPosition(_targetStation.transform.position);
+			Abort($"couldn't get to \"{_targetStation.m_name}\" ({num:F1}m away, {Time.time - _moveStart:F0}s)");
+			return;
+		}
 		_stuckTimer = MHR_Mover.StuckSeconds(_ai);
 		if (_stuckTimer > 10f)
 		{
@@ -555,6 +616,7 @@ public class RepairController : MonoBehaviour
 		_targetStation = null;
 		_repairQueue.Clear();
 		_phase = RepairPhase.Idle;
+		_direct = false;
 		_scanTimer = 1f;
 	}
 }

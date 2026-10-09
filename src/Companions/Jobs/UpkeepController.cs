@@ -59,6 +59,51 @@ public partial class UpkeepController : MonoBehaviour
 
 	private float _orderHoldUntil;
 
+	// ---- 1.4.143: small chores for an idle companion on any job (IdleController) ----
+	private bool _idleChore;
+
+	private float _idleRange;
+
+	internal bool IdleChoreActive => _idleChore;
+
+	// a repair, a fire to top up or a full beehive within range of where it's idling; true if one was started
+	internal bool StartIdleChore(Vector3 center, float range)
+	{
+		if (_idleChore || GetMode() == CompanionSetup.ModeRepairBuildings || _step != Step.Idle)
+		{
+			return false;
+		}
+		_idleChore = true;
+		_idleRange = range;
+		_atHome = false;
+		_anchor = center;
+		_hasAnchor = true;
+		if (PlanRepair() || PlanFuel() || PlanHoney())
+		{
+			return true;
+		}
+		_idleChore = false;
+		_hasAnchor = false;
+		return false;
+	}
+
+	internal void StopIdleChore()
+	{
+		if (_idleChore)
+		{
+			Stop();
+			EndIdleChore();
+		}
+	}
+
+	private void EndIdleChore()
+	{
+		PutHammerAway();
+		_idleChore = false;
+		_hasAnchor = false;
+		_step = Step.Idle;
+	}
+
 	private Step _step;
 
 	private float _scanTimer;
@@ -149,7 +194,7 @@ public partial class UpkeepController : MonoBehaviour
 			CloseChest();
 			return;
 		}
-		if (GetMode() != CompanionSetup.ModeRepairBuildings)
+		if (GetMode() != CompanionSetup.ModeRepairBuildings && !_idleChore)
 		{
 			if (_step != Step.Idle || _holdingHammer)
 			{
@@ -187,7 +232,7 @@ public partial class UpkeepController : MonoBehaviour
 		}
 		// 1.4.133: a "go there" order comes first (user: using the command broke Repair and Restock - both steered at once).
 		// It stays there a little while after arriving, then carries on with the chores.
-		if (_ai.PendingMoveTarget.HasValue)
+		if (MHR_JobRules.OrderPending(this))
 		{
 			if (_step != Step.Idle || _holdingHammer)
 			{
@@ -209,6 +254,15 @@ public partial class UpkeepController : MonoBehaviour
 			{
 				LogDebug("Repairing its gear first - " + _step + " waits");
 				Stop();
+			}
+			return;
+		}
+		// 1.4.143: one small chore for IdleController - when it's done (and anything fetched is put back), hand back
+		if (_idleChore && _step == Step.Idle)
+		{
+			if (!PlanStow())
+			{
+				EndIdleChore();
 			}
 			return;
 		}
@@ -256,6 +310,10 @@ public partial class UpkeepController : MonoBehaviour
 
 	private float Range()
 	{
+		if (_idleChore)
+		{
+			return _idleRange;
+		}
 		return _atHome ? MHR_ToolKeeper.HomeRange() : (ModConfig.UpkeepAwayRadius?.Value ?? 30f);
 	}
 

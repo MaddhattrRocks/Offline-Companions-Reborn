@@ -89,7 +89,7 @@ internal static class PortalPatches
 			if (component2 != null)
 			{
 				component2.position = vector;
-				component2.velocity = Vector3.zero;
+				component2.linearVelocity = Vector3.zero;
 			}
 			CompanionAI component3 = gameObject.GetComponent<CompanionAI>();
 			if (component3 != null)

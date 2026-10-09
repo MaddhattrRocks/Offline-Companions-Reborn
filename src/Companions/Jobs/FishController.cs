@@ -179,7 +179,7 @@ public class FishController : MonoBehaviour
 			}
 			return;
 		}
-		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this))
+		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
 			return;
 		}

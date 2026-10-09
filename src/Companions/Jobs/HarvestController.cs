@@ -51,8 +51,6 @@ public class HarvestController : MonoBehaviour
 
 	private int _consecutiveFailures;
 
-	private int _terrainHitCount;
-
 	private int _rock5ActiveSections = -1;
 
 	private Collider _rock5CurrentSegment;
@@ -93,8 +91,6 @@ public class HarvestController : MonoBehaviour
 
 	private static string _forageFilterRaw;
 
-	private static bool _forageAll = true;
-
 	private const HarvestState State_Idle = HarvestState.Idle;
 
 	private const HarvestState State_Moving = HarvestState.Moving;
@@ -122,8 +118,6 @@ public class HarvestController : MonoBehaviour
 	private static readonly int s_pickedHash = "picked".GetStableHashCode();
 
 	private float _overweightMsgTimer;
-
-	private Container _cachedChest;
 
 	private float _chestScanTimer;
 
@@ -642,7 +636,7 @@ public class HarvestController : MonoBehaviour
 		}
 		// 1.4.128: after a fight, picking up what the kill dropped goes first (1.4.127 test: on Forage it kept walking to
 		// the next mushroom while the loot pickup walked to the drops - the two took turns every frame and it stuttered)
-		if (MHR_Loot.Active(this))
+		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
 			return;
 		}
@@ -1314,7 +1308,6 @@ public class HarvestController : MonoBehaviour
 						_totalAttempts = 0;
 						_swingCount = 0;
 						_consecutiveFailures = 0;
-						_terrainHitCount = 0;
 						_reapproach = false;
 						_attackFaceLocked = false;
 						_moveTimer = 0f;
@@ -1479,7 +1472,6 @@ public class HarvestController : MonoBehaviour
 		_reapproach = false;
 		_rock5ActiveSections = -1;
 		_rock5CurrentSegment = null;
-		_terrainHitCount = 0;
 		_lastAoeSwing = -1;
 		_scanTimer = 0f;
 		_pendingToolReequip = null;
@@ -2837,11 +2829,9 @@ public class HarvestController : MonoBehaviour
 		_forageFilterRaw = value;
 		if (string.IsNullOrWhiteSpace(value) || value.Trim() == "*")
 		{
-			_forageAll = true;
 			_forageFilter = null;
 			return;
 		}
-		_forageAll = false;
 		_forageFilter = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		string[] array = value.Split(new char[1] { ',' });
 		for (int i = 0; i < array.Length; i++)

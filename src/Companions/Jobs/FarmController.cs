@@ -206,7 +206,7 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
-		if (MHR_Loot.Active(this))
+		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
 			return;
 		}

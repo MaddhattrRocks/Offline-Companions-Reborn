@@ -2,6 +2,41 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.147
+- Fixed: a running job could pull a companion away from boarding a ship, opening a door, or sitting by a fire / going to bed when you told it to - every job now waits for these orders too.
+- Repair and Restock and the idle behaviour wait for all your orders, not just "go there".
+
+## 1.4.146
+- Fixed: ordering a companion to repair at a station was cancelled straight away while its job had a task - your order now goes first and the job waits for it.
+- The repair log now says why a repair trip stopped (combat, loot, another order, being talked to, the job has work).
+
+## 1.4.145
+- Fixed: a "go there" order (or hitching a cart, putting things in a chest, fetching a tombstone) and a running job steered at the same time - every job now waits until the order is done.
+- Fixed: a gear repair trip could run alongside picking up loot after a fight - it now waits too.
+- A worn item no station nearby can repair is left alone for 10 minutes before it looks again (new [Repair] NoStationWait).
+- A gear repair trip that can't find a way to the station, or takes over 2 minutes, gives up; that item then waits the same 10 minutes.
+
+## 1.4.144
+- Fixed: with Cook on, a gear repair trip and the cook's task walked at the same time and the companion stood still - the repair trip now waits while Cook, Farm, Hunt or Fish has a task.
+- Fixed: an item it can't repair nearby (an arbalest needing the black forge) sent it to the forge over and over to top up nearly-new gear - only the worn items now decide the trip.
+
+## 1.4.143
+- New idle behaviour: a companion with nothing to do no longer just stands there - after 10 s it idles near its job until work turns up again.
+- Idle chores: repairs damaged pieces, tops up fires, collects honey and puts away what it carries nearby.
+- Idle rest: sits on a free chair or bench nearby, or on the ground, for a while.
+- Idle wander: strolls about and looks over the stations and chests near its job.
+- Idle company: walks over to you or another companion nearby and chats now and then.
+- Now and then says why it's idle ("Nothing left to chop here.", "Waiting for the crops to grow.").
+- New [Idle] settings: Enabled, StartAfter, Radius, Chores, ChoreRadius, Sit, Wander, Socialize, SpeechInterval.
+
+## 1.4.142
+- Code clean-up, no change in behaviour: the build has no warnings any more (old Unity names updated, unused leftovers removed).
+
+## 1.4.141
+- Movement clean-up, part 2: the old steering and "unstuck" code is gone - no more stray jumps while a companion stands working (it jumped after standing still for 2 seconds with any job on), and no more teleporting to you after five failed unstuck tries during a fight. The new movement handles all of it.
+- Swimming for the shore when low on stamina now uses the new movement (the old way had stopped working).
+- The "open this door" command now walks up and opens the door with the new movement; the old door helper and its [Door] settings are gone (doors on the way were already handled by the new movement).
+
 ## 1.4.140
 - Companions line up with a doorway before going through it, like a player: when their way leads through a door they first step onto the line straight out from the middle of the doorway, then walk straight through. They no longer cut the corner and walk into the leaf of an open door.
 

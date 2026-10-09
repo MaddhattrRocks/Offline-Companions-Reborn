@@ -249,7 +249,7 @@ public partial class CookController : MonoBehaviour
 			return;
 		}
 		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
-		if (MHR_Loot.Active(this))
+		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
 			return;
 		}
@@ -2210,20 +2210,15 @@ internal static class CookCatalog
 
 	private static bool s_built;
 
-	private static string s_foodsKey;
-
 	private static readonly HashSet<string> s_allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 	private static readonly HashSet<string> s_deny = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-	private static bool s_all;
 
 	private static string s_focusKey;
 
 	private static string s_focusStage;
 
 	private static readonly List<string> s_focus = new List<string>();
-
 
 	internal static void Ensure()
 	{

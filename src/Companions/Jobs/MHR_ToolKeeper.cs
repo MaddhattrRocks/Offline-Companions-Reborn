@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
+            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }
@@ -837,6 +837,29 @@ namespace Companions
         }
 
         // 1.4.75: a work mode is on (not Follow, and not the old Stay mode that pre-1.4.65 saves can still hold).
+        // 1.4.145: an order is being carried out (go there, hitch the cart, put things in a chest, fetch the tombstone).
+        // CompanionAI walks it with the mover; a job steering at the same time cancels it out every frame, so jobs wait.
+        public static bool OrderPending(Component c)
+        {
+            if (OtherOrder(c)) return true;
+            // 1.4.146: a repair the player ordered at a station
+            RepairController rc = c != null ? c.GetComponent<RepairController>() : null;
+            return rc != null && rc.IsDirect;
+        }
+
+        // every order but the ordered repair (which RepairController itself carries out)
+        public static bool OtherOrder(Component c)
+        {
+            if (c == null) return false;
+            CompanionAI ai = c.GetComponent<CompanionAI>();
+            if (ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone || ai.IsBoardingShip)) return true;
+            // 1.4.147: open that door; sit by that fire / sleep in that bed
+            DoorHandler door = c.GetComponent<DoorHandler>();
+            if (door != null && door.IsActive) return true;
+            CompanionRest rest = c.GetComponent<CompanionRest>();
+            return rest != null && rest.IsDirectedOrder;
+        }
+
         public static bool IsJobMode(int mode)
         {
             return mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay;

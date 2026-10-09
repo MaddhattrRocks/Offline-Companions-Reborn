@@ -25,6 +25,7 @@ namespace Companions
             public Chair Chair; public bool GoingToChair; public float ChairUntil, ChairFailUntil, NextChairLook;
             public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim;
             public Collider[] ChairCols;
+            public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
         }
         // one per followed player, shared by all companions following them
         class T
@@ -567,8 +568,34 @@ namespace Companions
             if (s.SitFloor && !keepAnim && za != null) { za.SetTrigger("emote_stop"); za.SetBool("emote_sit", false); }
             if (!keepAnim) SetResting(ai, false);
             Dbg(ai.GetComponent<Character>().m_name + " got up (" + why + ")");
-            s.SitChair = false; s.SitFloor = false; s.Chair = null; s.GoingToChair = false;
+            s.SitChair = false; s.SitFloor = false; s.Chair = null; s.GoingToChair = false; s.IdleSeat = false;
             s.UnloadAsked = false; s.HasIdle = false; s.IdleMoving = false; s.SettleDelay = UnityEngine.Random.Range(5f, 10f);
+        }
+
+        // ---------- 1.4.143: sitting for IdleController (same seats, pinning and getting up as when following) ----------
+        internal static Chair IdleFindChair(CompanionAI ai, Vector3 center, float range) { return FindChair(ai, center, range); }
+        internal static void IdleClaimChair(CompanionAI ai, Chair ch) { S s = Get(ai); s.Chair = ch; s.GoingToChair = true; s.LastUpdate = Time.time; }
+        internal static void IdleSit(CompanionAI ai, Chair ch)
+        {
+            S s = Get(ai);
+            s.Chair = ch; s.LastUpdate = Time.time;
+            SitInChair(ai, s, ch, ai.transform.position);
+            s.IdleSeat = true;
+        }
+        internal static void IdleSitFloor(CompanionAI ai, Vector3 face)
+        {
+            S s = Get(ai);
+            SitOnFloor(ai, s, face);
+            s.IdleSeat = true;
+        }
+        internal static bool IdleSeated(CompanionAI ai) { S s = Peek(ai); return s != null && s.IdleSeat && (s.SitChair || s.SitFloor); }
+        internal static void IdleStand(CompanionAI ai, string why)
+        {
+            S s = Peek(ai);
+            if (s == null) return;
+            if (s.IdleSeat && (s.SitChair || s.SitFloor)) StandUp(ai, s, false, why);
+            else if (s.GoingToChair) ReleaseChair(s);
+            s.IdleSeat = false;
         }
 
         // ---------- per-frame housekeeping (from MHR_ToolKeeper.Tick, owner only): get up when something else needs the companion ----------
@@ -582,6 +609,15 @@ namespace Companions
                 if (s.GoingToChair && Time.time - s.LastUpdate > 0.5f) ReleaseChair(s);
                 if (!s.SitChair && !s.SitFloor) return;
                 string why = null; bool keepAnim = false;
+                // 1.4.143: an idle companion's seat - only a fight or bed time gets it up here; IdleController does the rest
+                if (s.IdleSeat)
+                {
+                    CompanionRest r0 = cs.GetComponent<CompanionRest>();
+                    if (ai.IsInCombat) StandUp(ai, s, false, "fight");
+                    else if (r0 != null && (r0.IsSleeping || r0.IsNavigating)) StandUp(ai, s, s.SitFloor, "resting");
+                    else if (s.SitChair) Pin(ai, s);
+                    return;
+                }
                 GameObject f = ai.GetFollowTarget();
                 CompanionRest rest = cs.GetComponent<CompanionRest>();
                 RepairController rc = cs.GetComponent<RepairController>();

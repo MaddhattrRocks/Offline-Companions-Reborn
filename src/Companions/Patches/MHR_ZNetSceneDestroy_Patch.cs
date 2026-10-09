@@ -16,7 +16,6 @@ public static class MHR_ZNetSceneDestroy_Patch
 	[HarmonyPrefix]
 	private static bool Prefix(GameObject go)
 	{
-		bool flag = true;
 		try
 		{
 			return MHR_DeleteGuard.Allow(go);
