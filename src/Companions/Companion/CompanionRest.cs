@@ -120,7 +120,7 @@ public class CompanionRest : MonoBehaviour
 		}
 	}
 
-	public bool IsSleeping => _isSleeping;
+	public bool IsSleeping => _isSleeping || Time.time < _wakeUntil;
 
 	public bool IsNavigating => _navigating;
 
@@ -358,9 +358,15 @@ public class CompanionRest : MonoBehaviour
 	private Collider[] _bedCols;
 
 	// keep the sleeping companion on the bed (see FinalizeSleep)
+	// 1.4.105: getting up happens in the bed, like a player (user: "they should get up in bed like a player" - 1.4.104
+	// moved him to the floor first, so the get-up animation played lying on the floor); then he steps down beside it
+	private float _wakeUntil;
+
+	private Bed _wakeBed;
+
 	private void PinToBed()
 	{
-		if (!_bedPinned || !_isSleeping)
+		if (!_bedPinned || (!_isSleeping && Time.time >= _wakeUntil))
 		{
 			return;
 		}
@@ -419,6 +425,14 @@ public class CompanionRest : MonoBehaviour
 		if (_nview == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
 		{
 			return;
+		}
+		if (_wakeBed != null || (_bedPinned && !_isSleeping))
+		{
+			if (Time.time < _wakeUntil)
+			{
+				return;
+			}
+			FinishGetUp();
 		}
 		if (_navigating)
 		{
@@ -1143,8 +1157,12 @@ public class CompanionRest : MonoBehaviour
 	private void StopSleeping()
 	{
 		Bed bedTarget = _bedTarget;
-		MHR_StandUpFromBed(bedTarget);
-		MHR_SetBedCollisionIgnored(bedTarget, ignore: false);
+		bool inBed = bedTarget != null && bedTarget && _bedPinned;
+		if (!inBed)
+		{
+			MHR_StandUpFromBed(bedTarget);
+			MHR_SetBedCollisionIgnored(bedTarget, ignore: false);
+		}
 		_isSleeping = false;
 		_isAutoSleep = false;
 		_bedTarget = null;
@@ -1157,16 +1175,25 @@ public class CompanionRest : MonoBehaviour
 		{
 			_nview.GetZDO().Set(ZDOVars.s_inBed, value: false);
 		}
-		_bedPinned = false;
-		IgnoreBed(null, ignore: false);
-		if (_body != null)
+		if (inBed)
 		{
-			_body.isKinematic = false;
-			_body.useGravity = true;
-			_body.linearVelocity = Vector3.zero;
-			if (bedTarget != null)
+			// still lying on the bed while the get-up animation plays; FinishGetUp steps him off it
+			_wakeBed = bedTarget;
+			_wakeUntil = Time.time + 1.6f;
+		}
+		else
+		{
+			_bedPinned = false;
+			IgnoreBed(null, ignore: false);
+			if (_body != null)
 			{
-				_body.position = base.transform.position;
+				_body.isKinematic = false;
+				_body.useGravity = true;
+				_body.linearVelocity = Vector3.zero;
+				if (bedTarget != null)
+				{
+					_body.position = base.transform.position;
+				}
 			}
 		}
 		if (_stamina != null)
@@ -1197,6 +1224,33 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 			}
 		}
+	}
+
+	private void FinishGetUp()
+	{
+		Bed bed = _wakeBed;
+		_wakeBed = null;
+		_wakeUntil = 0f;
+		if (bed != null && bed)
+		{
+			Vector3 floor;
+			Transform spawnPoint = (bed.m_spawnPoint != null) ? bed.m_spawnPoint : bed.transform;
+			base.transform.position = MHR_Follow.StandSpot(bed.transform.position, bed.transform.right, bed.transform.forward, out floor) ? floor : spawnPoint.TransformPoint(new Vector3(0f, 0.5f, 0f));
+		}
+		_bedPinned = false;
+		if (bed != null && bed)
+		{
+			MHR_SetBedCollisionIgnored(bed, ignore: false);
+		}
+		IgnoreBed(null, ignore: false);
+		if (_body != null)
+		{
+			_body.isKinematic = false;
+			_body.useGravity = true;
+			_body.linearVelocity = Vector3.zero;
+			_body.position = base.transform.position;
+		}
+		CompanionsPlugin.Log.LogDebug("[Rest] Got up and stepped off the bed");
 	}
 
 	internal void MHR_StandUpFromBed(Bed bed)

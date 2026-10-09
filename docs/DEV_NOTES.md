@@ -31,6 +31,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.105 - from the 1.4.104 test (log 8d8ec150)
+- User: everything else looks like it's working. When they woke, the NPC got up from the floor next to the bed - should get up in bed like a player.
+- 1.4.102 moved him to the floor spot at once, so the get-up animation played on the floor. StopSleeping now (when he's pinned on the bed) only turns the bed animation off and keeps him pinned on the bed, collisions with it still ignored, for 1.6 s (IsSleeping stays true meanwhile); then FinishGetUp puts him on MHR_Follow.StandSpot beside the bed and restores collisions/gravity ("[Rest] Got up and stepped off the bed").
+
 ### 1.4.104 - the rest onto MHR_Mover (user: "update those 6 and the smaller pieces")
 - CompanionAI.MHR_Go(dt, point, dist, run, tag) = MHR_Mover.Go with SpeedRun/SpeedJog. Used for: PendingMoveTarget ("Command"; gave up -> CancelMoveTarget + log), deposit ("Deposit"), tombstone recovery ("Tombstone"), heal ("Heal", dist 1), FollowWithFormation ("Formation"), gather pile/dodge ("Pile", "Dodge"), Harvest LateUpdate final approach ("Harvest"). Repair buildings / Restock / DoorHandler: MHR_Nav.MoveWalk -> MHR_Nav.Move (tags RepairBuild, Restock, Door).
 - CompanionCombatAI.ChaseMove: all chase moves (enemy, lost target, friend for heal weapons) via MHR_Mover.Go "Combat"; if Mover has given up, vanilla MoveToPoint that tick.
