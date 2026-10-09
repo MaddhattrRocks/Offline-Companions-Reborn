@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.105 pushed, not yet tested (1.4.86-1.4.105 on the branch, no PR yet)
+## Current state: 1.4.106 pushed, not yet tested (1.4.86-1.4.106 on the branch, no PR yet)
+- 1.4.106: Fish redone for real (vanilla float/fish, MHR_FishingPatches), one list format for every list (Core/MHR_List.cs). Bait crafting parked in the backlog.
 - 1.4.104 tested: user says everything else works. 1.4.105: get up in the bed, then step off.
 - 1.4.104: commands, wheel actions, tombstone, heal, combat chases, harvest approach/dodge, door handler, formation follow on MHR_Mover. Still old: Homestead, Stay Home, Fish.
 - 1.4.103: hunting chases on MHR_Mover (shoot from the edge, leave prey needing a swim), no follow warp while still making progress.

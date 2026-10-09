@@ -135,19 +135,22 @@ namespace Companions
             return new Fam { Seed = name, Source = s_sourceFor.TryGetValue(name, out src) ? src : null };
         }
 
+        // 1.4.106: the shared list format (MHR_List): * = every crop that grows on cultivated ground (not tree
+        // saplings), Name, -Name, Name:Number (stop planting it once there are that many of its crop)
         static List<Fam> ListFams()
         {
             string raw = ModConfig.PlantAny != null ? ModConfig.PlantAny.Value : "";
             if (raw == s_listRaw) return s_list;
             s_listRaw = raw;
             s_list = new List<Fam>();
+            MHR_List l = MHR_List.Get(raw);
             HashSet<string> seen = new HashSet<string>();
-            foreach (string part in (raw ?? "").Split(','))
+            List<string> names = new List<string>(l.Order);
+            if (l.All && FarmController.s_seedToPlant != null)
+                foreach (KeyValuePair<string, FarmController.SeedPlantInfo> kv in FarmController.s_seedToPlant)
+                    if (kv.Value.NeedsCultivated && !names.Contains(kv.Key)) names.Add(kv.Key);
+            foreach (string name in names)
             {
-                string name = part.Trim();
-                int colon = name.IndexOf(':');
-                if (colon >= 0) name = name.Substring(0, colon).Trim();
-                if (name.Length == 0) continue;
                 Fam f = Resolve(name);
                 if (f == null)
                 {
@@ -155,9 +158,20 @@ namespace Companions
                         CompanionsPlugin.Log.LogWarning("[Farm] PlantAny: \"" + name + "\" isn't something a cultivator can plant - skipped");
                     continue;
                 }
+                if (l.IsExcluded(name, f.Seed, f.Source)) continue;
                 if (seen.Add(f.Seed)) s_list.Add(f);
             }
             return s_list;
+        }
+
+        // Name:Number on PlantAny: the crop's own stock target (counting what planting it gives: the vegetable for seeds,
+        // the item itself for barley, flax...)
+        static int CropAmount(Fam f)
+        {
+            MHR_List l = MHR_List.Get(ModConfig.PlantAny != null ? ModConfig.PlantAny.Value : "");
+            int n = l.AmountFor(f.Seed, 0);
+            if (n <= 0 && f.Source != null) n = l.AmountFor(f.Source, 0);
+            return n;
         }
 
         static Rot GetRot(Component farm, string key)
@@ -202,7 +216,10 @@ namespace Companions
                     if (f.Source != null) report.Append('/').Append(min).Append(", ").Append(f.Source).Append(' ').Append(veg);
                     order.Add(f.Seed);
                     // seeds: above the minimum, or (1.4.66) any at all when there's nothing to grow seed plants from yet
-                    ok.Add(f.Source == null ? seeds > 0 : (seeds > min || (seeds > 0 && veg == 0)));
+                    bool canPlant = f.Source == null ? seeds > 0 : (seeds > min || (seeds > 0 && veg == 0));
+                    int crop = CropAmount(f);
+                    if (crop > 0 && (f.Source != null ? veg : seeds) >= crop) { canPlant = false; report.Append(" (enough, ").Append(crop).Append(')'); }
+                    ok.Add(canPlant);
                     if (f.Source != null)
                     {
                         order.Add(f.Source);

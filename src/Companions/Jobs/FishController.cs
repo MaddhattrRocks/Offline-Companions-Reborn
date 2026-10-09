@@ -1,37 +1,31 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using BepInEx;
 using UnityEngine;
 
 namespace Companions;
 
+// 1.4.106: Fish, redone (user, Fish review): fishes for real, like a player.
+//  - Stays around where the job was started and looks for fish in the water nearby (Fishing.ScanRadius).
+//  - Goes to the bank by the fish it wants (MHR_Mover), picks the bait that fish takes, casts the game's own float at it.
+//  - Real fish: they come to the float, nibble, get hooked when it strikes (reels) in time, fight, escape, use stamina,
+//    can break the line. Reeling raises the Fishing skill, and the skill makes reeling faster and cheaper (the game's own
+//    rules - the float doesn't know it's a companion).
+//  - Fishing.Fish list (*, -Name, Name:Number) and FishTarget (pack + chests near home).
+//  - Pack full near home: walks home, puts the catch away, comes back (like Hunt). Bait isn't crafted (backlog).
 public class FishController : MonoBehaviour
 {
 	private enum FishState
 	{
 		Idle,
-		FindingSpot,
-		MovingToSpot,
+		Moving,
 		Casting,
 		Waiting,
 		Reeling,
-		Collecting
+		GoingHome
 	}
-
-	private struct FishEntry
-	{
-		public string PickupPrefabName;
-
-		public float Chance;
-	}
-
-	private const float ScanInterval = 5f;
-
-	private const float StuckTimeout = 6f;
-
-	private const float MinFishingDepth = 2f;
-
-	private const float SpeechCooldown = 30f;
-
-	private const int MaxConsecutiveMiss = 3;
 
 	private ZNetView _nview;
 
@@ -45,59 +39,59 @@ public class FishController : MonoBehaviour
 
 	private Character _character;
 
-	private CompanionStamina _stamina;
-
 	private CompanionTalk _talk;
-
-	private ZSyncAnimation _zanim;
 
 	private FishState _state;
 
-	private float _stateTimer;
+	private float _stateSince;
 
 	private float _scanTimer;
 
-	private float _stuckTimer;
-
-	private int _stuckCount;
-
 	private float _lastSpeechTime;
 
-	private Vector3 _lastPos;
+	private float _nextWhyLog;
 
-	private int _missCount;
+	private Vector3 _anchor;
 
-	private bool _castInitiated;
+	private bool _hasAnchor;
 
-	private Vector3 _shorePos;
+	private Fish _fish;
 
-	private Vector3 _waterPos;
+	private string _fishName;
 
-	private WaterVolume _cachedWaterVolume;
+	private Vector3 _stand;
 
-	private string _currentBaitName;
+	private string _bait;
 
-	private static Dictionary<string, List<FishEntry>> s_baitFishMap;
+	private float _castAt;
 
-	private static HashSet<string> s_baitNames;
+	private int _castTries;
 
-	private static bool s_mapBuilt;
+	private bool _settled;
 
-	private static float ScanRadius => ModConfig.FishScanRadius.Value;
+	private bool _retrieving;
 
-	private static float WaitTimeMin => ModConfig.FishWaitTimeMin.Value;
+	private float _hookTry;
 
-	private static float WaitTimeMax => ModConfig.FishWaitTimeMax.Value;
+	private Fish _hooked;
 
-	private static float ReelTimeMin => ModConfig.FishReelTimeMin.Value;
+	private string _hookedName;
 
-	private static float ReelTimeMax => ModConfig.FishReelTimeMax.Value;
+	private int _haveBefore;
 
-	private static float HookChance => ModConfig.FishHookChance.Value;
+	private float _castScale = 12f;
 
-	private static float MissChance => ModConfig.FishMissChance.Value;
+	private float _nextUnloadTry;
 
-	private static float ReelStamDrain => ModConfig.FishReelStaminaDrain.Value;
+	private float _nextCount;
+
+	private Transform _rodTop;
+
+	private readonly Dictionary<string, int> _counts = new Dictionary<string, int>();
+
+	private readonly Dictionary<int, float> _skip = new Dictionary<int, float>();
+
+	private static readonly HarmonyLib.AccessTools.FieldRef<Humanoid, float> s_drawTime = HarmonyLib.AccessTools.FieldRefAccess<Humanoid, float>("m_attackDrawTime");
 
 	public bool IsActive
 	{
@@ -113,54 +107,17 @@ public class FishController : MonoBehaviour
 
 	public void NotifyActionModeChanged()
 	{
-		if (_state != FishState.Idle)
-		{
-			Log($"NotifyActionModeChanged — resetting from {_state}");
-		}
-		ResetToIdle();
+		ReelOff();
+		_state = FishState.Idle;
+		_hasAnchor = false;
+		_scanTimer = 0f;
 		_lastSpeechTime = 0f;
-		UnequipFishingRod();
+		RestoreGear();
 	}
 
 	private int GetMode()
 	{
 		return (_nview?.GetZDO())?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
-	}
-
-	private void Log(string msg)
-	{
-		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogInfo("[Fish|" + text + "] " + msg);
-	}
-
-	private void ResetToIdle()
-	{
-		_state = FishState.Idle;
-		_stateTimer = 0f;
-		_scanTimer = 0f;
-		_missCount = 0;
-		_stuckTimer = 0f;
-		_stuckCount = 0;
-		_castInitiated = false;
-		_cachedWaterVolume = null;
-		if (_setup != null && _setup.SuppressAutoEquip)
-		{
-			_setup.SuppressAutoEquip = false;
-			_setup.SyncEquipmentToInventory();
-		}
-	}
-
-	private void UnequipFishingRod()
-	{
-		if (!(_humanoid == null))
-		{
-			ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
-			if (currentWeapon != null && currentWeapon.m_shared.m_animationState == ItemDrop.ItemData.AnimationState.FishingRod)
-			{
-				_humanoid.UnequipItem(currentWeapon);
-				Log("Unequipped fishing rod on mode change");
-			}
-		}
 	}
 
 	private void Awake()
@@ -171,66 +128,87 @@ public class FishController : MonoBehaviour
 		_setup = GetComponent<CompanionSetup>();
 		_humanoid = GetComponent<Humanoid>();
 		_character = GetComponent<Character>();
-		_stamina = GetComponent<CompanionStamina>();
 		_talk = GetComponent<CompanionTalk>();
-		_zanim = GetComponent<ZSyncAnimation>();
 	}
 
 	private void Update()
 	{
-		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || !_nview.IsOwner())
+		if (_nview == null || !_nview.IsOwner() || _ai == null || _humanoid == null || CompanionRest.MHR_ShouldPauseWork(this))
 		{
 			return;
 		}
-		int mode = GetMode();
-		if (mode != 9)
+		if (GetMode() != 9)
 		{
 			if (_state != FishState.Idle)
 			{
-				ResetToIdle();
+				ReelOff();
+				_state = FishState.Idle;
+				RestoreGear();
 			}
+			_hasAnchor = false;
+			return;
 		}
-		else if (IsCompanionUIOpen())
+		if (!_hasAnchor)
+		{
+			_hasAnchor = true;
+			_anchor = base.transform.position;
+			Log("Fishing around " + MHR_Mover.Fmt(_anchor) + ", up to " + Radius().ToString("F0") + " m out");
+		}
+		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
 			_ai.StopMoving();
+			return;
 		}
-		else if (!(_combatAI != null) || !_combatAI.IsEngaged)
+		if (_combatAI != null && _combatAI.IsEngaged)
 		{
-			switch (_state)
+			// a fight: the float is lost when it swings anyway; start over afterwards
+			if (_state != FishState.Idle)
 			{
-			case FishState.Idle:
-				UpdateIdle();
-				break;
-			case FishState.FindingSpot:
-				UpdateFindingSpot();
-				break;
-			case FishState.MovingToSpot:
-				UpdateMovingToSpot();
-				break;
-			case FishState.Casting:
-				UpdateCasting();
-				break;
-			case FishState.Waiting:
-				UpdateWaiting();
-				break;
-			case FishState.Reeling:
-				UpdateReeling();
-				break;
-			case FishState.Collecting:
-				UpdateCollecting();
-				break;
+				ReelOff();
+				_state = FishState.Idle;
+				RestoreGear();
 			}
+			return;
+		}
+		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this))
+		{
+			return;
+		}
+		switch (_state)
+		{
+		case FishState.Idle:
+			UpdateIdle();
+			break;
+		case FishState.Moving:
+			UpdateMoving();
+			break;
+		case FishState.Casting:
+			UpdateCasting();
+			break;
+		case FishState.Waiting:
+			UpdateWaiting();
+			break;
+		case FishState.Reeling:
+			UpdateReeling();
+			break;
+		case FishState.GoingHome:
+			UpdateGoingHome();
+			break;
 		}
 	}
 
-	private bool IsCompanionUIOpen()
+	private static float Radius()
 	{
-		if (!CompanionInteractPanel.IsOpenFor(_setup) && !CompanionRadialMenu.IsOpenFor(_setup))
-		{
-			return HomeZonePanel.IsOpenFor(_setup);
-		}
-		return true;
+		return ModConfig.FishScanRadius?.Value ?? 30f;
 	}
+
+	private void Enter(FishState s)
+	{
+		_state = s;
+		_stateSince = Time.time;
+	}
+
+	// ------------------------------------------------------------------ choosing what to catch
 
 	private void UpdateIdle()
 	{
@@ -239,451 +217,791 @@ public class FishController : MonoBehaviour
 		{
 			return;
 		}
-		_scanTimer = 5f;
-		BuildBaitFishMapIfNeeded();
-		ItemDrop.ItemData itemData = FindFishingRod();
-		if (itemData == null)
+		_scanTimer = 3f;
+		FishCatalog.Ensure();
+		if (FindRod() == null)
 		{
-			SayThrottled(ModLocalization.Loc("hc_speech_fish_need_rod"));
+			Say("hc_speech_fish_need_rod");
 			return;
 		}
-		ItemDrop.ItemData itemData2 = FindBait();
-		if (itemData2 == null)
+		if (PackFull())
 		{
-			SayThrottled(ModLocalization.Loc("hc_speech_fish_need_bait"));
-		}
-		else
-		{
-			_state = FishState.FindingSpot;
-		}
-	}
-
-	private void UpdateFindingSpot()
-	{
-		if (FindWaterSpot(out var shorePos, out var waterPos))
-		{
-			_shorePos = shorePos;
-			_waterPos = waterPos;
-			_lastPos = base.transform.position;
-			_stuckTimer = 0f;
-			_state = FishState.MovingToSpot;
-			Log($"FindingSpot → MovingToSpot (shore={_shorePos:F1}, water={_waterPos:F1})");
-		}
-		else
-		{
-			SayThrottled(ModLocalization.Loc("hc_speech_fish_no_water"));
-			_state = FishState.Idle;
-			_scanTimer = 10f;
-		}
-	}
-
-	private void UpdateMovingToSpot()
-	{
-		float num = Vector3.Distance(base.transform.position, _shorePos);
-		if (num < 3f)
-		{
-			_ai.LookAtPoint(_waterPos);
-			_state = FishState.Casting;
-			_stateTimer = 0f;
-			Log("MovingToSpot → Casting (arrived at shore)");
-			return;
-		}
-		_ai.MoveToPoint(Time.deltaTime, _shorePos, 2f, run: true);
-		_stuckTimer += Time.deltaTime;
-		if (!(_stuckTimer >= 1f))
-		{
-			return;
-		}
-		_stuckTimer = 0f;
-		float num2 = Vector3.Distance(base.transform.position, _lastPos);
-		_lastPos = base.transform.position;
-		if (num2 < 0.3f)
-		{
-			_stuckCount++;
-			if (_stuckCount >= 5)
+			if (_setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup))
 			{
-				Log("MovingToSpot → FindingSpot (stuck)");
-				_state = FishState.FindingSpot;
-				_stuckCount = 0;
+				if (Time.time >= _nextUnloadTry)
+				{
+					if (MHR_ToolKeeper.AtHome(_setup))
+					{
+						_nextUnloadTry = Time.time + 60f;
+						Log("Pack is full - putting the catch away");
+						MHR_ToolKeeper.RequestUnload(_setup);
+						_nextCount = 0f;
+					}
+					else
+					{
+						Log("Pack is full - taking the catch home");
+						MHR_Mover.Release(_ai);
+						Enter(FishState.GoingHome);
+					}
+				}
+				return;
+			}
+			Say("hc_speech_fish_full");
+			WhyLog("Pack is full and home is too far - not fishing until it's emptied");
+			return;
+		}
+		RefreshCounts();
+		if (!PickTarget(out string why))
+		{
+			WhyLog("Nothing to fish (" + why + ")");
+			if (why.StartsWith("no bait"))
+			{
+				Say("hc_speech_fish_need_bait");
+			}
+			else if (why.StartsWith("no fish"))
+			{
+				Say("hc_speech_fish_no_water");
+			}
+			return;
+		}
+		_castTries = 0;
+		MHR_Mover.Release(_ai);
+		Enter(FishState.Moving);
+		Log("Going to fish for " + _fishName + " from " + MHR_Mover.Fmt(_stand) + " with " + CookController.Name(_bait) + NeedText(_fishName));
+	}
+
+	private bool PickTarget(out string why)
+	{
+		why = null;
+		Inventory inv = _humanoid.GetInventory();
+		Vector3 me = base.transform.position;
+		float radius = Radius();
+		int seen = 0;
+		int enough = 0;
+		int noBait = 0;
+		int noBank = 0;
+		string noBaitFor = null;
+		float best = float.MaxValue;
+		Fish bestFish = null;
+		Vector3 bestStand = Vector3.zero;
+		string bestBait = null;
+		foreach (IMonoUpdater u in Fish.Instances)
+		{
+			Fish fish = u as Fish;
+			if (fish == null || fish.IsHooked())
+			{
+				continue;
+			}
+			Vector3 p = fish.transform.position;
+			if (Flat(p, _anchor) > radius)
+			{
+				continue;
+			}
+			if (_skip.TryGetValue(fish.GetInstanceID(), out var until) && Time.time < until)
+			{
+				continue;
+			}
+			string name = FishCatalog.PrefabName(fish.gameObject);
+			if (!FishCatalog.Allowed(name, fish))
+			{
+				continue;
+			}
+			seen++;
+			if (!Needs(name))
+			{
+				enough++;
+				continue;
+			}
+			string bait = BestBait(fish, inv);
+			if (bait == null)
+			{
+				noBait++;
+				noBaitFor = noBaitFor ?? (FishCatalog.Local(fish) + " (takes " + FishCatalog.BaitsText(fish) + ")");
+				continue;
+			}
+			if (!BankSpot(fish, out var stand))
+			{
+				noBank++;
+				continue;
+			}
+			float d = Flat(me, stand);
+			if (d < best)
+			{
+				best = d;
+				bestFish = fish;
+				bestStand = stand;
+				bestBait = bait;
 			}
 		}
-		else
+		if (bestFish == null)
 		{
-			_stuckCount = 0;
+			why = seen == 0 ? ("no fish within " + radius.ToString("F0") + " m") : (enough == seen ? "enough of every fish here" : (noBait > 0 && noBank == 0 ? ("no bait for " + noBaitFor) : "no bank to fish from within a cast"));
+			return false;
+		}
+		_fish = bestFish;
+		_fishName = FishCatalog.PrefabName(bestFish.gameObject);
+		_stand = bestStand;
+		_bait = bestBait;
+		return true;
+	}
+
+	// the bait in the pack this fish takes best
+	private static string BestBait(Fish fish, Inventory inv)
+	{
+		string best = null;
+		float chance = -1f;
+		foreach (Fish.BaitSetting b in fish.m_baits)
+		{
+			if (b?.m_bait == null)
+			{
+				continue;
+			}
+			string n = b.m_bait.gameObject.name;
+			if (b.m_chance > chance && CountIn(inv, n) > 0)
+			{
+				chance = b.m_chance;
+				best = n;
+			}
+		}
+		return best;
+	}
+
+	// a dry spot on the bank, within a cast of the fish: walk out from the fish towards where we are (then all round)
+	// until the ground is above the water
+	private bool BankSpot(Fish fish, out Vector3 stand)
+	{
+		stand = Vector3.zero;
+		Vector3 fp = fish.transform.position;
+		Vector3 toMe = base.transform.position - fp;
+		toMe.y = 0f;
+		float a0 = (toMe.sqrMagnitude > 0.01f) ? Mathf.Atan2(toMe.x, toMe.z) * 57.29578f : 0f;
+		for (int i = 0; i < 12; i++)
+		{
+			float ang = a0 + ((i % 2 == 0) ? 1 : (-1)) * ((i + 1) / 2) * 30f;
+			Vector3 dir = Quaternion.Euler(0f, ang, 0f) * Vector3.forward;
+			for (float x = 3f; x <= 14f; x += 1f)
+			{
+				Vector3 p = fp + dir * x;
+				if (MHR_Water.DepthAt(p) > 0.2f)
+				{
+					continue;
+				}
+				Vector3 q = p + dir * 0.8f;
+				float g = MHR_Water.GroundAt(q);
+				q.y = g;
+				float water = MHR_Water.WaterLevel(fp);
+				if (g > water + 4f || MHR_Water.DepthAt(q) > 0.2f || MHR_Mover.InFire(q))
+				{
+					break;
+				}
+				if (!MHR_Mover.CanSee(q + Vector3.up * 1.6f, new Vector3(fp.x, water + 0.3f, fp.z)))
+				{
+					break;
+				}
+				stand = q;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ------------------------------------------------------------------ getting there, casting
+
+	private void UpdateMoving()
+	{
+		if (_fish == null || _fish.IsHooked())
+		{
+			Enter(FishState.Idle);
+			_scanTimer = 0.5f;
+			return;
+		}
+		if (Flat(base.transform.position, _stand) <= 1.2f && Mathf.Abs(base.transform.position.y - _stand.y) < 1.5f)
+		{
+			_ai.StopMoving();
+			MHR_Mover.Release(_ai);
+			Enter(FishState.Casting);
+			return;
+		}
+		MHR_Mover.Go(_ai, Time.deltaTime, _stand, 0.8f, true, "Fish");
+		if (MHR_Mover.RouteSwim(_ai) > 0.5f || MHR_Mover.GaveUp(_ai) || Time.time - _stateSince > 60f)
+		{
+			Log("Can't get to the bank by the " + _fishName + " - trying another");
+			_skip[_fish.GetInstanceID()] = Time.time + 120f;
+			MHR_Mover.Release(_ai);
+			Enter(FishState.Idle);
+			_scanTimer = 0.5f;
 		}
 	}
 
 	private void UpdateCasting()
 	{
-		if (!_castInitiated)
+		_ai.StopMoving();
+		ItemDrop.ItemData rod = FindRod();
+		Inventory inv = _humanoid.GetInventory();
+		ItemDrop.ItemData bait = FindItem(inv, _bait);
+		if (rod == null || bait == null)
 		{
-			ItemDrop.ItemData itemData = FindFishingRod();
-			if (itemData == null)
-			{
-				Log("Casting → Idle (rod missing)");
-				ResetToIdle();
-				return;
-			}
-			ItemDrop.ItemData itemData2 = FindBait();
-			if (itemData2 == null)
-			{
-				Log("Casting → Idle (bait missing)");
-				ResetToIdle();
-				return;
-			}
-			_currentBaitName = itemData2.m_dropPrefab?.name ?? "";
-			if (_setup != null)
-			{
-				_setup.SuppressAutoEquip = true;
-			}
-			ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
-			if (currentWeapon == null || currentWeapon.m_shared.m_animationState != ItemDrop.ItemData.AnimationState.FishingRod)
-			{
-				_humanoid.EquipItem(itemData);
-				return;
-			}
-			_ai.StopMoving();
-			_ai.LookAtPoint(_waterPos);
-			if (_ai.IsLookingAtPoint(_waterPos, 30f) && _humanoid.StartAttack(null, secondaryAttack: false))
-			{
-				Log("Casting — cast animation started");
-				_castInitiated = true;
-				Rigidbody rigidbody = _character?.GetComponent<Rigidbody>();
-				if (rigidbody != null)
-				{
-					rigidbody.linearVelocity = Vector3.zero;
-				}
-			}
+			Log(rod == null ? "No fishing rod" : ("Out of " + CookController.Name(_bait)));
+			Enter(FishState.Idle);
+			return;
 		}
-		else
+		if (_setup != null)
 		{
-			_ai.StopMoving();
-			if (!_humanoid.InAttack())
-			{
-				_castInitiated = false;
-				float num = (_stateTimer = Random.Range(WaitTimeMin, WaitTimeMax));
-				_state = FishState.Waiting;
-				Log($"Casting → Waiting ({num:F1}s)");
-			}
+			_setup.SuppressAutoEquip = true;
 		}
+		if (_humanoid.GetCurrentWeapon() != rod)
+		{
+			_humanoid.EquipItem(rod);
+			return;
+		}
+		if (_humanoid.GetAmmoItem() != bait)
+		{
+			_humanoid.EquipItem(bait);
+		}
+		Vector3 aim = AimPoint();
+		_ai.LookAtPoint(aim);
+		if (_character.InAttack() || !_ai.IsLookingAtPoint(aim, 8f) || Time.time - _stateSince < 0.5f)
+		{
+			if (Time.time - _stateSince > 10f)
+			{
+				Log("Couldn't get a cast off - trying again");
+				Enter(FishState.Idle);
+			}
+			return;
+		}
+		// how hard to cast: learned from where the last float landed
+		float want = Flat(base.transform.position, aim);
+		float pct = Mathf.Clamp01(want / Mathf.Max(4f, _castScale));
+		Attack attack = rod.m_shared.m_attack;
+		float full = attack.m_drawDurationMin;
+		float skill = _character.GetSkillFactor(rod.m_shared.m_skillType);
+		float draw = Mathf.Lerp(full, full * 0.2f, skill);
+		s_drawTime(_humanoid) = (draw > 0f) ? Mathf.Max(0.01f, pct * draw) : 0f;
+		bool ok = _humanoid.StartAttack(null, secondaryAttack: false);
+		s_drawTime(_humanoid) = 0f;
+		if (!ok)
+		{
+			return;
+		}
+		_castAt = Time.time;
+		_castTries++;
+		_settled = false;
+		_retrieving = false;
+		_hooked = null;
+		LogDebug("Casting at the " + _fishName + " (" + want.ToString("F0") + " m, " + (pct * 100f).ToString("F0") + "% cast)");
+		Enter(FishState.Waiting);
 	}
+
+	private Vector3 AimPoint()
+	{
+		Vector3 p = (_fish != null) ? _fish.transform.position : (_stand + base.transform.forward * 8f);
+		p.y = MHR_Water.WaterLevel(p);
+		return p;
+	}
+
+	// ------------------------------------------------------------------ the float is out
 
 	private void UpdateWaiting()
 	{
 		_ai.StopMoving();
-		_ai.LookAtPoint(_waterPos);
-		_stateTimer -= Time.deltaTime;
-		if (_stateTimer > 0f)
+		FishingFloat ff = MHR_FishingFloat.Of(_character);
+		if (ff == null)
 		{
+			if (Time.time - _castAt > 4f)
+			{
+				LogDebug("The cast didn't come off");
+				if (_castTries >= 3)
+				{
+					SkipFish(60f);
+					Enter(FishState.Idle);
+				}
+				else
+				{
+					Enter(FishState.Casting);
+				}
+			}
 			return;
 		}
-		if (Random.value < MissChance)
+		_ai.LookAtPoint(ff.transform.position);
+		if (!_settled && Time.time - _castAt > 2.5f)
 		{
-			_missCount++;
-			if (_missCount >= 3)
+			_settled = true;
+			float landed = Flat(base.transform.position, ff.transform.position);
+			float want = Flat(base.transform.position, AimPoint());
+			float pct = Mathf.Clamp01(want / Mathf.Max(4f, _castScale));
+			if (pct > 0.05f && ff.IsInWater())
 			{
-				_missCount = 0;
-				_state = FishState.FindingSpot;
-				Log("Waiting → FindingSpot (too many misses)");
+				_castScale = Mathf.Clamp(Mathf.Lerp(_castScale, landed / pct, 0.5f), 4f, 40f);
 			}
-			else
+			if (!ff.IsInWater())
 			{
-				_stateTimer = Random.Range(WaitTimeMin, WaitTimeMax);
-				Log($"Waiting — miss #{_missCount}, waiting {_stateTimer:F1}s more");
+				LogDebug("The float landed on dry ground - reeling in");
+				Retrieve();
+				return;
 			}
 		}
-		else if (Random.value > HookChance)
+		// a bite: strike (reel) straight away, like a player watching the float
+		Fish nibbler = MHR_FishingFloat.Nibbler(ff);
+		if (nibbler != null && Time.time - MHR_FishingFloat.NibbleTime(ff) < 0.4f)
 		{
-			_talk?.Say(ModLocalization.Loc("hc_speech_fish_got_away"));
-			_stateTimer = Random.Range(WaitTimeMin * 0.5f, WaitTimeMax * 0.5f);
-			Log($"Waiting — hook failed, waiting {_stateTimer:F1}s more");
+			_hookTry = Time.time;
+			ReelOn();
+			Enter(FishState.Reeling);
+			return;
 		}
-		else
+		if (Time.time - _castAt > (ModConfig.FishCastWait?.Value ?? 60f))
 		{
-			float num = (_stateTimer = Random.Range(ReelTimeMin, ReelTimeMax));
-			_state = FishState.Reeling;
-			_missCount = 0;
-			Log($"Waiting → Reeling ({num:F1}s)");
+			LogDebug("No bite - reeling in");
+			Retrieve();
 		}
+	}
+
+	private void Retrieve()
+	{
+		_retrieving = true;
+		ReelOn();
+		Enter(FishState.Reeling);
 	}
 
 	private void UpdateReeling()
 	{
 		_ai.StopMoving();
-		_ai.LookAtPoint(_waterPos);
-		_stateTimer -= Time.deltaTime;
-		if (_stamina != null)
+		FishingFloat ff = MHR_FishingFloat.Of(_character);
+		if (ff == null)
 		{
-			_stamina.Drain(ReelStamDrain * Time.deltaTime);
-			if (_stamina.Stamina <= 0f)
-			{
-				_talk?.Say(ModLocalization.Loc("hc_speech_fish_got_away"));
-				_stateTimer = Random.Range(WaitTimeMin * 0.5f, WaitTimeMax * 0.5f);
-				_state = FishState.Waiting;
-				Log("Reeling → Waiting (stamina depleted, fish escaped)");
-				return;
-			}
-		}
-		if (_stateTimer <= 0f)
-		{
-			_state = FishState.Collecting;
-			Log("Reeling → Collecting");
-		}
-	}
-
-	private void UpdateCollecting()
-	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
-		{
-			ResetToIdle();
+			ReelOff();
+			Landed();
 			return;
 		}
-		string text = DetermineCatch(_currentBaitName);
-		if (!string.IsNullOrEmpty(text))
+		_ai.LookAtPoint(ff.transform.position);
+		Fish fish = ff.GetCatch();
+		if (fish == null)
 		{
-			GameObject gameObject = ZNetScene.instance?.GetPrefab(text);
-			if (gameObject != null)
+			if (_hooked != null)
 			{
-				ItemDrop component = gameObject.GetComponent<ItemDrop>();
-				if (component != null)
-				{
-					if (!inventory.CanAddItem(gameObject, 1))
-					{
-						_talk?.Say(ModLocalization.Loc("hc_speech_fish_full"), force: true);
-						Log("Collecting → Idle (inventory full)");
-						ResetToIdle();
-						return;
-					}
-					inventory.AddItem(gameObject, 1);
-					string text2 = component.m_itemData.m_shared.m_name;
-					string text3 = ((Localization.instance != null) ? Localization.instance.Localize(text2) : text2);
-					_talk?.Say(ModLocalization.LocFmt("hc_speech_fish_caught", text3), force: true);
-					PlayCatchEffect();
-					Log("Collecting — caught " + text + " (" + text3 + ")");
-				}
+				// it got off (out of stamina, or it fought free)
+				Log("The " + _hookedName + " got away");
+				_talk?.Say(ModLocalization.Loc("hc_speech_fish_got_away"));
+				_hooked = null;
+				Retrieve();
+				return;
+			}
+			if (!_retrieving && Time.time - _hookTry > 1f)
+			{
+				// struck at a nibble and missed: let the float settle and wait again
+				ReelOff();
+				Enter(FishState.Waiting);
 			}
 			else
 			{
-				Log("Collecting — fish prefab '" + text + "' not found in ZNetScene");
+				ReelOn();
 			}
 		}
 		else
 		{
-			Log("Collecting — no fish determined (empty catch)");
+			if (_hooked == null)
+			{
+				_hooked = fish;
+				_hookedName = FishCatalog.PrefabName(fish.gameObject);
+				_haveBefore = CountIn(_humanoid.GetInventory(), _hookedName);
+				Log("Hooked a " + FishCatalog.Local(fish) + " - reeling it in");
+			}
+			// like a player: ease off while it fights (or the line is tight), reel while it rests
+			float tension = Tension(ff);
+			if (fish.IsEscaping() || tension > 2.5f)
+			{
+				ReelOff();
+			}
+			else
+			{
+				ReelOn();
+			}
 		}
-		ItemDrop.ItemData itemData = FindBait();
-		if (itemData == null)
+		if (Time.time - _stateSince > 90f)
 		{
-			SayThrottled(ModLocalization.Loc("hc_speech_fish_need_bait"));
-			Log("Collecting → Idle (no bait left)");
-			ResetToIdle();
-		}
-		else
-		{
-			_stateTimer = 0f;
-			_state = FishState.Casting;
-			Log("Collecting → Casting (continuing to fish)");
+			LogDebug("Reeling is taking too long - letting go");
+			ReelOff();
+			Enter(FishState.Idle);
 		}
 	}
 
-	private static void BuildBaitFishMapIfNeeded()
+	private void Landed()
 	{
-		if (s_mapBuilt || ZNetScene.instance == null)
+		if (_hooked != null || _hookedName != null)
 		{
+			int now = CountIn(_humanoid.GetInventory(), _hookedName);
+			if (_hookedName != null && now > _haveBefore)
+			{
+				string local = CookController.Name(_hookedName);
+				Log("Caught a " + local + NeedText(_hookedName));
+				_talk?.Say(ModLocalization.LocFmt("hc_speech_fish_caught", local), force: true);
+				_nextCount = 0f;
+			}
+			else if (_hooked != null)
+			{
+				Log("Lost the " + _hookedName + " (the line broke)");
+			}
+		}
+		_hooked = null;
+		_hookedName = null;
+		_retrieving = false;
+		RefreshCounts();
+		// carry on with the same fish while it's still around and still wanted, else choose again
+		if (_fish != null && !_fish.IsHooked() && Needs(_fishName) && FindItem(_humanoid.GetInventory(), _bait) != null && !PackFull() && Flat(base.transform.position, _fish.transform.position) < 20f)
+		{
+			_castTries = 0;
+			Enter(FishState.Casting);
+		}
+		else
+		{
+			Enter(FishState.Idle);
+			_scanTimer = 0.5f;
+		}
+	}
+
+	private float Tension(FishingFloat ff)
+	{
+		if (_rodTop == null)
+		{
+			_rodTop = FindChild(base.transform, "_RodTop");
+		}
+		if (_rodTop == null)
+		{
+			return 0f;
+		}
+		return Vector3.Distance(_rodTop.position, ff.transform.position) - MHR_FishingFloat.LineLength(ff);
+	}
+
+	private void ReelOn()
+	{
+		ReflectionHelper.TrySetBlocking(_character, value: true);
+	}
+
+	private void ReelOff()
+	{
+		if (_character != null)
+		{
+			ReflectionHelper.TrySetBlocking(_character, value: false);
+		}
+	}
+
+	private void SkipFish(float seconds)
+	{
+		if (_fish != null)
+		{
+			_skip[_fish.GetInstanceID()] = Time.time + seconds;
+		}
+		if (_skip.Count > 100)
+		{
+			_skip.Clear();
+		}
+	}
+
+	// ------------------------------------------------------------------ taking the catch home
+
+	private void UpdateGoingHome()
+	{
+		if (!_setup.HasHomePosition())
+		{
+			Enter(FishState.Idle);
 			return;
 		}
-		s_baitFishMap = new Dictionary<string, List<FishEntry>>();
-		s_baitNames = new HashSet<string>();
-		int num = 0;
-		foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+		if (MHR_ToolKeeper.AtHome(_setup))
 		{
-			Fish component = prefab.GetComponent<Fish>();
-			if (component == null)
-			{
-				continue;
-			}
-			string pickupPrefabName = ((component.m_pickupItem != null) ? component.m_pickupItem.name : prefab.name);
-			num++;
-			if (component.m_baits == null || component.m_baits.Count == 0)
-			{
-				continue;
-			}
-			foreach (Fish.BaitSetting bait in component.m_baits)
-			{
-				if (!(bait.m_bait == null))
-				{
-					string text = bait.m_bait.name;
-					s_baitNames.Add(text);
-					if (!s_baitFishMap.ContainsKey(text))
-					{
-						s_baitFishMap[text] = new List<FishEntry>();
-					}
-					s_baitFishMap[text].Add(new FishEntry
-					{
-						PickupPrefabName = pickupPrefabName,
-						Chance = bait.m_chance
-					});
-				}
-			}
+			_nextUnloadTry = Time.time + 60f;
+			Log("Home - putting the catch away");
+			MHR_ToolKeeper.RequestUnload(_setup);
+			_nextCount = 0f;
+			MHR_Mover.Release(_ai);
+			Enter(FishState.Idle);
+			return;
 		}
-		s_mapBuilt = true;
-	}
-
-	private ItemDrop.ItemData FindFishingRod()
-	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
+		MHR_Mover.Go(_ai, Time.deltaTime, _setup.GetHomePosition(), 4f, true, "Fish");
+		if (MHR_Mover.GaveUp(_ai))
 		{
-			return null;
-		}
-		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
-		{
-			if (allItem.m_shared.m_animationState == ItemDrop.ItemData.AnimationState.FishingRod)
-			{
-				return allItem;
-			}
-		}
-		return null;
-	}
-
-	private void SayThrottled(string text)
-	{
-		float time = Time.time;
-		if (!(time - _lastSpeechTime < 30f))
-		{
-			_lastSpeechTime = time;
-			_talk?.Say(text);
+			Log("Can't find the way home with the catch - trying again later");
+			_nextUnloadTry = Time.time + 60f;
+			Enter(FishState.Idle);
 		}
 	}
 
-	private ItemDrop.ItemData FindBait()
+	private bool PackFull()
 	{
-		Inventory inventory = _humanoid?.GetInventory();
-		if (inventory == null)
-		{
-			return null;
-		}
-		BuildBaitFishMapIfNeeded();
-		if (s_baitNames == null || s_baitNames.Count == 0)
-		{
-			return null;
-		}
-		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
-		{
-			if (allItem.m_dropPrefab != null && s_baitNames.Contains(allItem.m_dropPrefab.name))
-			{
-				return allItem;
-			}
-		}
-		return null;
-	}
-
-	private bool FindWaterSpot(out Vector3 shorePos, out Vector3 waterPos)
-	{
-		shorePos = Vector3.zero;
-		waterPos = Vector3.zero;
-		if (ZoneSystem.instance == null)
+		Inventory inv = _humanoid.GetInventory();
+		if (inv == null)
 		{
 			return false;
 		}
-		Vector3 position = base.transform.position;
-		float num = float.MaxValue;
-		bool result = false;
-		for (int i = 0; i < 360; i += 30)
-		{
-			Vector3 vector = Quaternion.Euler(0f, i, 0f) * Vector3.forward;
-			for (float num2 = 8f; num2 <= ScanRadius; num2 += 5f)
-			{
-				Vector3 vector2 = position + vector * num2;
-				float waterLevel = GetWaterLevel(vector2);
-				if (waterLevel < -999f || !ZoneSystem.instance.GetSolidHeight(vector2, out var height))
-				{
-					continue;
-				}
-				float num3 = waterLevel - height;
-				if (num3 < 2f)
-				{
-					continue;
-				}
-				Vector3 vector3 = Vector3.zero;
-				bool flag = false;
-				for (float num4 = 3f; num4 <= num2; num4 += 1f)
-				{
-					Vector3 vector4 = position + vector * (num2 - num4);
-					if (ZoneSystem.instance.GetSolidHeight(vector4, out var height2))
-					{
-						float num5 = waterLevel - height2;
-						if (num5 <= 0f)
-						{
-							vector3 = vector4;
-							flag = true;
-							break;
-						}
-					}
-				}
-				if (flag)
-				{
-					Vector3 normalized = (vector3 - vector2).normalized;
-					vector3 += normalized * 2f;
-					float num6 = Vector3.Distance(position, vector3);
-					if (num6 < num)
-					{
-						num = num6;
-						shorePos = vector3;
-						waterPos = vector2;
-						result = true;
-					}
-				}
-				break;
-			}
-		}
-		return result;
+		float full = ModConfig.FishBagFull?.Value ?? 0.9f;
+		return inv.GetEmptySlots() == 0 || inv.GetTotalWeight() >= CompanionTierData.MaxCarryWeight * full;
 	}
 
-	private static string DetermineCatch(string baitName)
+	// ------------------------------------------------------------------ counts and targets
+
+	private bool Needs(string fish)
 	{
-		if (string.IsNullOrEmpty(baitName) || s_baitFishMap == null)
+		int target = FishCatalog.Target(fish);
+		return target <= 0 || !_counts.TryGetValue(fish, out var have) || have < target;
+	}
+
+	private string NeedText(string fish)
+	{
+		int target = FishCatalog.Target(fish);
+		_counts.TryGetValue(fish, out var have);
+		return " (" + have + "/" + (target > 0 ? target.ToString() : "no limit") + ")";
+	}
+
+	private void RefreshCounts()
+	{
+		if (Time.time < _nextCount)
+		{
+			return;
+		}
+		_nextCount = Time.time + 15f;
+		_counts.Clear();
+		Add(_humanoid.GetInventory());
+		Vector3 center = _setup.HasHomePosition() ? _setup.GetHomePosition() : _anchor;
+		float radius = _setup.HasHomePosition() ? MHR_ToolKeeper.HomeRange() : 25f;
+		foreach (Container c in MHR_Chests.Near(center, radius))
+		{
+			Inventory ci = c?.GetInventory();
+			if (ci != null)
+			{
+				Add(ci);
+			}
+		}
+	}
+
+	private void Add(Inventory inv)
+	{
+		if (inv == null)
+		{
+			return;
+		}
+		foreach (ItemDrop.ItemData item in inv.GetAllItems())
+		{
+			string n = item?.m_dropPrefab?.name;
+			if (n != null && FishCatalog.IsFish(n))
+			{
+				_counts.TryGetValue(n, out var have);
+				_counts[n] = have + item.m_stack;
+			}
+		}
+	}
+
+	// ------------------------------------------------------------------ helpers
+
+	private ItemDrop.ItemData FindRod()
+	{
+		foreach (ItemDrop.ItemData item in _humanoid.GetInventory().GetAllItems())
+		{
+			if (item.m_shared.m_animationState == ItemDrop.ItemData.AnimationState.FishingRod)
+			{
+				return item;
+			}
+		}
+		return null;
+	}
+
+	private static ItemDrop.ItemData FindItem(Inventory inv, string prefab)
+	{
+		if (inv == null || prefab == null)
 		{
 			return null;
 		}
-		if (!s_baitFishMap.TryGetValue(baitName, out var value) || value.Count == 0)
+		foreach (ItemDrop.ItemData item in inv.GetAllItems())
 		{
-			return null;
-		}
-		float num = 0f;
-		foreach (FishEntry item in value)
-		{
-			num += item.Chance;
-		}
-		if (num <= 0f)
-		{
-			return value[0].PickupPrefabName;
-		}
-		float num2 = Random.value * num;
-		float num3 = 0f;
-		foreach (FishEntry item2 in value)
-		{
-			num3 += item2.Chance;
-			if (num2 <= num3)
+			if (item?.m_dropPrefab != null && item.m_dropPrefab.name == prefab)
 			{
-				return item2.PickupPrefabName;
+				return item;
 			}
 		}
-		return value[value.Count - 1].PickupPrefabName;
+		return null;
 	}
 
-	private void PlayCatchEffect()
+	private static int CountIn(Inventory inv, string prefab)
 	{
-		Player localPlayer = Player.m_localPlayer;
-		if (!(localPlayer == null) && !(_character == null))
+		int n = 0;
+		if (inv == null || prefab == null)
 		{
-			localPlayer.m_skillLevelupEffects.Create(_character.GetHeadPoint(), _character.transform.rotation, _character.transform, 1f, -1, ZDOID.None);
+			return 0;
+		}
+		foreach (ItemDrop.ItemData item in inv.GetAllItems())
+		{
+			if (item?.m_dropPrefab != null && item.m_dropPrefab.name == prefab)
+			{
+				n += item.m_stack;
+			}
+		}
+		return n;
+	}
+
+	private void RestoreGear()
+	{
+		ReelOff();
+		if (_humanoid != null)
+		{
+			ItemDrop.ItemData w = _humanoid.GetCurrentWeapon();
+			if (w != null && w.m_shared.m_animationState == ItemDrop.ItemData.AnimationState.FishingRod)
+			{
+				_humanoid.UnequipItem(w);
+			}
+		}
+		if (_setup != null && _setup.SuppressAutoEquip)
+		{
+			_setup.SuppressAutoEquip = false;
+			_setup.SyncEquipmentToInventory();
 		}
 	}
 
-	private float GetWaterLevel(Vector3 point)
+	private static Transform FindChild(Transform t, string name)
 	{
-		return Floating.GetWaterLevel(point, ref _cachedWaterVolume);
+		if (t.name == name)
+		{
+			return t;
+		}
+		for (int i = 0; i < t.childCount; i++)
+		{
+			Transform r = FindChild(t.GetChild(i), name);
+			if (r != null)
+			{
+				return r;
+			}
+		}
+		return null;
+	}
+
+	private static float Flat(Vector3 a, Vector3 b)
+	{
+		return new Vector2(a.x - b.x, a.z - b.z).magnitude;
+	}
+
+	private void Say(string key)
+	{
+		if (Time.time - _lastSpeechTime >= 60f)
+		{
+			_lastSpeechTime = Time.time;
+			_talk?.Say(ModLocalization.Loc(key));
+		}
+	}
+
+	private void WhyLog(string msg)
+	{
+		if (Time.time >= _nextWhyLog)
+		{
+			_nextWhyLog = Time.time + 60f;
+			LogDebug(msg);
+		}
+	}
+
+	private void Log(string msg)
+	{
+		CompanionsPlugin.Log?.LogInfo("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
+	}
+
+	private void LogDebug(string msg)
+	{
+		CompanionsPlugin.Log?.LogDebug("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
+	}
+}
+
+// 1.4.106: which fish there are and what they bite on, from the game's own data (mods included)
+internal static class FishCatalog
+{
+	private static readonly HashSet<string> s_fish = new HashSet<string>();
+
+	private static bool s_built;
+
+	internal static void Ensure()
+	{
+		if (s_built || ZNetScene.instance == null)
+		{
+			return;
+		}
+		s_built = true;
+		try
+		{
+			StringBuilder sb = new StringBuilder();
+			sb.AppendLine("Offline Companions Reborn - names for the [Fishing] settings. Written at every start from the game's own data, mods included.");
+			sb.AppendLine();
+			sb.AppendLine("FISH (Fishing > Fish)  name = in-game name  (baits it takes, with the chance)");
+			SortedDictionary<string, string> lines = new SortedDictionary<string, string>();
+			foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+			{
+				Fish fish = (prefab != null) ? prefab.GetComponent<Fish>() : null;
+				if (fish == null)
+				{
+					continue;
+				}
+				s_fish.Add(prefab.name);
+				lines[prefab.name] = prefab.name + " = " + Local(fish) + "  (" + BaitsText(fish) + ")";
+			}
+			foreach (string line in lines.Values)
+			{
+				sb.AppendLine("  " + line);
+			}
+			File.WriteAllText(Path.Combine(Paths.ConfigPath, "OfflineCompanionsReborn.Fishing.txt"), sb.ToString());
+			CompanionsPlugin.Log.LogInfo($"[Fish] {s_fish.Count} kinds of fish");
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Fish] couldn't read the fish: " + ex.Message);
+		}
+	}
+
+	internal static bool IsFish(string prefab)
+	{
+		Ensure();
+		return s_fish.Contains(prefab);
+	}
+
+	internal static string BaitsText(Fish fish)
+	{
+		List<string> parts = new List<string>();
+		foreach (Fish.BaitSetting b in fish.m_baits)
+		{
+			if (b?.m_bait != null)
+			{
+				parts.Add(CookController.Name(b.m_bait.gameObject.name) + " " + (b.m_chance * 100f).ToString("F0") + "%");
+			}
+		}
+		return parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "no bait";
+	}
+
+	internal static string Local(Fish fish)
+	{
+		string n = fish.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name ?? fish.m_name;
+		return MHR_List.Local(n) ?? n;
+	}
+
+	internal static bool Allowed(string prefab, Fish fish)
+	{
+		return MHR_List.Get(ModConfig.FishList?.Value ?? "*").Allows(prefab, Local(fish));
+	}
+
+	internal static int Target(string prefab)
+	{
+		int dflt = ModConfig.FishTarget?.Value ?? 100;
+		MHR_List l = MHR_List.Get(ModConfig.FishList?.Value ?? "*");
+		if (l.HasAmount(prefab))
+		{
+			return l.AmountFor(prefab, dflt);
+		}
+		string local = CookController.Name(prefab);
+		return l.AmountFor(local, dflt);
+	}
+
+	internal static string PrefabName(GameObject go)
+	{
+		ZNetView nv = go.GetComponent<ZNetView>();
+		ZDO zdo = (nv != null && nv.IsValid()) ? nv.GetZDO() : null;
+		GameObject prefab = (zdo != null && ZNetScene.instance != null) ? ZNetScene.instance.GetPrefab(zdo.GetPrefab()) : null;
+		if (prefab != null)
+		{
+			return prefab.name;
+		}
+		string text = go.name;
+		int num = text.IndexOf("(Clone)", StringComparison.Ordinal);
+		return (num >= 0) ? text.Substring(0, num).Trim() : text;
 	}
 }

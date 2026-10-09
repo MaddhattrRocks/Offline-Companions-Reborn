@@ -2432,7 +2432,7 @@ public class HarvestController : MonoBehaviour
 				continue;
 			}
 			Pickable componentInParent = collider.GetComponentInParent<Pickable>();
-			if (componentInParent == null || !MHR_ForageAllowed(componentInParent))
+			if (componentInParent == null || !MHR_ForageAllowed(componentInParent) || !ForageUnderAmount(componentInParent))
 			{
 				continue;
 			}
@@ -2584,19 +2584,28 @@ public class HarvestController : MonoBehaviour
 		return false;
 	}
 
+	// 1.4.106: the shared list format (MHR_List): *, Name, -Name, Name:Number
 	private static bool IsForageItemAllowed(Pickable pickable)
 	{
-		RefreshForageFilter();
-		if (_forageAll)
-		{
-			return true;
-		}
 		if (pickable.m_itemPrefab == null)
 		{
 			return false;
 		}
 		string prefabName = Utils.GetPrefabName(pickable.m_itemPrefab);
-		return _forageFilter.Contains(prefabName);
+		string local = MHR_List.Local(pickable.m_itemPrefab.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name);
+		return MHR_List.Get(ModConfig.ForageItems.Value).Allows(prefabName, local);
+	}
+
+	// Name:Number in ForageItems: stop picking that item once there are that many (pack + chests near home)
+	private bool ForageUnderAmount(Pickable pickable)
+	{
+		if (pickable.m_itemPrefab == null)
+		{
+			return true;
+		}
+		string prefabName = Utils.GetPrefabName(pickable.m_itemPrefab);
+		int amount = MHR_List.Get(ModConfig.ForageItems.Value).AmountFor(prefabName, 0);
+		return amount <= 0 || MHR_GatherRules.Stock(this, prefabName) < amount;
 	}
 
 	private static void RefreshForageFilter()

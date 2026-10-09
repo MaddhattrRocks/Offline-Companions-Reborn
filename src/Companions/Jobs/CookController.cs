@@ -462,7 +462,8 @@ public class CookController : MonoBehaviour
 				continue;
 			}
 			int stock = Count(final) + ((final != output) ? Count(output) : 0);
-			if (stock >= FoodTarget)
+			int target = CookCatalog.Target(final, FoodTarget);
+			if (stock >= target)
 			{
 				continue;
 			}
@@ -476,7 +477,7 @@ public class CookController : MonoBehaviour
 			{
 				continue;
 			}
-			best = CraftTask(recipe, station, final, FoodTarget - stock);
+			best = CraftTask(recipe, station, final, target - stock);
 			bestScore = score;
 		}
 		// on a cooking station / oven
@@ -504,7 +505,7 @@ public class CookController : MonoBehaviour
 				{
 					continue;
 				}
-				int room = FoodTarget - Count(to);
+				int room = CookCatalog.Target(to, FoodTarget) - Count(to);
 				int have = Usable(from);
 				int n = Mathf.Min(Mathf.Min(CountSlots(cooker, -1), Batch), Mathf.Min(room, have));
 				if (n <= 0)
@@ -2271,38 +2272,21 @@ internal static class CookCatalog
 		return s.m_food + s.m_foodStamina + s.m_foodEitr;
 	}
 
+	// 1.4.106: the shared list format (MHR_List): *, Name, -Name, Name:Number (that food's own FoodTarget)
 	internal static bool Allowed(string item)
 	{
-		string text = ModConfig.CookFoods?.Value ?? "*";
-		if (text != s_foodsKey)
+		return MHR_List.Get(ModConfig.CookFoods?.Value ?? "*").Allows(item, CookController.Name(item));
+	}
+
+	internal static int Target(string item, int dflt)
+	{
+		MHR_List l = MHR_List.Get(ModConfig.CookFoods?.Value ?? "*");
+		int n = l.AmountFor(item, -1);
+		if (n < 0)
 		{
-			s_foodsKey = text;
-			s_allow.Clear();
-			s_deny.Clear();
-			s_all = false;
-			foreach (string part in text.Split(','))
-			{
-				string text2 = part.Trim();
-				if (text2 == "*")
-				{
-					s_all = true;
-				}
-				else if (text2.StartsWith("-"))
-				{
-					s_deny.Add(text2.Substring(1).Trim());
-				}
-				else if (text2.Length > 0)
-				{
-					s_allow.Add(text2);
-				}
-			}
+			n = l.AmountFor(CookController.Name(item), dflt);
 		}
-		string text3 = CookController.Name(item);
-		if (s_deny.Contains(item) || s_deny.Contains(text3))
-		{
-			return false;
-		}
-		return s_all || s_allow.Contains(item) || s_allow.Contains(text3);
+		return (n <= 0) ? int.MaxValue / 4 : n;
 	}
 
 	// the mead bases to work on first: the MeadFocus entry for the last boss beaten. 1.4.92: the entries are in the

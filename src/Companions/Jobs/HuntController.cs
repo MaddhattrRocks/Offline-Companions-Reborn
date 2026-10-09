@@ -530,24 +530,7 @@ public class HuntController : MonoBehaviour
 
 	private bool NeedsBirdDrop(string prefab)
 	{
-		int target = ModConfig.HuntFeatherTarget?.Value ?? 100;
-		if (target <= 0)
-		{
-			return true;
-		}
-		List<string> drops = HuntCatalog.MeatsOf(prefab);
-		if (drops == null)
-		{
-			return false;
-		}
-		foreach (string item in drops)
-		{
-			if (!_meatCount.TryGetValue(item, out var have) || have < target)
-			{
-				return true;
-			}
-		}
-		return false;
+		return NeedsDrop(prefab, ModConfig.HuntFeatherTarget?.Value ?? 100);
 	}
 
 	private void UpdateGoingHome(bool follow)
@@ -656,11 +639,11 @@ public class HuntController : MonoBehaviour
 
 	private bool NeedsMeat(string prefab)
 	{
-		int target = ModConfig.HuntMeatTarget?.Value ?? 100;
-		if (target <= 0)
-		{
-			return true;
-		}
+		return NeedsDrop(prefab, ModConfig.HuntMeatTarget?.Value ?? 100);
+	}
+
+	private bool NeedsDrop(string prefab, int dflt)
+	{
 		List<string> meats = HuntCatalog.MeatsOf(prefab);
 		if (meats == null || meats.Count == 0)
 		{
@@ -668,7 +651,8 @@ public class HuntController : MonoBehaviour
 		}
 		foreach (string meat in meats)
 		{
-			if (!_meatCount.TryGetValue(meat, out var have) || have < target)
+			int target = HuntCatalog.Target(prefab, meat, dflt);
+			if (target <= 0 || !_meatCount.TryGetValue(meat, out var have) || have < target)
 			{
 				return true;
 			}
@@ -678,17 +662,18 @@ public class HuntController : MonoBehaviour
 
 	private string NeedText(string prefab)
 	{
-		int target = ModConfig.HuntMeatTarget?.Value ?? 100;
+		int dflt = HuntCatalog.CanHuntBird(prefab) ? (ModConfig.HuntFeatherTarget?.Value ?? 100) : (ModConfig.HuntMeatTarget?.Value ?? 100);
 		List<string> meats = HuntCatalog.MeatsOf(prefab);
-		if (target <= 0 || meats == null)
+		if (meats == null)
 		{
 			return "";
 		}
 		StringBuilder sb = new StringBuilder();
 		foreach (string meat in meats)
 		{
+			int target = HuntCatalog.Target(prefab, meat, dflt);
 			_meatCount.TryGetValue(meat, out var have);
-			sb.Append(sb.Length == 0 ? " - " : ", ").Append(CookController.Name(meat)).Append(' ').Append(have).Append('/').Append(target);
+			sb.Append(sb.Length == 0 ? " - " : ", ").Append(CookController.Name(meat)).Append(' ').Append(have).Append('/').Append(target > 0 ? target.ToString() : "no limit");
 		}
 		return sb.ToString();
 	}
@@ -912,45 +897,21 @@ internal static class HuntCatalog
 		return Allowed(prefab, c.m_name);
 	}
 
+	// 1.4.106: the shared list format (MHR_List): *, Name, -Name, Name:Number (the creature's meats - or that meat, or
+	// that bird's drops - get their own target instead of MeatTarget / FeatherTarget)
 	private static bool Allowed(string prefab, string token)
 	{
-		string text = ModConfig.HuntPrey?.Value ?? "*";
-		if (text != s_preyKey)
+		return MHR_List.Get(ModConfig.HuntPrey?.Value ?? "*").Allows(prefab, MHR_List.Local(token));
+	}
+
+	internal static int Target(string prefab, string item, int dflt)
+	{
+		MHR_List l = MHR_List.Get(ModConfig.HuntPrey?.Value ?? "*");
+		if (l.HasAmount(item))
 		{
-			s_preyKey = text;
-			s_allow.Clear();
-			s_deny.Clear();
-			s_all = false;
-			foreach (string part in text.Split(','))
-			{
-				string p = part.Trim();
-				if (p == "*")
-				{
-					s_all = true;
-				}
-				else if (p.StartsWith("-"))
-				{
-					s_deny.Add(p.Substring(1).Trim());
-				}
-				else if (p.Length > 0)
-				{
-					s_allow.Add(p);
-				}
-			}
+			return l.AmountFor(item, dflt);
 		}
-		string local = null;
-		try
-		{
-			local = Localization.instance?.Localize(token);
-		}
-		catch
-		{
-		}
-		if (s_deny.Contains(prefab) || (local != null && s_deny.Contains(local)))
-		{
-			return false;
-		}
-		return s_all || s_allow.Contains(prefab) || (local != null && s_allow.Contains(local));
+		return l.AmountFor(prefab, dflt);
 	}
 
 	private static void WriteReference()
