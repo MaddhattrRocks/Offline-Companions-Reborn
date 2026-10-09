@@ -768,14 +768,14 @@ namespace Companions
                 s_fireLog[id] = now;
                 Dbg("[Move] standing in a fire at " + Fmt(pos) + " - " + (exit ? "stepping out" : "no clear way out"));
             }
-            if (now - since > 6f)
+            if (now - since > 3f)
             {
                 Vector3 spot;
                 if (SafeSpot(pos, out spot))
                 {
                     ai.MHR_PlaceAt(spot);
                     s_fireSince.Remove(id);
-                    Dbg("[Move] still in the fire after 6s - moved to " + Fmt(spot));
+                    Dbg("[Move] still in the fire after 3s (stuck in it?) - moved to " + Fmt(spot));
                     return true;
                 }
             }

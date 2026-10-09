@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.101 - stuck inside the hearth (user, about the 1.4.99 test)
+- User: he wasn't taking fire damage, the hearth was taking 10 damage at a time - like he was stuck IN the hearth, not on it. (The log's "Armor reduction dmg 10 -> 0.7" lines were him, barely hurt.)
+- Cause: MHR_Follow.StandUp put him at the first walkable surface 0.8 m in front of the chair's attach point - the top of the hearth stones in front of the chair - so his capsule ended up inside the hearth's colliders and he couldn't walk out. What damaged the hearth isn't clear from the log (nothing in the mod damages pieces); it stops with him not ending up inside it.
+- StandSpot: front, sides, diagonals, behind (0.8-1.6 m): floor no higher than the seat + 0.3, not a Fireplace, furniture or fire, room for the capsule; else vanilla's detach offset. EscapeFire's safe-spot rescue now after 3 s (was 6).
+
 ### 1.4.100 - from the 1.4.99 test (log 8ad77af0)
 - User: hunting is fine now; maybe hunt birds as a toggle (feathers). The NPC got stuck in the fire and the hearth broke; the command button didn't work.
 - Fire: after "got up (player moved)" from a chair beside the hearth he stood at (-269..-271, 40.5, -308.5) for minutes, 10 fire damage a tick, "stepping out" every 10 s but not moving - FireExit only tried 1.5 m out and every one of those was still inside the hearth's Burning area, so EscapeFire returned false and Follow kept trying a route from inside it. Now FireExit tries 1.5/2.5/3.5 m; after 1 s still in the fire he leaps out (MHR_Jump.Leap); after 6 s he's placed on the nearest safe spot (SafeSpot: ground within 1.2 m height, not fire, not furniture, not water, room to stand). The hearth was placed again by the user afterwards (Unity log "Placed hearth"); no sign the mod damaged it.

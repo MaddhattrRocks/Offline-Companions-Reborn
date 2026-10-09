@@ -519,6 +519,29 @@ namespace Companions
 
         static void ReleaseChair(S s) { s.GoingToChair = false; s.Chair = null; }
 
+        static bool StandSpot(Vector3 seat, Vector3 fwd, Vector3 right, out Vector3 spot)
+        {
+            fwd.y = 0f; right.y = 0f;
+            Vector3[] dirs = { fwd, right, -right, (fwd + right).normalized, (fwd - right).normalized, -fwd };
+            for (int i = 0; i < dirs.Length; i++)
+            {
+                if (dirs[i].sqrMagnitude < 0.01f) continue;
+                for (float r = 0.8f; r <= 1.6f; r += 0.4f)
+                {
+                    Vector3 p = seat + dirs[i].normalized * r;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 2.5f, GroundMask()) || hit.normal.y <= 0.6f) continue;
+                    if (hit.point.y > seat.y + 0.3f) continue;   // on top of something (a hearth, a table), not the floor
+                    if (hit.collider.GetComponentInParent<Fireplace>() != null || MHR_Chests.IsFurniture(hit.collider) || MHR_Mover.InFire(hit.point)) continue;
+                    if (Physics.CheckCapsule(hit.point + Vector3.up * 0.6f, hit.point + Vector3.up * 1.6f, 0.3f, GroundMask())) continue;
+                    spot = hit.point + Vector3.up * 0.05f;
+                    return true;
+                }
+            }
+            spot = seat;
+            return false;
+        }
+
         static void StandUp(CompanionAI ai, S s, bool keepAnim, string why)
         {
             ZSyncAnimation za = ai.GetComponent<ZSyncAnimation>();
@@ -529,11 +552,12 @@ namespace Companions
                 Vector3 pos = ai.transform.position;
                 if (s.Chair != null && s.Chair.m_attachPoint != null)
                 {
-                    // step off the front of the seat onto the floor, like getting up (vanilla's detach offset if there's no floor there)
+                    // step off the front of the seat onto the floor, like getting up (vanilla's detach offset if there's no floor there).
+                    // 1.4.101: onto real floor with room to stand - not into the hearth in front of the chair (1.4.99 test: got up
+                    // into the hearth and was stuck inside it), else the sides or behind
                     Transform at = s.Chair.m_attachPoint;
-                    Vector3 front = at.position + at.forward * 0.8f;
-                    RaycastHit hit;
-                    if (Physics.Raycast(front + Vector3.up * 1.0f, Vector3.down, out hit, 2.5f, GroundMask()) && hit.normal.y > 0.6f) pos = hit.point + Vector3.up * 0.05f;
+                    Vector3 spot;
+                    if (StandSpot(at.position, at.forward, at.right, out spot)) pos = spot;
                     else pos = at.TransformPoint(s.Chair.m_detachOffset);
                 }
                 ai.transform.position = pos;

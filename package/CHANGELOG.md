@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.101
+- Fixed companions getting up from a chair into the hearth (or onto a table) in front of it and getting stuck inside it: they now step down onto open floor beside the chair.
+- A companion still in a fire after 3 seconds (stuck in it) is moved to the nearest safe spot.
+
 ## 1.4.100
 - Hunters shoot birds for their feathers: when a crow, gull or modded bird lands within range, they sneak up and shoot it with a bow or crossbow, then pick up the drops (Hunting > Birds, FeatherTarget).
 - Fixed a companion getting stuck standing in a hearth: it now looks further for a way out, jumps out like a player, and after 6 seconds steps onto the nearest safe spot.
