@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.102
+- Companions no longer go straight back to bed right after you load in.
+- Companions get up beside the bed onto the floor, instead of on the bed (where they slid off the end).
+- Bird hunting: shoots from up to 30 m and jogs into range, since birds only stay down a few seconds; never swims after a bird.
+
 ## 1.4.101
 - Fixed companions getting up from a chair into the hearth (or onto a table) in front of it and getting stuck inside it: they now step down onto open floor beside the chair.
 - A companion still in a fire after 3 seconds (stuck in it) is moved to the nearest safe spot.

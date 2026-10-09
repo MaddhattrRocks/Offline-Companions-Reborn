@@ -324,6 +324,9 @@ public class CompanionRest : MonoBehaviour
 
 	private void Awake()
 	{
+		// 1.4.102: not straight back to bed while the world loads in (user: "loading into the game the NPC keeps going
+		// back to sleep" - right after loading, the time of day can still read as night for a moment)
+		_mhrNoAutoSleepUntil = Time.time + 20f;
 		_nview = GetComponent<ZNetView>();
 		_character = GetComponent<Character>();
 		_ai = GetComponent<CompanionAI>();
@@ -1205,7 +1208,9 @@ public class CompanionRest : MonoBehaviour
 			{
 				spawnPoint = bed.transform;
 			}
-			base.transform.position = spawnPoint.TransformPoint(new Vector3(0f, 0.5f, 0f));
+			// 1.4.102: step off beside the bed onto the floor (1.4.101 test: got up on the bed and slid off the end)
+			Vector3 floor;
+			base.transform.position = MHR_Follow.StandSpot(bed.transform.position, bed.transform.right, bed.transform.forward, out floor) ? floor : spawnPoint.TransformPoint(new Vector3(0f, 0.5f, 0f));
 			Rigidbody component = GetComponent<Rigidbody>();
 			if (!(component == null))
 			{

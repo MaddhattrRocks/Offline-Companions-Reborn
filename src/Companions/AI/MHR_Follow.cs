@@ -519,7 +519,7 @@ namespace Companions
 
         static void ReleaseChair(S s) { s.GoingToChair = false; s.Chair = null; }
 
-        static bool StandSpot(Vector3 seat, Vector3 fwd, Vector3 right, out Vector3 spot)
+        internal static bool StandSpot(Vector3 seat, Vector3 fwd, Vector3 right, out Vector3 spot)
         {
             fwd.y = 0f; right.y = 0f;
             Vector3[] dirs = { fwd, right, -right, (fwd + right).normalized, (fwd - right).normalized, -fwd };

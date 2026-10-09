@@ -361,7 +361,9 @@ public class HuntController : MonoBehaviour
 
 	private HashSet<int> _birdBefore;
 
-	private const float BirdShotRange = 20f;
+	// 1.4.102: from further away - birds only stay down a few seconds (1.4.101 test: every bird flew off before he got
+	// a shot off, walking up to 20 m)
+	private const float BirdShotRange = 30f;
 
 	private bool StartBird(bool follow)
 	{
@@ -382,7 +384,7 @@ public class HuntController : MonoBehaviour
 				continue;
 			}
 			Vector3 p = bird.transform.position;
-			if (Vector3.Distance(p, center) > range || Vector3.Distance(p, me) > range + 10f)
+			if (Vector3.Distance(p, center) > range || Vector3.Distance(p, me) > BirdShotRange + 10f)
 			{
 				continue;
 			}
@@ -464,12 +466,13 @@ public class HuntController : MonoBehaviour
 		float dist = Vector3.Distance(me, _birdPos);
 		if (dist > BirdShotRange || !MHR_Mover.CanSee(me + Vector3.up * 1.6f, aim))
 		{
-			// sneak closer so it doesn't fly off
-			_ai.MHR_SetCrouch(ModConfig.HuntSneak?.Value ?? true);
-			MHR_Mover.Go(_ai, Time.deltaTime, _birdPos, BirdShotRange * 0.7f, false, "Hunt", MHR_Mover.SpeedWalk);
-			if (MHR_Mover.GaveUp(_ai))
+			// get within a shot quickly (birds only stay down a few seconds); never swim for one (1.4.101 test: dived into
+			// the moat after a gull)
+			MHR_Mover.Go(_ai, Time.deltaTime, _birdPos, BirdShotRange * 0.8f, true, "Hunt", MHR_Mover.SpeedJog);
+			if (MHR_Mover.GaveUp(_ai) || MHR_Mover.RouteSwim(_ai) > 0.5f || _character.IsSwimming())
 			{
-				_skip[_bird.GetInstanceID()] = Time.time + 60f;
+				LogDebug("Can't get a shot at the " + _birdName + (MHR_Mover.RouteSwim(_ai) > 0.5f ? " without swimming" : "") + " - leaving it");
+				_skip[_bird.GetInstanceID()] = Time.time + 120f;
 				EndBird();
 			}
 			return;
@@ -487,11 +490,12 @@ public class HuntController : MonoBehaviour
 		{
 			attack.m_bowDraw = false;
 		}
-		_character.StartAttack(null, false);
+		bool shot = _character.StartAttack(null, false);
 		if (draw)
 		{
 			attack.m_bowDraw = true;
 		}
+		LogDebug((shot ? "Shooting at the " : "Couldn't shoot at the ") + _birdName + " (" + dist.ToString("F0") + " m, " + (_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "no weapon") + ")");
 	}
 
 	private void EndBird()
