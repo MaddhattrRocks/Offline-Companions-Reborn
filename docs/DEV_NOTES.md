@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.125 - from the 1.4.124 test (log 8d01cde8)
+- User: worked better, still got stuck after a while. Also wants Repair and Restock to make wood and stone piles while sorting (design to agree first).
+- Log: 18 repairs done (poles, stairs, chests, workbench, stonecutter, a stone wall), two poles behind the hearth skipped with the new reason ("Hearth is in the way"). Then "Repairing the Stone Stair ... 27 m away" while RepairController found "1 items to repair at $piece_workbench" (the worn hammer - RepairThreshold is 0.999 at home) and went MovingToStation: two controllers steering at once, stood still until the user opened the wheel.
+- UpkeepController yields to RepairController.IsActive (Stop: hammer away, chest closed, mover released) and resumes afterwards.
+
 ### 1.4.124 - from the 1.4.123 test (log cc9c58c4)
 - User: Repair and Restock doesn't work - the companion stands there.
 - Run 1: "Repairing the Wood Pole 1 m at (-267.9, 39.4, -311.6)", one [Move|Upkeep] line (2.2 m left), then nothing. Approach fell back to the piece's position with dist 1.5 (no PickApproachPiece spot); MHR_Mover arrived (Halt, no more logs) but PieceInReach stayed false - only the nearest surface point was checked and Clear() was blocked by the floor/wall touching the pole (pole at y 39.4 under the floor at 40.0). It would only have given up after GiveUp (90 s).

@@ -49,6 +49,8 @@ public class UpkeepController : MonoBehaviour
 
 	private CompanionTalk _talk;
 
+	private RepairController _gearRepair;
+
 	private Step _step;
 
 	private float _scanTimer;
@@ -117,6 +119,7 @@ public class UpkeepController : MonoBehaviour
 		_character = GetComponent<Character>();
 		_stamina = GetComponent<CompanionStamina>();
 		_talk = GetComponent<CompanionTalk>();
+		_gearRepair = GetComponent<RepairController>();
 	}
 
 	public void NotifyActionModeChanged()
@@ -172,6 +175,17 @@ public class UpkeepController : MonoBehaviour
 		}
 		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this))
 		{
+			return;
+		}
+		// 1.4.125: gear repair (e.g. the hammer worn by the repairs) goes first. 1.4.124 test: it set off for the workbench
+		// while this job kept steering toward a stone stair, and the companion stood stuck between the two.
+		if (_gearRepair != null && _gearRepair.IsActive)
+		{
+			if (_step != Step.Idle || _holdingHammer)
+			{
+				LogDebug("Repairing its gear first - " + _step + " waits");
+				Stop();
+			}
 			return;
 		}
 		switch (_step)
