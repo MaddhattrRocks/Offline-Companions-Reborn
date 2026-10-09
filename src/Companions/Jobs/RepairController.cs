@@ -476,6 +476,12 @@ public class RepairController : MonoBehaviour
 		{
 			return false;
 		}
+		// 1.4.133: only a station a player could use right now - under a roof if it needs one, with a fire if it needs one
+		// (user: it repaired at workbenches the player can't use because they have no roof)
+		if (Player.m_localPlayer != null && !station.CheckUsable(Player.m_localPlayer, showMessage: false))
+		{
+			return false;
+		}
 		Recipe recipe = ObjectDB.instance?.GetRecipe(item);
 		if (recipe == null)
 		{

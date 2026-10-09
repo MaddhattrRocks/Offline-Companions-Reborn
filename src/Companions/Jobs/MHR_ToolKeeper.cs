@@ -1190,7 +1190,9 @@ namespace Companions
             CompanionSetup cs = c != null ? c.GetComponent<CompanionSetup>() : null;
             // 1.4.78: only actually at home (within 25 m of the home spot, or HomeTripRange if smaller). With the whole
             // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
-            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return 0.999f;
+            // 1.4.133: [Repair] HomeThreshold (80%) - at any wear it went off to the workbench every time the hammer dropped to
+            // 99% during Repair and Restock (user: "the NPC seems to repair a lot")
+            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return ModConfig.RepairHomeThreshold != null ? Mathf.Max(cfg, ModConfig.RepairHomeThreshold.Value) : 0.8f;
             return cfg;
         }
 

@@ -2,6 +2,12 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.133
+- Gear repair: at home it walked to the workbench every time a tool dropped to 99% (the hammer, after each building repair). It now waits until gear is below [Repair] HomeThreshold (80%).
+- Gear repair only uses a station a player could use right now - under a roof if it needs one, with a fire if it needs one.
+- Repair and Restock: sending the companion somewhere with the command no longer fights the job. It goes, waits there [RepairAndRestock] OrderWait (30 s), then goes back to its chores.
+- Repair and Restock now empties beehives (once half full, [RepairAndRestock] HoneyAt) and puts the honey away in the chest that already holds the most honey ([RepairAndRestock] Honey).
+
 ## 1.4.132
 - Repair and Restock no longer puts a pile on top of another pile - piles can't carry each other and the new one broke. Piles only go beside each other now, on the ground or floor.
 

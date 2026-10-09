@@ -340,6 +340,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RepairDurabilityThreshold;
 
+	internal static ConfigEntry<float> RepairHomeThreshold;
+
 	internal static ConfigEntry<float> RepairScanRadius;
 
 	internal static ConfigEntry<float> RepairScanInterval;
@@ -387,6 +389,12 @@ internal static class ModConfig
 	internal static ConfigEntry<float> UpkeepGiveUp;
 
 	internal static ConfigEntry<bool> UpkeepPiles;
+
+	internal static ConfigEntry<bool> UpkeepHoney;
+
+	internal static ConfigEntry<float> UpkeepHoneyAt;
+
+	internal static ConfigEntry<float> UpkeepOrderWait;
 
 	internal static ConfigEntry<bool> SmeltUsePiles;
 
@@ -537,6 +545,7 @@ internal static class ModConfig
 		FishCastWait = Bind(cfg, "Fishing", "CastWait", 60f, "Seconds to wait for a bite before reeling in and trying again (a fish that swam off, the wrong spot).", new AcceptableValueRange<float>(10f, 600f));
 		FishBagFull = Bind(cfg, "Fishing", "BagFull", 0.9f, "Near home: when the pack is this full (by weight, or out of free slots) the companion walks home and puts the catch away, then goes back to fishing.", new AcceptableValueRange<float>(0.3f, 1f));
 		RepairDurabilityThreshold = Bind(cfg, "Repair", "DurabilityThreshold", 0.5f, "Repair items below this durability %", new AcceptableValueRange<float>(0.1f, 0.9f));
+		RepairHomeThreshold = Bind(cfg, "Repair", "HomeThreshold", 0.8f, "At home (where a workbench is close by) gear is repaired a bit sooner: below this durability (0.8 = 80%). Away from home DurabilityThreshold applies. 1 = at any wear.", new AcceptableValueRange<float>(0.1f, 1f));
 		RepairScanRadius = Bind(cfg, "Repair", "ScanRadius", 20f, "Crafting station scan radius", new AcceptableValueRange<float>(5f, 60f));
 		RepairScanInterval = Bind(cfg, "Repair", "ScanInterval", 5f, "Seconds between repair scans", new AcceptableValueRange<float>(1f, 30f));
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
@@ -563,6 +572,9 @@ internal static class ModConfig
 		CookFuelLevel = Bind(cfg, "Cooking", "FuelLevel", 0.5f, "Cook job: keeps the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven at this share of full (0.5 = 50%). When one drops below half of that it tops it back up. Only enough to cook with - Repair and Restock fills fires further if it's on.", new AcceptableValueRange<float>(0.1f, 1f));
 		CookUsePiles = Bind(cfg, "Cooking", "UsePiles", true, "Cook job: with no fuel in the chests, take down a pile of it (Stack of Wood...) with a hammer, like a player. Needs a hammer in its pack.");
 		SmeltUsePiles = Bind(cfg, "Smelting", "UsePiles", true, "When the chests have none of what a smelter or kiln needs (wood for the kiln, fuel...), the Smelt job takes down a pile of it (Stack of Wood...) with a hammer, like a player, and uses that. Needs a hammer in its pack.");
+		UpkeepHoney = Bind(cfg, "RepairAndRestock", "Honey", true, "Repair and Restock: empty the beehives in its area and put the honey away in the chest that already holds the most honey.");
+		UpkeepHoneyAt = Bind(cfg, "RepairAndRestock", "HoneyAt", 0.5f, "Empty a beehive once it's at least this full (0.5 = half full, 1 = only when full).", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepOrderWait = Bind(cfg, "RepairAndRestock", "OrderWait", 30f, "After you send the companion somewhere with the command, it waits there this many seconds before going back to its chores.", new AcceptableValueRange<float>(0f, 600f));
 		UpkeepPiles = Bind(cfg, "RepairAndRestock", "Piles", true, "Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.");
 		UpkeepPileKeep = Bind(cfg, "RepairAndRestock", "PileKeep", 100, "How many of each material stay in the chests for building: what's above this goes into piles, and when the chests drop below it a pile is taken down (with the hammer, like a player) and the material put back in the chests.", new AcceptableValueRange<int>(0, 10000));
 		UpkeepPileItems = Bind(cfg, "RepairAndRestock", "PileItems", "*", "Which materials go into piles. Comma-separated: * = every material you have piles of, Name = this one, -Name = never this one, Name:Number = keep this many of it in the chests instead of PileKeep. Prefab or in-game names (Wood, Stone, FineWood, RoundLog...).");

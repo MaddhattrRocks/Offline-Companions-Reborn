@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.132 pushed, not yet tested (1.4.86-1.4.132 on the branch, no PR yet)
+## Current state: 1.4.133 pushed, not yet tested (1.4.86-1.4.133 on the branch, no PR yet)
+- 1.4.133: gear repair at home below 80% only and only at usable stations (roof/fire); Repair and Restock pauses for commands, collects honey. Backlog: chest organisation by category near stations.
 - 1.4.131 test: mostly working; a pile placed on top of another broke - 1.4.132 only places piles beside each other.
 - 1.4.131: Cook keeps cooking fires and the oven at FuelLevel (50%), wood from chests or piles.
 - 1.4.130: Smelt takes down a wood pile when the chests have no wood for the kiln (needs a hammer).

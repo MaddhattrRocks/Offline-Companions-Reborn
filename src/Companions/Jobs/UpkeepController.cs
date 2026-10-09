@@ -32,6 +32,8 @@ public partial class UpkeepController : MonoBehaviour
 		PileBuild,
 		PileDown,
 		PileCollect,
+		Hive,
+		HiveCollect,
 		Home
 	}
 
@@ -54,6 +56,8 @@ public partial class UpkeepController : MonoBehaviour
 	private CompanionTalk _talk;
 
 	private RepairController _gearRepair;
+
+	private float _orderHoldUntil;
 
 	private Step _step;
 
@@ -181,6 +185,22 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			return;
 		}
+		// 1.4.133: a "go there" order comes first (user: using the command broke Repair and Restock - both steered at once).
+		// It stays there a little while after arriving, then carries on with the chores.
+		if (_ai.PendingMoveTarget.HasValue)
+		{
+			if (_step != Step.Idle || _holdingHammer)
+			{
+				LogDebug("Following an order - " + _step + " waits");
+				Stop();
+			}
+			_orderHoldUntil = Time.time + (ModConfig.UpkeepOrderWait?.Value ?? 30f);
+			return;
+		}
+		if (Time.time < _orderHoldUntil)
+		{
+			return;
+		}
 		// 1.4.125: gear repair (e.g. the hammer worn by the repairs) goes first. 1.4.124 test: it set off for the workbench
 		// while this job kept steering toward a stone stair, and the companion stood stuck between the two.
 		if (_gearRepair != null && _gearRepair.IsActive)
@@ -213,6 +233,12 @@ public partial class UpkeepController : MonoBehaviour
 			break;
 		case Step.PileCollect:
 			UpdatePileCollect();
+			break;
+		case Step.Hive:
+			UpdateHive();
+			break;
+		case Step.HiveCollect:
+			UpdateHiveCollect();
 			break;
 		case Step.Fuel:
 			UpdateFuel();
@@ -255,7 +281,7 @@ public partial class UpkeepController : MonoBehaviour
 		}
 		_scanTimer = ModConfig.UpkeepScanInterval?.Value ?? 5f;
 		// fuel before putting leftovers back, so fuel fetched for one fire can go in the next one first
-		bool busy = PlanRepair() || PlanFuel() || PlanStow() || PlanPiles() || PlanSort();
+		bool busy = PlanRepair() || PlanFuel() || PlanHoney() || PlanStow() || PlanPiles() || PlanSort();
 		if (_step != Step.Repair && _step != Step.PileTake && _step != Step.PileBuild && _step != Step.PileDown)
 		{
 			PutHammerAway();
