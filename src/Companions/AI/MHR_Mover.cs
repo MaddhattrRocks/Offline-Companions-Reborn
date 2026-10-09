@@ -42,6 +42,9 @@ namespace Companions
         static readonly List<Vector3> s_tmp2 = new List<Vector3>();
         static readonly List<Piece> s_pieces = new List<Piece>();
         static readonly Collider[] s_cols = new Collider[16];
+        // 1.4.138: door searches need far more room - inside a house dozens of walls, floors and beams are within 2.5 m and
+        // with 16 slots the door often wasn't among them (1.4.137 test: stuck by an open door that was 1.9 m away)
+        static readonly Collider[] s_doorCols = new Collider[512];
         static int s_mask = -1;
         static float s_nextErr;
 
@@ -216,6 +219,8 @@ namespace Companions
                 // it like a player would - if the way is through it, the closed door is then opened from this side and
                 // swings away (user: kept getting stuck on a door for a moment)
                 Door leaf = OpenLeafAhead(pos, target);
+                // 1.4.138: held up for a second right by an open door - close it now rather than waiting for the 3 s stuck check
+                if (leaf == null && now - s.AnchorTime > 1.0f) leaf = OpenDoorNear(pos, 2.0f);
                 if (leaf != null) { CloseDoor(ai, c, leaf, tag); Halt(ai, c, s); return false; }
             }
 
@@ -1044,11 +1049,11 @@ namespace Companions
 
         static Door DoorNear(Vector3 pos, float range)
         {
-            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_cols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
+            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_doorCols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
             Door best = null; float bd = float.MaxValue;
             for (int i = 0; i < n; i++)
             {
-                Door d = s_cols[i] != null ? s_cols[i].GetComponentInParent<Door>() : null;
+                Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (!Usable(d)) continue;
                 float dd = MHR_Nav.DoorDist(pos, d.transform.position);
                 if (dd < bd) { bd = dd; best = d; }
@@ -1095,11 +1100,11 @@ namespace Companions
         // an open door (any part of it) within range, not one we closed in the last few seconds
         static Door OpenDoorNear(Vector3 pos, float range)
         {
-            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_cols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
+            int n = Physics.OverlapSphereNonAlloc(pos + Vector3.up, range, s_doorCols, LayerMask.GetMask("piece", "piece_nonsolid", "Default"));
             Door best = null; float bd = float.MaxValue;
             for (int i = 0; i < n; i++)
             {
-                Collider col = s_cols[i];
+                Collider col = s_doorCols[i];
                 Door d = col != null ? col.GetComponentInParent<Door>() : null;
                 if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
                 if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;

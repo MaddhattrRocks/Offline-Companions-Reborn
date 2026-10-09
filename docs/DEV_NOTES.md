@@ -31,6 +31,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.138 - from the 1.4.137 test (log 0eb3e1f9)
+- User: still got stuck on that door.
+- Log: first time (Farm) "stuck (standing still 3s) at (-274.9, 40.0, -310.7) - stepping back", then a hop toward (-276.5, 40.0, -311.9) = the doorway - no door found by step 0 although the $piece_wooddoor at (-276.4, 40.9, -311.9) was 1.9 m away. Later (Tools) the peek's OpenLeafAhead closed it, reopened from this side and walked through without stopping.
+- Cause: DoorNear / OpenDoorNear used s_cols (16 colliders) with OverlapSphereNonAlloc - indoors the 2.5 m sphere holds far more pieces, so the door often wasn't in the 16. Now s_doorCols (512).
+- Door peek: held up > 1 s (now - AnchorTime) and nothing straight ahead -> OpenDoorNear(2 m) -> CloseDoor (no 3 s wait).
+
 ### 1.4.137 - from the 1.4.136 test (log eb2f6309)
 - User: the door was already open; got really stuck, then past it and smelted. Turned on Cook - it stood there.
 - Log: DoorHandler "1 doors nearby, 0 valid" (open) at (-274.1, 40.0, -308.1); "[Move|Smelt] stuck (standing still 3s) at (-274.9, 40.0, -310.6)" -> step back, "no closer for 8s" -> hop; no "closed the ..." - OpenLeafAhead's rays towards the next corner didn't hit the leaf.

@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.137 pushed, not yet tested (1.4.86-1.4.137 on the branch, no PR yet)
+## Current state: 1.4.138 pushed, not yet tested (1.4.86-1.4.138 on the branch, no PR yet)
+- 1.4.138: door search buffer 16 -> 512 colliders (missed the door indoors); closes an open door after 1 s held up.
 - 1.4.137: closes any open door next to it when stuck (1.4.136's look-ahead missed the leaf).
 - 1.4.135 test: good; brief stops at an open door - 1.4.136 closes a door open towards it and reopens from its side. Next: movement phase 4 part 2.
 - 1.4.135: jobs accept the mover's "arrived" (Farm planting pause). The last test log was still 1.4.133 - 1.4.134/135 untested.
