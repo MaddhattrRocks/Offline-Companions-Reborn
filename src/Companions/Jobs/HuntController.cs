@@ -147,7 +147,7 @@ public class HuntController : MonoBehaviour
 			_anchor = home ? _setup.GetHomePosition() : base.transform.position;
 			Log("Hunting around " + (home ? "home" : "here") + " " + MHR_Mover.Fmt(_anchor) + ", up to " + Range(follow: false).ToString("F0") + " m out");
 		}
-		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this) || CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
+		if (MHR_ToolKeeper.IsBusy(this) || MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this) || CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
 			return;
 		}

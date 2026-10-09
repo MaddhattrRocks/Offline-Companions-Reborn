@@ -837,6 +837,14 @@ namespace Companions
         }
 
         // 1.4.75: a work mode is on (not Follow, and not the old Stay mode that pre-1.4.65 saves can still hold).
+        // 1.4.145: an order is being carried out (go there, hitch the cart, put things in a chest, fetch the tombstone).
+        // CompanionAI walks it with the mover; a job steering at the same time cancels it out every frame, so jobs wait.
+        public static bool OrderPending(Component c)
+        {
+            CompanionAI ai = c != null ? c.GetComponent<CompanionAI>() : null;
+            return ai != null && (ai.PendingMoveTarget.HasValue || ai.PendingCartAttach != null || ai.PendingDepositContainer != null || ai.IsRecoveringTombstone);
+        }
+
         public static bool IsJobMode(int mode)
         {
             return mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay;

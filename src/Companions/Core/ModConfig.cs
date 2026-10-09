@@ -342,6 +342,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RepairHomeThreshold;
 
+	internal static ConfigEntry<float> RepairNoStationWait;
+
 	internal static ConfigEntry<float> RepairScanRadius;
 
 	internal static ConfigEntry<float> RepairScanInterval;
@@ -554,6 +556,7 @@ internal static class ModConfig
 		FishBagFull = Bind(cfg, "Fishing", "BagFull", 0.9f, "Near home: when the pack is this full (by weight, or out of free slots) the companion walks home and puts the catch away, then goes back to fishing.", new AcceptableValueRange<float>(0.3f, 1f));
 		RepairDurabilityThreshold = Bind(cfg, "Repair", "DurabilityThreshold", 0.5f, "Repair items below this durability %", new AcceptableValueRange<float>(0.1f, 0.9f));
 		RepairHomeThreshold = Bind(cfg, "Repair", "HomeThreshold", 0.8f, "At home (where a workbench is close by) gear is repaired a bit sooner: below this durability (0.8 = 80%). Away from home DurabilityThreshold applies. 1 = at any wear.", new AcceptableValueRange<float>(0.1f, 1f));
+		RepairNoStationWait = Bind(cfg, "Repair", "NoStationWait", 600f, "When a worn item can't be repaired at any station within reach (say it needs a black forge and there isn't one nearby), or the way to the station failed, that item is left alone for this many seconds before it looks again.", new AcceptableValueRange<float>(30f, 3600f));
 		RepairScanRadius = Bind(cfg, "Repair", "ScanRadius", 20f, "Crafting station scan radius", new AcceptableValueRange<float>(5f, 60f));
 		RepairScanInterval = Bind(cfg, "Repair", "ScanInterval", 5f, "Seconds between repair scans", new AcceptableValueRange<float>(1f, 30f));
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
