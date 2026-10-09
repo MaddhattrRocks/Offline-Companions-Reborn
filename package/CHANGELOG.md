@@ -2,6 +2,259 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.140
+- Companions line up with a doorway before going through it, like a player: when their way leads through a door they first step onto the line straight out from the middle of the doorway, then walk straight through. They no longer cut the corner and walk into the leaf of an open door.
+
+## 1.4.139
+- Shorter stop at doors: after closing a door that was open towards it, the companion tries to open it again every moment instead of waiting, so it goes through as soon as the door has finished swinging shut.
+
+## 1.4.138
+- The open-door fix sometimes didn't find the door at all: inside a house there are so many walls and beams close by that the door search ran out of room before reaching the door. It now looks much further through the list, and an open door is closed after about a second of being held up next to it instead of three.
+
+## 1.4.137
+- Still stuck at the open door: the door's leaf wasn't straight ahead, so the look-ahead missed it. When a companion gets stuck it now closes any open door right next to it (and reopens it from its side if that's the way).
+
+## 1.4.136
+- Companions got stuck for a moment on a door that was already open towards them (opened from the other side). Like a player, they now close it and, if their way is through it, open it again from their side so it swings away.
+
+## 1.4.135
+- Farm paused for a few seconds while planting: it had walked as close to the plant spot as it needed to, but Farm measured the distance differently (straight-line, slope included) and kept waiting. Farm, Smelt and Cook now accept "arrived" the same way the movement does.
+
+## 1.4.134
+- Movement clean-up, part 1: Farm, Smelt and Cook no longer have their own "stuck" timers - they give a trip up only when the movement itself gives up (or after 2 minutes). Farm's old timer counted waiting at a door or for stamina as being stuck.
+- The last pieces of the retired Homestead / Stay Home code are gone (patrolling home, teleporting home, the home-zone row on the companion panel).
+
+## 1.4.133
+- Gear repair: at home it walked to the workbench every time a tool dropped to 99% (the hammer, after each building repair). It now waits until gear is below [Repair] HomeThreshold (80%).
+- Gear repair only uses a station a player could use right now - under a roof if it needs one, with a fire if it needs one.
+- Repair and Restock: sending the companion somewhere with the command no longer fights the job. It goes, waits there [RepairAndRestock] OrderWait (30 s), then goes back to its chores.
+- Repair and Restock now empties beehives (once half full, [RepairAndRestock] HoneyAt) and puts the honey away in the chest that already holds the most honey ([RepairAndRestock] Honey).
+
+## 1.4.132
+- Repair and Restock no longer puts a pile on top of another pile - piles can't carry each other and the new one broke. Piles only go beside each other now, on the ground or floor.
+
+## 1.4.131
+- Cook job keeps its heat going: the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven are kept at [Cooking] FuelLevel (50%) - when one drops below half of that it's topped back up, one piece at a time. Fuel from its pack or the chests, or a wood pile taken down with a hammer ([Cooking] UsePiles).
+- When cooking in the oven it now fills it to FuelLevel instead of a flat 3 pieces.
+- (Repair and Restock only fuels fires, torches, braziers and hot tubs - never kilns, smelters or the oven.)
+
+## 1.4.130
+- Smelt job: when the chests have no wood for the kiln (or no fuel for a smelter), it takes down a pile of it with a hammer, like a player, picks up the material and uses that. Needs a hammer in its pack; [Smelting] UsePiles turns it off.
+
+## 1.4.129
+- Piles are a resource now: when the chests drop below PileKeep, Repair and Restock takes a pile down with the hammer like a player (top of a stack first), picks up the material and puts it back in the chests.
+- Smarter pile placement: it scores every free spot beside or on top of a pile and picks the best. It won't narrow a walkway, and won't build by a door, portal, bed, chair, crafting station, cooking spot, fermenter, beehive, chest or a smelter/kiln's ports (its back is fine). It prefers spots backed by a wall or another pile.
+
+## 1.4.128
+- After a fight on Forage (or Wood, Stone, Ore, Smelt, Farm, Cook) the companion stuttered: it tried to walk to its next job target and to what the kill dropped at the same time. It now picks up the drops first, then goes back to the job.
+
+## 1.4.127
+- Wood, stone and other materials in piles near home now count toward the Wood/Stone/Ore jobs' limits (WoodLimit, StoneLimit and per-item amounts), like what's in the chests.
+
+## 1.4.126
+- Repair and Restock now stacks wood, stone and similar materials from the chests into piles (Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. It only adds to piles of the same kind you already built, beside them or on top, and leaves [RepairAndRestock] PileKeep (100) of each in the chests.
+- New settings: Piles, PileKeep, PileItems (* / Name / -Name / Name:Number to keep a different amount).
+
+## 1.4.125
+- Repair and Restock: when the companion's own gear needed repairing (its hammer, worn from the repairs) it got stuck between walking to the workbench and walking to the next piece. Gear repair now goes first and the job carries on afterwards.
+
+## 1.4.124
+- Repair and Restock: the companion took its hammer out and then just stood there - it kept checking for the hammer as a weapon, which the game doesn't count it as. It now swings.
+- It also stood next to a pole set under the floor doing nothing: the floor touching the pole counted as "in the way". It now looks at several points on a piece, ignores what's touching it, and if it still can't reach a piece (or fire) from where it stands it moves on after 3 seconds and says why in the log.
+
+## 1.4.123
+- Picking up branches, stones and flint is now early-game only: it stops once there's a bronze-or-better axe in the companion's pack, your pack or the chests near home, or a forge at home (it used to depend only on the companion's own axe).
+
+## 1.4.122
+- Wood and Stone jobs: a companion with only a stone or flint axe, or no axe at all, also picks up what's lying on the ground - branches on the Wood job, loose stones and flint on the Stone job (on the job's list and under its amount). Whichever is closer, a tree/rock or something on the ground, comes first.
+- With no tool for the job (no axe for Wood, no pickaxe for Stone) it only picks things up, instead of standing around.
+- New [Harvest] PickUpLoose setting (on by default) to turn this off.
+
+## 1.4.121
+- Wood, Stone, Ore and Forage with Follow off now work an area like Hunt: around home when started near home, otherwise around where they were started (new [Harvest] Range, 40 m), and keep going when you walk away instead of stopping 40 m from you.
+- With nothing left to gather they walk back to the middle of that area.
+
+## 1.4.120
+- Wood, Stone, Ore and Forage work like Hunt: picking one no longer turns Follow off, and picking Follow no longer turns them off.
+- With Follow on they only go for trees, rocks and plants within [Harvest] FollowRange (20 m) of you, and otherwise follow; if you move on, they leave what they were working on and catch up.
+- Gathering companions that follow you put their load away when you get home, like a hunter.
+
+## 1.4.119
+- Cook: each cooking appliance can be switched off on its own - Cauldron, PrepTable, MeadKetill, CookingStation, IronCookingStation, Oven, Fermenter, Beehives and OtherStations (modded ones).
+- Repair and Restock now sorts chests wherever it was started, not only at home: started near home it works around home, anywhere else within AwayRadius of where it was started (and goes back there when idle, instead of walking home).
+
+## 1.4.118
+- Repair and Restock now leaves pieces above 75% health alone by default (RepairBelow 0.75, was 1 = any damage).
+- Each kind of fire can be left alone: RefuelFires, RefuelHearths, RefuelBraziers, RefuelStandingTorches, RefuelWallTorches, RefuelHotTubs and RefuelOther (lanterns, modded fires and the like).
+
+## 1.4.117
+- Repair, Restock and Homestead were three wheel jobs that didn't really do the work; they're now one job, "Repair and Restock", that walks over and does each task the way a player would.
+- Repair: with a hammer in hand it walks up to each damaged building piece near home and repairs it with a swing (needs the piece's workbench in range and ward access, and costs stamina and hammer wear like a player). If it has no hammer it fetches one from a chest.
+- Restock: fires, torches and braziers low on fuel are topped up one piece at a time, with fuel from its pack or fetched from a chest; any fuel left over goes back in a chest.
+- New chest sorting: each kind of item is carried to the chest near home that already holds the most of it, and part-stacks are merged (needs a home set; only stackable items unless SortGear is on).
+- New [RepairAndRestock] settings: Repair, RepairBelow, Reach, Restock, FuelBelow, Sort, SortItems (* / Name / -Name), SortGear, AwayRadius, ScanInterval, WorkTime, GiveUp.
+- The Restock and Homestead wheel slots are now "Pending" and do nothing when clicked; companions saved on Restock switch to Repair and Restock, and Homestead is turned off (Wander still lets them move around home).
+
+## 1.4.116
+- After each catch the fisher casts at the closest fish it wants from where it stands, instead of the one it first picked further out.
+- The first cast of a session no longer goes twice as far as needed (it starts from a full cast reaching about 24 m and keeps learning).
+
+## 1.4.115
+- The fisher may stand on a rock again, like a player, as long as there's something to stand on.
+- If it falls off its spot it gets back on; if it falls into the water with a fish on the line, the fish is lost; and if it falls off the same spot twice it fishes from somewhere else for a while.
+
+## 1.4.114
+- The fisher may stand in shallow water (up to about waist deep) to fish, but prefers dry land.
+- It only fishes from firm footing: level ground at least half a meter all round, so no more hopping onto a small rock and falling off when it casts.
+- It prefers fish it can reach with a shorter cast.
+
+## 1.4.113
+- Fixed the fisher finding almost nowhere to fish from (1.4.112 was too strict on beaches): any dry ground or dock with water within 5 m counts again, as long as the water is at least a meter away.
+
+## 1.4.112
+- Fixed companions getting stuck floating in the water: while swimming they could get stuck steering at a point right under them and never try to get out.
+- The fisher never fishes from the water: if it slips in, it reels in and climbs back out to its spot first.
+- Fishing spots are at least a meter back from the water's edge, so it doesn't slip in while fishing.
+
+## 1.4.111
+- The fisher gets its breath back before each cast: it waits until its stamina is nearly full, so it doesn't start reeling a fish on an empty bar.
+- While fishing, companions eat their most stamina-rich food first, and near home they fetch a few stamina foods from the chests if they have none (and put back what's left after the job).
+- The running dive into water only happens for a real swim across, not to reach something just off the bank or to get round a fence end.
+
+## 1.4.110
+- Companions prefer staying dry like a player: when the way somewhere crosses water they go round on land unless that's a long way in another direction, and otherwise swim (General > DryDetour).
+- Jobs (fishing spots, prey, birds, kill drops) accept a short swim to get somewhere and only give up on a long one (General > JobSwim, 20 m). Drops floating in deep water are still left.
+- Companions take a running dive into the water whenever their route really does swim, not only while following you.
+
+## 1.4.109
+- Fixed companions counting as having stamina at zero, so a fisher out of stamina still landed its fish (a player loses it). This also applies to anything else that needs stamina.
+- The fisher fishes for fish up to 20 m out (its full cast reaches about 24 m), so it finds somewhere to fish much sooner.
+- Companions only take a running dive into deep water while following you, not on the way to a job.
+- Less log spam from the small stamina drains while reeling.
+
+## 1.4.108
+- Fixed the fisher's float never coming out: the game's float setup crashed for companions every time the cast hit the water (and kept spawning floats).
+- The fisher finds places to fish from much faster and more reliably: it maps the shore and docks around it that are right next to deep water, and picks the one nearest a fish it wants.
+- It casts no further than about 14 m (fish come to the float from 10 m around it), and picks another fish when the one it was after has swum off.
+
+## 1.4.107
+- Fixed the fisher never finding a spot to fish from on a dock or a high bank: it looked for ground from below the dock, so it only saw seabed. Docks, banks and walls up to 10 m above the water count now, and it fishes from where it stands when a fish is within a cast.
+
+## 1.4.106
+- Fish redone: the companion fishes for real like a player, with the game's own float and the fish actually in the water. Fish come to the float, bite, get hooked when it strikes in time, fight, and can get away or break the line.
+- It stays around where you started the job, looks for fish within Fishing > ScanRadius, walks to the bank by the one it wants and uses the bait that fish takes best.
+- Reeling uses stamina and raises the Fishing skill, and a higher skill reels faster and cheaper, as for a player. Bait is only used up when something takes it.
+- New Fishing > Fish list and FishTarget (100 of each, pack + chests near home). Near home it takes the catch home when the pack is full, then goes back to fishing. Fish names are in OfflineCompanionsReborn.Fishing.txt.
+- The old simulated fishing settings (WaitTime, ReelTime, HookChance, MissChance, ReelStaminaDrain) are gone; new ones: CastWait, BagFull.
+- Every list setting now works the same way: * = everything, Name, -Name = never this one, Name:Number = this one with its own amount. That's Foods, Prey, Fish, PlantAny, ForageItems, GatherWood, GatherStone and GatherOre.
+- New amounts: Name:Number in Foods sets that food's target, in Prey that creature's (or meat's) target, in ForageItems stops picking that item at that many, in PlantAny stops planting that crop at that many.
+
+## 1.4.105
+- Companions get up in the bed like a player when they wake, then step down beside it (they were playing the get-up on the floor).
+
+## 1.4.104
+- Move here, put items in a chest, Repair buildings, Restock, going back to a tombstone and healers going to someone hurt now use the companion movement: routes, doors, stairs, climbing out of pits and keeping out of deep water. A move order it can't find a way to is dropped (the log says so).
+- Chasing enemies in a fight uses the companion movement too, falling back to the game's own only when it can't find a way.
+- The last steps up to a tree or rock, dodging a falling tree, the door handler and following a non-player use it as well.
+
+## 1.4.103
+- Hunters chase prey the way companions follow you: proper routes, climbing out of pits, no jumping into water. Prey they'd have to swim to, or can't find a way to, is left alone.
+- With a bow or crossbow, prey down in a moat or pit is shot from the edge instead of followed down.
+- A companion far from you and out of sight no longer warps to you while it's still making its way there; it walks.
+
+## 1.4.102
+- Companions no longer go straight back to bed right after you load in.
+- Companions get up beside the bed onto the floor, instead of on the bed (where they slid off the end).
+- Bird hunting: shoots from up to 30 m and jogs into range, since birds only stay down a few seconds; never swims after a bird.
+
+## 1.4.101
+- Fixed companions getting up from a chair into the hearth (or onto a table) in front of it and getting stuck inside it: they now step down onto open floor beside the chair.
+- A companion still in a fire after 3 seconds (stuck in it) is moved to the nearest safe spot.
+
+## 1.4.100
+- Hunters shoot birds for their feathers: when a crow, gull or modded bird lands within range, they sneak up and shoot it with a bow or crossbow, then pick up the drops (Hunting > Birds, FeatherTarget).
+- Fixed a companion getting stuck standing in a hearth: it now looks further for a way out, jumps out like a player, and after 6 seconds steps onto the nearest safe spot.
+- When a command reaches no companion, the log now says why (too far away for RecallRange, Command switched off, or not yours).
+
+## 1.4.99
+- Jumps don't have to be perfect: a companion jumps across water when it can land somewhere shallow enough to stand, then jumps again, like a player. It keeps a quarter of its stamina back for these.
+- Shortcuts through water it can wade are no longer ruled out, and gaps are judged a little less strictly.
+
+## 1.4.98
+- Companions jump like a player: their own run speed (with mead, wet, cold and other speed effects) carries them across, and a higher Jump skill jumps further.
+- Jumping now costs companions stamina like it does a player, and with too little stamina for a full jump they don't try a stream or gap they can't clear; they wade or go round.
+- Streams and gaps are only jumped when the companion can actually make it from where it is (width, landing height, speed, skill and stamina all count).
+
+## 1.4.97
+- Companions no longer swim out for a kill's drops or follow a body floating into deep water; they wait on the bank and leave what's out of reach.
+- Fixed companions staying crouched (sneaking) while swimming.
+- Shortcuts are more like a player's: when the straight way is much shorter, companions drop off ledges up to 3 m and leap gaps up to 1.5 m instead of going down the stairs and round (General > MaxDrop, JumpGap).
+- Cooks no longer eat the honey they collect for the kitchen; it's put away with the rest.
+
+## 1.4.96
+- Companions sneak up on deer, hares and other skittish game that hasn't noticed anyone yet: crouched and not running, so it doesn't bolt (Hunting > Sneak).
+- A crouching companion is now really sneaking, like a player: quiet footsteps and harder to spot (light and Sneak skill count). Before, it only looked like it.
+- Companions jump narrow shallow streams and puddles too, not only water deep enough to swim, and wade through wider shallow water (General > JumpWaterDepth, JumpWaterWidth).
+- Fixed a companion missing the drops of its first kill when it fought something else straight after: fights no longer use up its looking time, it follows a body that slides or floats off, and it looks further around once it gets there.
+
+## 1.4.95
+- Fixed companions giving up on a kill's drops about a second after setting off, before reaching the body ("nothing dropped").
+- Companions wade into shallow water for a kill's drops and follow drops that float off, but don't swim out for them.
+- Cooks walk to each honey after harvesting a hive, so honey that rolls off behind a hive on a slope gets picked up too.
+- Wet, Cold, meads and other status effects now change a companion's health and stamina regeneration like a player's (General > StatusEffectsOnRegen).
+
+## 1.4.94
+- Hunt works with Follow on: the companion goes after game near you (FollowRange, 25 m) and keeps up with you when there's nothing close.
+- Hunt with Follow off hunts around where it is: home if it's near home, otherwise where the job was started (Range, 40 m), and walks back there between hunts.
+- Hunt goes after anything that drops meat, modded creatures included; never tamed animals, bosses or companions. New [Hunting] Prey list (* = all, -Name to exclude); the names are in OfflineCompanionsReborn.Hunting.txt.
+- Hunt stops on a creature once you have MeatTarget (100) of each meat it drops, counting the pack and the chests near home. Leather and hides are picked up as a bonus.
+- A hunter that follows you keeps its catch until you're home, then puts it away. With Follow off near home it walks home to unload when its pack is full.
+- Hunt uses a bow first and melee second, and fights anything that attacks it the normal way (blocking and parrying included) before going back to its prey.
+- Hunt no longer stops when there's no bow or arrows away from home; it hunts with its melee weapon.
+- After any kill, a companion goes over and picks up what the creature dropped, waiting for drops that come out of the body. New [Looting] settings; needs Auto Pickup on.
+
+## 1.4.93
+- Cooks collect honey from beehives around home (within HomeTripRange, 60 m by default; at a camp, within the cooking range): from a full hive, right away when a mead base is waiting on honey, and from any half-full hive when there's nothing else to cook. The honey gets put away with the rest.
+- Fixed the "Setting linear velocity of a kinematic body is not supported" warning while a companion sleeps in a bed.
+
+## 1.4.92
+- Reviewed mead plan: after each boss, cooks brew the mead bases you'll want for the next one first (Eikthyr through Fader, plus Kall Fimbulbringer). The list sets the order, it doesn't limit it: other mead bases you know are still brewed after food, within the same targets.
+- Bosses are read from the game itself, so the MeadFocus setting works with new and modded bosses too; OfflineCompanionsReborn.Cooking.txt lists them.
+- The log now says why a cook isn't brewing a priority mead base (enough already, recipe not known, no usable station, or an ingredient at its reserve).
+
+## 1.4.91
+- Fixed cooks never actually putting mead bases into fermenters (the base disappeared from their bag and the fermenter stayed empty), and thinking a full fermenter was empty.
+- Fixed companions trying to stand on top of a fermenter (or chest, station, bed) next to the one they're using. They now stand on the floor beside it.
+
+## 1.4.90
+- Fixed cooking (and other chest trips) not reaching any chest in a room with a fire. The "keep out of fires" check now only avoids the flames themselves, not the whole area around a fire.
+- Companions carry their best parrying shield again instead of the tower shield. They still switch to the tower shield in a fight when they're hurt or outnumbered.
+- Companions no longer put their gear back on piece by piece when you load in. They're already dressed, like you.
+
+## 1.4.89
+- Companions jump over a small fire in their way, like a player, and only walk round a big one. Fixed a cook getting stuck stepping in and out of a fire pit on the way to the cauldron.
+- Fixed the cook trying the same recipe over and over when an ingredient is only in a chest it can't reach. Such chests no longer count, and a recipe that can't be made is left alone for a minute.
+- Companions can use chests on ledges and shelves from the floor below: they look for a place to stand under an overhang too, and check whether they can see the chest from a little higher (like a player's camera).
+
+## 1.4.88
+- Fixed companions running back and forth under a chest up on a ledge (seen when emptying their bags after turning Cook off).
+- Companions keep out of fires: they don't pick a spot in one, walk round one in their way, and step straight out if they end up in one (seen in a tight kitchen, standing in the fire pit).
+- Companions reach chests like a player: anything within about 4 m of their eyes that they can see, so chests up on a ledge or a high shelf can be used from the floor below.
+
+## 1.4.87
+- Cooking rewritten. Companions now use every cooking station like a player: cauldron and food preparation table (with a fire and roof, like you need), cooking station, iron cooking station and oven (they put food on, take it off when it's done, and keep the oven fed with wood). Bread and pies go from the prep table to the oven.
+- They make the best food they can from recipes you know, until there are 20 of it in the chests nearby, and never use a raw ingredient once 20 or fewer are left, so you always have some to cook with yourself. All amounts are in the new [Cooking] settings.
+- Mead: they brew and ferment the meads you'll want for the next boss (the MeadFocus setting, by the last boss beaten), keeping 10 of each mead base and 20 of each finished mead, and tap fermenters when they're done.
+- They take finished food off any cooking station nearby before it burns.
+- Cooked food goes in a chest that already has it, else one with other cooked food, else the one nearest the cooking area. Food you gave them to eat stays with them.
+- They cook in batches like a player (Cooking > BatchSize, 5 by default): several at the cauldron or prep table in one trip, several slots on a cooking station or oven at once.
+- The [Cooking] Foods setting limits what they cook (* = everything, -Name to leave one out). OfflineCompanionsReborn.Cooking.txt in the config folder lists the names, mods included.
+
+## 1.4.86
+- Smelting now uses the same movement as farming and gathering: routes through doors and up stairs, the shared stuck handling, and a spot it can stand on by each chest and by the smelter's ore and fuel slots. Chests it can't get to are skipped.
+- Companions walk up stairs normally again and only jump a step that stops them.
+- Removed a false "hasn't moved" warning in the log while a companion stands and fights.
+
 ## 1.4.85
 - Companions now find their way with their own map of the world. Closed doors don't block their way (they open each one as they reach it, however many there are), and they hop up stairs and steps the normal map doesn't connect. New setting General > CompanionPathing (on) turns it off if it causes trouble.
 - Companions find a place to stand by chests in narrow spots more often (anywhere within reach, from more directions).

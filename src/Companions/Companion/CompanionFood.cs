@@ -324,6 +324,13 @@ public class CompanionFood : MonoBehaviour
 					{
 						num *= CompanionRestedBuff.HealthRegenMultiplier;
 					}
+					// 1.4.95: wet, cold, meads and other status effects change regen like they do for a player
+					if (ModConfig.StatusEffectsOnRegen?.Value ?? true)
+					{
+						float mult = 1f;
+						_character.GetSEMan()?.ModifyHealthRegen(ref mult);
+						num *= mult;
+					}
 					float health = _character.GetHealth();
 					_character.Heal(num);
 					float health2 = _character.GetHealth();
@@ -466,6 +473,24 @@ public class CompanionFood : MonoBehaviour
 	private ItemDrop.ItemData FindFoodForSlot(Inventory inv)
 	{
 		List<ItemDrop.ItemData> allItemsInGridOrder = inv.GetAllItemsInGridOrder();
+		// 1.4.111: fishing - the most stamina first (user: "if fishing the NPC should prefer stamina food")
+		int mode = GetComponent<ZNetView>()?.GetZDO()?.GetInt(CompanionSetup.ActionModeHash) ?? 0;
+		if (mode == CompanionSetup.ModeFish)
+		{
+			ItemDrop.ItemData best = null;
+			for (int j = 0; j < allItemsInGridOrder.Count; j++)
+			{
+				ItemDrop.ItemData it = allItemsInGridOrder[j];
+				if ((best == null || it.m_shared.m_foodStamina > best.m_shared.m_foodStamina) && CanConsumeFoodItem(it))
+				{
+					best = it;
+				}
+			}
+			if (best != null)
+			{
+				return best;
+			}
+		}
 		for (int i = 0; i < allItemsInGridOrder.Count; i++)
 		{
 			ItemDrop.ItemData itemData = allItemsInGridOrder[i];
@@ -484,6 +509,11 @@ public class CompanionFood : MonoBehaviour
 			return false;
 		}
 		string text = item.m_shared?.m_name ?? "?";
+		CookController cook = GetComponent<CookController>();
+		if (cook != null && cook.IsWorkFood(item))
+		{
+			return false;
+		}
 		if (!isRefresh && IsFoodAlreadyActive(item.m_shared.m_name))
 		{
 			CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — already active in another slot");

@@ -37,7 +37,32 @@ public class CompanionStamina : MonoBehaviour
 
 	public bool IsRunning { get; set; }
 
-	public bool IsCrouching { get; set; }
+	// 1.4.96: crouching counts like it does for a player (CompanionSneak): quiet footsteps, harder to spot
+	private bool _crouching;
+
+	public bool IsCrouching
+	{
+		get
+		{
+			return _crouching;
+		}
+		set
+		{
+			_crouching = value;
+			Character character = (_character != null) ? _character : GetComponent<Character>();
+			if (character != null)
+			{
+				if (value)
+				{
+					CompanionSneak.Crouching.Add(character);
+				}
+				else
+				{
+					CompanionSneak.Crouching.Remove(character);
+				}
+			}
+		}
+	}
 
 	private static float RegenRate => ModConfig.StaminaRegenRate.Value;
 
@@ -189,6 +214,13 @@ public class CompanionStamina : MonoBehaviour
 						num6 += CompanionRestedBuff.StaminaRegenAdditiveBonus;
 					}
 					float num7 = RegenRate * num6;
+					// 1.4.95: wet, cold, meads and other status effects change regen like they do for a player
+					if (_character != null && (ModConfig.StatusEffectsOnRegen?.Value ?? true))
+					{
+						float mult = 1f;
+						_character.GetSEMan()?.ModifyStaminaRegen(ref mult);
+						num7 *= mult;
+					}
 					Stamina = Mathf.Min(num2, Stamina + num7 * deltaTime);
 				}
 			}
@@ -212,6 +244,10 @@ public class CompanionStamina : MonoBehaviour
 
 	private void OnDestroy()
 	{
+		if (_character != null)
+		{
+			CompanionSneak.Crouching.Remove(_character);
+		}
 		if (_initialized)
 		{
 			SaveToZDO();

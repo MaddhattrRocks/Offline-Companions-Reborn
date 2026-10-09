@@ -49,34 +49,25 @@ namespace Companions
             BepInEx.Configuration.ConfigEntry<int> e = mode == 1 ? ModConfig.WoodLimit : mode == 2 ? ModConfig.StoneLimit : mode == 3 ? ModConfig.OreLimit : null;
             return e != null ? e.Value : 500;
         }
-        // name -> limit (0 = unlimited). Null when the list isn't set at all (then everything is allowed).
-        static Dictionary<string, int> Parse(int mode)
+        // 1.4.106: the shared list format (MHR_List): *, Name, -Name, Name:Number. Null when the list isn't set at all
+        // (then everything is allowed).
+        static MHR_List Parse(int mode)
         {
             string raw = ListFor(mode);
             if (raw == null) return null;
-            string key = mode + "|" + raw + "|" + DefaultLimit(mode);
-            Dictionary<string, int> d;
-            if (s_listCache.TryGetValue(key, out d)) return d;
-            d = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            foreach (string part in raw.Split(','))
+            MHR_List l = MHR_List.Get(raw);
+            foreach (string n in l.Order) CheckKnown(n, mode);
+            return l;
+        }
+        static string ItemLocal(string prefab)
+        {
+            try
             {
-                string s = part.Trim();
-                if (s.Length == 0) continue;
-                int limit = DefaultLimit(mode);
-                int colon = s.IndexOf(':');
-                if (colon >= 0)
-                {
-                    string num = s.Substring(colon + 1).Trim();
-                    s = s.Substring(0, colon).Trim();
-                    int n;
-                    if (num.Length > 0 && int.TryParse(num, out n)) limit = n;
-                }
-                if (s.Length == 0) continue;
-                d[s] = limit;
-                CheckKnown(s, mode);
+                GameObject g = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(prefab) : null;
+                ItemDrop d = g != null ? g.GetComponent<ItemDrop>() : null;
+                return d != null ? MHR_List.Local(d.m_itemData.m_shared.m_name) : null;
             }
-            s_listCache[key] = d;
-            return d;
+            catch { return null; }
         }
         static void CheckKnown(string name, int mode)
         {
@@ -92,8 +83,8 @@ namespace Companions
         {
             for (int m = 1; m <= 3; m++)
             {
-                Dictionary<string, int> d = Parse(m);
-                if (d != null && d.ContainsKey(name)) return true;
+                MHR_List d = Parse(m);
+                if (d != null && d.Allows(name)) return true;
             }
             return false;
         }
@@ -138,7 +129,8 @@ namespace Companions
         }
 
         // ---------- stock counting ----------
-        static int Stock(Component c, string item)
+        static readonly List<Piece> s_piles = new List<Piece>();
+        internal static int Stock(Component c, string item)
         {
             float t;
             if (s_countTime.TryGetValue(item, out t) && Time.time - t < 10f) return s_countVal[item];
@@ -154,6 +146,16 @@ namespace Companions
                 if (box == null) continue;
                 if (box.GetComponentInParent<Character>() != null || box.GetComponent<TombStone>() != null) continue;
                 if (box.GetInventory() != null) total += CountIn(box.GetInventory(), item);
+            }
+            // 1.4.127: what's stacked in wood/stone piles counts too (user) - each pile holds what it was built from
+            s_piles.Clear();
+            Piece.GetAllPiecesInRadius(center, 40f, s_piles);
+            for (int i = 0; i < s_piles.Count; i++)
+            {
+                Piece p = s_piles[i];
+                if (!UpkeepController.IsPile(p)) continue;
+                Piece.Requirement req = p.m_resources[0];
+                if (string.Equals(req.m_resItem.gameObject.name, item, StringComparison.OrdinalIgnoreCase)) total += req.m_amount;
             }
             s_countTime[item] = Time.time; s_countVal[item] = total;
             return total;
@@ -207,15 +209,15 @@ namespace Companions
                         }
                     if (NearBuildings(go)) { p.OtherRejects++; return false; }
                 }
-                Dictionary<string, int> list = Parse(mode);
+                MHR_List list = Parse(mode);
                 if (list == null) return true;
                 List<string> drops = DropsOf(go);
                 if (drops.Count == 0) return true;      // unknown drops: don't block it
                 bool listed = false;
                 for (int i = 0; i < drops.Count; i++)
                 {
-                    int limit;
-                    if (!list.TryGetValue(drops[i], out limit)) continue;
+                    if (!list.Allows(drops[i], ItemLocal(drops[i]))) continue;
+                    int limit = list.AmountFor(drops[i], DefaultLimit(mode));
                     listed = true;
                     if (limit <= 0 || Stock(h, drops[i]) < limit) return true;
                 }
@@ -246,6 +248,29 @@ namespace Companions
         }
 
         // ---------- drops ----------
+        // 1.4.122: loose things lying on the ground that the Wood job (branches -> Wood) and the Stone job (stones, flint)
+        // pick up by hand - on the job's list and under its amount, like any other target
+        public static bool LooseItem(int mode, string item)
+        {
+            return (mode == 1 && item == "Wood") || (mode == 2 && (item == "Stone" || item == "Flint"));
+        }
+
+        public static bool AllowLoose(HarvestController h, Pickable pick, int mode)
+        {
+            try
+            {
+                if (pick == null || pick.m_itemPrefab == null) return false;
+                string item = pick.m_itemPrefab.name;
+                if (!LooseItem(mode, item)) return false;
+                MHR_List list = Parse(mode);
+                if (list == null) return true;
+                if (!list.Allows(item, ItemLocal(item))) return false;
+                int limit = list.AmountFor(item, DefaultLimit(mode));
+                return limit <= 0 || Stock(h, item) < limit;
+            }
+            catch (Exception e) { Warn("AllowLoose: " + e.Message); return false; }
+        }
+
         public static bool WantDrop(HarvestController h, ItemDrop drop)
         {
             try
@@ -254,11 +279,11 @@ namespace Companions
                 if (!drop.m_autoPickup) return false;           // junk he dropped, stone piles
                 int mode = Mode(h);
                 if (mode < 1 || mode > 3) return true;
-                Dictionary<string, int> list = Parse(mode);
+                MHR_List list = Parse(mode);
                 if (list == null) return true;
                 string name = drop.m_itemData.m_dropPrefab != null ? drop.m_itemData.m_dropPrefab.name : drop.gameObject.name.Replace("(Clone)", "");
                 if (mode == 3 && name == "Stone") return true;   // 1.4.73: cleared up into a pile out of the way
-                return list.ContainsKey(name);
+                return list.Allows(name, MHR_List.Local(drop.m_itemData.m_shared.m_name));
             }
             catch { return true; }
         }
@@ -374,13 +399,13 @@ namespace Companions
                     h.ResetToIdle();
                     return true;
                 }
-                pai.MoveToPoint(Time.deltaTime, p.PilePoint, 1.0f, false);
+                pai.MHR_Go(Time.deltaTime, p.PilePoint, 1.0f, false, "Pile");
                 return true;
             }
             if (Time.time >= p.DodgeUntil) return false;
             CompanionAI ai = h.GetComponent<CompanionAI>();
             if (ai == null || ai.IsInCombat) { p.DodgeUntil = 0f; return false; }
-            if (Vector3.Distance(h.transform.position, p.DodgePoint) > 0.6f) ai.MoveToPoint(Time.deltaTime, p.DodgePoint, 0.4f, true);
+            if (Vector3.Distance(h.transform.position, p.DodgePoint) > 0.6f) ai.MHR_Go(Time.deltaTime, p.DodgePoint, 0.4f, true, "Dodge");
             else ai.StopMoving();
             return true;
         }

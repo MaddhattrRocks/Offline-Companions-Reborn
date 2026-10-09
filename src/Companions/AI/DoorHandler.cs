@@ -248,10 +248,6 @@ public class DoorHandler : MonoBehaviour
 					return;
 				}
 			}
-			else if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-			{
-				return;
-			}
 		}
 		bool flag2 = !flag && gameObject != null;
 		bool flag3 = flag;
@@ -345,7 +341,7 @@ public class DoorHandler : MonoBehaviour
 		float num = MHR_Nav.DoorDist(base.transform.position, _doorPos);
 		if (num > InteractDist * 0f)
 		{
-			MHR_Nav.MoveWalk(_ai, dt, _doorPos, InteractDist, run: true);
+			MHR_Nav.Move(_ai, dt, _doorPos, InteractDist, run: true, "Door");
 		}
 		else
 		{

@@ -8,7 +8,7 @@ namespace Companions
     // ---- 1.4.62: fetch a missing job tool from a nearby chest, put borrowed ones back ----
     public static class MHR_ToolKeeper
     {
-        const int K_AXE = 1, K_PICK = 2, K_BOW = 3, K_ARROW = 4, K_CULT = 5, K_ROD = 6, K_BAIT = 7, K_HAMMER = 8;
+        const int K_AXE = 1, K_PICK = 2, K_BOW = 3, K_ARROW = 4, K_CULT = 5, K_ROD = 6, K_BAIT = 7, K_HAMMER = 8, K_FOOD = 9;
         const float SearchRadius = 30f, UseDist = 2.5f, TripTimeout = 150f, NoProgressTimeout = 45f;
         static readonly int BorrowHash = "HC_Borrowed".GetStableHashCode();
 
@@ -23,7 +23,7 @@ namespace Companions
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
             public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
-            public int LastMode = -999; public bool LastStayHome; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
+            public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public string UnloadFor; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
         }
@@ -59,6 +59,8 @@ namespace Companions
         public static bool Drive(CompanionAI ai, float dt)
         {
             if (ai == null) return false;
+            // 1.4.88: out of a fire before following, idling or anything else
+            if (MHR_Mover.EscapeFire(ai)) return true;
             CompanionSetup cs = ai.GetComponent<CompanionSetup>();
             if (cs == null) return false;
             State st;
@@ -110,19 +112,19 @@ namespace Companions
             // 1.4.70: gear, food and mead the player hands over (through the inventory panel) are the companion's own;
             // anything picked up during work isn't. Everything present at load counts as its own too.
             if (!st.TagInit || CompanionInteractPanel.IsOpenFor(cs)) { st.TagInit = true; TagOwn(inv); }
-            bool stayHome = cs.GetStayHome();
-            if (st.LastMode == -999) { st.LastMode = mode; st.LastStayHome = stayHome; }
-            if (mode != st.LastMode || (stayHome && !st.LastStayHome))
+            if (st.LastMode == -999) st.LastMode = mode;
+            if (mode != st.LastMode)
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
-                LogDebug("Job changed (" + st.LastMode + " -> " + mode + (stayHome && !st.LastStayHome ? ", Homestead" : "") + ") - will empty bags at home");
+                LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
             }
-            st.LastMode = mode; st.LastStayHome = stayHome;
+            st.LastMode = mode;
             // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
             // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
-            // with tin ore, bone fragments, meat... and he kept it all until a job was picked)
+            // with tin ore, bone fragments, meat... and he kept it all until a job was picked). 1.4.94: a hunter that
+            // follows you keeps its catch until you're home, then puts it away the same way.
             bool atHome = cs.HasHomePosition() && AtHome(cs);
-            if (atHome && !st.WasAtHome && mode == 0 && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
+            if (atHome && !st.WasAtHome && (mode == 0 || (MHR_JobRules.KeepsFollow(mode) && (mode == 7 || cs.GetFollow()))) && !st.UnloadPending && st.Phase == 0 && UnloadList(cs, st, inv, mode).Count > 0)
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
                 LogDebug("Back home - will empty bags");
@@ -196,6 +198,11 @@ namespace Companions
                 float cd;
                 if (st.KindCooldown.TryGetValue(kind, out cd) && now < cd) continue;
                 ItemDrop.ItemData broken = BrokenOfKind(inv, kind, launcher);
+                // 1.4.94: Hunt is bow first, melee second - no bow (or arrows) away from home isn't a reason to stop
+                if (!nearHome && mode == 7) continue;
+                // 1.4.117: Repair and Restock still restocks and sorts without a hammer - not a reason to stop and follow
+                if (!nearHome && mode == 15) continue;
+                if (kind == K_FOOD && !nearHome) continue;   // nice to have, not worth going home for
                 if (!nearHome)
                 {
                     // too far to go home for it: say so, stop the job for now and follow
@@ -297,14 +304,14 @@ namespace Companions
             Vector3 cp = st.Chest.transform.position;
             Vector3 me = cs.transform.position;
             bool atSpot = st.HasSpot && new Vector2(me.x - st.Goal.x, me.z - st.Goal.z).magnitude <= 1.0f && Mathf.Abs(me.y - st.Goal.y) <= 1.5f;
-            bool canReach = distNow <= UseDist && MHR_Chests.LineClear(me, st.Chest);
+            bool canReach = MHR_Chests.InReach(me, st.Chest);
             if (!atSpot && !canReach)
             {
                 if (now >= st.NextSpotPick) PickSpot(cs, st, st.Chest, now);
                 st.NeedMove = true;
                 return;
             }
-            if (!canReach && distNow > UseDist + 1f) { st.NeedMove = true; return; }
+            if (!canReach && distNow > MHR_Chests.EyeReach + 0.5f) { st.NeedMove = true; return; }
             st.NeedMove = false;
             ai.StopMoving();
             ai.LookAtPoint(cp);
@@ -324,7 +331,13 @@ namespace Companions
                 {
                     string prefab = item.m_dropPrefab != null ? item.m_dropPrefab.name : st.Prefab;
                     int count = item.m_stack;
-                    inv.MoveItemToThis(cinv, item);
+                    if (st.Kind == K_FOOD && item.m_stack > 5)
+                    {
+                        // a few to eat, not the whole stack
+                        ItemDrop.ItemData part = item.Clone(); part.m_stack = 5; count = 5;
+                        if (inv.AddItem(part)) cinv.RemoveItem(item, 5);
+                    }
+                    else inv.MoveItemToThis(cinv, item);
                     if (FindByPrefab(inv, prefab) != null)
                     {
                         st.Borrowed.Add(new Entry { Kind = st.Kind, Prefab = prefab, Count = count, Chest = cp });
@@ -387,7 +400,7 @@ namespace Companions
         }
         static ItemDrop.ItemData BrokenOfKind(Inventory inv, int kind, ItemDrop.ItemData launcher)
         {
-            if (kind == K_ARROW || kind == K_BAIT) return null;
+            if (kind == K_ARROW || kind == K_BAIT || kind == K_FOOD) return null;
             List<ItemDrop.ItemData> items = inv.GetAllItems();
             for (int i = 0; i < items.Count; i++)
             {
@@ -594,7 +607,7 @@ namespace Companions
                 case 2: case 3: return new[] { K_PICK };
                 case 7: return new[] { K_BOW, K_ARROW };
                 case 8: return new[] { K_CULT };
-                case 9: return new[] { K_ROD, K_BAIT };
+                case 9: return new[] { K_ROD, K_BAIT, K_FOOD };   // 1.4.111: stamina food for reeling (user)
                 case 15: return new[] { K_HAMMER };
                 default: return null;
             }
@@ -611,7 +624,7 @@ namespace Companions
             switch (kind)
             {
                 case K_AXE: return "an axe"; case K_PICK: return "a pickaxe"; case K_BOW: return "a bow"; case K_ARROW: return "arrows";
-                case K_CULT: return "a cultivator"; case K_ROD: return "a fishing rod"; case K_BAIT: return "bait"; case K_HAMMER: return "a hammer";
+                case K_CULT: return "a cultivator"; case K_ROD: return "a fishing rod"; case K_BAIT: return "bait"; case K_HAMMER: return "a hammer"; case K_FOOD: return "stamina food";
             }
             return "a tool";
         }
@@ -645,6 +658,8 @@ namespace Companions
                            !string.IsNullOrEmpty(s.m_ammoType) && s.m_ammoType == launcher.m_shared.m_ammoType;
                 case K_CULT: return HasPlantPiece(s.m_buildPieces);
                 case K_HAMMER: return s.m_buildPieces != null && s.m_buildPieces.name != null && s.m_buildPieces.name.IndexOf("Hammer", StringComparison.OrdinalIgnoreCase) >= 0;
+                // 1.4.111: food that's mostly stamina (not mead - meads have no food values)
+                case K_FOOD: return s.m_itemType == ItemDrop.ItemData.ItemType.Consumable && s.m_foodStamina > 0f && s.m_foodStamina >= s.m_food;
             }
             return false;
         }
@@ -663,6 +678,7 @@ namespace Companions
         static float Score(ItemDrop.ItemData it, int kind)
         {
             if (kind == K_ARROW || kind == K_BAIT) return it.m_stack;
+            if (kind == K_FOOD) return it.m_shared.m_foodStamina;
             ItemDrop.ItemData.SharedData s = it.m_shared;
             float dmg = kind == K_AXE ? s.m_damages.m_chop : kind == K_PICK ? s.m_damages.m_pickaxe : 0f;
             return s.m_toolTier * 10000f + it.m_quality * 1000f + dmg + (it.m_durability / Mathf.Max(1f, s.m_maxDurability));
@@ -693,11 +709,12 @@ namespace Companions
         static bool FindSame(Inventory inv, ItemDrop.ItemData it) { return inv.GetAllItems().Contains(it); }
         static bool RoomFor(Inventory inv, ItemDrop.ItemData it, int kind)
         {
+            if (kind == K_FOOD) return inv.CanAddItem(it, 1);
             return (kind == K_ARROW || kind == K_BAIT) ? inv.CanAddItem(it, it.m_stack) : inv.HaveEmptySlot();
         }
 
         // ---- chests ----
-        static bool UsableChest(Container c)
+        internal static bool UsableChest(Container c)
         {
             if (c == null || c.GetInventory() == null) return false;
             if (c.GetComponent<Character>() != null || c.GetComponentInParent<Character>() != null) return false;
@@ -830,6 +847,14 @@ namespace Companions
         // the job off turns Follow back on if the job was what turned it off. Picking Follow turns the job off (radial).
         static readonly int FollowPausedHash = "HC_FollowPausedByJob".GetStableHashCode();
 
+        // 1.4.120: Wood, Stone, Ore and Forage work like Hunt (user: "just trigger on targets of opportunity and no longer
+        // turn off follow automatically"): with Follow on they work what's close to you and otherwise follow
+        public static bool KeepsFollow(int mode)
+        {
+            return mode == CompanionSetup.ModeHunt || mode == CompanionSetup.ModeGatherWood || mode == CompanionSetup.ModeGatherStone ||
+                   mode == CompanionSetup.ModeGatherOre || mode == CompanionSetup.ModeForage;
+        }
+
         public static void OnJobSet(CompanionSetup cs, int mode)
         {
             if (cs == null) return;
@@ -837,26 +862,19 @@ namespace Companions
             ZDO zdo = nv != null ? nv.GetZDO() : null;
             if (mode != 0)
             {
-                if (cs.GetFollow())
+                // 1.4.94: Hunt works with Follow on (hunts near you) or off (hunts around where it is)
+                if (!KeepsFollow(mode) && cs.GetFollow())
                 {
                     cs.SetFollow(false);
                     if (zdo != null) zdo.Set(FollowPausedHash, true);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Follow turned off");
                 }
-                if (cs.GetStayHome())
-                {
-                    cs.SetStayHome(false);
-                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job " + mode + " picked - Homestead turned off");
-                }
             }
             else if (zdo != null && zdo.GetBool(FollowPausedHash))
             {
                 zdo.Set(FollowPausedHash, false);
-                if (!cs.GetStayHome())
-                {
-                    cs.SetFollow(true);
-                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
-                }
+                cs.SetFollow(true);
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Jobs] Job turned off - Follow back on");
             }
         }
     }
@@ -914,11 +932,28 @@ namespace Companions
         }
 
         // nothing solid between someone standing at 'from' and the chest
-        public static bool LineClear(Vector3 from, Container chest)
+        // 1.4.88: reach like a player - Valheim lets you use something within 5 m of your eyes that you can see. Companions
+        // get 4 m from eye height (1.6 m) to the middle of the chest, with a clear line from the eyes or the chest
+        // (user: "I can open all the chests without issue" - the ones on the ledge 2 m up included).
+        public const float EyeHeight = 1.6f, EyeReach = 4f;
+        public static bool InReach(Vector3 feet, Container chest)
         {
             if (chest == null) return false;
-            Vector3 a = from + Vector3.up * 1.0f;
-            Vector3 b = chest.transform.position + Vector3.up * 0.5f;
+            Vector3 eye = feet + Vector3.up * EyeHeight;
+            return Vector3.Distance(eye, chest.transform.position + Vector3.up * 0.5f) <= EyeReach && LineClear(feet, chest);
+        }
+
+        public static bool LineClear(Vector3 from, Container chest)
+        {
+            // eyes to the middle, a little higher to the top (a player's camera sits above and behind them), waist height
+            return LineClear(from, chest, EyeHeight, 0.5f) || LineClear(from, chest, 1.9f, 0.9f) || LineClear(from, chest, 1.0f, 0.5f);
+        }
+
+        static bool LineClear(Vector3 from, Container chest, float height, float target)
+        {
+            if (chest == null) return false;
+            Vector3 a = from + Vector3.up * height;
+            Vector3 b = chest.transform.position + Vector3.up * target;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
             RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
@@ -940,7 +975,7 @@ namespace Companions
         public static bool CanReach(Vector3 me, Container chest)
         {
             if (chest == null) return false;
-            if (Vector3.Distance(me, chest.transform.position) <= 2.5f && LineClear(me, chest)) return true;
+            if (InReach(me, chest)) return true;
             int id = chest.GetInstanceID();
             KeyValuePair<float, bool> c;
             if (s_reach.TryGetValue(id, out c) && Time.time - c.Key < 30f) return c.Value;
@@ -960,31 +995,42 @@ namespace Companions
             float best = float.MaxValue; bool found = false;
             List<Vector3> viaDoor = null;
             // 1.4.85: out to 2.2 m (inside the 2-2.5 m use distance) and every 22.5 degrees, for chests in narrow spots
-            float[] radii = { 1.2f, 1.7f, 2.2f };
+            // 1.4.88: also lower down (up to 2.6 m below, e.g. the floor under a ledge) and further out, as long as it's in
+            // reach from eye height like a player (InReach)
+            float[] radii = { 1.2f, 1.7f, 2.2f, 2.8f };
+            int nGround = 0, nHeight = 0, nFire = 0, nBlocked = 0, nReach = 0, nRoute = 0;
             for (int r = 0; r < radii.Length; r++)
             {
                 for (int k = 0; k < 16; k++)
                 {
                     float ang = k * 22.5f * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
-                    RaycastHit hit;
-                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
-                    if (IsChestPart(hit.collider, chest)) continue;
-                    Vector3 stand = hit.point;
-                    if (Mathf.Abs(stand.y - cp.y) > 1.2f) continue;
-                    if (Blocked(stand + Vector3.up * 1.0f, chest)) continue;
-                    if (!LineClear(stand, chest)) continue;
-                    s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
-                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
-                    // 1.4.67: the route has to actually end at the spot, not just somewhere near it
-                    Vector3 end = s_path[s_path.Count - 1];
-                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
-                    { if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
-                    float score = 0f;
-                    Vector3 prev = me;
-                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
-                    if (score < best) { best = score; spot = stand; found = true; }
+                    // 1.4.89: every surface straight down, not just the first - next to a ledge chest the first one is the
+                    // ledge itself and the floor below (where a player stands to open it) was never looked at
+                    RaycastHit[] hits = Physics.RaycastAll(pt + Vector3.up * 1.6f, Vector3.down, 4.5f, Mask());
+                    if (hits.Length == 0) { nGround++; continue; }
+                    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                    for (int h = 0; h < hits.Length; h++)
+                    {
+                        RaycastHit hit = hits[h];
+                        if (hit.normal.y < 0.6f || IsChestPart(hit.collider, chest) || IsFurniture(hit.collider)) continue;
+                        Vector3 stand = hit.point;
+                        if (stand.y > cp.y + 1.2f || stand.y < cp.y - 2.6f) { nHeight++; continue; }
+                        if (MHR_Mover.InFire(stand)) { nFire++; continue; }   // 1.4.88
+                        if (Blocked(stand + Vector3.up * 1.0f, chest)) { nBlocked++; continue; }
+                        if (!InReach(stand, chest)) { nReach++; continue; }
+                        s_path.Clear();
+                        if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true) || s_path.Count == 0)
+                        { nRoute++; if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
+                        // 1.4.67: the route has to actually end at the spot, not just somewhere near it
+                        Vector3 end = s_path[s_path.Count - 1];
+                        if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f)
+                        { nRoute++; if (viaDoor == null) viaDoor = new List<Vector3>(); viaDoor.Add(stand); continue; }
+                        float score = 0f;
+                        Vector3 prev = me;
+                        for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                        if (score < best) { best = score; spot = stand; found = true; }
+                    }
                 }
                 if (found) break;
             }
@@ -998,6 +1044,8 @@ namespace Companions
                     if (MHR_Mover.ReachableViaDoor(me, viaDoor[i])) { spot = viaDoor[i]; found = true; break; }
                 }
             }
+            // 1.4.89: why no spot worked, so a chest the player can open but the companion can't shows the reason
+            if (!found && CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Chests] No spot to stand by the chest at " + Fmt(cp) + ": " + nGround + " no ground, " + nHeight + " too high/low, " + nFire + " in a fire, " + nBlocked + " no room, " + nReach + " out of reach/sight, " + nRoute + " no route");
             return found;
         }
 
@@ -1008,38 +1056,66 @@ namespace Companions
         {
             spot = Vector3.zero;
             if (target == null) return false;
-            Piece piece = target.GetComponentInParent<Piece>();
-            Vector3 cp = target.transform.position;
+            return PickNear(me, target.transform.position, target.GetComponentInParent<Piece>(), s_pieceRadii, 8, 1.5f, out spot);
+        }
+        static readonly float[] s_pieceRadii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
+        static readonly float[] s_pointRadii = { 0.9f, 1.4f, 1.9f };
+
+        // 1.4.86: the same around one point of a piece, e.g. a smelter's ore or fuel slot
+        public static bool PickApproachPoint(Vector3 me, Vector3 point, Component owner, out Vector3 spot)
+        {
+            return PickNear(me, point, owner != null ? owner.GetComponentInParent<Piece>() : null, s_pointRadii, 12, 1.8f, out spot);
+        }
+
+        static bool PickNear(Vector3 me, Vector3 cp, Piece piece, float[] radii, int dirs, float maxDy, out Vector3 spot)
+        {
+            spot = Vector3.zero;
             float best = float.MaxValue; bool found = false;
-            float[] radii = { 1.3f, 1.8f, 2.2f };   // within the 2.5 m repair reach
             for (int r = 0; r < radii.Length; r++)
             {
-                for (int k = 0; k < 8; k++)
+                for (int k = 0; k < dirs; k++)
                 {
-                    float ang = k * 45f * Mathf.Deg2Rad;
+                    float ang = k * (360f / dirs) * Mathf.Deg2Rad;
                     Vector3 pt = cp + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * radii[r];
-                    RaycastHit hit;
-                    if (!Physics.Raycast(pt + Vector3.up * 1.6f, Vector3.down, out hit, 3.2f, Mask())) continue;
-                    if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f) continue;
-                    Vector3 stand = hit.point;
-                    if (Mathf.Abs(stand.y - cp.y) > 1.5f) continue;
-                    if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
-                    if (!ClearTo(stand, cp, piece)) continue;
-                    s_path.Clear();
-                    if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
-                    if (s_path.Count == 0) continue;
-                    Vector3 end = s_path[s_path.Count - 1];
-                    if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
-                    float score = 0f;
-                    Vector3 prev = me;
-                    for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
-                    if (score < best) { best = score; spot = stand; found = true; }
+                    // 1.4.91: every surface straight down, skipping furniture tops (1.4.90 log: the stand spot for a
+                    // fermenter was on top of the one next to it, 2.2 m up)
+                    RaycastHit[] hits = Physics.RaycastAll(pt + Vector3.up * 1.6f, Vector3.down, 3.2f + maxDy, Mask());
+                    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                    for (int h = 0; h < hits.Length; h++)
+                    {
+                        RaycastHit hit = hits[h];
+                        if (IsPart(hit.collider, piece) || hit.normal.y < 0.6f || IsFurniture(hit.collider)) continue;
+                        Vector3 stand = hit.point;
+                        if (Mathf.Abs(stand.y - cp.y) > maxDy) continue;
+                        if (MHR_Mover.InFire(stand)) continue;   // 1.4.88: not in the fire under the cauldron
+                        if (BlockedNear(stand + Vector3.up * 1.0f, piece)) continue;
+                        if (!ClearTo(stand, cp, piece)) continue;
+                        s_path.Clear();
+                        if (Pathfinding.instance == null || !Pathfinding.instance.GetPath(me, stand, s_path, MHR_CompanionNavMesh.AgentOrHumanoid, false, true, true)) continue;
+                        if (s_path.Count == 0) continue;
+                        Vector3 end = s_path[s_path.Count - 1];
+                        if (new Vector2(end.x - stand.x, end.z - stand.z).magnitude > 0.6f || Mathf.Abs(end.y - stand.y) > 1.0f) continue;
+                        float score = 0f;
+                        Vector3 prev = me;
+                        for (int i = 0; i < s_path.Count; i++) { score += Vector3.Distance(prev, s_path[i]); prev = s_path[i]; }
+                        if (score < best) { best = score; spot = stand; found = true; }
+                        break;   // the first walkable surface from the top is the one to stand on
+                    }
                 }
                 if (found) break;
             }
             return found;
         }
         static bool IsPart(Collider col, Piece piece) { return col != null && piece != null && col.GetComponentInParent<Piece>() == piece; }
+        // 1.4.91: the top of a chest, fermenter, station, smelter, bed or chair isn't somewhere to stand
+        public static bool IsFurniture(Collider col)
+        {
+            if (col == null) return false;
+            return col.GetComponentInParent<Container>() != null || col.GetComponentInParent<Fermenter>() != null
+                || col.GetComponentInParent<CraftingStation>() != null || col.GetComponentInParent<CookingStation>() != null
+                || col.GetComponentInParent<Smelter>() != null || col.GetComponentInParent<Bed>() != null
+                || col.GetComponentInParent<Chair>() != null;
+        }
         static bool BlockedNear(Vector3 p, Piece piece)
         {
             int n = Physics.OverlapSphereNonAlloc(p, 0.35f, s_small, Mask());
@@ -1087,6 +1163,7 @@ namespace Companions
     {
         public static bool MoveFarm(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Farm"); }
         public static bool MovePlant(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Plant"); }
+        public static bool MoveSmelt(CompanionAI ai, float dt, Vector3 point, float dist, bool run) { return Move(ai, dt, point, dist, run, "Smelt"); }
 
         // 1.4.70: "in range" the way a player reaches things: flat distance while within 2.2m up or down (stacked chests,
         // crops below a low edge); real distance beyond that
@@ -1104,7 +1181,9 @@ namespace Companions
             CompanionSetup cs = c != null ? c.GetComponent<CompanionSetup>() : null;
             // 1.4.78: only actually at home (within 25 m of the home spot, or HomeTripRange if smaller). With the whole
             // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
-            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return 0.999f;
+            // 1.4.133: [Repair] HomeThreshold (80%) - at any wear it went off to the workbench every time the hammer dropped to
+            // 99% during Repair and Restock (user: "the NPC seems to repair a lot")
+            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return ModConfig.RepairHomeThreshold != null ? Mathf.Max(cfg, ModConfig.RepairHomeThreshold.Value) : 0.8f;
             return cfg;
         }
 
@@ -1142,10 +1221,8 @@ namespace Companions
             float d = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
             return d > 0f && Vector3.Distance(ai.transform.position, point) > d;
         }
-        public static bool MoveWalk(CompanionAI ai, float dt, Vector3 point, float dist, bool run)
-        {
-            return ai.MoveToPoint(dt, point, dist, run && FarEnoughToRun(ai, point));
-        }
+        // 1.4.134 (movement phase 4): jobs give a leg up when the movement does, or after this long whatever happens
+        public const float LegTimeout = 120f;
 
         public static bool Move(CompanionAI ai, float dt, Vector3 point, float dist, bool run, string tag)
         {

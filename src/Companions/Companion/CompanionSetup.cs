@@ -313,11 +313,6 @@ public class CompanionSetup : MonoBehaviour
 		return !CompanionTierData.IsDvergerVariant(_nview.GetZDO().GetPrefab());
 	}
 
-	internal bool GetStayHome()
-	{
-		return _nview?.GetZDO()?.GetBool(StayHomeHash) == true;
-	}
-
 	internal bool HasHomePosition()
 	{
 		ZDO zDO = _nview?.GetZDO();
@@ -631,6 +626,7 @@ public class CompanionSetup : MonoBehaviour
 			AddStarterGear(zDO);
 			int num = zDO.GetInt(ActionModeHash);
 			CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Initialized — mode={0} appearance={1} ", num, string.IsNullOrEmpty(text) ? "default" : "saved") + $"pos={base.transform.position:F1}");
+			_instantEquipUntil = Time.time + 10f;
 			_initialized = true;
 		}
 	}
@@ -748,7 +744,7 @@ public class CompanionSetup : MonoBehaviour
 		else
 		{
 			int num = zDO2.GetInt(ActionModeHash);
-			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && (!GetStayHome() || !HasHomePosition()) && num != 4)
+			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && num != 4)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
@@ -790,19 +786,12 @@ public class CompanionSetup : MonoBehaviour
 		{
 			return;
 		}
-		bool flag = GetStayHome() && HasHomePosition();
 		bool follow = GetFollow();
-		CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} stayHome={flag} follow={follow} force={force}");
+		CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} follow={follow} force={force}");
 		switch (mode)
 		{
 		case 0:
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → StayHome patrol at {GetHomePosition():F1}");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
@@ -854,13 +843,7 @@ public class CompanionSetup : MonoBehaviour
 					break;
 				}
 			}
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Gather+StayHome patrol at {GetHomePosition():F1}");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
@@ -878,24 +861,11 @@ public class CompanionSetup : MonoBehaviour
 			break;
 		case 4:
 			_ai.SetFollowTarget(null);
-			if (flag)
-			{
-				_ai.SetPatrolPointAt(GetHomePosition());
-			}
-			else
-			{
-				_ai.SetPatrolPoint();
-			}
-			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {(flag ? GetHomePosition() : base.transform.position):F1}");
+			_ai.SetPatrolPoint();
+			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {base.transform.position:F1}");
 			break;
 		default:
-			if (flag)
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(GetHomePosition());
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → StayHome patrol (default fallback, mode={mode})");
-			}
-			else if (follow && Player.m_localPlayer != null)
+			if (follow && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (default fallback, mode={mode})");
@@ -1022,13 +992,19 @@ public class CompanionSetup : MonoBehaviour
 				}
 				break;
 			// 1.4.83: carry the best shield with a one-hander, like a player (it was only picked up once a fight started)
+			// 1.4.90: the best one for parrying, the same pick the combat code makes when he's healthy and not surrounded
+			// (ShieldLogic) - not the highest block power, which is always the tower shield (user: "favoring the tower
+			// shield again"). The combat code still swaps to the tower shield when he's hurt or outnumbered.
 			case ItemDrop.ItemData.ItemType.Shield:
-				if (item.GetBaseBlockPower() > num4)
+			{
+				float shieldScore = item.m_shared.m_timedBlockBonus * 1000f + item.GetBaseBlockPower();
+				if (shieldScore > num4)
 				{
 					itemData4 = item;
-					num4 = item.GetBaseBlockPower();
+					num4 = shieldScore;
 				}
 				break;
+			}
 			case ItemDrop.ItemData.ItemType.Trinket:
 				if (armor > num10)
 				{
@@ -1258,6 +1234,17 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(WanderHash, value: true);
 			zDO.Set(WanderFollowMigratedHash, value: true);
 			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
+		}
+		// 1.4.117: Restock is part of Repair and Restock now, and Homestead is retired
+		if (zDO.GetInt(ActionModeHash) == ModeRestock)
+		{
+			zDO.Set(ActionModeHash, ModeRepairBuildings);
+			CompanionsPlugin.Log.LogInfo("[Setup] Restock job moved to Repair and Restock");
+		}
+		if (zDO.GetBool(StayHomeHash))
+		{
+			zDO.Set(StayHomeHash, value: false);
+			CompanionsPlugin.Log.LogInfo("[Setup] Homestead is retired - turned off (Wander still lets it move around home)");
 		}
 		// 1.4.78: a job and Follow can't both be on (saves from before have both)
 		int mode = zDO.GetInt(ActionModeHash);
@@ -1642,12 +1629,30 @@ public class CompanionSetup : MonoBehaviour
 		}
 	}
 
+	// 1.4.90: right after loading in, gear goes straight on - a player loads in already dressed (user: on loading the
+	// companion visibly re-equipped everything, one piece at a time)
+	private float _instantEquipUntil;
+
 	private void QueueEquip(ItemDrop.ItemData item)
 	{
-		if (item != null)
+		if (item == null)
 		{
-			_equipQueue.Add(item);
+			return;
 		}
+		if (Time.time < _instantEquipUntil && _humanoid != null)
+		{
+			_equipping = true;
+			try
+			{
+				_humanoid.EquipItem(item, triggerEquipEffects: false);
+			}
+			finally
+			{
+				_equipping = false;
+			}
+			return;
+		}
+		_equipQueue.Add(item);
 	}
 
 	internal void ClearEquipQueue()
@@ -1753,15 +1758,6 @@ public class CompanionSetup : MonoBehaviour
 	internal void SetIsCommandable(bool value)
 	{
 		(_nview?.GetZDO())?.Set(IsCommandableHash, value ? 1 : 0);
-	}
-
-	internal void SetStayHome(bool v)
-	{
-		_nview?.GetZDO()?.Set(StayHomeHash, v);
-		if (v)
-		{
-			SetFollow(v: false);
-		}
 	}
 
 	internal void SetHomePosition(Vector3 p)

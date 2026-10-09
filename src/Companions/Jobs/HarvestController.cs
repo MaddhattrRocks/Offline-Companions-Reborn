@@ -127,7 +127,7 @@ public class HarvestController : MonoBehaviour
 
 	private float _chestScanTimer;
 
-	private readonly Collider[] _scanBuffer = new Collider[1024];
+	private readonly Collider[] _scanBuffer = new Collider[4096];
 
 	private readonly Collider[] _dropBuffer = new Collider[128];
 
@@ -185,7 +185,99 @@ public class HarvestController : MonoBehaviour
 
 	public bool IsInGatherMode { get; private set; }
 
-	public bool IsActive => _state != HarvestState.Idle;
+	public bool IsActive => _state != HarvestState.Idle || _goingBack;
+
+	// 1.4.121: with Follow off it works an area, like Hunt (user): around home when the job starts near home, otherwise
+	// around where it was started, whether or not you're nearby. With nothing left it walks back to the middle.
+	private Vector3 _anchor;
+
+	private bool _hasAnchor;
+
+	private bool _anchorAtHome;
+
+	private int _anchorMode;
+
+	private bool _wasFollow;
+
+	private bool _goingBack;
+
+	private static float AreaRange => ModConfig.HarvestRange?.Value ?? 40f;
+
+	private bool Following => _setup != null && _setup.GetFollow();
+
+	private void UpdateAnchor(int mode)
+	{
+		bool follow = Following;
+		if (follow != _wasFollow || mode != _anchorMode)
+		{
+			_wasFollow = follow;
+			_anchorMode = mode;
+			_hasAnchor = false;
+			if (_goingBack)
+			{
+				_goingBack = false;
+				MHR_Mover.Release(_ai);
+			}
+		}
+		if (follow || _isDirectedHarvest || _hasAnchor)
+		{
+			return;
+		}
+		_hasAnchor = true;
+		_anchorAtHome = _setup != null && _setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup);
+		_anchor = _anchorAtHome ? _setup.GetHomePosition() : base.transform.position;
+		LogInfo("Working around " + (_anchorAtHome ? "home" : "here") + " " + MHR_Mover.Fmt(_anchor) + ", up to " + AreaRange.ToString("F0") + " m out");
+	}
+
+	private bool InWorkArea(Vector3 p)
+	{
+		if (Following || _isDirectedHarvest || !_hasAnchor)
+		{
+			return Player.m_localPlayer == null || Vector3.Distance(Player.m_localPlayer.transform.position, p) <= PlayerRange();
+		}
+		return Vector3.Distance(_anchor, p) <= AreaRange;
+	}
+
+	private Vector3 ScanCenter()
+	{
+		return (!Following && !_isDirectedHarvest && _hasAnchor) ? _anchor : base.transform.position;
+	}
+
+	private float ScanRad()
+	{
+		return (!Following && !_isDirectedHarvest && _hasAnchor) ? AreaRange : ScanRadius;
+	}
+
+	private void UpdateGoingBack()
+	{
+		if (!_goingBack)
+		{
+			return;
+		}
+		if (Following || Vector3.Distance(base.transform.position, _anchor) <= 5f)
+		{
+			_goingBack = false;
+			_ai?.StopMoving();
+			MHR_Mover.Release(_ai);
+			return;
+		}
+		MHR_Mover.Go(_ai, Time.deltaTime, _anchor, 4f, true, "Gather");
+		if (MHR_Mover.GaveUp(_ai))
+		{
+			LogInfo("Can't get back to the work area - working from here");
+			_anchor = base.transform.position;
+			_anchorAtHome = false;
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
+		}
+	}
+
+	// 1.4.120: with Follow on, only what's within [Harvest] FollowRange of the player (targets of opportunity, like Hunt);
+	// with Follow off, anything within 40 m of the player as before
+	private float PlayerRange()
+	{
+		return (_setup != null && _setup.GetFollow() && !_isDirectedHarvest) ? (ModConfig.HarvestFollowRange?.Value ?? 20f) : 40f;
+	}
 
 	internal bool IsMoving => _state == HarvestState.Moving;
 
@@ -532,6 +624,7 @@ public class HarvestController : MonoBehaviour
 		{
 			EnterGatherMode();
 		}
+		UpdateAnchor(mode);
 		if (IsOverweight())
 		{
 			if (!(_ai != null) || !(_ai.PendingDepositContainer != null))
@@ -547,12 +640,27 @@ public class HarvestController : MonoBehaviour
 			RestoreLoadout();
 			return;
 		}
+		// 1.4.128: after a fight, picking up what the kill dropped goes first (1.4.127 test: on Forage it kept walking to
+		// the next mushroom while the loot pickup walked to the drops - the two took turns every frame and it stuttered)
+		if (MHR_Loot.Active(this))
+		{
+			return;
+		}
 		if (IsCompanionUIOpen())
 		{
 			if (_state != HarvestState.Idle)
 			{
 				_ai?.StopMoving();
 			}
+			return;
+		}
+		// 1.4.120: following and you've moved on - leave the tree/rock/plant and catch up, like Hunt leaves its prey
+		if (_state != HarvestState.Idle && !_isDirectedHarvest && _setup != null && _setup.GetFollow() && Player.m_localPlayer != null &&
+			Vector3.Distance(base.transform.position, Player.m_localPlayer.transform.position) > PlayerRange() + 15f)
+		{
+			Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up");
+			ResetToIdle();
+			RestoreLoadout();
 			return;
 		}
 		_heartbeatTimer -= Time.deltaTime;
@@ -564,6 +672,7 @@ public class HarvestController : MonoBehaviour
 		switch (_state)
 		{
 		case HarvestState.Idle:
+			UpdateGoingBack();
 			UpdateIdle(mode);
 			break;
 		case HarvestState.Moving:
@@ -591,24 +700,23 @@ public class HarvestController : MonoBehaviour
 	{
 		Log($"EXIT gather mode — was state={_state} " + "target=\"" + ((_target != null) ? _target.name : "null") + "\" " + $"toolEquipped={_toolEquipped}");
 		IsInGatherMode = false;
+		_hasAnchor = false;
+		if (_goingBack)
+		{
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
+		}
 		ResetToIdle();
 		RestoreLoadout();
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-			Log("Restored patrol to home (StayHome active)");
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 			Log("Restored follow target to player (Follow=ON)");
 		}
 		else
 		{
-			Log("Follow OFF, no StayHome — idle");
+			Log("Follow OFF — idle");
 		}
 	}
 
@@ -703,16 +811,41 @@ public class HarvestController : MonoBehaviour
 			}
 		}
 		LogInfo($"Scanning for targets... mode={mode} " + $"pos={base.transform.position:F1} radius={ScanRadius}");
-		GameObject gameObject = MHR_GatherRules.Scan(this, mode);
+		// 1.4.122: with only a stone or flint axe, or no axe (Stone: or no pickaxe), also pick up branches / stones / flint
+		// lying around (user); with no tool for the job, that's all it does
+		GameObject loose = null;
+		bool noTool = false;
+		bool looseOn = !_isDirectedHarvest && (mode == 1 || mode == 2) && LooseOn(mode, out noTool);
+		if (looseOn)
+		{
+			loose = ScanForPickable(mode);
+		}
+		GameObject gameObject = (looseOn && noTool) ? null : MHR_GatherRules.Scan(this, mode);
+		bool pickLoose = false;
+		if (loose != null && (gameObject == null || Vector3.Distance(base.transform.position, loose.transform.position) <= Vector3.Distance(base.transform.position, gameObject.transform.position)))
+		{
+			gameObject = loose;
+			pickLoose = true;
+		}
 		if (gameObject == null)
 		{
 			LogInfo("Scan found 0 valid targets — staying idle");
+			if (!_goingBack && !Following && !_isDirectedHarvest && _hasAnchor && Vector3.Distance(base.transform.position, _anchor) > 8f)
+			{
+				LogInfo("Nothing left nearby - walking back to the middle of the work area");
+				_goingBack = true;
+			}
 			return;
 		}
-		if (mode == 5)
+		if (_goingBack)
+		{
+			_goingBack = false;
+			MHR_Mover.Release(_ai);
+		}
+		if (mode == 5 || pickLoose)
 		{
 			float num = Vector3.Distance(base.transform.position, gameObject.transform.position);
-			LogInfo($"Forage target: \"{gameObject.name}\" dist={num:F1}m");
+			LogInfo($"{(pickLoose ? "Picking up" : "Forage target")}: \"{gameObject.name}\" dist={num:F1}m");
 			Log($"Forage target acquired: \"{gameObject.name}\" dist={num:F1}m " + $"pos={gameObject.transform.position:F1}");
 			_target = gameObject;
 			_targetType = "Pickable";
@@ -970,7 +1103,7 @@ public class HarvestController : MonoBehaviour
 	private void UpdateAttacking()
 	{
 		int mode = GetMode();
-		if (mode == 5)
+		if (mode == 5 || _targetType == "Pickable")
 		{
 			Pickable pickable = _target?.GetComponentInParent<Pickable>();
 			if (pickable != null)
@@ -1361,19 +1494,13 @@ public class HarvestController : MonoBehaviour
 			Log("ResetToIdle (directed harvest complete) — restored loadout");
 		}
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
 		if (state != HarvestState.Idle)
 		{
-			Log($"ResetToIdle (was {state}) — follow={flag} stayHome={flag2}");
+			Log($"ResetToIdle (was {state}) — follow={flag}");
 		}
 	}
 
@@ -2105,7 +2232,7 @@ public class HarvestController : MonoBehaviour
 			float dist = (flag2 ? (attackRange * 0.8f) : (attackRange * 0.8f));
 			if (num > num2)
 			{
-				_ai.MoveToPoint(Time.deltaTime, effectiveTargetPosition, dist, run: false);
+				_ai.MHR_Go(Time.deltaTime, effectiveTargetPosition, dist, false, "Harvest");
 			}
 		}
 	}
@@ -2143,17 +2270,11 @@ public class HarvestController : MonoBehaviour
 		_scanTimer = 0f;
 		UnclaimTarget();
 		bool flag = _setup != null && _setup.GetFollow();
-		bool flag2 = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
-		if (_ai != null && flag2)
-		{
-			_ai.SetFollowTarget(null);
-			_ai.SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (_ai != null && flag && Player.m_localPlayer != null)
+		if (_ai != null && flag && Player.m_localPlayer != null)
 		{
 			_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
-		Log($"FinishDropCollection — collected {_dropsPickedUp} items, follow={flag} stayHome={flag2}");
+		Log($"FinishDropCollection — collected {_dropsPickedUp} items, follow={flag}");
 	}
 
 	private void TryPickupDrop(GameObject dropGO)
@@ -2268,7 +2389,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return ScanForPickable();
 		}
-		int num = Physics.OverlapSphereNonAlloc(base.transform.position, ScanRadius, _scanBuffer);
+		int num = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer);
 		bool flag = num >= _scanBuffer.Length;
 		if (num > _scanBuffer.Length)
 		{
@@ -2322,22 +2443,9 @@ public class HarvestController : MonoBehaviour
 				{
 					continue;
 				}
-				if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
+				if (!InWorkArea(harvestCandidateWithType.transform.position))
 				{
-					float num9 = Vector3.Distance(_setup.GetHomePosition(), harvestCandidateWithType.transform.position);
-					float homeRadius = _setup.GetHomeRadius();
-					if (num9 > homeRadius)
-					{
-						continue;
-					}
-				}
-				if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
-				{
-					float num10 = Vector3.Distance(Player.m_localPlayer.transform.position, harvestCandidateWithType.transform.position);
-					if (num10 > 40f)
-					{
-						continue;
-					}
+					continue;
 				}
 				num3++;
 				float num11 = Vector3.Distance(base.transform.position, harvestCandidateWithType.transform.position);
@@ -2412,9 +2520,132 @@ public class HarvestController : MonoBehaviour
 		return gameObject;
 	}
 
-	private GameObject ScanForPickable()
+	// 1.4.122: loose pickups for the Wood and Stone jobs
+	private bool LooseOn(int mode, out bool noTool)
 	{
-		int num = Physics.OverlapSphereNonAlloc(base.transform.position, ScanRadius, _scanBuffer);
+		noTool = BestToolQuiet(mode) == null;
+		if (!(ModConfig.HarvestPickUpLoose?.Value ?? true))
+		{
+			return false;
+		}
+		return EarlyGame();
+	}
+
+	// 1.4.123: only early in the game (user: "make the pickup work early game where grabbing those items is useful"):
+	// no bronze-or-better axe anywhere - the companion's pack, the chests near home, your pack - and no forge at home
+	// to make one. Checked every 30 s.
+	private float _nextEarlyCheck;
+
+	private bool _early;
+
+	private bool EarlyGame()
+	{
+		if (Time.time < _nextEarlyCheck)
+		{
+			return _early;
+		}
+		_nextEarlyCheck = Time.time + 30f;
+		bool was = _early;
+		string why = null;
+		bool home = _setup != null && _setup.HasHomePosition();
+		Vector3 center = home ? _setup.GetHomePosition() : base.transform.position;
+		float radius = home ? MHR_ToolKeeper.HomeRange() : 30f;
+		if (HasGoodAxe(_humanoid?.GetInventory()))
+		{
+			why = "it has a bronze-or-better axe";
+		}
+		else if (Player.m_localPlayer != null && HasGoodAxe(Player.m_localPlayer.GetInventory()))
+		{
+			why = "you have a bronze-or-better axe";
+		}
+		else
+		{
+			foreach (Container c in MHR_Chests.Near(center, radius))
+			{
+				if (c != null && c.GetComponent<Character>() == null && HasGoodAxe(c.GetInventory()))
+				{
+					why = "there's a bronze-or-better axe in a chest";
+					break;
+				}
+			}
+			if (why == null)
+			{
+				foreach (CraftingStation st in MHR_Chests.Stations(center, radius))
+				{
+					if (st != null && st.m_name == "$piece_forge")
+					{
+						why = "there's a forge" + (home ? " at home" : " nearby");
+						break;
+					}
+				}
+			}
+		}
+		_early = why == null;
+		if (_early != was || !_earlyLogged)
+		{
+			_earlyLogged = true;
+			LogInfo(_early ? "Early game (no bronze-or-better axe and no forge) - picking up branches, stones and flint" : "Not picking up branches, stones and flint: " + why);
+		}
+		return _early;
+	}
+
+	private bool _earlyLogged;
+
+	private static bool HasGoodAxe(Inventory inv)
+	{
+		if (inv == null)
+		{
+			return false;
+		}
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || it.m_shared.m_skillType != Skills.SkillType.Axes || it.m_shared.m_damages.m_chop <= 0f)
+			{
+				continue;
+			}
+			string n = it.m_dropPrefab != null ? it.m_dropPrefab.name : "";
+			if (n != "AxeStone" && n != "AxeFlint")
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// the best tool for the job without the logging (FindBestTool logs every candidate)
+	private ItemDrop.ItemData BestToolQuiet(int mode)
+	{
+		Inventory inv = _humanoid?.GetInventory();
+		if (inv == null)
+		{
+			return null;
+		}
+		ItemDrop.ItemData best = null;
+		float bestDmg = 0f;
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || (it.m_shared.m_useDurability && it.m_durability <= 0f))
+			{
+				continue;
+			}
+			if (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(it.m_shared.m_ammoType) || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo)
+			{
+				continue;
+			}
+			HitData.DamageTypes d = it.GetDamage();
+			float dmg = mode == 1 ? d.m_chop : d.m_pickaxe;
+			if (dmg > bestDmg)
+			{
+				bestDmg = dmg;
+				best = it;
+			}
+		}
+		return best;
+	}
+
+	private GameObject ScanForPickable(int looseMode = 0)
+	{
+		int num = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer);
 		if (num > _scanBuffer.Length)
 		{
 			num = _scanBuffer.Length;
@@ -2432,7 +2663,7 @@ public class HarvestController : MonoBehaviour
 				continue;
 			}
 			Pickable componentInParent = collider.GetComponentInParent<Pickable>();
-			if (componentInParent == null || !MHR_ForageAllowed(componentInParent))
+			if (componentInParent == null || (looseMode == 0 ? (!MHR_ForageAllowed(componentInParent) || !ForageUnderAmount(componentInParent)) : !MHR_GatherRules.AllowLoose(this, componentInParent, looseMode)))
 			{
 				continue;
 			}
@@ -2446,21 +2677,9 @@ public class HarvestController : MonoBehaviour
 			{
 				continue;
 			}
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
+			if (!InWorkArea(gameObject2.transform.position))
 			{
-				float num4 = Vector3.Distance(_setup.GetHomePosition(), gameObject2.transform.position);
-				if (num4 > 50f)
-				{
-					continue;
-				}
-			}
-			if (Player.m_localPlayer != null && (_setup == null || !_setup.GetStayHome()))
-			{
-				float num5 = Vector3.Distance(Player.m_localPlayer.transform.position, gameObject2.transform.position);
-				if (num5 > 40f)
-				{
-					continue;
-				}
+				continue;
 			}
 			num3++;
 			float num6 = Vector3.Distance(base.transform.position, gameObject2.transform.position);
@@ -2584,19 +2803,28 @@ public class HarvestController : MonoBehaviour
 		return false;
 	}
 
+	// 1.4.106: the shared list format (MHR_List): *, Name, -Name, Name:Number
 	private static bool IsForageItemAllowed(Pickable pickable)
 	{
-		RefreshForageFilter();
-		if (_forageAll)
-		{
-			return true;
-		}
 		if (pickable.m_itemPrefab == null)
 		{
 			return false;
 		}
 		string prefabName = Utils.GetPrefabName(pickable.m_itemPrefab);
-		return _forageFilter.Contains(prefabName);
+		string local = MHR_List.Local(pickable.m_itemPrefab.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name);
+		return MHR_List.Get(ModConfig.ForageItems.Value).Allows(prefabName, local);
+	}
+
+	// Name:Number in ForageItems: stop picking that item once there are that many (pack + chests near home)
+	private bool ForageUnderAmount(Pickable pickable)
+	{
+		if (pickable.m_itemPrefab == null)
+		{
+			return true;
+		}
+		string prefabName = Utils.GetPrefabName(pickable.m_itemPrefab);
+		int amount = MHR_List.Get(ModConfig.ForageItems.Value).AmountFor(prefabName, 0);
+		return amount <= 0 || MHR_GatherRules.Stock(this, prefabName) < amount;
 	}
 
 	private static void RefreshForageFilter()

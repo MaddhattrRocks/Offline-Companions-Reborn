@@ -44,7 +44,7 @@ public static class MHR_Diag
 			}
 			int instanceID = companionSetup.GetInstanceID();
 			ZNetView component = companionSetup.GetComponent<ZNetView>();
-			if (component == null || !component.IsValid() || !component.IsOwner() || !companionSetup.GetFollow() || companionSetup.GetStayHome() || component.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
+			if (component == null || !component.IsValid() || !component.IsOwner() || !companionSetup.GetFollow() || component.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
 			{
 				s_track.Remove(instanceID);
 				continue;
@@ -59,7 +59,8 @@ public static class MHR_Diag
 				value = track;
 				s_track[instanceID] = value;
 			}
-			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f)
+			// 1.4.86: standing still in a fight (shooting from where it is) isn't being stuck
+			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f || (companionSetup.GetComponent<CompanionAI>()?.IsInCombat ?? false))
 			{
 				value.Anchor = position2;
 				value.Since = time;
@@ -111,9 +112,9 @@ public static class MHR_Diag
 			{
 				text2 += "repair-gear ";
 			}
-			if (Active(cs.GetComponent<HomesteadController>()))
+			if (Active(cs.GetComponent<UpkeepController>()))
 			{
-				text2 += "homestead ";
+				text2 += "repair-restock ";
 			}
 			if (text2.Length == 0)
 			{
@@ -165,7 +166,7 @@ public static class MHR_Diag
 		return c != null && c.IsActive;
 	}
 
-	private static bool Active(HomesteadController c)
+	private static bool Active(UpkeepController c)
 	{
 		return c != null && c.IsActive;
 	}

@@ -17,7 +17,8 @@ public class SmeltController : MonoBehaviour
 		Monitoring,
 		CollectingOutput,
 		MovingToOutputChest,
-		StoringOutput
+		StoringOutput,
+		TakingDownPile
 	}
 
 	private CompanionAI _ai;
@@ -45,12 +46,6 @@ public class SmeltController : MonoBehaviour
 	private float _actionTimer;
 
 	private float _stuckTimer;
-
-	private float _stuckCheckTimer;
-
-	private Vector3 _stuckCheckPos;
-
-	private float _stuckBestDist;
 
 	private float _monitorTimer;
 
@@ -93,10 +88,6 @@ public class SmeltController : MonoBehaviour
 	private static int _itemLayerMask = -1;
 
 	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
 
 	private const float MonitorInterval = 3f;
 
@@ -174,6 +165,11 @@ public class SmeltController : MonoBehaviour
 		{
 			return;
 		}
+		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
+		if (MHR_Loot.Active(this))
+		{
+			return;
+		}
 		if (ShouldAbort())
 		{
 			if (_phase != SmeltPhase.Idle)
@@ -225,6 +221,9 @@ public class SmeltController : MonoBehaviour
 			case SmeltPhase.StoringOutput:
 				UpdateStoringOutput();
 				break;
+			case SmeltPhase.TakingDownPile:
+				UpdateTakingDownPile();
+				break;
 			}
 		}
 	}
@@ -245,6 +244,11 @@ public class SmeltController : MonoBehaviour
 	private void Abort(string reason)
 	{
 		Log($"Aborted — {reason} (phase was {_phase})");
+		if (_pileTaker != null)
+		{
+			_pileTaker.PutAway(_humanoid, _setup);
+			_pileTaker = null;
+		}
 		UnclaimSmelter();
 		CloseAnyOpenChest();
 		_targetSmelter = null;
@@ -475,7 +479,13 @@ public class SmeltController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetChest.transform.position);
-		if (num < UseDistance)
+		Vector3 goal = ChestGoal(_targetChest);
+		if (num >= UseDistance && ChestOutOfReach(_targetChest))
+		{
+			Abort("chest out of reach");
+			return;
+		}
+		if (num < UseDistance || AtSpot(num))
 		{
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetChest.transform.position);
@@ -486,7 +496,7 @@ public class SmeltController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveWalk(_ai, dt, _targetChest.transform.position, UseDistance, _shouldRun);
+			bool moveOk = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			LogMovement(dt, "chest", num, moveOk);
 			UpdateStuckDetection(dt, "chest");
 		}
@@ -587,10 +597,11 @@ public class SmeltController : MonoBehaviour
 		}
 		Vector3 smelterInteractPoint = GetSmelterInteractPoint(_targetSmelter, _carryingIsFuel);
 		float num = MHR_Nav.ReachDist(base.transform.position, smelterInteractPoint);
-		if (!(num < UseDistance))
+		Vector3 goal = SlotGoal(_targetSmelter, SlotPosition(_targetSmelter, _carryingIsFuel), smelterInteractPoint, _carryingIsFuel ? "fuel" : "ore");
+		if (!(num < UseDistance) && !AtSpot(num))
 		{
 			_shouldRun = num > 8f;
-			bool flag = MHR_Nav.MoveWalk(_ai, dt, smelterInteractPoint, UseDistance, _shouldRun);
+			bool flag = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
 			{
 				LogMovement(dt, "smelter", num, flag);
@@ -697,10 +708,11 @@ public class SmeltController : MonoBehaviour
 		}
 		Vector3 smelterOutputPoint = GetSmelterOutputPoint(_targetSmelter);
 		float num = Vector3.Distance(base.transform.position, smelterOutputPoint);
-		if (num > UseDistance)
+		Vector3 goal = SlotGoal(_targetSmelter, OutputSlotPosition(_targetSmelter), smelterOutputPoint, "out");
+		if (num > UseDistance && !AtSpot(num))
 		{
 			_shouldRun = num > 8f;
-			bool flag = MHR_Nav.MoveWalk(_ai, Time.deltaTime, smelterOutputPoint, UseDistance, _shouldRun);
+			bool flag = MHR_Nav.MoveSmelt(_ai, Time.deltaTime, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
 			{
 				LogMovement(Time.deltaTime, "smelter (collect)", num, flag);
@@ -766,9 +778,16 @@ public class SmeltController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _outputChest.transform.position);
-		if (num < UseDistance)
+		Vector3 goal = ChestGoal(_outputChest);
+		if (num >= UseDistance && ChestOutOfReach(_outputChest))
+		{
+			Abort("output chest out of reach");
+			return;
+		}
+		if (num < UseDistance || AtSpot(num))
 		{
 			_ai.StopMoving();
+			_ai.LookAtPoint(_outputChest.transform.position);
 			_chestOpened = false;
 			_phase = SmeltPhase.StoringOutput;
 			Log($"Arrived at output chest (dist={num:F1}m) — storing output");
@@ -776,7 +795,7 @@ public class SmeltController : MonoBehaviour
 		else
 		{
 			_shouldRun = num > 8f;
-			bool moveOk = MHR_Nav.MoveWalk(_ai, dt, _outputChest.transform.position, UseDistance, _shouldRun);
+			bool moveOk = MHR_Nav.MoveSmelt(_ai, dt, goal, MoveDist, _shouldRun);
 			LogMovement(dt, "output chest", num, moveOk);
 			UpdateStuckDetection(dt, "output chest");
 		}
@@ -937,13 +956,98 @@ public class SmeltController : MonoBehaviour
 	private void ResetStuck()
 	{
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
-		_stuckBestDist = float.MaxValue;
+	}
+
+	// 1.4.86 (movement phase 3 part 2): Smelt moves through MHR_Mover like Farm, and walks to a spot it can actually
+	// stand on by the chest or by the smelter's ore/fuel slot, instead of at the chest or slot itself.
+	private string _approachKey;
+
+	private Vector3 _approachSpot;
+
+	private bool _hasApproach;
+
+	private readonly HashSet<int> _unreachableChests = new HashSet<int>();
+
+	private float _unreachableClearAt;
+
+	private Vector3 ChestGoal(Container chest)
+	{
+		string text = "c" + chest.GetInstanceID();
+		if (_approachKey != text)
+		{
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproach(base.transform.position, chest, out _approachSpot);
+		}
+		return _hasApproach ? _approachSpot : chest.transform.position;
+	}
+
+	private Vector3 SlotGoal(Smelter smelter, Vector3 slot, Vector3 fallback, string which)
+	{
+		string text = "s" + smelter.GetInstanceID() + which;
+		if (_approachKey != text)
+		{
+			_approachKey = text;
+			_hasApproach = MHR_Chests.PickApproachPoint(base.transform.position, slot, smelter, out _approachSpot);
+		}
+		return _hasApproach ? _approachSpot : fallback;
+	}
+
+	// standing on the picked spot counts as in reach (it can be a little past UseDistance from the measuring point)
+	private bool AtSpot(float dist)
+	{
+		if (!_hasApproach || dist > UseDistance + 1.5f)
+		{
+			return false;
+		}
+		Vector3 position = base.transform.position;
+		return new Vector2(position.x - _approachSpot.x, position.z - _approachSpot.z).magnitude <= 0.7f && Mathf.Abs(position.y - _approachSpot.y) <= 1.5f;   // 1.4.135: same height rule as the movement's "arrived"
+	}
+
+	private float MoveDist => _hasApproach ? 0.5f : UseDistance;
+
+	// a chest with no spot in reach that a route gets to: skip it for a minute and pick another
+	private bool ChestOutOfReach(Container chest)
+	{
+		if (_hasApproach || MHR_Chests.CanReach(base.transform.position, chest))
+		{
+			return false;
+		}
+		_unreachableChests.Add(chest.GetInstanceID());
+		Log($"Skipping chest at {chest.transform.position:F1} - can't get within reach of it");
+		return true;
+	}
+
+	private bool SkipChest(Container chest)
+	{
+		return chest == null || _unreachableChests.Contains(chest.GetInstanceID()) || (_ai != null && _ai.IsPositionBlacklisted(chest.transform.position));
+	}
+
+	private static Vector3 SlotPosition(Smelter smelter, bool isFuel)
+	{
+		Transform transform = ((!isFuel) ? smelter.m_addOreSwitch?.transform : smelter.m_addWoodSwitch?.transform);
+		return (transform != null) ? transform.position : smelter.transform.position;
+	}
+
+	private static Vector3 OutputSlotPosition(Smelter smelter)
+	{
+		if (smelter.m_emptyOreSwitch != null)
+		{
+			return smelter.m_emptyOreSwitch.transform.position;
+		}
+		if (smelter.m_outputPoint != null)
+		{
+			return smelter.m_outputPoint.position;
+		}
+		return smelter.transform.position;
 	}
 
 	private void ScanNearbyChests()
 	{
+		if (Time.time >= _unreachableClearAt)
+		{
+			_unreachableChests.Clear();
+			_unreachableClearAt = Time.time + 60f;
+		}
 		_nearbyChests.Clear();
 		_tempPieces.Clear();
 		Piece.GetAllPiecesInRadius(base.transform.position, ScanRadius, _tempPieces);
@@ -1021,7 +1125,7 @@ public class SmeltController : MonoBehaviour
 			string text2 = item2.m_from.gameObject.name;
 			foreach (Container nearbyChest in _nearbyChests)
 			{
-				if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+				if (SkipChest(nearbyChest))
 				{
 					continue;
 				}
@@ -1046,6 +1150,14 @@ public class SmeltController : MonoBehaviour
 		}
 		if (container == null || bestPrefab == null)
 		{
+			// 1.4.130: nothing in the chests - a pile of it (e.g. wood for the kiln) will do
+			foreach (Smelter.ItemConversion conv in smelter.m_conversion)
+			{
+				if (conv?.m_from != null && (!flag || conv.m_from.gameObject.name == "Wood") && TryStartPile(conv.m_from.gameObject.name, smelter))
+				{
+					return true;
+				}
+			}
 			return false;
 		}
 		int num9 = num2;
@@ -1134,7 +1246,7 @@ public class SmeltController : MonoBehaviour
 		int num6 = 0;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}
@@ -1157,7 +1269,7 @@ public class SmeltController : MonoBehaviour
 		}
 		if (container == null)
 		{
-			return false;
+			return TryStartPile(fuelPrefab, smelter);   // 1.4.130: or from a pile
 		}
 		int num9 = num2;
 		foreach (Smelter nearbySmelter in _nearbySmelters)
@@ -1194,18 +1306,78 @@ public class SmeltController : MonoBehaviour
 		return true;
 	}
 
+	// ---- 1.4.130: wood (or any material) from a pile when the chests have none (user) ----
+	private MHR_PileTaker _pileTaker;
+
+	private readonly Dictionary<int, float> _pileSkip = new Dictionary<int, float>();
+
+	private float _nextNoHammerLog;
+
+	private bool TryStartPile(string itemPrefab, Smelter smelter)
+	{
+		if (ModConfig.SmeltUsePiles != null && !ModConfig.SmeltUsePiles.Value)
+		{
+			return false;
+		}
+		Piece pile = MHR_PileTaker.Find(base.transform.position, ScanRadius, itemPrefab, base.transform.position, _pileSkip);
+		if (pile == null)
+		{
+			return false;
+		}
+		if (MHR_PileTaker.Hammer(_humanoid) == null)
+		{
+			if (Time.time >= _nextNoHammerLog)
+			{
+				_nextNoHammerLog = Time.time + 120f;
+				Log("No " + itemPrefab + " in the chests, but there's a pile of it - it needs a hammer to take it down");
+			}
+			return false;
+		}
+		_pileTaker = new MHR_PileTaker(pile, "Smelt");
+		ClearFollowForMovement();
+		_phase = SmeltPhase.TakingDownPile;
+		Log("No " + itemPrefab + " in the chests for \"" + smelter.m_name + "\" - taking down the " + MHR_List.Local(pile.m_name) + " at " + MHR_Mover.Fmt(pile.transform.position));
+		return true;
+	}
+
+	private void UpdateTakingDownPile()
+	{
+		if (_pileTaker == null)
+		{
+			_phase = SmeltPhase.Idle;
+			return;
+		}
+		int r = _pileTaker.Tick(_ai, _humanoid, _setup);
+		if (r == 0)
+		{
+			return;
+		}
+		_pileTaker.PutAway(_humanoid, _setup);
+		if (r < 0)
+		{
+			if (_pileTaker.Pile != null)
+			{
+				_pileSkip[_pileTaker.Pile.GetInstanceID()] = Time.time + 600f;
+			}
+			Log("Gave up on the pile: " + _pileTaker.Why);
+		}
+		else
+		{
+			Log("Took down the pile - picked up " + _pileTaker.Got + " " + MHR_List.Local(_pileTaker.Shared));
+		}
+		_pileTaker = null;
+		_ai?.StopMoving();
+		MHR_Mover.Release(_ai);
+		_phase = SmeltPhase.Idle;
+		_scanTimer = 0.5f;
+	}
+
 	private void RestoreFollow()
 	{
 		if (!(_ai == null))
 		{
 			bool flag = _setup != null && _setup.GetFollow();
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
-				Log("Restored patrol to home (StayHome active)");
-			}
-			else if (flag && Player.m_localPlayer != null)
+			if (flag && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				Log("Restored follow target to player (Follow=ON)");
@@ -1229,26 +1401,19 @@ public class SmeltController : MonoBehaviour
 		}
 	}
 
+	// 1.4.134 (movement phase 4): only the movement decides it's stuck (see FarmController); two minutes per leg at most
+	private Vector3 _stuckLeg;
+
 	private void UpdateStuckDetection(float dt, string targetName)
 	{
-		_stuckCheckTimer += dt;
-		if (_stuckCheckTimer >= 1f)
+		Vector3 leg = GetCurrentTargetPosition();
+		if (Vector3.Distance(leg, _stuckLeg) > 1.5f)
 		{
-			Vector3 currentTargetPosition = GetCurrentTargetPosition();
-			float num = Vector3.Distance(base.transform.position, currentTargetPosition);
-			if (_stuckBestDist - num < 0.3f)
-			{
-				_stuckTimer += _stuckCheckTimer;
-			}
-			else
-			{
-				_stuckBestDist = num;
-				_stuckTimer = 0f;
-			}
-			_stuckCheckPos = base.transform.position;
-			_stuckCheckTimer = 0f;
+			_stuckLeg = leg;
+			_stuckTimer = 0f;
 		}
-		if (_stuckTimer > 10f)
+		_stuckTimer += dt;
+		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > MHR_Nav.LegTimeout)
 		{
 			Vector3 currentTargetPosition = GetCurrentTargetPosition();
 			if (currentTargetPosition != Vector3.zero && _ai != null)
@@ -1418,7 +1583,7 @@ public class SmeltController : MonoBehaviour
 		float num = float.MaxValue;
 		foreach (Container nearbyChest in _nearbyChests)
 		{
-			if (nearbyChest == null || (_ai != null && _ai.IsPositionBlacklisted(nearbyChest.transform.position)))
+			if (SkipChest(nearbyChest))
 			{
 				continue;
 			}

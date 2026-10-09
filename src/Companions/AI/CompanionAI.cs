@@ -6,22 +6,6 @@ namespace Companions;
 
 public class CompanionAI : BaseAI
 {
-	private enum RepairBuildPhase
-	{
-		Idle,
-		MovingToTarget,
-		Repairing
-	}
-
-	private enum RestockPhase
-	{
-		Idle,
-		MovingToChest,
-		TakingFuel,
-		MovingToFire,
-		Refueling
-	}
-
 	[Header("Sleep")]
 	public bool m_sleeping;
 
@@ -175,10 +159,6 @@ public class CompanionAI : BaseAI
 
 	private Vector3 _lastFollowPos = Vector3.positiveInfinity;
 
-	private float _homePatrolTimer;
-
-	private bool _homeStayReset;
-
 	private int _formationSlot = -1;
 
 	private CompanionSetup _setup;
@@ -197,7 +177,7 @@ public class CompanionAI : BaseAI
 
 	private FishController _fish;
 
-	private HomesteadController _homestead;
+	private UpkeepController _upkeep;
 
 	private CookController _cook;
 
@@ -256,8 +236,6 @@ public class CompanionAI : BaseAI
 	private float _ctxLogTimer;
 
 	private const float SuppressedMoveInterval = 9999f;
-
-	private bool _returningHome;
 
 	private float _furnitureStuckTimer;
 
@@ -321,68 +299,6 @@ public class CompanionAI : BaseAI
 
 	private static int _strafeProbeMask;
 
-	private RepairBuildPhase _rbPhase;
-
-	private float _rbScanTimer;
-
-	private float _rbActionTimer;
-
-	private WearNTear _rbTargetPiece;
-
-	private ItemDrop.ItemData _rbPrevRightItem;
-
-	private bool _rbHammerEquipped;
-
-	private float _rbStuckTimer;
-
-	private float _rbStuckCheckTimer;
-
-	private Vector3 _rbStuckCheckPos;
-
-	private const float RBScanInterval = 10f;
-
-	private const float RBRadius = 50f;
-
-	private const float RBUseDistance = 2.5f;
-
-	private const float RBRepairDelay = 1.2f;
-
-	private const float RBMoveTimeout = 15f;
-
-	private RestockPhase _rsPhase;
-
-	private float _rsScanTimer;
-
-	private float _rsActionTimer;
-
-	private Fireplace _rsTargetFire;
-
-	private Container _rsSupplyChest;
-
-	private string _rsFuelPrefab;
-
-	private int _rsFuelToAdd;
-
-	private bool _rsChestOpened;
-
-	private float _rsStuckTimer;
-
-	private float _rsStuckCheckTimer;
-
-	private Vector3 _rsStuckCheckPos;
-
-	private const float RSScanInterval = 10f;
-
-	private const float RSRadius = 50f;
-
-	private const float RSUseDistance = 2.5f;
-
-	private const float RSFuelThreshold = 0.8f;
-
-	private const float RSFuelAddDelay = 0.8f;
-
-	private const float RSChestOpenDelay = 0.8f;
-
 	private const float RSItemTransferDelay = 0.6f;
 
 	private const float RSMoveTimeout = 15f;
@@ -434,10 +350,6 @@ public class CompanionAI : BaseAI
 	internal bool IsRecoveringTombstone => _pendingTombstone != null;
 
 	private static float WanderMoveInterval => ModConfig.WanderMoveInterval.Value;
-
-	internal bool IsRepairBuildActive => _rbPhase != RepairBuildPhase.Idle;
-
-	internal bool IsRestockActive => _rsPhase != RestockPhase.Idle;
 
 	internal void SetPatrolPointAt(Vector3 point)
 	{
@@ -550,7 +462,7 @@ public class CompanionAI : BaseAI
 		_farm = GetComponent<FarmController>();
 		_hunt = GetComponent<HuntController>();
 		_fish = GetComponent<FishController>();
-		_homestead = GetComponent<HomesteadController>();
+		_upkeep = GetComponent<UpkeepController>();
 		_cook = GetComponent<CookController>();
 		_doorHandler = GetComponent<DoorHandler>();
 		_rest = GetComponent<CompanionRest>();
@@ -740,6 +652,13 @@ public class CompanionAI : BaseAI
 			_ctxLogTimer = 2f;
 		}
 		return _ctxSmoothedDir;
+	}
+
+	// 1.4.104: commands, wheel actions and the smaller moves go through MHR_Mover too (routes, doors, stairs, climbing
+	// out of pits, water) - jog, or run when asked
+	internal bool MHR_Go(float dt, Vector3 point, float dist, bool run, string tag)
+	{
+		return MHR_Mover.Go(this, dt, point, dist, run, tag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
 	}
 
 	internal bool MoveToPoint(float dt, Vector3 point, float dist, bool run)
@@ -1022,14 +941,8 @@ public class CompanionAI : BaseAI
 
 	private void RestoreFollowOrPatrol()
 	{
-		bool flag = _setup != null && _setup.GetStayHome() && _setup.HasHomePosition();
 		bool flag2 = _setup != null && _setup.GetFollow();
-		if (flag)
-		{
-			SetFollowTarget(null);
-			SetPatrolPointAt(_setup.GetHomePosition());
-		}
-		else if (flag2 && Player.m_localPlayer != null)
+		if (flag2 && Player.m_localPlayer != null)
 		{
 			SetFollowTarget(Player.m_localPlayer.gameObject);
 		}
@@ -1304,7 +1217,7 @@ public class CompanionAI : BaseAI
 				_tombstoneScanTimer = TombstoneScanInterval;
 			}
 			bool run = num > 10f;
-			MoveToPoint(dt, position, 2.5f, run);
+			MHR_Go(dt, position, 2.5f, run, "Tombstone");
 			return true;
 		}
 		if ((object)_pendingTombstone != null)
@@ -1514,73 +1427,6 @@ public class CompanionAI : BaseAI
 		}
 	}
 
-	private bool EnforceHomePatrol(float dt)
-	{
-		if (_setup == null || !_setup.GetStayHome() || !_setup.HasHomePosition())
-		{
-			if (m_randomMoveRange > 10f)
-			{
-				m_randomMoveRange = 4f;
-			}
-			if (m_randomMoveInterval < 100f)
-			{
-				m_randomMoveInterval = 9999f;
-			}
-			_returningHome = false;
-			_homeStayReset = false;
-			return false;
-		}
-		if (m_follow != null)
-		{
-			return false;
-		}
-		bool wander = _setup.GetWander();
-		bool flag = _harvest != null && _harvest.IsInGatherMode;
-		if (wander || flag)
-		{
-			m_randomMoveRange = _setup.GetHomeRadius();
-			if (m_randomMoveInterval > 10f)
-			{
-				m_randomMoveInterval = WanderMoveInterval;
-				ResetRandomMovement();
-			}
-			_returningHome = false;
-			_homeStayReset = false;
-		}
-		else
-		{
-			m_randomMoveRange = 0f;
-			if (m_randomMoveInterval < 100f)
-			{
-				m_randomMoveInterval = 9999f;
-			}
-			if (!_homeStayReset)
-			{
-				_homeStayReset = true;
-				ResetRandomMovement();
-			}
-			float num = Utils.DistanceXZ(base.transform.position, _setup.GetHomePosition());
-			if (num > 3f)
-			{
-				if (!_returningHome)
-				{
-					_returningHome = true;
-				}
-				MoveToPoint(dt, _setup.GetHomePosition(), 2f, num > 10f);
-				return true;
-			}
-			_returningHome = false;
-		}
-		_homePatrolTimer -= dt;
-		if (_homePatrolTimer > 0f)
-		{
-			return false;
-		}
-		_homePatrolTimer = 2f;
-		SetPatrolPointAt(_setup.GetHomePosition());
-		return false;
-	}
-
 	public override bool UpdateAI(float dt)
 	{
 		if (!base.UpdateAI(dt))
@@ -1653,7 +1499,9 @@ public class CompanionAI : BaseAI
 			}
 			// 1.4.83: not while you can still see each other, unless it's half as far again (1.4.82 log: warped while the
 			// player watched it run the long way round)
-			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || !MHR_Mover.CanSee(base.transform.position, position)))
+			// 1.4.103: and out of sight only when it isn't getting anywhere - a companion on its way round (out of a moat, up
+			// the stairs) keeps walking (user: "they just appeared next to me")
+			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || (!MHR_Mover.CanSee(base.transform.position, position) && !MHR_Mover.Progressing(this))))
 			{
 				TeleportToFollowTarget();
 			}
@@ -1662,14 +1510,6 @@ public class CompanionAI : BaseAI
 		else if (m_follow == null)
 		{
 			_lastFollowPos = Vector3.positiveInfinity;
-		}
-		if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-		{
-			float num2 = Utils.DistanceXZ(base.transform.position, _setup.GetHomePosition());
-			if (num2 > _setup.GetHomeRadius())
-			{
-				TeleportToHome();
-			}
 		}
 		if (_rest != null && _rest.IsNavigating)
 		{
@@ -1808,7 +1648,12 @@ public class CompanionAI : BaseAI
 				else
 				{
 					bool run = num6 > 10f;
-					MoveToPoint(dt, PendingMoveTarget.Value, 1f, run);
+					MHR_Go(dt, PendingMoveTarget.Value, 1f, run, "Command");
+					if (MHR_Mover.GaveUp(this))
+					{
+						CompanionsPlugin.Log.LogInfo($"[Direct] Can't find a way to {PendingMoveTarget.Value:F1} - stopping here");
+						CancelMoveTarget();
+					}
 				}
 			}
 			return true;
@@ -1891,7 +1736,7 @@ public class CompanionAI : BaseAI
 				else
 				{
 					bool run2 = num7 > 10f;
-					MoveToPoint(dt, position5, 1.5f, run2);
+					MHR_Go(dt, position5, 1.5f, run2, "Deposit");
 				}
 			}
 			return true;
@@ -2006,25 +1851,24 @@ public class CompanionAI : BaseAI
 				}
 			}
 		}
+		// 1.4.97: nobody sneaks while swimming
+		if (_companionStamina != null && _companionStamina.IsCrouching && m_character.IsSwimming())
+		{
+			MHR_SetCrouch(sneak: false);
+		}
 		UpdateTorch();
 		if (MHR_ToolKeeper.Drive(this, dt))
 		{
 			return true;
 		}
-		ZDO zDO = m_nview?.GetZDO();
-		if (zDO != null && !MHR_ToolKeeper.IsBusy(this))
+		// 1.4.94: go and pick up what the last kill dropped
+		if (MHR_Loot.Drive(this, dt))
 		{
-			switch (zDO.GetInt(CompanionSetup.ActionModeHash))
-			{
-			case 15:
-				UpdateRepairBuildingsMode(dt);
-				break;
-			case 16:
-				UpdateRestockMode(dt);
-				break;
-			}
+			ClearFollowMovementOverrides();
+			return true;
 		}
-		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_homestead != null && _homestead.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive) || IsRepairBuildActive || IsRestockActive)
+		ZDO zDO = m_nview?.GetZDO();
+		if ((_harvest != null && _harvest.IsActive) || (_repair != null && _repair.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_cook != null && _cook.IsActive) || (_doorHandler != null && _doorHandler.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
 		{
 			ClearFollowMovementOverrides();
 			return true;
@@ -2048,10 +1892,7 @@ public class CompanionAI : BaseAI
 				StopMoving();
 				return true;
 			}
-			if (!EnforceHomePatrol(dt))
-			{
-				IdleMovement(dt);
-			}
+			IdleMovement(dt);
 		}
 		return true;
 	}
@@ -2412,7 +2253,7 @@ public class CompanionAI : BaseAI
 		bool flag2 = _rest != null && _rest.IsResting;
 		bool flag3 = _isOnShip || _pendingShip != null;
 		bool flag4 = FreezeTimer > 0f;
-		bool flag5 = m_follow != null || m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || IsRepairBuildActive || IsRestockActive || (_doorHandler != null && _doorHandler.IsActive) || _returningHome;
+		bool flag5 = m_follow != null || m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive) || (_doorHandler != null && _doorHandler.IsActive);
 		bool flag6 = _harvest != null && _harvest.IsAttacking;
 		if (flag || flag6 || flag2 || flag3 || flag4 || !flag5)
 		{
@@ -2479,7 +2320,7 @@ public class CompanionAI : BaseAI
 			_lowVelAccum = 0f;
 			return;
 		}
-		bool flag = m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || IsRepairBuildActive || IsRestockActive || _returningHome;
+		bool flag = m_targetCreature != null || m_targetStatic != null || PendingMoveTarget.HasValue || PendingCartAttach != null || (_rest != null && _rest.IsNavigating) || (_harvest != null && _harvest.IsActive) || (_smelt != null && _smelt.IsActive) || (_farm != null && _farm.IsActive) || (_cook != null && _cook.IsActive) || (_repair != null && _repair.IsActive) || (_hunt != null && _hunt.IsActive) || (_upkeep != null && _upkeep.IsActive);
 		if (!flag && m_follow != null)
 		{
 			float num = Vector3.Distance(base.transform.position, m_follow.transform.position);
@@ -2489,15 +2330,6 @@ public class CompanionAI : BaseAI
 		{
 			_lowVelAccum = 0f;
 			return;
-		}
-		if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-		{
-			float num2 = Vector3.Distance(base.transform.position, _setup.GetHomePosition());
-			if (num2 < 4f)
-			{
-				_lowVelAccum = 0f;
-				return;
-			}
 		}
 		_oscillationTimer += dt;
 		if (_oscillationTimer >= 3f)
@@ -2623,57 +2455,6 @@ public class CompanionAI : BaseAI
 		}
 	}
 
-	private void TeleportToHome()
-	{
-		if (_setup == null || !_setup.HasHomePosition())
-		{
-			return;
-		}
-		Vector3 homePosition = _setup.GetHomePosition();
-		Vector3 position = homePosition;
-		for (int i = 0; i < 20; i++)
-		{
-			Vector2 vector = UnityEngine.Random.insideUnitCircle * 3f;
-			Vector3 vector2 = homePosition + new Vector3(vector.x, 0f, vector.y);
-			if (ZoneSystem.instance != null && ZoneSystem.instance.FindFloor(vector2, out var height))
-			{
-				vector2.y = height;
-				position = vector2;
-				break;
-			}
-		}
-		base.transform.position = position;
-		Rigidbody body = _body;
-		if (body != null)
-		{
-			body.position = position;
-			body.linearVelocity = Vector3.zero;
-		}
-		if (m_nview?.GetZDO() != null)
-		{
-			m_nview.GetZDO().SetPosition(position);
-		}
-		ClearTargets();
-		if (IsAlerted())
-		{
-			SetAlerted(alert: false);
-		}
-		_harvest?.NotifyActionModeChanged();
-		_hunt?.NotifyActionModeChanged();
-		_fish?.NotifyActionModeChanged();
-		_cook?.NotifyActionModeChanged();
-		if (_smelt != null)
-		{
-			_smelt.NotifyActionModeChanged();
-		}
-		if (_farm != null)
-		{
-			_farm.NotifyActionModeChanged();
-		}
-		SetFollowTarget(null);
-		SetPatrolPointAt(homePosition);
-	}
-
 	private Character FindHurtAlly()
 	{
 		Character result = null;
@@ -2745,7 +2526,7 @@ public class CompanionAI : BaseAI
 			}
 			return;
 		}
-		MoveToPoint(dt, _healTarget.transform.position, 0f, num > 10f);
+		MHR_Go(dt, _healTarget.transform.position, 1f, num > 10f, "Heal");
 		bool flag2 = FoundPath();
 		bool flag3 = _healLastDistance < 0f || num < _healLastDistance - 0.2f;
 		float magnitude = m_character.GetVelocity().magnitude;
@@ -2767,44 +2548,6 @@ public class CompanionAI : BaseAI
 
 	private void UpdateDebugLog(float dt)
 	{
-	}
-
-	private void UpdateRepairBuildingsMode(float dt)
-	{
-		switch (_rbPhase)
-		{
-		case RepairBuildPhase.Idle:
-			UpdateRBIdle(dt);
-			break;
-		case RepairBuildPhase.MovingToTarget:
-			UpdateRBMoving(dt);
-			break;
-		case RepairBuildPhase.Repairing:
-			UpdateRBRepairing(dt);
-			break;
-		}
-	}
-
-	private void UpdateRestockMode(float dt)
-	{
-		switch (_rsPhase)
-		{
-		case RestockPhase.Idle:
-			UpdateRSIdle(dt);
-			break;
-		case RestockPhase.MovingToChest:
-			UpdateRSMovingToChest(dt);
-			break;
-		case RestockPhase.TakingFuel:
-			UpdateRSTakingFuel(dt);
-			break;
-		case RestockPhase.MovingToFire:
-			UpdateRSMovingToFire(dt);
-			break;
-		case RestockPhase.Refueling:
-			UpdateRSRefueling(dt);
-			break;
-		}
 	}
 
 	private void ClearFollowMovementOverrides()
@@ -2905,7 +2648,7 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		bool run = !(flag2 || flag3) && (flag4 || num2 > 10f);
-		MoveToPoint(dt, vector2, 1f, run);
+		MHR_Go(dt, vector2, 1f, run, "Formation");
 		if (_inContextSteerFallback || _navClaimedDoneCount > 0)
 		{
 			_inContextSteerFallback = false;
@@ -2933,7 +2676,7 @@ public class CompanionAI : BaseAI
 	// 1.4.76: MHR_Follow - sneak when the player sneaks (MHR_Mover sets walk/run itself)
 	internal void MHR_SetCrouch(bool sneak)
 	{
-		if (sneak && _companionStamina != null && _companionStamina.Stamina <= 0f)
+		if (sneak && ((_companionStamina != null && _companionStamina.Stamina <= 0f) || m_character.IsSwimming()))
 		{
 			sneak = false;
 		}
@@ -3181,553 +2924,4 @@ public class CompanionAI : BaseAI
 		return false;
 	}
 
-	private void UpdateRBIdle(float dt)
-	{
-		_rbScanTimer -= dt;
-		if (_rbScanTimer > 0f)
-		{
-			return;
-		}
-		_rbScanTimer = 10f;
-		Inventory inventory = GetComponent<Humanoid>()?.GetInventory();
-		if (inventory == null)
-		{
-			return;
-		}
-		if (HomesteadController.FindHammerInInventory(inventory) == null)
-		{
-			if (_talk != null)
-			{
-				_talk.Say(ModLocalization.Loc("hc_speech_repair_no_hammer"));
-			}
-			return;
-		}
-		List<WearNTear> allInstances = WearNTear.GetAllInstances();
-		if (allInstances == null)
-		{
-			return;
-		}
-		Vector3 position = base.transform.position;
-		WearNTear wearNTear = null;
-		float num = float.MaxValue;
-		for (int i = 0; i < allInstances.Count; i++)
-		{
-			WearNTear wearNTear2 = allInstances[i];
-			if (wearNTear2 == null)
-			{
-				continue;
-			}
-			Piece component = wearNTear2.GetComponent<Piece>();
-			if (!(component == null) && component.IsPlacedByPlayer())
-			{
-				float num2 = Vector3.Distance(position, wearNTear2.transform.position);
-				if (!(num2 > 50f) && !(wearNTear2.GetHealthPercentage() >= 1f) && !IsPositionBlacklisted(wearNTear2.transform.position) && num2 < num)
-				{
-					wearNTear = wearNTear2;
-					num = num2;
-				}
-			}
-		}
-		if (wearNTear == null)
-		{
-			if (_talk != null)
-			{
-				_talk.Say(ModLocalization.Loc("hc_speech_repair_nothing"));
-			}
-			return;
-		}
-		_rbTargetPiece = wearNTear;
-		CompanionsPlugin.Log.LogInfo($"[RepairBuild] Heading to repair \"{wearNTear.name}\" ({num:F0}m away)");
-		_rbStuckTimer = 0f;
-		_rbStuckCheckTimer = 0f;
-		_rbStuckCheckPos = base.transform.position;
-		_rbPhase = RepairBuildPhase.MovingToTarget;
-	}
-
-	private void UpdateRBMoving(float dt)
-	{
-		if (_rbTargetPiece == null)
-		{
-			AbortRepairBuild("target destroyed");
-			return;
-		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _rbTargetPiece.transform.position);
-		if (num <= 2.5f)
-		{
-			StopMoving();
-			LookAt(_rbTargetPiece.transform.position);
-			Humanoid component = GetComponent<Humanoid>();
-			Inventory inventory = component?.GetInventory();
-			_rbHammerEquipped = false;
-			if (inventory != null)
-			{
-				ItemDrop.ItemData itemData = HomesteadController.FindHammerInInventory(inventory);
-				if (itemData != null)
-				{
-					_rbPrevRightItem = (ItemDrop.ItemData)(CompanionSetup._rightItemField?.GetValue(component));
-					if (_rbPrevRightItem != null && _rbPrevRightItem != itemData)
-					{
-						component.UnequipItem(_rbPrevRightItem, triggerEquipEffects: false);
-					}
-					component.EquipItem(itemData);
-					_rbHammerEquipped = true;
-				}
-			}
-			_rbActionTimer = 1.2f;
-			_rbPhase = RepairBuildPhase.Repairing;
-			return;
-		}
-		MHR_Nav.MoveWalk(this, dt, _rbTargetPiece.transform.position, 2.5f, num > 8f);
-		_rbStuckCheckTimer += dt;
-		if (_rbStuckCheckTimer >= 1f)
-		{
-			float num2 = MHR_Nav.ReachDist(base.transform.position, _rbStuckCheckPos);
-			if (num2 < 0.5f)
-			{
-				_rbStuckTimer += _rbStuckCheckTimer;
-			}
-			else
-			{
-				_rbStuckTimer = 0f;
-			}
-			_rbStuckCheckPos = base.transform.position;
-			_rbStuckCheckTimer = 0f;
-		}
-		if (_rbStuckTimer > 15f)
-		{
-			BlacklistPosition(_rbTargetPiece.transform.position);
-			AbortRepairBuild("stuck");
-		}
-	}
-
-	private void UpdateRBRepairing(float dt)
-	{
-		if (_rbTargetPiece == null)
-		{
-			AbortRepairBuild("target destroyed");
-			return;
-		}
-		float num = Vector3.Distance(base.transform.position, _rbTargetPiece.transform.position);
-		if (num > 5f)
-		{
-			AbortRepairBuild("drifted");
-			return;
-		}
-		LookAt(_rbTargetPiece.transform.position);
-		_rbActionTimer -= dt;
-		if (_rbActionTimer > 0f)
-		{
-			return;
-		}
-		_rbActionTimer = 1.2f;
-		Humanoid component = GetComponent<Humanoid>();
-		ZSyncAnimation component2 = GetComponent<ZSyncAnimation>();
-		ItemDrop.ItemData itemData = (ItemDrop.ItemData)(CompanionSetup._rightItemField?.GetValue(component));
-		if (component2 != null)
-		{
-			string text = itemData?.m_shared?.m_attack?.m_attackAnimation;
-			component2.SetTrigger((!string.IsNullOrEmpty(text)) ? text : "swing_pickaxe");
-		}
-		_rbTargetPiece.Repair();
-		Piece component3 = _rbTargetPiece.GetComponent<Piece>();
-		if (component3?.m_placeEffect != null)
-		{
-			component3.m_placeEffect.Create(component3.transform.position, component3.transform.rotation, null, 1f, -1, ZDOID.None);
-		}
-		if (_rbTargetPiece.GetHealthPercentage() >= 1f)
-		{
-			if (_talk != null)
-			{
-				_talk.Say(ModLocalization.Loc("hc_speech_repair_buildings_done"));
-			}
-			CompanionsPlugin.Log.LogInfo("[RepairBuild] Finished repairing a piece");
-			RestoreRBWeapon();
-			_rbTargetPiece = null;
-			_rbPhase = RepairBuildPhase.Idle;
-			_rbScanTimer = 2f;
-		}
-	}
-
-	private void AbortRepairBuild(string reason)
-	{
-		CompanionsPlugin.Log.LogInfo($"[RepairBuild] Stopped working on a piece: {reason}");
-		RestoreRBWeapon();
-		_rbTargetPiece = null;
-		_rbPhase = RepairBuildPhase.Idle;
-		_rbScanTimer = 10f;
-	}
-
-	private void RestoreRBWeapon()
-	{
-		if (!_rbHammerEquipped)
-		{
-			return;
-		}
-		_rbHammerEquipped = false;
-		Humanoid component = GetComponent<Humanoid>();
-		ItemDrop.ItemData itemData = (ItemDrop.ItemData)(CompanionSetup._rightItemField?.GetValue(component));
-		if (itemData?.m_shared?.m_buildPieces != null)
-		{
-			component.UnequipItem(itemData, triggerEquipEffects: false);
-		}
-		if (_rbPrevRightItem != null)
-		{
-			Inventory inventory = component?.GetInventory();
-			if (inventory != null && inventory.ContainsItem(_rbPrevRightItem))
-			{
-				component.EquipItem(_rbPrevRightItem);
-			}
-			else
-			{
-				GetComponent<CompanionSetup>()?.SyncEquipmentToInventory();
-			}
-		}
-		else
-		{
-			GetComponent<CompanionSetup>()?.SyncEquipmentToInventory();
-		}
-		_rbPrevRightItem = null;
-	}
-
-	internal void ResetRepairBuildState()
-	{
-		if (_rbPhase != RepairBuildPhase.Idle)
-		{
-			AbortRepairBuild("mode changed");
-		}
-	}
-
-	private void UpdateRSIdle(float dt)
-	{
-		_rsScanTimer -= dt;
-		if (_rsScanTimer > 0f)
-		{
-			return;
-		}
-		_rsScanTimer = 10f;
-		Inventory inventory = GetComponent<Humanoid>()?.GetInventory();
-		if (inventory == null)
-		{
-			return;
-		}
-		Vector3 position = base.transform.position;
-		List<Piece> list = new List<Piece>();
-		Piece.GetAllPiecesInRadius(position, 50f, list);
-		Fireplace fireplace = null;
-		float num = float.MaxValue;
-		for (int i = 0; i < list.Count; i++)
-		{
-			Fireplace component = list[i].GetComponent<Fireplace>();
-			if (component == null || !component.m_canRefill || component.m_infiniteFuel || component.m_fuelItem == null)
-			{
-				continue;
-			}
-			ZNetView component2 = component.GetComponent<ZNetView>();
-			if (component2 == null || component2.GetZDO() == null)
-			{
-				continue;
-			}
-			float num2 = component2.GetZDO().GetFloat(ZDOVars.s_fuel);
-			float maxFuel = component.m_maxFuel;
-			if (!(maxFuel <= 0f) && !(num2 / maxFuel >= 0.8f) && !IsPositionBlacklisted(component.transform.position))
-			{
-				float num3 = Vector3.Distance(position, component.transform.position);
-				if (num3 < num)
-				{
-					fireplace = component;
-					num = num3;
-				}
-			}
-		}
-		if (fireplace == null)
-		{
-			if (_talk != null)
-			{
-				_talk.Say(ModLocalization.Loc("hc_speech_restock_nothing"));
-			}
-			return;
-		}
-		_rsTargetFire = fireplace;
-		_rsFuelPrefab = fireplace.m_fuelItem.gameObject.name;
-		ZNetView component3 = fireplace.GetComponent<ZNetView>();
-		float num4 = component3.GetZDO().GetFloat(ZDOVars.s_fuel);
-		_rsFuelToAdd = Mathf.Max(1, (int)(fireplace.m_maxFuel - num4));
-		int num5 = HomesteadController.CountItemInInventory(inventory, _rsFuelPrefab);
-		if (num5 > 0)
-		{
-			_rsFuelToAdd = Mathf.Min(_rsFuelToAdd, num5);
-			ResetRSStuck();
-			_rsPhase = RestockPhase.MovingToFire;
-			return;
-		}
-		List<Piece> list2 = new List<Piece>();
-		Piece.GetAllPiecesInRadius(position, 50f, list2);
-		Container container = null;
-		float num6 = float.MaxValue;
-		for (int j = 0; j < list2.Count; j++)
-		{
-			Container component4 = list2[j].GetComponent<Container>();
-			if (component4 == null || component4.gameObject == base.gameObject || component4.IsInUse())
-			{
-				continue;
-			}
-			Inventory inventory2 = component4.GetInventory();
-			if (inventory2 != null && HomesteadController.FindItemByPrefab(inventory2, _rsFuelPrefab) != null && !IsPositionBlacklisted(component4.transform.position))
-			{
-				float num7 = Vector3.Distance(position, component4.transform.position);
-				if (num7 < num6)
-				{
-					container = component4;
-					num6 = num7;
-				}
-			}
-		}
-		if (container == null)
-		{
-			_rsTargetFire = null;
-			return;
-		}
-		_rsSupplyChest = container;
-		ResetRSStuck();
-		_rsPhase = RestockPhase.MovingToChest;
-		if (_talk != null)
-		{
-			_talk.Say(ModLocalization.Loc("hc_speech_homestead_refuel"));
-		}
-	}
-
-	private void UpdateRSMovingToChest(float dt)
-	{
-		if (_rsSupplyChest == null)
-		{
-			AbortRestock("chest destroyed");
-			return;
-		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _rsSupplyChest.transform.position);
-		if (num <= 2.5f)
-		{
-			StopMoving();
-			LookAt(_rsSupplyChest.transform.position);
-			_rsChestOpened = false;
-			_rsPhase = RestockPhase.TakingFuel;
-		}
-		else
-		{
-			MHR_Nav.MoveWalk(this, dt, _rsSupplyChest.transform.position, 2.5f, num > 8f);
-			UpdateRSStuck(dt, "chest", num);
-		}
-	}
-
-	private void UpdateRSTakingFuel(float dt)
-	{
-		if (_rsSupplyChest == null)
-		{
-			AbortRestock("chest destroyed");
-			return;
-		}
-		if (!_rsChestOpened)
-		{
-			_rsSupplyChest.SetInUse(inUse: true);
-			_rsChestOpened = true;
-			_rsActionTimer = 0.8f;
-			ZSyncAnimation component = GetComponent<ZSyncAnimation>();
-			if (component != null)
-			{
-				component.SetTrigger("interact");
-			}
-			return;
-		}
-		_rsActionTimer -= dt;
-		if (_rsActionTimer > 0f)
-		{
-			return;
-		}
-		_rsActionTimer = 0.6f;
-		Inventory inventory = _rsSupplyChest.GetInventory();
-		Inventory inventory2 = GetComponent<Humanoid>()?.GetInventory();
-		if (inventory == null || inventory2 == null)
-		{
-			CloseRSChest();
-			AbortRestock("inventory null");
-			return;
-		}
-		ItemDrop.ItemData itemData = HomesteadController.FindItemByPrefab(inventory, _rsFuelPrefab);
-		if (itemData == null || _rsFuelToAdd <= 0)
-		{
-			CloseRSChest();
-			int num = HomesteadController.CountItemInInventory(inventory2, _rsFuelPrefab);
-			if (num == 0)
-			{
-				AbortRestock("no fuel taken");
-				return;
-			}
-			_rsFuelToAdd = Mathf.Min(_rsFuelToAdd, num);
-			ResetRSStuck();
-			_rsPhase = RestockPhase.MovingToFire;
-		}
-		else if (HomesteadController.TransferOne(inventory, inventory2, itemData))
-		{
-			_rsFuelToAdd--;
-		}
-		else
-		{
-			CloseRSChest();
-			int num2 = HomesteadController.CountItemInInventory(inventory2, _rsFuelPrefab);
-			if (num2 > 0)
-			{
-				_rsFuelToAdd = num2;
-				ResetRSStuck();
-				_rsPhase = RestockPhase.MovingToFire;
-			}
-			else
-			{
-				AbortRestock("inventory full");
-			}
-		}
-	}
-
-	private void UpdateRSMovingToFire(float dt)
-	{
-		if (_rsTargetFire == null)
-		{
-			AbortRestock("fire destroyed");
-			return;
-		}
-		float num = MHR_Nav.ReachDist(base.transform.position, _rsTargetFire.transform.position);
-		if (num <= 2.5f)
-		{
-			StopMoving();
-			LookAt(_rsTargetFire.transform.position);
-			_rsActionTimer = 0.8f;
-			_rsPhase = RestockPhase.Refueling;
-		}
-		else
-		{
-			MHR_Nav.MoveWalk(this, dt, _rsTargetFire.transform.position, 2.5f, num > 8f);
-			UpdateRSStuck(dt, "fire", num);
-		}
-	}
-
-	private void UpdateRSRefueling(float dt)
-	{
-		if (_rsTargetFire == null)
-		{
-			AbortRestock("fire destroyed");
-			return;
-		}
-		float num = Vector3.Distance(base.transform.position, _rsTargetFire.transform.position);
-		if (num > 5f)
-		{
-			AbortRestock("drifted");
-			return;
-		}
-		LookAt(_rsTargetFire.transform.position);
-		_rsActionTimer -= dt;
-		if (_rsActionTimer > 0f)
-		{
-			return;
-		}
-		_rsActionTimer = 0.8f;
-		ZNetView component = _rsTargetFire.GetComponent<ZNetView>();
-		if (component == null || component.GetZDO() == null)
-		{
-			AbortRestock("fire nview lost");
-			return;
-		}
-		float num2 = component.GetZDO().GetFloat(ZDOVars.s_fuel);
-		if (num2 >= _rsTargetFire.m_maxFuel)
-		{
-			FinishRestock();
-			return;
-		}
-		Inventory inventory = GetComponent<Humanoid>()?.GetInventory();
-		if (inventory == null || !HomesteadController.ConsumeOneFromInventory(inventory, _rsFuelPrefab))
-		{
-			FinishRestock();
-			return;
-		}
-		ZSyncAnimation component2 = GetComponent<ZSyncAnimation>();
-		if (component2 != null)
-		{
-			component2.SetTrigger("interact");
-		}
-		component.InvokeRPC("RPC_AddFuel");
-		_rsFuelToAdd--;
-		if (_rsFuelToAdd <= 0)
-		{
-			FinishRestock();
-		}
-	}
-
-	private void ResetRSStuck()
-	{
-		_rsStuckTimer = 0f;
-		_rsStuckCheckTimer = 0f;
-		_rsStuckCheckPos = base.transform.position;
-	}
-
-	private void AbortRestock(string reason)
-	{
-		CloseRSChest();
-		_rsTargetFire = null;
-		_rsSupplyChest = null;
-		_rsFuelPrefab = null;
-		_rsPhase = RestockPhase.Idle;
-		_rsScanTimer = 10f;
-	}
-
-	private void UpdateRSStuck(float dt, string target, float dist)
-	{
-		_rsStuckCheckTimer += dt;
-		if (_rsStuckCheckTimer >= 1f)
-		{
-			float num = Vector3.Distance(base.transform.position, _rsStuckCheckPos);
-			if (num < 0.5f)
-			{
-				_rsStuckTimer += _rsStuckCheckTimer;
-			}
-			else
-			{
-				_rsStuckTimer = 0f;
-			}
-			_rsStuckCheckPos = base.transform.position;
-			_rsStuckCheckTimer = 0f;
-		}
-		if (_rsStuckTimer > 15f)
-		{
-			Vector3 pos = ((!(target == "chest")) ? ((_rsTargetFire != null) ? _rsTargetFire.transform.position : base.transform.position) : ((_rsSupplyChest != null) ? _rsSupplyChest.transform.position : base.transform.position));
-			BlacklistPosition(pos);
-			AbortRestock($"stuck moving to {target} ({dist:F1}m)");
-		}
-	}
-
-	private void CloseRSChest()
-	{
-		if (_rsChestOpened && _rsSupplyChest != null)
-		{
-			_rsSupplyChest.SetInUse(inUse: false);
-		}
-		_rsChestOpened = false;
-	}
-
-	private void FinishRestock()
-	{
-		if (_talk != null)
-		{
-			_talk.Say(ModLocalization.Loc("hc_speech_restock_done"));
-		}
-		_rsTargetFire = null;
-		_rsSupplyChest = null;
-		_rsFuelPrefab = null;
-		_rsPhase = RestockPhase.Idle;
-		_rsScanTimer = 2f;
-	}
-
-	internal void ResetRestockState()
-	{
-		if (_rsPhase != RestockPhase.Idle)
-		{
-			AbortRestock("mode changed");
-		}
-	}
 }

@@ -92,7 +92,187 @@ public class CompanionCombatAI : MonoBehaviour
 
 	internal bool IsEngaged => _engaged;
 
-	internal bool HuntMode { get; set; }
+	// 1.4.94: hunting only counts while the target is the prey. Something that attacks us mid-hunt is fought the normal
+	// way (blocking, parrying, leash), like a player would.
+	private Character _huntPrey;
+
+	internal bool HuntMode
+	{
+		get
+		{
+			return _huntPrey != null && _targetCreature == _huntPrey;
+		}
+		set
+		{
+			_huntPrey = value ? _targetCreature : null;
+		}
+	}
+
+	internal Character HuntPrey => _huntPrey;
+
+	// 1.4.96: sneak up on game that hasn't noticed us yet (user: "try and sneak if they see a deer so as to not spook
+	// it"), like a player: crouched, no running, until it's alerted or something else is the target
+	private bool _stalking;
+
+	private float _nextStalkLog;
+
+	private void UpdateStalk()
+	{
+		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && !_character.IsSwimming() && Unaware(_targetCreature);
+		if (stalk == _stalking)
+		{
+			return;
+		}
+		_stalking = stalk;
+		_ai.MHR_SetCrouch(stalk);
+		if (stalk)
+		{
+			_character.SetRun(run: false);
+		}
+		if (Time.time >= _nextStalkLog)
+		{
+			_nextStalkLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
+		}
+	}
+
+	private void StopStalk()
+	{
+		if (_stalking)
+		{
+			_stalking = false;
+			_ai.MHR_SetCrouch(false);
+		}
+	}
+
+	// 1.4.103: hunting chases go through MHR_Mover like following does - routes, climbing out of pits, no jumping into
+	// water (1.4.101 test: followed a deer into the moat with the game's own movement, couldn't climb the wall and ended
+	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
+	private float _nextHuntMoveLog;
+
+	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
+	// for now, the game's own movement still closes in (a fight can't just stand still)
+	private bool ChaseMove(float dt, Vector3 point, float dist, bool run)
+	{
+		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, "Combat", run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+		if (!there && MHR_Mover.GaveUp(_ai))
+		{
+			return _ai.MoveToPoint(dt, point, dist, run);
+		}
+		return there;
+	}
+
+	private bool HuntMove(float dt, Vector3 point, float dist, bool run)
+	{
+		if (!HuntMode || _targetCreature == null)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		Vector3 goal = point;
+		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
+		bool ranged = weapon != null && (weapon.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || weapon.m_shared.m_aiAttackRange > 10f);
+		if (ranged && point.y < me.y - 2.5f)
+		{
+			if (EdgeSpot(me, _targetCreature, out var spot))
+			{
+				goal = spot;
+				dist = 0.5f;
+			}
+			else
+			{
+				LeavePrey("it's down where I can't get a shot from up here");
+				return true;
+			}
+		}
+		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run, "Hunt", run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
+		if (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim())
+		{
+			LeavePrey("I'd have to swim");
+		}
+		else if (MHR_Mover.GaveUp(_ai))
+		{
+			LeavePrey("I can't find a way to it");
+		}
+		return true;
+	}
+
+	private void LeavePrey(string why)
+	{
+		if (Time.time >= _nextHuntMoveLog)
+		{
+			_nextHuntMoveLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] Leaving " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - " + why);
+		}
+		MHR_Mover.Release(_ai);
+		Disengage();
+	}
+
+	// a spot on our level, towards the prey, from where it can be seen (the edge of the moat / pit)
+	private static bool EdgeSpot(Vector3 me, Character prey, out Vector3 spot)
+	{
+		spot = me;
+		Vector3 target = prey.GetTopPoint();
+		Vector3 d = prey.transform.position - me;
+		d.y = 0f;
+		float len = d.magnitude;
+		if (len < 0.5f)
+		{
+			return false;
+		}
+		d /= len;
+		Vector3 best = Vector3.zero;
+		bool found = false;
+		for (float x = 0f; x < len; x += 0.5f)
+		{
+			Vector3 p = me + d * x;
+			float g = MHR_Water.GroundAt(p);
+			if (Mathf.Abs(g - me.y) > 1.5f || MHR_Water.DepthAt(p) > 0.4f)
+			{
+				break;   // the edge: dropping down or into water from here
+			}
+			p.y = g;
+			bool inRange = Vector3.Distance(p, target) < RangedAttackRange - 3f;
+			if (inRange && MHR_Mover.CanSee(p + Vector3.up * 1.6f, target))
+			{
+				best = p;
+				found = true;
+				break;
+			}
+			best = p;
+		}
+		if (!found && best != Vector3.zero && Vector3.Distance(best, target) < RangedAttackRange - 3f && MHR_Mover.CanSee(best + Vector3.up * 1.6f, target))
+		{
+			found = true;
+		}
+		spot = best;
+		return found;
+	}
+
+	// skittish game (deer, hares, anything that runs when it notices you) that hasn't noticed anyone yet
+	private static bool Unaware(Character c)
+	{
+		if (c == null)
+		{
+			return false;
+		}
+		BaseAI ai = c.GetBaseAI();
+		if (ai == null || ai.IsAlerted() || ai.GetTargetCreature() != null)
+		{
+			return false;
+		}
+		MonsterAI monsterAI = ai as MonsterAI;
+		return ai is AnimalAI || (monsterAI != null && monsterAI.m_fleeIfNotAlerted);
+	}
+
+	internal void EngagePrey(Character prey)
+	{
+		Engage(prey);
+		if (_engaged && _targetCreature == prey)
+		{
+			_huntPrey = prey;
+		}
+	}
 
 	internal bool IsRecalled => _recallTimer > 0f;
 
@@ -154,6 +334,7 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		_ai.m_targetCreature = _targetCreature;
 		_ai.m_targetStatic = _targetStatic;
+		UpdateStalk();
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();
 		if (healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
@@ -253,7 +434,10 @@ public class CompanionCombatAI : MonoBehaviour
 						{
 							lastKnownTargetPos += velocity * _interceptTime;
 						}
-						_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: true);
+						if (!HuntMove(dt, lastKnownTargetPos, dist, !_stalking))
+						{
+							ChaseMove(dt, lastKnownTargetPos, dist, !_stalking);
+						}
 						if (_timeSinceAttacking > 15f)
 						{
 							_unableToAttackTargetTimer = 15f;
@@ -284,7 +468,7 @@ public class CompanionCombatAI : MonoBehaviour
 							_unableToAttackTargetTimer = 15f;
 						}
 					}
-					else if (_ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: true))
+					else if (HuntMode ? (HuntMove(dt, _lastKnownTargetPos, dist2, !_stalking) && Vector3.Distance(base.transform.position, _lastKnownTargetPos) <= dist2 + 1.5f) : ChaseMove(dt, _lastKnownTargetPos, dist2, !_stalking))
 					{
 						_beenAtLastPos = true;
 					}
@@ -312,7 +496,7 @@ public class CompanionCombatAI : MonoBehaviour
 				}
 				else
 				{
-					_ai.MoveToPoint(dt, character.transform.position, 0f, run: true);
+					ChaseMove(dt, character.transform.position, 0f, true);
 				}
 			}
 			else
@@ -335,8 +519,12 @@ public class CompanionCombatAI : MonoBehaviour
 			{
 				_recallIgnored = null;
 			}
-			if (_engaged && (_targetCreature == null || _targetCreature.GetHealth() <= 0f))
+			if (_engaged && (_targetCreature == null || _targetCreature.GetHealth() <= 0f || (HuntMode && attacker != _targetCreature)))
 			{
+				if (HuntMode && attacker != _targetCreature)
+				{
+					CompanionsPlugin.Log.LogDebug("[Combat] " + attacker.m_name + " attacked while hunting " + _targetCreature.m_name + " - fighting it first");
+				}
 				_targetCreature = attacker;
 				_lastKnownTargetPos = attacker.transform.position;
 				_beenAtLastPos = false;
@@ -370,6 +558,7 @@ public class CompanionCombatAI : MonoBehaviour
 			ClearBlock();
 			_parryAttackCount = 0;
 			HuntMode = false;
+			StopStalk();
 		}
 	}
 
@@ -423,8 +612,9 @@ public class CompanionCombatAI : MonoBehaviour
 				character = null;
 			}
 			// 1.4.83: switching targets mid-fight follows the same rule as starting one: only something that's after us
-			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business)
-			if (character != null && character != _targetCreature && !HuntMode && !MHR_Threat.IsAfterUs(character))
+			// (1.4.82 log: after a Neck, he moved on to boars that were minding their own business). 1.4.94: hunting too -
+			// a hunter goes after its prey and whatever attacks, not every creature around
+			if (character != null && character != _targetCreature && !MHR_Threat.IsAfterUs(character))
 			{
 				character = null;
 			}

@@ -142,6 +142,82 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> CompanionNavMesh;
 
+	internal static ConfigEntry<float> CookRange;
+
+	internal static ConfigEntry<int> CookIngredientReserve;
+
+	internal static ConfigEntry<int> CookFoodTarget;
+
+	internal static ConfigEntry<int> CookBatchSize;
+
+	internal static ConfigEntry<string> CookFoods;
+
+	internal static ConfigEntry<bool> CookStoreWithCookedFood;
+
+	internal static ConfigEntry<int> CookMeadBaseTarget;
+
+	internal static ConfigEntry<int> CookMeadTarget;
+
+	internal static ConfigEntry<string> CookMeadFocus;
+
+	internal static ConfigEntry<bool> CookCauldron;
+
+	internal static ConfigEntry<bool> CookPrepTable;
+
+	internal static ConfigEntry<bool> CookMeadKetill;
+
+	internal static ConfigEntry<bool> CookCookingStation;
+
+	internal static ConfigEntry<bool> CookIronCookingStation;
+
+	internal static ConfigEntry<bool> CookOven;
+
+	internal static ConfigEntry<bool> CookFermenter;
+
+	internal static ConfigEntry<bool> CookBeehives;
+
+	internal static ConfigEntry<bool> CookOtherStations;
+
+	internal static ConfigEntry<bool> StatusEffectsOnRegen;
+
+	internal static ConfigEntry<float> DryDetour;
+
+	internal static ConfigEntry<float> JobSwim;
+
+	internal static ConfigEntry<float> MaxDrop;
+
+	internal static ConfigEntry<float> JumpGap;
+
+	internal static ConfigEntry<float> JumpWaterDepth;
+
+	internal static ConfigEntry<float> JumpWaterWidth;
+
+	internal static ConfigEntry<string> HuntPrey;
+
+	internal static ConfigEntry<bool> HuntSneak;
+
+	internal static ConfigEntry<bool> HuntBirds;
+
+	internal static ConfigEntry<int> HuntFeatherTarget;
+
+	internal static ConfigEntry<int> HuntMeatTarget;
+
+	internal static ConfigEntry<float> HuntRange;
+
+	internal static ConfigEntry<float> HuntFollowRange;
+
+	internal static ConfigEntry<float> HuntChaseExtra;
+
+	internal static ConfigEntry<float> HuntBagFull;
+
+	internal static ConfigEntry<bool> LootKills;
+
+	internal static ConfigEntry<float> LootRadius;
+
+	internal static ConfigEntry<float> LootWait;
+
+	internal static ConfigEntry<float> LootMaxDistance;
+
 	internal static ConfigEntry<float> FollowMaxDistance;
 
 	internal static ConfigEntry<float> FollowIndoorDistance;
@@ -214,6 +290,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestScanRadius;
 
+	internal static ConfigEntry<float> HarvestFollowRange;
+
+	internal static ConfigEntry<float> HarvestRange;
+
+	internal static ConfigEntry<bool> HarvestPickUpLoose;
+
 	internal static ConfigEntry<float> HarvestScanInterval;
 
 	internal static ConfigEntry<float> HarvestAttackInterval;
@@ -248,21 +330,17 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> FishScanRadius;
 
-	internal static ConfigEntry<float> FishWaitTimeMin;
+	internal static ConfigEntry<string> FishList;
 
-	internal static ConfigEntry<float> FishWaitTimeMax;
+	internal static ConfigEntry<int> FishTarget;
 
-	internal static ConfigEntry<float> FishReelTimeMin;
+	internal static ConfigEntry<float> FishCastWait;
 
-	internal static ConfigEntry<float> FishReelTimeMax;
-
-	internal static ConfigEntry<float> FishHookChance;
-
-	internal static ConfigEntry<float> FishMissChance;
-
-	internal static ConfigEntry<float> FishReelStaminaDrain;
+	internal static ConfigEntry<float> FishBagFull;
 
 	internal static ConfigEntry<float> RepairDurabilityThreshold;
+
+	internal static ConfigEntry<float> RepairHomeThreshold;
 
 	internal static ConfigEntry<float> RepairScanRadius;
 
@@ -272,19 +350,61 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RepairUseDistance;
 
-	internal static ConfigEntry<float> HomesteadScanRadius;
+	internal static ConfigEntry<bool> UpkeepRepair;
 
-	internal static ConfigEntry<float> HomesteadScanInterval;
+	internal static ConfigEntry<float> UpkeepRepairBelow;
 
-	internal static ConfigEntry<float> HomesteadFuelThreshold;
+	internal static ConfigEntry<float> UpkeepReach;
 
-	internal static ConfigEntry<float> HomesteadTaskSlotTime;
+	internal static ConfigEntry<bool> UpkeepRestock;
 
-	internal static ConfigEntry<float> HomesteadSmeltSlotTime;
+	internal static ConfigEntry<bool> RefuelFires;
 
-	internal static ConfigEntry<float> HomesteadScanBackoff;
+	internal static ConfigEntry<bool> RefuelHearths;
 
-	internal static ConfigEntry<float> HomesteadUseDistance;
+	internal static ConfigEntry<bool> RefuelBraziers;
+
+	internal static ConfigEntry<bool> RefuelStandingTorches;
+
+	internal static ConfigEntry<bool> RefuelWallTorches;
+
+	internal static ConfigEntry<bool> RefuelHotTubs;
+
+	internal static ConfigEntry<bool> RefuelOther;
+
+	internal static ConfigEntry<float> UpkeepFuelBelow;
+
+	internal static ConfigEntry<bool> UpkeepSort;
+
+	internal static ConfigEntry<string> UpkeepSortItems;
+
+	internal static ConfigEntry<bool> UpkeepSortGear;
+
+	internal static ConfigEntry<float> UpkeepAwayRadius;
+
+	internal static ConfigEntry<float> UpkeepScanInterval;
+
+	internal static ConfigEntry<float> UpkeepWorkTime;
+
+	internal static ConfigEntry<float> UpkeepGiveUp;
+
+	internal static ConfigEntry<bool> UpkeepPiles;
+
+	internal static ConfigEntry<bool> UpkeepHoney;
+
+	internal static ConfigEntry<float> UpkeepHoneyAt;
+
+	internal static ConfigEntry<float> UpkeepOrderWait;
+
+	internal static ConfigEntry<bool> SmeltUsePiles;
+
+	internal static ConfigEntry<float> CookFuelLevel;
+
+	internal static ConfigEntry<bool> CookUsePiles;
+
+	internal static ConfigEntry<int> UpkeepPileKeep;
+
+	internal static ConfigEntry<string> UpkeepPileItems;
 
 	internal static ConfigEntry<float> RestHealRate;
 
@@ -396,12 +516,15 @@ internal static class ModConfig
 		StaminaSwimDrain = Bind(cfg, "Stamina", "SwimDrainRate", 10f, "Stamina drain per second while swimming", new AcceptableValueRange<float>(1f, 30f));
 		StaminaRegenDelay = Bind(cfg, "Stamina", "RegenDelay", 1f, "Seconds after stamina use before regen starts", new AcceptableValueRange<float>(0.1f, 5f));
 		HarvestScanRadius = Bind(cfg, "Harvest", "ScanRadius", 30f, "Resource scan radius", new AcceptableValueRange<float>(5f, 100f));
+		HarvestPickUpLoose = Bind(cfg, "Harvest", "PickUpLoose", true, "Wood and Stone jobs, early in the game only: also pick up what's lying on the ground by hand - branches (Wood job), loose stones and flint (Stone job) - as long as they're on GatherWood / GatherStone and under their amount. Early game = there's no bronze-or-better axe in the companion's pack, your pack or the chests near home, and no forge at home to make one. With no tool for the job (no axe for Wood, no pickaxe for Stone) picking things up is all it does.");
+		HarvestRange = Bind(cfg, "Harvest", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
+		HarvestFollowRange = Bind(cfg, "Harvest", "FollowRange", 20f, "Wood, Stone, Ore and Forage with Follow on: a tree, rock or plant has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range.)", new AcceptableValueRange<float>(5f, 60f));
 		HarvestScanInterval = Bind(cfg, "Harvest", "ScanInterval", 4f, "Seconds between resource scans", new AcceptableValueRange<float>(1f, 30f));
 		HarvestAttackInterval = Bind(cfg, "Harvest", "AttackInterval", 2.5f, "Seconds between harvest swings", new AcceptableValueRange<float>(0.5f, 5f));
 		HarvestOverweightThreshold = Bind(cfg, "Harvest", "OverweightThreshold", 298f, "Stop gathering at this carry weight", new AcceptableValueRange<float>(50f, 500f));
 		HarvestDropScanRadius = Bind(cfg, "Harvest", "DropScanRadius", 8f, "Drop collection scan radius", new AcceptableValueRange<float>(2f, 20f));
 		HarvestBlacklistDuration = Bind(cfg, "Harvest", "BlacklistDuration", 60f, "Seconds a failed target stays blacklisted", new AcceptableValueRange<float>(5f, 300f));
-		ForageItems = Bind(cfg, "Harvest", "ForageItems", "Raspberry,Blueberries,Cloudberry,Mushroom,MushroomYellow,MushroomBlue,MushroomMagecap,MushroomJotunPuffs,MushroomSmokePuff,Thistle,Dandelion,Carrot,Turnip,Onion,Barley,Flax,RoyalJelly,Honey", "Comma-separated item prefab names to forage. Only crops, berries, mushrooms, and flowers by default. Use * for all pickables including rocks and sticks");
+		ForageItems = Bind(cfg, "Harvest", "ForageItems", "Raspberry,Blueberries,Cloudberry,Mushroom,MushroomYellow,MushroomBlue,MushroomMagecap,MushroomJotunPuffs,MushroomSmokePuff,Thistle,Dandelion,Carrot,Turnip,Onion,Barley,Flax,RoyalJelly,Honey", "What the Forage job picks up. Name:Number stops picking that item once there are that many (pack + chests near home). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
 		if (ForageItems.Value.Trim() == "*")
 		{
 			ForageItems.Value = (string)ForageItems.DefaultValue;
@@ -416,26 +539,88 @@ internal static class ModConfig
 		FarmScanInterval = Bind(cfg, "Farming", "ScanInterval", 4f, "Seconds between farm scans", new AcceptableValueRange<float>(1f, 30f));
 		FarmPlantSpacing = Bind(cfg, "Farming", "PlantSpacing", 0.75f, "Min spacing between crops (uses max of this and plant grow radius)", new AcceptableValueRange<float>(0.25f, 3f));
 		FarmUseDistance = Bind(cfg, "Farming", "UseDistance", 2f, "Interaction range for crops and chests", new AcceptableValueRange<float>(1f, 5f));
-		FishScanRadius = Bind(cfg, "Fishing", "ScanRadius", 30f, "Water scan radius", new AcceptableValueRange<float>(5f, 100f));
-		FishWaitTimeMin = Bind(cfg, "Fishing", "WaitTimeMin", 15f, "Min seconds waiting for nibble", new AcceptableValueRange<float>(1f, 120f));
-		FishWaitTimeMax = Bind(cfg, "Fishing", "WaitTimeMax", 20f, "Max seconds waiting for nibble", new AcceptableValueRange<float>(1f, 180f));
-		FishReelTimeMin = Bind(cfg, "Fishing", "ReelTimeMin", 4f, "Min seconds to reel in", new AcceptableValueRange<float>(1f, 30f));
-		FishReelTimeMax = Bind(cfg, "Fishing", "ReelTimeMax", 6f, "Max seconds to reel in", new AcceptableValueRange<float>(1f, 60f));
-		FishHookChance = Bind(cfg, "Fishing", "HookChance", 0.85f, "Chance to hook after nibble", new AcceptableValueRange<float>(0.1f, 1f));
-		FishMissChance = Bind(cfg, "Fishing", "MissChance", 0.1f, "Chance of no nibble per wait", new AcceptableValueRange<float>(0f, 0.9f));
-		FishReelStaminaDrain = Bind(cfg, "Fishing", "ReelStaminaDrain", 3f, "Stamina drain per second while reeling", new AcceptableValueRange<float>(0f, 20f));
+		FishScanRadius = Bind(cfg, "Fishing", "ScanRadius", 30f, "How far (meters) from where the Fish job was started the companion looks for fish to catch. It stays around there and fishes the water nearby.", new AcceptableValueRange<float>(5f, 100f));
+		FishList = Bind(cfg, "Fishing", "Fish", "*", "Which fish to catch. Name:Number gives that fish its own target instead of FishTarget. The fish names are listed in OfflineCompanionsReborn.Fishing.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit).");
+		FishTarget = Bind(cfg, "Fishing", "FishTarget", 100, "Catch a kind of fish only while there are fewer than this many (pack + chests near home). 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
+		FishCastWait = Bind(cfg, "Fishing", "CastWait", 60f, "Seconds to wait for a bite before reeling in and trying again (a fish that swam off, the wrong spot).", new AcceptableValueRange<float>(10f, 600f));
+		FishBagFull = Bind(cfg, "Fishing", "BagFull", 0.9f, "Near home: when the pack is this full (by weight, or out of free slots) the companion walks home and puts the catch away, then goes back to fishing.", new AcceptableValueRange<float>(0.3f, 1f));
 		RepairDurabilityThreshold = Bind(cfg, "Repair", "DurabilityThreshold", 0.5f, "Repair items below this durability %", new AcceptableValueRange<float>(0.1f, 0.9f));
+		RepairHomeThreshold = Bind(cfg, "Repair", "HomeThreshold", 0.8f, "At home (where a workbench is close by) gear is repaired a bit sooner: below this durability (0.8 = 80%). Away from home DurabilityThreshold applies. 1 = at any wear.", new AcceptableValueRange<float>(0.1f, 1f));
 		RepairScanRadius = Bind(cfg, "Repair", "ScanRadius", 20f, "Crafting station scan radius", new AcceptableValueRange<float>(5f, 60f));
 		RepairScanInterval = Bind(cfg, "Repair", "ScanInterval", 5f, "Seconds between repair scans", new AcceptableValueRange<float>(1f, 30f));
 		RepairTickInterval = Bind(cfg, "Repair", "RepairTickInterval", 0.8f, "Seconds between individual item repairs", new AcceptableValueRange<float>(0.1f, 5f));
 		RepairUseDistance = Bind(cfg, "Repair", "UseDistance", 2.5f, "Crafting station interaction range", new AcceptableValueRange<float>(1f, 5f));
-		HomesteadScanRadius = Bind(cfg, "Homestead", "ScanRadius", 40f, "Maintenance scan radius from home position", new AcceptableValueRange<float>(10f, 100f));
-		HomesteadScanInterval = Bind(cfg, "Homestead", "ScanInterval", 5f, "Seconds between maintenance scans", new AcceptableValueRange<float>(1f, 30f));
-		HomesteadFuelThreshold = Bind(cfg, "Homestead", "FuelThreshold", 0.5f, "Refuel fires below this fuel %", new AcceptableValueRange<float>(0.1f, 0.9f));
-		HomesteadTaskSlotTime = Bind(cfg, "Homestead", "TaskSlotTime", 60f, "Seconds per task rotation (repair/refuel/sort)", new AcceptableValueRange<float>(10f, 300f));
-		HomesteadSmeltSlotTime = Bind(cfg, "Homestead", "SmeltSlotTime", 60f, "Seconds for smelting turn in rotation", new AcceptableValueRange<float>(10f, 300f));
-		HomesteadScanBackoff = Bind(cfg, "Homestead", "ScanBackoff", 30f, "Extended scan interval when nothing to do", new AcceptableValueRange<float>(5f, 120f));
-		HomesteadUseDistance = Bind(cfg, "Homestead", "UseDistance", 2f, "Interaction range for fires/chests", new AcceptableValueRange<float>(1f, 5f));
+		UpkeepRepair = Bind(cfg, "RepairAndRestock", "Repair", true, "Repair and Restock: repair damaged building pieces near home with a hammer, like a player (one swing per piece; the piece's crafting station has to be in range and a ward has to allow it; costs stamina and hammer wear). A hammer is fetched from a chest if it has none.");
+		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 0.75f, "Repair pieces below this much health (0.75 = 75% or less; 1 = any damage at all). Each repair is one swing that fixes the piece fully, like a player's.", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepReach = Bind(cfg, "RepairAndRestock", "Reach", 4.5f, "How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.", new AcceptableValueRange<float>(2f, 6f));
+		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.");
+		RefuelFires = Bind(cfg, "RepairAndRestock", "RefuelFires", true, "Restock: campfires, fire pits and bonfires.");
+		RefuelHearths = Bind(cfg, "RepairAndRestock", "RefuelHearths", true, "Restock: hearths.");
+		RefuelBraziers = Bind(cfg, "RepairAndRestock", "RefuelBraziers", true, "Restock: braziers (standing and hanging).");
+		RefuelStandingTorches = Bind(cfg, "RepairAndRestock", "RefuelStandingTorches", true, "Restock: standing torches (wood, iron, green, blue, mist).");
+		RefuelWallTorches = Bind(cfg, "RepairAndRestock", "RefuelWallTorches", true, "Restock: sconces and wall torches.");
+		RefuelHotTubs = Bind(cfg, "RepairAndRestock", "RefuelHotTubs", true, "Restock: hot tubs.");
+		RefuelOther = Bind(cfg, "RepairAndRestock", "RefuelOther", true, "Restock: anything else that burns fuel and isn't one of the kinds above (lanterns, the jack-o-turnip, things added by other mods).");
+		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepSort = Bind(cfg, "RepairAndRestock", "Sort", true, "Repair and Restock: sort the chests in its area (around home, or around where the job was started), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.");
+		UpkeepSortItems = Bind(cfg, "RepairAndRestock", "SortItems", "*", "Which items get sorted. Comma-separated: * = everything, Name = this one, -Name = never this one (e.g. *, -Coins, -Wood keeps coins and wood where they are). Prefab or in-game names.");
+		UpkeepSortGear = Bind(cfg, "RepairAndRestock", "SortGear", false, "Also sort things that don't stack (weapons, armor, tools). Off: only stackable items are moved.");
+		UpkeepAwayRadius = Bind(cfg, "RepairAndRestock", "AwayRadius", 30f, "Started away from home (or with no home set): how far (meters) from where the job was started it repairs, restocks and sorts. Started near home, the range is [General] HomeTripRange around home.", new AcceptableValueRange<float>(5f, 100f));
+		UpkeepScanInterval = Bind(cfg, "RepairAndRestock", "ScanInterval", 5f, "Seconds between looks for something to repair, refuel or sort when it's idle.", new AcceptableValueRange<float>(1f, 60f));
+		UpkeepWorkTime = Bind(cfg, "RepairAndRestock", "WorkTime", 1f, "Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)", new AcceptableValueRange<float>(0.3f, 5f));
+		UpkeepGiveUp = Bind(cfg, "RepairAndRestock", "GiveUp", 90f, "Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.", new AcceptableValueRange<float>(20f, 600f));
+		CookFuelLevel = Bind(cfg, "Cooking", "FuelLevel", 0.5f, "Cook job: keeps the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven at this share of full (0.5 = 50%). When one drops below half of that it tops it back up. Only enough to cook with - Repair and Restock fills fires further if it's on.", new AcceptableValueRange<float>(0.1f, 1f));
+		CookUsePiles = Bind(cfg, "Cooking", "UsePiles", true, "Cook job: with no fuel in the chests, take down a pile of it (Stack of Wood...) with a hammer, like a player. Needs a hammer in its pack.");
+		SmeltUsePiles = Bind(cfg, "Smelting", "UsePiles", true, "When the chests have none of what a smelter or kiln needs (wood for the kiln, fuel...), the Smelt job takes down a pile of it (Stack of Wood...) with a hammer, like a player, and uses that. Needs a hammer in its pack.");
+		UpkeepHoney = Bind(cfg, "RepairAndRestock", "Honey", true, "Repair and Restock: empty the beehives in its area and put the honey away in the chest that already holds the most honey.");
+		UpkeepHoneyAt = Bind(cfg, "RepairAndRestock", "HoneyAt", 0.5f, "Empty a beehive once it's at least this full (0.5 = half full, 1 = only when full).", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepOrderWait = Bind(cfg, "RepairAndRestock", "OrderWait", 30f, "After you send the companion somewhere with the command, it waits there this many seconds before going back to its chores.", new AcceptableValueRange<float>(0f, 600f));
+		UpkeepPiles = Bind(cfg, "RepairAndRestock", "Piles", true, "Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.");
+		UpkeepPileKeep = Bind(cfg, "RepairAndRestock", "PileKeep", 100, "How many of each material stay in the chests for building: what's above this goes into piles, and when the chests drop below it a pile is taken down (with the hammer, like a player) and the material put back in the chests.", new AcceptableValueRange<int>(0, 10000));
+		UpkeepPileItems = Bind(cfg, "RepairAndRestock", "PileItems", "*", "Which materials go into piles. Comma-separated: * = every material you have piles of, Name = this one, -Name = never this one, Name:Number = keep this many of it in the chests instead of PileKeep. Prefab or in-game names (Wood, Stone, FineWood, RoundLog...).");
+		CookRange = Bind(cfg, "Cooking", "Range", 25f, "How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests.", new AcceptableValueRange<float>(5f, 60f));
+		CookIngredientReserve = Bind(cfg, "Cooking", "IngredientReserve", 20, "A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.", new AcceptableValueRange<int>(0, 1000));
+		CookFoodTarget = Bind(cfg, "Cooking", "FoodTarget", 20, "Cook a food until the chests in range hold this many of it.", new AcceptableValueRange<int>(1, 1000));
+		CookBatchSize = Bind(cfg, "Cooking", "BatchSize", 5, "How many of a food (or mead base) to make in one go, like a player cooking a batch. Still stops at FoodTarget / MeadBaseTarget and never goes into the ingredient reserve. On a cooking station or oven it's also limited by the free slots.", new AcceptableValueRange<int>(1, 50));
+		CookFoods = Bind(cfg, "Cooking", "Foods", "*", "What may be cooked. Name:Number is that food's own target instead of FoodTarget. The names to use are listed in OfflineCompanionsReborn.Cooking.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
+		CookStoreWithCookedFood = Bind(cfg, "Cooking", "StoreWithCookedFood", true, "Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.");
+		CookMeadBaseTarget = Bind(cfg, "Cooking", "MeadBaseTarget", 10, "Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.", new AcceptableValueRange<int>(0, 1000));
+		CookMeadTarget = Bind(cfg, "Cooking", "MeadTarget", 20, "Keep fermenters going with a mead base until the chests in range hold this many of the finished mead.", new AcceptableValueRange<int>(0, 1000));
+		CookCauldron = Bind(cfg, "Cooking", "UseCauldron", true, "Cook job: use the cauldron (soups, stews and other crafted food).");
+		CookPrepTable = Bind(cfg, "Cooking", "UsePrepTable", true, "Cook job: use the food preparation table (dough, raw pies and the like).");
+		CookMeadKetill = Bind(cfg, "Cooking", "UseMeadKetill", true, "Cook job: use the mead ketill (mead bases).");
+		CookCookingStation = Bind(cfg, "Cooking", "UseCookingStation", true, "Cook job: use the cooking station / spit over a fire.");
+		CookIronCookingStation = Bind(cfg, "Cooking", "UseIronCookingStation", true, "Cook job: use the iron cooking station.");
+		CookOven = Bind(cfg, "Cooking", "UseOven", true, "Cook job: use the stone oven (bread, pies; it also gets wood).");
+		CookFermenter = Bind(cfg, "Cooking", "UseFermenter", true, "Cook job: use fermenters (filling them with mead bases and tapping the mead).");
+		CookBeehives = Bind(cfg, "Cooking", "UseBeehives", true, "Cook job: use beehives (collecting honey).");
+		CookOtherStations = Bind(cfg, "Cooking", "UseOther", true, "Cook job: use any other cooking station, e.g. one added by another mod.");
+		CookMeadFocus = Bind(cfg, "Cooking", "MeadFocus", "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBasePoisonResist, MeadBaseHealthMedium, MeadBaseStaminaMinor; bonemass: MeadBaseFrostResist, MeadBaseHealthMedium, MeadBaseStaminaMedium; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseTasty, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, MeadBaseLightfoot; queen: BarleyWineBase, MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseHealthLingering, MeadBaseEitrMinor; fader: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor; kall: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor", "Mead bases to brew FIRST, by the last boss beaten, to get ready for the next one (other mead bases you know are still brewed after food, within MeadBaseTarget / MeadTarget). Format: boss: Base, Base; boss: ... in the order you beat them. A boss is its name or part of it (eikthyr, gdking = The Elder, bonemass, dragon = Moder, goblinking = Yagluth, queen, fader, kall = Kall Fimbulbringer, or a modded boss); start = none beaten yet. The bosses your game has, and the mead base names, are listed in OfflineCompanionsReborn.Cooking.txt in the config folder.");
+		StatusEffectsOnRegen = Bind(cfg, "General", "StatusEffectsOnRegen", true, "Status effects change a companion's health and stamina regeneration like they do for a player: Wet and Cold slow it, meads and other buffs change it. Off = companions regenerate at their normal rate whatever the effects.");
+		HuntPrey = Bind(cfg, "Hunting", "Prey", "*", "What the Hunt job goes after: creatures that drop meat (and birds, see Birds). Name:Number with a creature or a meat name gives that meat its own target instead of MeatTarget / FeatherTarget. Tamed animals, bosses and companions are never hunted. The names to use are listed in OfflineCompanionsReborn.Hunting.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
+		HuntMeatTarget = Bind(cfg, "Hunting", "MeatTarget", 100, "Hunt a creature only while one of the meats it drops is under this many (counting the companion's pack and the chests near its home). Leather, hides and other drops are picked up as a bonus. 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
+		HuntRange = Bind(cfg, "Hunting", "Range", 40f, "With Follow off: how far (meters) from where it is hunting (home if it's near home, otherwise where the job was started) a companion looks for prey.", new AcceptableValueRange<float>(10f, 200f));
+		HuntFollowRange = Bind(cfg, "Hunting", "FollowRange", 25f, "With Follow on: prey has to be within this many meters of you. With nothing that close the companion just follows you.", new AcceptableValueRange<float>(5f, 100f));
+		HuntChaseExtra = Bind(cfg, "Hunting", "ChaseExtra", 15f, "How much further than Range / FollowRange a companion chases prey that runs off before letting it go.", new AcceptableValueRange<float>(0f, 100f));
+		HuntBagFull = Bind(cfg, "Hunting", "BagFull", 0.9f, "With Follow off and home set: when the pack is this full (by weight, or out of free slots) the hunter walks home and puts its catch away, then goes back out.", new AcceptableValueRange<float>(0.3f, 1f));
+		HuntBirds = Bind(cfg, "Hunting", "Birds", true, "Also shoot birds (crows, gulls, modded birds) for their feathers: when one lands within range, the hunter sneaks up and shoots it with a bow or crossbow (only if it has one with ammo), then picks up the drops. Birds on the Prey list's exclusions (-Crow, -Seagal) are left alone.");
+		HuntFeatherTarget = Bind(cfg, "Hunting", "FeatherTarget", 100, "Shoot birds only while what they drop (feathers) is under this many, counting the pack and the chests near home. 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
+		HuntSneak = Bind(cfg, "Hunting", "Sneak", true, "Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).");
+		DryDetour = Bind(cfg, "General", "DryDetour", 30f, "Companions prefer staying dry, like a player: when the way somewhere crosses water they go round it on land, as long as the dry way is no longer than 1.5x the swimming way plus this many meters. Otherwise they swim.", new AcceptableValueRange<float>(0f, 500f));
+		JobSwim = Bind(cfg, "General", "JobSwim", 20f, "The most swimming (meters) a job accepts to reach something: loot from a kill, prey, a bird, a fishing spot. Further than that and it leaves it.", new AcceptableValueRange<float>(0f, 200f));
+		MaxDrop = Bind(cfg, "General", "MaxDrop", 3f, "When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).", new AcceptableValueRange<float>(1f, 4f));
+		JumpGap = Bind(cfg, "General", "JumpGap", 1.5f, "The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.", new AcceptableValueRange<float>(0.5f, 3f));
+		JumpWaterDepth = Bind(cfg, "General", "JumpWaterDepth", 0.3f, "Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.", new AcceptableValueRange<float>(0.05f, 2f));
+		JumpWaterWidth = Bind(cfg, "General", "JumpWaterWidth", 3f, "The widest stretch of water (meters) a companion jumps over.", new AcceptableValueRange<float>(1f, 4f));
+		LootKills = Bind(cfg, "Looting", "PickUpKills", true, "After a companion kills something it goes over and picks up what the creature dropped (things you'd auto-pickup yourself), like a player would. Needs Auto Pickup on in the wheel.");
+		LootRadius = Bind(cfg, "Looting", "Radius", 6f, "How far around the kill (meters) the drops are looked for.", new AcceptableValueRange<float>(2f, 20f));
+		LootWait = Bind(cfg, "Looting", "WaitSeconds", 10f, "Longest wait (seconds) by the body for its drops to come out.", new AcceptableValueRange<float>(2f, 60f));
+		LootMaxDistance = Bind(cfg, "Looting", "MaxDistance", 30f, "Kills further away than this (meters), or that you've moved this far away from while it follows you, are left.", new AcceptableValueRange<float>(5f, 100f));
+		// 1.4.92: a config file still holding the 1.4.87 draft gets the reviewed table
+		if (CookMeadFocus.Value == "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; bonemass: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseFrostResist; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseFrostResist, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, BarleyWineBase; queen: MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseEitrMinor, BarleyWineBase; fader: MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor, BarleyWineBase")
+		{
+			CookMeadFocus.Value = "start: MeadBaseHealthMinor, MeadBaseStaminaMinor; eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist; gdking: MeadBasePoisonResist, MeadBaseHealthMedium, MeadBaseStaminaMinor; bonemass: MeadBaseFrostResist, MeadBaseHealthMedium, MeadBaseStaminaMedium; dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseTasty, BarleyWineBase; goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, MeadBaseLightfoot; queen: BarleyWineBase, MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseHealthLingering, MeadBaseEitrMinor; fader: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor; kall: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor";
+		}
 		RestHealRate = Bind(cfg, "Rest", "HealRate", 2f, "HP per second while resting", new AcceptableValueRange<float>(0.5f, 20f));
 		RestPlayerRange = Bind(cfg, "Rest", "PlayerRange", 5f, "Max player distance for auto-sit", new AcceptableValueRange<float>(2f, 20f));
 		RestFireRange = Bind(cfg, "Rest", "FireRange", 5f, "Campfire detection radius", new AcceptableValueRange<float>(2f, 20f));
@@ -462,7 +647,7 @@ internal static class ModConfig
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Respawn", "AutoRespawnAtWorldSpawnWhenNoBed", defaultValue: false, "When a companion auto-respawns and has no claimed bed, respawn it at the world spawn stones instead of next to its owner");
 		DeathItemRule = Bind(cfg, "Respawn", "DeathItemRule", 0, "What a companion loses when it dies. 0 = Follow the world's death penalty setting, same as a player. 1 = Keep everything. 2 = Keep equipped gear, drop the rest into the tombstone. 3 = Drop everything into the tombstone. The companion's owner's setting is used even if another player's game handles the death.", new AcceptableValueRange<int>(0, 3));
 		TombstoneRecoveryRange = Bind(cfg, "Respawn", "TombstoneRecoveryRange", 50f, "How close a companion needs to be to their own leftover tombstone before they'll walk over and loot it themselves", new AcceptableValueRange<float>(5f, 100f));
-		SleepAtNight = Bind(cfg, "Sleep", "SleepAtNight", defaultValue: true, "At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working or on Homestead. It goes back to its job in the morning.");
+		SleepAtNight = Bind(cfg, "Sleep", "SleepAtNight", defaultValue: true, "At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working. It goes back to its job in the morning.");
 		SleepWhenPlayerSleeps = Bind(cfg, "Sleep", "SleepWhenPlayerSleeps", defaultValue: true, "When you get into a bed, your companions within BedRange of their claimed beds go to bed too, even in the evening. The night skip waits up to 30 seconds for them.");
 		BedRange = Bind(cfg, "Sleep", "BedRange", 50f, "How close (in meters) a companion has to be to its claimed bed for the sleep rules above to send it to bed", new AcceptableValueRange<float>(10f, 200f));
 		RecallRange = Bind(cfg, "Controls", "RecallRange", 40f, "How close (in meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. Set to 0 for no limit.", new AcceptableValueRange<float>(0f, 500f));
@@ -472,7 +657,7 @@ internal static class ModConfig
 		SeedTarget = Bind(cfg, "Farm", "SeedTarget", 100, "While a seed is under this number, the farmer grows seed plants (planting carrots, turnips, onions...) alongside its regular crops to build the stock back up. Below SeedMinimum it grows only seed plants for that crop. At or above this number it grows only crops.", new AcceptableValueRange<int>(0, 5000));
 		PlantGroupSize = Bind(cfg, "Farm", "PlantGroupSize", 4, "How many of one plant the farmer puts in before switching to the next type, so a mixed field ends up in small blocks instead of one crop. 1 = fully mixed.", new AcceptableValueRange<int>(1, 100));
 		FarmNextCropRange = Bind(cfg, "Farm", "NextCropRange", 3f, "After picking a crop, the farmer goes straight to the next ripe crop within this many meters, like working down a row, instead of pausing and scanning the whole field. 0 = always pause and scan.", new AcceptableValueRange<float>(0f, 10f));
-		PlantAny = Bind(cfg, "Farm", "PlantAny", "CarrotSeeds, TurnipSeeds, OnionSeeds, Barley, Flax, MushroomJotunPuffs, MushroomMagecap, VineberrySeeds", "What the farmer plants in farm zones set to Any crop. Comma-separated item names. Anything not on the list (tree seeds such as BirchSeeds, Acorn, BeechSeeds, PineCone, FirCone) is never planted in an Any zone. Items added by other mods work too, for example MushroomCommon or Raspberry with Plant Everything.");
+		PlantAny = Bind(cfg, "Farm", "PlantAny", "CarrotSeeds, TurnipSeeds, OnionSeeds, Barley, Flax, MushroomJotunPuffs, MushroomMagecap, VineberrySeeds", "What the farmer plants in farm zones set to Any crop. * = every crop that grows on cultivated ground (tree saplings are never planted in an Any zone unless named). Name:Number stops planting that crop once there are that many of what it gives (carrots for CarrotSeeds, barley for Barley...), counting pack and chests near home. Items added by other mods work too. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
 		SeedCarry = Bind(cfg, "Farm", "SeedCarry", 40, "How many of each plantable item the farmer carries. When it opens a chest for seeds it takes up to this many of every type on the PlantAny list (and vegetables for seed plants while that seed is under SeedTarget), so it can fill the fields without walking back for each type. It keeps up to this many in its pack instead of storing them.", new AcceptableValueRange<int>(1, 200));
 		WorkRunDistance = Bind(cfg, "General", "WorkRunDistance", 25f, "Companions walk while doing jobs (farming, chest trips, smelting, cooking, chores, repairs, gathering) and only run when what they are heading to is further away than this many meters. 0 = never run for work. Following you, fighting and hunting are not affected.", new AcceptableValueRange<float>(0f, 500f));
 		HomeTripRange = Bind(cfg, "General", "HomeTripRange", 60f, "How far from home (meters) a companion will still walk back for chest trips: fetching or putting back tools, repairing a broken tool, emptying its bags. Further away than this, a companion missing its job tool says so and follows you until you are both back near home.", new AcceptableValueRange<float>(10f, 500f));
@@ -486,9 +671,9 @@ internal static class ModConfig
 		WoodLimit = Bind(cfg, "Harvest", "WoodLimit", 500, "How many of each wood material (counting your companion's pack and chests near its home) the Wood job gathers before stopping. 0 = no limit. Per-item numbers in GatherWood override this.", new AcceptableValueRange<int>(0, 100000));
 		StoneLimit = Bind(cfg, "Harvest", "StoneLimit", 500, "Same as WoodLimit, for the Stone job and GatherStone.", new AcceptableValueRange<int>(0, 100000));
 		OreLimit = Bind(cfg, "Harvest", "OreLimit", 500, "Same as WoodLimit, for the Ore job and GatherOre.", new AcceptableValueRange<int>(0, 100000));
-		GatherWood = Bind(cfg, "Harvest", "GatherWood", "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood, Blackwood, Resin", "What the Wood job collects. Trees are only felled if they drop something on this list that is still under its limit. Comma-separated items. Name:Number sets that item's own limit, a name with no number uses the category limit, :0 means no limit. Items not on the list are not gathered and their drops are left on the ground.");
-		GatherStone = Bind(cfg, "Harvest", "GatherStone", "Stone, Flint, BlackMarble, Grausten", "What the Stone job collects. Comma-separated items. Name:Number sets that item's own limit, a name with no number uses the category limit, :0 means no limit. Items not on the list are not gathered and their drops are left on the ground.");
-		GatherOre = Bind(cfg, "Harvest", "GatherOre", "CopperOre, TinOre, IronScrap, SilverOre, BlackMetalScrap, CopperScrap, FlametalOreNew, Obsidian", "What the Ore job collects. Comma-separated items. Name:Number sets that item's own limit, a name with no number uses the category limit, :0 means no limit. Items not on the list are not gathered and their drops are left on the ground.");
+		GatherWood = Bind(cfg, "Harvest", "GatherWood", "Wood, FineWood, RoundLog, ElderBark, YggdrasilWood, Blackwood, Resin", "What the Wood job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses WoodLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
+		GatherStone = Bind(cfg, "Harvest", "GatherStone", "Stone, Flint, BlackMarble, Grausten", "What the Stone job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses StoneLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
+		GatherOre = Bind(cfg, "Harvest", "GatherOre", "CopperOre, TinOre, IronScrap, SilverOre, BlackMetalScrap, CopperScrap, FlametalOreNew, Obsidian", "What the Ore job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses OreLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
 		WoodSkipTrees = Bind(cfg, "Harvest", "WoodSkipTrees", "Oak", "Standing trees the Wood job never fells, matched on part of the tree name (Oak, Birch, Beech, Pine, Fir, SwampTree, YggaShoot...). Logs and stumps are still cleaned up.");
 		BaseProtectRadius = Bind(cfg, "Harvest", "BaseProtectRadius", 10f, "The Wood job won't fell a standing tree with anything players built within this many meters of its trunk. 0 = off.", new AcceptableValueRange<float>(0f, 50f));
 		JunkCleanup = Bind(cfg, "Harvest", "JunkCleanup", defaultValue: true, "When a gathering companion's pack is full and it has no home chest to unload into, it drops junk (materials and trophies that aren't on any gather list) to make room. Gear, tools, ammo, food, potions, seeds and anything on NeverDiscard are always kept.");

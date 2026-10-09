@@ -318,7 +318,7 @@ public static class CompanionPrefabs
 		go.AddComponent<HuntController>();
 		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + HuntController (" + def.PrefabName + ")");
 		go.AddComponent<FishController>();
-		go.AddComponent<HomesteadController>();
+		go.AddComponent<UpkeepController>();
 		go.AddComponent<CookController>();
 	}
 

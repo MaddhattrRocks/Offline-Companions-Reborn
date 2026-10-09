@@ -17,6 +17,10 @@ public static class StaminaPatches
 			}
 			float stamina2 = component.Stamina;
 			component.Drain(stamina);
+			if (stamina < 0.5f)
+			{
+				return false;   // per-frame trickles (reeling, hooked fish) would flood the log
+			}
 			CompanionsPlugin.Log.LogDebug($"[Stamina] UseStamina — drained {stamina:F1} " + $"({stamina2:F1} → {component.Stamina:F1} / {component.MaxStamina:F1}) " + "companion=\"" + __instance.m_name + "\"");
 			return false;
 		}
@@ -48,7 +52,9 @@ public static class StaminaPatches
 			{
 				return true;
 			}
-			__result = component.Stamina >= amount;
+			// 1.4.109: strictly more than, like the player (Player.HaveStamina) - at 0 stamina "have stamina?" is no.
+			// It said yes at 0, so a companion reeling in a fish with no stamina left kept it (vanilla loses it).
+			__result = component.Stamina > amount;
 			if (!__result && Time.time - _lastLogTime > 2f)
 			{
 				_lastLogTime = Time.time;

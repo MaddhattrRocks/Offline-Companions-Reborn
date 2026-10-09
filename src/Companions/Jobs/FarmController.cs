@@ -73,9 +73,7 @@ public class FarmController : MonoBehaviour
 
 	private float _stuckTimer;
 
-	private float _stuckCheckTimer;
-
-	private Vector3 _stuckCheckPos;
+	private bool _moveArrived;
 
 	private bool _chestOpened;
 
@@ -130,10 +128,6 @@ public class FarmController : MonoBehaviour
 	private int _pickableMask;
 
 	private const float MoveTimeout = 10f;
-
-	private const float StuckCheckPeriod = 1f;
-
-	private const float StuckMinDistance = 0.5f;
 
 	private const float DropPickupDelay = 0.4f;
 
@@ -208,6 +202,11 @@ public class FarmController : MonoBehaviour
 	private void Update()
 	{
 		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
+		{
+			return;
+		}
+		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
+		if (MHR_Loot.Active(this))
 		{
 			return;
 		}
@@ -381,8 +380,10 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetPickable.transform.position);
-		if (num < UseDistance)
+		// 1.4.135: or wherever the movement says it has arrived (it measures flat, up to 1.5 m up/down)
+		if (num < UseDistance || _moveArrived)
 		{
+			_moveArrived = false;
 			_ai.StopMoving();
 			_ai.LookAtPoint(_targetPickable.transform.position);
 			_phase = FarmPhase.Harvesting;
@@ -393,6 +394,7 @@ public class FarmController : MonoBehaviour
 		{
 			_shouldRun = num > 8f;
 			bool moveOk = MHR_Nav.MoveFarm(_ai, dt, _targetPickable.transform.position, UseDistance, _shouldRun);
+			_moveArrived = moveOk;
 			LogMovement(dt, "pickable", num, moveOk);
 			UpdateStuckDetection(dt, "pickable");
 		}
@@ -559,8 +561,11 @@ public class FarmController : MonoBehaviour
 		if (!(_doorHandler != null) || !_doorHandler.IsActive)
 		{
 			float num = Vector3.Distance(base.transform.position, _plantPosition);
-			if (num < UseDistance)
+			// 1.4.135: or wherever the movement says it has arrived. 1.4.133 test: the plant spot was 1.8 m away and 0.9 m
+			// down (2.03 m straight-line, just over UseDistance): the movement had arrived and stopped, Farm kept waiting.
+			if (num < UseDistance || _moveArrived)
 			{
+				_moveArrived = false;
 				_ai.StopMoving();
 				_ai.LookAtPoint(_plantPosition);
 				_phase = FarmPhase.Planting;
@@ -571,6 +576,7 @@ public class FarmController : MonoBehaviour
 			{
 				_shouldRun = num > 8f;
 				bool moveOk = MHR_Nav.MovePlant(_ai, dt, _plantPosition, UseDistance, _shouldRun);
+				_moveArrived = moveOk;
 				LogMovement(dt, "plant spot", num, moveOk);
 				UpdateStuckDetection(dt, "plant spot");
 			}
@@ -994,13 +1000,7 @@ public class FarmController : MonoBehaviour
 		if (!(_ai == null))
 		{
 			bool flag = _setup != null && _setup.GetFollow();
-			if (_setup != null && _setup.GetStayHome() && _setup.HasHomePosition())
-			{
-				_ai.SetFollowTarget(null);
-				_ai.SetPatrolPointAt(_setup.GetHomePosition());
-				Log("Restored patrol to home (StayHome active)");
-			}
-			else if (flag && Player.m_localPlayer != null)
+			if (flag && Player.m_localPlayer != null)
 			{
 				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
 				Log("Restored follow target to player");
@@ -1123,8 +1123,7 @@ public class FarmController : MonoBehaviour
 	private void ResetStuck()
 	{
 		_stuckTimer = 0f;
-		_stuckCheckTimer = 0f;
-		_stuckCheckPos = base.transform.position;
+		_moveArrived = false;
 	}
 
 	private bool PackNearlyFull()
@@ -1525,7 +1524,7 @@ public class FarmController : MonoBehaviour
 	// past UseDistance, and moving stops within half a meter of it)
 	private bool AtChestSpot(Container chest, float dist)
 	{
-		if (!_hasApproach || chest != _approachChest || dist > UseDistance + 1f)
+		if (!_hasApproach || chest != _approachChest)
 		{
 			return false;
 		}
@@ -1534,7 +1533,7 @@ public class FarmController : MonoBehaviour
 		{
 			return false;
 		}
-		return MHR_Chests.LineClear(position, chest);
+		return MHR_Chests.InReach(position, chest);
 	}
 
 	private Vector3 ChestGoal(Container chest)
@@ -1555,29 +1554,21 @@ public class FarmController : MonoBehaviour
 		return _approachSpot;
 	}
 
+	// 1.4.134 (movement phase 4): only the movement decides it's stuck - it has its own ladder (door, step back, hop,
+	// detour) and gives up when that's done. The old "hasn't moved 0.5 m in a second" timer counted waiting at a door or
+	// for stamina as stuck. A leg that takes over two minutes is given up too, just in case.
+	private Vector3 _stuckLeg;
+
 	private void UpdateStuckDetection(float dt, string targetName)
 	{
-		_stuckCheckTimer += dt;
-		if (_stuckCheckTimer >= 1f)
+		Vector3 leg = GetCurrentTargetPosition();
+		if (Vector3.Distance(leg, _stuckLeg) > 1.5f)
 		{
-			float num = Vector3.Distance(base.transform.position, _stuckCheckPos);
-			if (num < 0.5f)
-			{
-				_stuckTimer += _stuckCheckTimer;
-			}
-			else
-			{
-				_stuckTimer = 0f;
-			}
-			_stuckCheckPos = base.transform.position;
-			_stuckCheckTimer = 0f;
+			_stuckLeg = leg;
+			_stuckTimer = 0f;
 		}
-		// 1.4.79: the movement has worked through its whole stuck ladder - give this target up now
-		if (_ai != null && MHR_Mover.GaveUp(_ai))
-		{
-			_stuckTimer = 10.01f;
-		}
-		if (_stuckTimer > 10f)
+		_stuckTimer += dt;
+		if ((_ai != null && MHR_Mover.GaveUp(_ai)) || _stuckTimer > MHR_Nav.LegTimeout)
 		{
 			Vector3 currentTargetPosition = GetCurrentTargetPosition();
 			if (currentTargetPosition != Vector3.zero && _ai != null)
