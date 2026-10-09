@@ -2541,9 +2541,88 @@ public class HarvestController : MonoBehaviour
 		{
 			return false;
 		}
-		ItemDrop.ItemData axe = BestToolQuiet(1);
-		string name = axe?.m_dropPrefab != null ? axe.m_dropPrefab.name : null;
-		return noTool || axe == null || name == "AxeStone" || name == "AxeFlint";
+		return EarlyGame();
+	}
+
+	// 1.4.123: only early in the game (user: "make the pickup work early game where grabbing those items is useful"):
+	// no bronze-or-better axe anywhere - the companion's pack, the chests near home, your pack - and no forge at home
+	// to make one. Checked every 30 s.
+	private float _nextEarlyCheck;
+
+	private bool _early;
+
+	private bool EarlyGame()
+	{
+		if (Time.time < _nextEarlyCheck)
+		{
+			return _early;
+		}
+		_nextEarlyCheck = Time.time + 30f;
+		bool was = _early;
+		string why = null;
+		bool home = _setup != null && _setup.HasHomePosition();
+		Vector3 center = home ? _setup.GetHomePosition() : base.transform.position;
+		float radius = home ? MHR_ToolKeeper.HomeRange() : 30f;
+		if (HasGoodAxe(_humanoid?.GetInventory()))
+		{
+			why = "it has a bronze-or-better axe";
+		}
+		else if (Player.m_localPlayer != null && HasGoodAxe(Player.m_localPlayer.GetInventory()))
+		{
+			why = "you have a bronze-or-better axe";
+		}
+		else
+		{
+			foreach (Container c in MHR_Chests.Near(center, radius))
+			{
+				if (c != null && c.GetComponent<Character>() == null && HasGoodAxe(c.GetInventory()))
+				{
+					why = "there's a bronze-or-better axe in a chest";
+					break;
+				}
+			}
+			if (why == null)
+			{
+				foreach (CraftingStation st in MHR_Chests.Stations(center, radius))
+				{
+					if (st != null && st.m_name == "$piece_forge")
+					{
+						why = "there's a forge" + (home ? " at home" : " nearby");
+						break;
+					}
+				}
+			}
+		}
+		_early = why == null;
+		if (_early != was || !_earlyLogged)
+		{
+			_earlyLogged = true;
+			LogInfo(_early ? "Early game (no bronze-or-better axe and no forge) - picking up branches, stones and flint" : "Not picking up branches, stones and flint: " + why);
+		}
+		return _early;
+	}
+
+	private bool _earlyLogged;
+
+	private static bool HasGoodAxe(Inventory inv)
+	{
+		if (inv == null)
+		{
+			return false;
+		}
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || it.m_shared.m_skillType != Skills.SkillType.Axes || it.m_shared.m_damages.m_chop <= 0f)
+			{
+				continue;
+			}
+			string n = it.m_dropPrefab != null ? it.m_dropPrefab.name : "";
+			if (n != "AxeStone" && n != "AxeFlint")
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// the best tool for the job without the logging (FindBestTool logs every candidate)

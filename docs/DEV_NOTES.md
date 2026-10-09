@@ -31,6 +31,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.123 - loose pickups early game only (user, 2026-10-09)
+- User: not just when the companion has no axe - when there's no better axe at home, the player has no bronze-or-better axe, or there's no way to make one (no forge at home). Pickups should help early game, not run all the time.
+- HarvestController.EarlyGame() (cached 30 s, logs when it changes): false if an Axes-skill item with chop damage other than AxeStone/AxeFlint is in the companion's pack, the player's pack or any chest within HomeTripRange of home (30 m of the companion without a home), or a "$piece_forge" station is in that area. LooseOn = PickUpLoose && EarlyGame (the companion's own axe no longer matters).
+
 ### 1.4.122 - loose stones, flint and branches (user, 2026-10-09)
 - User: build the stone/flint axe gathering; with no axe of any kind also gather stone, flint and branches lying around; tied to the jobs, with a toggle.
 - HarvestController.LooseOn(mode, out noTool): [Harvest] PickUpLoose on and (best chop tool is AxeStone/AxeFlint or none, or no tool for this job). BestToolQuiet = FindBestTool without the per-item logging. Wood (1): Pickables giving Wood (Pickable_Branch). Stone (2): Pickables giving Stone or Flint. MHR_GatherRules.AllowLoose checks the item against GatherWood/GatherStone and its amount (Stock < limit), like AllowTarget.
