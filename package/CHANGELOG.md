@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.128
+- After a fight on Forage (or Wood, Stone, Ore, Smelt, Farm, Cook) the companion stuttered: it tried to walk to its next job target and to what the kill dropped at the same time. It now picks up the drops first, then goes back to the job.
+
 ## 1.4.127
 - Wood, stone and other materials in piles near home now count toward the Wood/Stone/Ore jobs' limits (WoodLimit, StoneLimit and per-item amounts), like what's in the chests.
 

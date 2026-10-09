@@ -640,6 +640,12 @@ public class HarvestController : MonoBehaviour
 			RestoreLoadout();
 			return;
 		}
+		// 1.4.128: after a fight, picking up what the kill dropped goes first (1.4.127 test: on Forage it kept walking to
+		// the next mushroom while the loot pickup walked to the drops - the two took turns every frame and it stuttered)
+		if (MHR_Loot.Active(this))
+		{
+			return;
+		}
 		if (IsCompanionUIOpen())
 		{
 			if (_state != HarvestState.Idle)

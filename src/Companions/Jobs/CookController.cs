@@ -241,6 +241,11 @@ public class CookController : MonoBehaviour
 		{
 			return;
 		}
+		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
+		if (MHR_Loot.Active(this))
+		{
+			return;
+		}
 		if (!_ledgerLoaded)
 		{
 			LoadLedger();

@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.128 - from the 1.4.127 test (log 557055bf)
+- User: mostly working; stuttering after a fight with Forage on.
+- Log: piles worked (5 Stone Piles built beside the existing one, 361 -> 161 stone in the chests, keeping 100). After the Boar and Neck kills "[Loot] Going to pick up what Neck dropped (19 m away)" while "[Gather] Moving -> Pickable_Dandelion" kept going: [Move|Loot] and [Move|Gather] alternating every frame (the Loot route re-planned each frame: "going straight to ... instead of a 24m way round" repeated).
+- HarvestController (after the combat check), SmeltController, FarmController and CookController now return while MHR_Loot.Active (Hunt, Fish and Upkeep already did). CompanionAI runs MHR_Loot.Drive before the jobs' IsActive check, so the pickup steers alone.
+
 ### 1.4.127 - piles count toward job limits (user, 2026-10-09)
 - MHR_GatherRules.Stock (pack + chests within 40 m of home) also adds m_resources[0].m_amount for every pile (UpkeepController.IsPile, now internal) in the same 40 m whose material matches. Used by AllowTarget, AllowLoose and Forage's ForageUnderAmount. Cached 10 s per item as before.
 
