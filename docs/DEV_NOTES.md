@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.113 - from the 1.4.112 test (log 78bd5324)
+- User: something broke again - didn't fish, just said lines about fishing.
+- Log (v1.4.112): "Mapped 1 places to fish from", "Nothing to fish (no bank ... 6/8 fish seen)". 1.4.112's MapShore needed water 1 m deep 2.5 m away AND dry ground 1 m towards it - on that gently sloping beach that left one place.
+- MapShore now: dry top (terrain/dock, 0.1-10 m above the water), water deeper than 0.4 m somewhere 1-5 m away (8 directions, 1 m steps - so never right on the edge), room to stand, not fire. Grid 2 m, mapped once per 5 minutes per spot. The fish's own depth/line of sight is still checked in SpotFor.
+
 ### 1.4.112 - from the 1.4.111 test (log 4dbb8fb5)
 - User: fell in the water, fished from the water, swam off to fight something, now floating in the water saying fishing lines - stuck.
 - Log: rested ("Getting my breath back (91/102)"), cast, "Hooked a Pike" at (-335.9, 27.9, -309) - already in the water by the spot (stand was (-334.5, 30.0, -308.6) right at the edge). A Neck: combat swapped to the crossbow (float destroyed: "Failed to find fishing rod top"), killed it. Then "[Move|Fish] ... route=full (2 corners), swimming, no closer for 58s, standing still 27s" at (-334.1, 27.8, -319.9) for minutes, then the same as Follow - no stuck steps at all.

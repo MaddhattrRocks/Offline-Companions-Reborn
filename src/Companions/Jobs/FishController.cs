@@ -393,7 +393,7 @@ public class FishController : MonoBehaviour
 
 	private void MapShore()
 	{
-		if (Time.time - _shoreAt < 60f && Flat(_shoreFor, _anchor) < 2f)
+		if (Time.time - _shoreAt < 300f && Flat(_shoreFor, _anchor) < 2f)
 		{
 			return;
 		}
@@ -406,6 +406,9 @@ public class FishController : MonoBehaviour
 		{
 			baseWater = (ZoneSystem.instance != null) ? ZoneSystem.instance.m_waterLevel : 30f;
 		}
+		// 1.4.113: any dry spot (ground, dock) with water within 5 m - the fish themselves are further out, the line of
+		// sight to them is checked when choosing (1.4.112 wanted 1 m deep water within 2.5 m and a meter of dry ground on
+		// top of that: one place left on that beach). Not right on the edge: the nearest water at least 1 m away.
 		for (float x = -r; x <= r; x += 2f)
 		{
 			for (float z = -r; z <= r; z += 2f)
@@ -420,34 +423,27 @@ public class FishController : MonoBehaviour
 				{
 					continue;
 				}
-				// water right next to it, deep enough for fish
-				Vector3 best = Vector3.zero;
-				float bestDepth = 0f;
+				float nearest = 99f;
+				Vector3 water = Vector3.zero;
 				for (int i = 0; i < 8; i++)
 				{
 					Vector3 dir = Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward;
-					Vector3 w = top + dir * 2.5f;
-					float lw = Level(w, baseWater);
-					if (!Top(w, lw, out var bottom))
+					for (float d = 1f; d <= 5f; d += 1f)
 					{
-						continue;
-					}
-					float depth = lw - bottom.y;
-					if (depth > bestDepth)
-					{
-						bestDepth = depth;
-						best = new Vector3(w.x, lw, w.z);
+						Vector3 w = top + dir * d;
+						float lw = Level(w, baseWater);
+						if (Top(w, lw, out var under) && lw - under.y > 0.4f)
+						{
+							if (d < nearest)
+							{
+								nearest = d;
+								water = new Vector3(w.x, lw, w.z);
+							}
+							break;
+						}
 					}
 				}
-				if (bestDepth < 1f)
-				{
-					continue;
-				}
-				// 1.4.112: not right on the edge (1.4.111 test: slipped into the water from its spot) - dry ground 1 m
-				// towards the water too
-				Vector3 toWater = best - top;
-				toWater.y = 0f;
-				if (toWater.sqrMagnitude > 0.01f && (!Top(top + toWater.normalized * 1f, wl, out var edge) || edge.y < wl + 0.1f))
+				if (nearest > 5f)
 				{
 					continue;
 				}
@@ -458,7 +454,7 @@ public class FishController : MonoBehaviour
 				_shore.Add(new Shore
 				{
 					Stand = top,
-					Water = best
+					Water = water
 				});
 			}
 		}
