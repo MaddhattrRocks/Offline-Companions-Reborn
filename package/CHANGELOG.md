@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.104
+- Move here, put items in a chest, Repair buildings, Restock, going back to a tombstone and healers going to someone hurt now use the companion movement: routes, doors, stairs, climbing out of pits and keeping out of deep water. A move order it can't find a way to is dropped (the log says so).
+- Chasing enemies in a fight uses the companion movement too, falling back to the game's own only when it can't find a way.
+- The last steps up to a tree or rock, dodging a falling tree, the door handler and following a non-player use it as well.
+
 ## 1.4.103
 - Hunters chase prey the way companions follow you: proper routes, climbing out of pits, no jumping into water. Prey they'd have to swim to, or can't find a way to, is left alone.
 - With a bow or crossbow, prey down in a moat or pit is shot from the edge instead of followed down.

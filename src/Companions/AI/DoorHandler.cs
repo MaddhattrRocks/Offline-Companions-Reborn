@@ -345,7 +345,7 @@ public class DoorHandler : MonoBehaviour
 		float num = MHR_Nav.DoorDist(base.transform.position, _doorPos);
 		if (num > InteractDist * 0f)
 		{
-			MHR_Nav.MoveWalk(_ai, dt, _doorPos, InteractDist, run: true);
+			MHR_Nav.Move(_ai, dt, _doorPos, InteractDist, run: true, "Door");
 		}
 		else
 		{

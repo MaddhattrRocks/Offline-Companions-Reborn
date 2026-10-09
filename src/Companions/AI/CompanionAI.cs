@@ -742,6 +742,13 @@ public class CompanionAI : BaseAI
 		return _ctxSmoothedDir;
 	}
 
+	// 1.4.104: commands, wheel actions and the smaller moves go through MHR_Mover too (routes, doors, stairs, climbing
+	// out of pits, water) - jog, or run when asked
+	internal bool MHR_Go(float dt, Vector3 point, float dist, bool run, string tag)
+	{
+		return MHR_Mover.Go(this, dt, point, dist, run, tag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+	}
+
 	internal bool MoveToPoint(float dt, Vector3 point, float dist, bool run)
 	{
 		if (m_character.m_flying)
@@ -1304,7 +1311,7 @@ public class CompanionAI : BaseAI
 				_tombstoneScanTimer = TombstoneScanInterval;
 			}
 			bool run = num > 10f;
-			MoveToPoint(dt, position, 2.5f, run);
+			MHR_Go(dt, position, 2.5f, run, "Tombstone");
 			return true;
 		}
 		if ((object)_pendingTombstone != null)
@@ -1810,7 +1817,12 @@ public class CompanionAI : BaseAI
 				else
 				{
 					bool run = num6 > 10f;
-					MoveToPoint(dt, PendingMoveTarget.Value, 1f, run);
+					MHR_Go(dt, PendingMoveTarget.Value, 1f, run, "Command");
+					if (MHR_Mover.GaveUp(this))
+					{
+						CompanionsPlugin.Log.LogInfo($"[Direct] Can't find a way to {PendingMoveTarget.Value:F1} - stopping here");
+						CancelMoveTarget();
+					}
 				}
 			}
 			return true;
@@ -1893,7 +1905,7 @@ public class CompanionAI : BaseAI
 				else
 				{
 					bool run2 = num7 > 10f;
-					MoveToPoint(dt, position5, 1.5f, run2);
+					MHR_Go(dt, position5, 1.5f, run2, "Deposit");
 				}
 			}
 			return true;
@@ -2758,7 +2770,7 @@ public class CompanionAI : BaseAI
 			}
 			return;
 		}
-		MoveToPoint(dt, _healTarget.transform.position, 0f, num > 10f);
+		MHR_Go(dt, _healTarget.transform.position, 1f, num > 10f, "Heal");
 		bool flag2 = FoundPath();
 		bool flag3 = _healLastDistance < 0f || num < _healLastDistance - 0.2f;
 		float magnitude = m_character.GetVelocity().magnitude;
@@ -2918,7 +2930,7 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		bool run = !(flag2 || flag3) && (flag4 || num2 > 10f);
-		MoveToPoint(dt, vector2, 1f, run);
+		MHR_Go(dt, vector2, 1f, run, "Formation");
 		if (_inContextSteerFallback || _navClaimedDoneCount > 0)
 		{
 			_inContextSteerFallback = false;
@@ -3290,7 +3302,7 @@ public class CompanionAI : BaseAI
 			_rbPhase = RepairBuildPhase.Repairing;
 			return;
 		}
-		MHR_Nav.MoveWalk(this, dt, _rbTargetPiece.transform.position, 2.5f, num > 8f);
+		MHR_Nav.Move(this, dt, _rbTargetPiece.transform.position, 2.5f, num > 8f, "RepairBuild");
 		_rbStuckCheckTimer += dt;
 		if (_rbStuckCheckTimer >= 1f)
 		{
@@ -3526,7 +3538,7 @@ public class CompanionAI : BaseAI
 		}
 		else
 		{
-			MHR_Nav.MoveWalk(this, dt, _rsSupplyChest.transform.position, 2.5f, num > 8f);
+			MHR_Nav.Move(this, dt, _rsSupplyChest.transform.position, 2.5f, num > 8f, "Restock");
 			UpdateRSStuck(dt, "chest", num);
 		}
 	}
@@ -3616,7 +3628,7 @@ public class CompanionAI : BaseAI
 		}
 		else
 		{
-			MHR_Nav.MoveWalk(this, dt, _rsTargetFire.transform.position, 2.5f, num > 8f);
+			MHR_Nav.Move(this, dt, _rsTargetFire.transform.position, 2.5f, num > 8f, "Restock");
 			UpdateRSStuck(dt, "fire", num);
 		}
 	}

@@ -150,6 +150,18 @@ public class CompanionCombatAI : MonoBehaviour
 	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
 	private float _nextHuntMoveLog;
 
+	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
+	// for now, the game's own movement still closes in (a fight can't just stand still)
+	private bool ChaseMove(float dt, Vector3 point, float dist, bool run)
+	{
+		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, "Combat", run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+		if (!there && MHR_Mover.GaveUp(_ai))
+		{
+			return _ai.MoveToPoint(dt, point, dist, run);
+		}
+		return there;
+	}
+
 	private bool HuntMove(float dt, Vector3 point, float dist, bool run)
 	{
 		if (!HuntMode || _targetCreature == null)
@@ -424,7 +436,7 @@ public class CompanionCombatAI : MonoBehaviour
 						}
 						if (!HuntMove(dt, lastKnownTargetPos, dist, !_stalking))
 						{
-							_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: !_stalking);
+							ChaseMove(dt, lastKnownTargetPos, dist, !_stalking);
 						}
 						if (_timeSinceAttacking > 15f)
 						{
@@ -456,7 +468,7 @@ public class CompanionCombatAI : MonoBehaviour
 							_unableToAttackTargetTimer = 15f;
 						}
 					}
-					else if (HuntMode ? (HuntMove(dt, _lastKnownTargetPos, dist2, !_stalking) && Vector3.Distance(base.transform.position, _lastKnownTargetPos) <= dist2 + 1.5f) : _ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: !_stalking))
+					else if (HuntMode ? (HuntMove(dt, _lastKnownTargetPos, dist2, !_stalking) && Vector3.Distance(base.transform.position, _lastKnownTargetPos) <= dist2 + 1.5f) : ChaseMove(dt, _lastKnownTargetPos, dist2, !_stalking))
 					{
 						_beenAtLastPos = true;
 					}
@@ -484,7 +496,7 @@ public class CompanionCombatAI : MonoBehaviour
 				}
 				else
 				{
-					_ai.MoveToPoint(dt, character.transform.position, 0f, run: true);
+					ChaseMove(dt, character.transform.position, 0f, true);
 				}
 			}
 			else

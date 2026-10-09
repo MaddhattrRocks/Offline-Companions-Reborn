@@ -374,13 +374,13 @@ namespace Companions
                     h.ResetToIdle();
                     return true;
                 }
-                pai.MoveToPoint(Time.deltaTime, p.PilePoint, 1.0f, false);
+                pai.MHR_Go(Time.deltaTime, p.PilePoint, 1.0f, false, "Pile");
                 return true;
             }
             if (Time.time >= p.DodgeUntil) return false;
             CompanionAI ai = h.GetComponent<CompanionAI>();
             if (ai == null || ai.IsInCombat) { p.DodgeUntil = 0f; return false; }
-            if (Vector3.Distance(h.transform.position, p.DodgePoint) > 0.6f) ai.MoveToPoint(Time.deltaTime, p.DodgePoint, 0.4f, true);
+            if (Vector3.Distance(h.transform.position, p.DodgePoint) > 0.6f) ai.MHR_Go(Time.deltaTime, p.DodgePoint, 0.4f, true, "Dodge");
             else ai.StopMoving();
             return true;
         }

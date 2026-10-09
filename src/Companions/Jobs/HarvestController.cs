@@ -2105,7 +2105,7 @@ public class HarvestController : MonoBehaviour
 			float dist = (flag2 ? (attackRange * 0.8f) : (attackRange * 0.8f));
 			if (num > num2)
 			{
-				_ai.MoveToPoint(Time.deltaTime, effectiveTargetPosition, dist, run: false);
+				_ai.MHR_Go(Time.deltaTime, effectiveTargetPosition, dist, false, "Harvest");
 			}
 		}
 	}
