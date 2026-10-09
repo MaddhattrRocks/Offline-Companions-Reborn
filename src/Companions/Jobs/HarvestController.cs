@@ -270,7 +270,13 @@ public class HarvestController : MonoBehaviour
 	// with Follow off, anything within 40 m of the player as before
 	private float PlayerRange()
 	{
-		return (_setup != null && _setup.GetFollow() && !_isDirectedHarvest) ? (ModConfig.HarvestFollowRange?.Value ?? 20f) : 40f;
+		if (_setup == null || !_setup.GetFollow() || _isDirectedHarvest)
+		{
+			return 40f;
+		}
+		// 1.4.151: Forage has its own, shorter range (user: "more of a you stumbled upon some raspberries" - at 20 m it
+		// picked almost everything around the player)
+		return GetMode() == CompanionSetup.ModeForage ? (ModConfig.ForageFollowRange?.Value ?? 10f) : (ModConfig.HarvestFollowRange?.Value ?? 20f);
 	}
 
 	internal bool IsMoving => _state == HarvestState.Moving;

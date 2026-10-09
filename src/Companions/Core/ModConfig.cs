@@ -272,6 +272,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestFollowRange;
 
+	internal static ConfigEntry<float> ForageFollowRange;
+
 	internal static ConfigEntry<float> HarvestRange;
 
 	internal static ConfigEntry<bool> HarvestPickUpLoose;
@@ -538,7 +540,8 @@ internal static class ModConfig
 		RepairScanRadius = Bind(cfg, "GearRepair", "StationRange", 20f, "How far (meters) a companion looks for a crafting station to repair at. Near home, any station near home counts.", new AcceptableValueRange<float>(5f, 60f));
 		// [Gathering]
 		HarvestRange = Bind(cfg, "Gathering", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
-		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 20f, "Wood, Stone, Ore and Forage with Follow on: a tree, rock or plant has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range.)", new AcceptableValueRange<float>(5f, 60f));
+		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 20f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
+		ForageFollowRange = Bind(cfg, "Gathering", "ForageFollowRange", 10f, "Forage with Follow on: a plant has to be within this many meters of you - the berries you happen to walk past, not everything around. With nothing that close the companion just follows you. (With Follow off see Range.)", new AcceptableValueRange<float>(3f, 60f));
 		HarvestPickUpLoose = Bind(cfg, "Gathering", "PickUpLoose", true, "Wood and Stone jobs, early in the game only: also pick up what's lying on the ground by hand - branches (Wood job), loose stones and flint (Stone job) - as long as they're on GatherWood / GatherStone and under their amount. Early game = there's no bronze-or-better axe in the companion's pack, your pack or the chests near home, and no forge at home to make one. With no tool for the job (no axe for Wood, no pickaxe for Stone) picking things up is all it does.");
 		WoodLimit = Bind(cfg, "Gathering", "WoodLimit", 500, "How many of each wood material (counting the companion's pack and chests near its home) the Wood job gathers before stopping. 0 = no limit. Per-item numbers in GatherWood override this.", new AcceptableValueRange<int>(0, 100000));
 		StoneLimit = Bind(cfg, "Gathering", "StoneLimit", 500, "Same as WoodLimit, for the Stone job and GatherStone.", new AcceptableValueRange<int>(0, 100000));

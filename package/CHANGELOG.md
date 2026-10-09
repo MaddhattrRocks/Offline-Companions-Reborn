@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.151
+- Forage with Follow on now only picks plants within 10 m of you (new [Gathering] ForageFollowRange) - the berries you happen to walk past, not everything around. Wood, Stone and Ore keep FollowRange (20 m).
+
 ## 1.4.150
 - Fixed: a patch meant only for companions stopped every creature's attacks from leaving effects on the ground.
 - Fixed: Smelt could put ore or fuel into a smelter that was no longer in its pack (duplicating it).
