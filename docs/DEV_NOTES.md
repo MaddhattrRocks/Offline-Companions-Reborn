@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.144 - gear repair vs jobs (user test of 1.4.143, 2026-10-09)
+- Log: Cook on, went for honey, then took Ooze for Muckshake and stood still. RepairController had started MovingToStation (forge) just before; it only yielded to Harvest/Smelt, so Cook's MHR_Mover.Go and Repair's Go ("Repair") ran every frame and cancelled each other. ShouldAbort now also covers Cook/Farm/Hunt/Fish IsActive (Upkeep already yields to gear repair).
+- The trip was triggered by the arbalest at 56% (< HomeThreshold 80% at home), which only the black forge repairs; the station was picked by "can repair any worn item", so it went to the forge for 96-100% bronze gear - and would again every scan. Now only items below RepairThreshold pick the station (log "canRepairWorn"); none repairable in range -> 60 s back-off. The station's queue still tops up everything else it can fix there.
+- Idle never started in that log (Cook stayed IsActive on the stalled task).
+
 ### 1.4.143 - idle behaviours (user, 2026-10-09)
 - User's answers: all four activities (small chores, sit and rest, wander and look busy, socialize); near their job; say why now and then; global [Idle] settings.
 - New Jobs/IdleController.cs (added in CompanionPrefabs). Free() = not Stay, not following, no combat/swim, no pending order (move, cart, deposit, tombstone), no ToolKeeper trip or loot pickup, not resting, panel/radial not open, no job controller IsActive (Harvest, Smelt, Farm, Cook, Hunt, Fish, gear Repair, DoorHandler, Upkeep other than its own idle chore). Free for [Idle] StartAfter (10 s) -> Begin: center = where it is (mode 0 near home: home). Not free -> Stop at once (chore stopped, stands up, mover released).

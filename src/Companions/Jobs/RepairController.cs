@@ -32,6 +32,14 @@ public class RepairController : MonoBehaviour
 
 	private SmeltController _smelt;
 
+	private CookController _cook;
+
+	private FarmController _farm;
+
+	private HuntController _hunt;
+
+	private FishController _fish;
+
 	private static readonly HashSet<int> s_claimedStations = new HashSet<int>();
 
 	private int _claimedStationId;
@@ -159,6 +167,10 @@ public class RepairController : MonoBehaviour
 		_harvest = GetComponent<HarvestController>();
 		_doorHandler = GetComponent<DoorHandler>();
 		_smelt = GetComponent<SmeltController>();
+		_cook = GetComponent<CookController>();
+		_farm = GetComponent<FarmController>();
+		_hunt = GetComponent<HuntController>();
+		_fish = GetComponent<FishController>();
 	}
 
 	private void OnDestroy()
@@ -218,6 +230,12 @@ public class RepairController : MonoBehaviour
 		{
 			return true;
 		}
+		// 1.4.144: the other jobs too - with Cook on, both walked at once (forge vs honey/cauldron), fought over the
+		// mover and it stood still. The job's task comes first; the repair trip waits until the job is between tasks.
+		if ((_cook != null && _cook.IsActive) || (_farm != null && _farm.IsActive) || (_hunt != null && _hunt.IsActive) || (_fish != null && _fish.IsActive))
+		{
+			return true;
+		}
 		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
 			return true;
@@ -271,16 +289,19 @@ public class RepairController : MonoBehaviour
 				Log($"Scan: \"{itemData.m_shared.m_name}\" dur={itemData.m_durability:F0}/{maxDurability:F0} ({num:F0}%) " + $"station=\"{arg}\" minLevel={num2} canRepair={itemData.m_shared.m_canBeReparied}");
 			}
 		}
-		bool flag = false;
+		// 1.4.144: only the items below the threshold pick the station - the 56% arbalest (black forge only) sent it to the
+		// forge over and over to top up 96-100% bronze gear (user: "the NPC seems to repair a lot")
+		List<ItemDrop.ItemData> low = new List<ItemDrop.ItemData>();
+		float threshold = MHR_Nav.RepairThreshold(this);
 		for (int j = 0; j < _tempWorn.Count; j++)
 		{
 			float maxDurability2 = _tempWorn[j].GetMaxDurability();
-			if (maxDurability2 > 0f && _tempWorn[j].m_durability / maxDurability2 < MHR_Nav.RepairThreshold(this))
+			if (maxDurability2 > 0f && _tempWorn[j].m_durability / maxDurability2 < threshold)
 			{
-				flag = true;
-				break;
+				low.Add(_tempWorn[j]);
 			}
 		}
+		bool flag = low.Count > 0;
 		if (!flag)
 		{
 			Log($"Scan: {_tempWorn.Count} worn items but none below {DurabilityThreshold * 100f:F0}% — skipping");
@@ -306,15 +327,15 @@ public class RepairController : MonoBehaviour
 				continue;
 			}
 			bool flag2 = false;
-			for (int l = 0; l < _tempWorn.Count; l++)
+			for (int l = 0; l < low.Count; l++)
 			{
-				if (CanRepairAt(craftingStation2, _tempWorn[l]))
+				if (CanRepairAt(craftingStation2, low[l]))
 				{
 					flag2 = true;
 					break;
 				}
 			}
-			Log($"Scan: station \"{craftingStation2.m_name}\" level={craftingStation2.GetLevel()} " + $"dist={num4:F1}m canRepairAny={flag2}");
+			Log($"Scan: station \"{craftingStation2.m_name}\" level={craftingStation2.GetLevel()} " + $"dist={num4:F1}m canRepairWorn={flag2}");
 			if (flag2 && num4 < num3 && !s_claimedStations.Contains(craftingStation2.GetInstanceID()))
 			{
 				if (_ai != null && _ai.IsPositionBlacklisted(craftingStation2.transform.position))
@@ -330,7 +351,7 @@ public class RepairController : MonoBehaviour
 		{
 			if (!_lastScanFailed)
 			{
-				Log($"Scan: no reachable station can repair any worn items within {ScanRadius}m — backing off {60f}s");
+				Log($"Scan: no reachable station can repair the items below {threshold * 100f:F0}% within {ScanRadius}m — backing off {60f}s");
 			}
 			_lastScanFailed = true;
 			_scanTimer = 60f;

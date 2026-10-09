@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.143 pushed, not yet tested (1.4.142 tested good)
+## Current state: 1.4.144 pushed, not yet tested (1.4.142 tested good; 1.4.143 idle not yet seen in a log)
+- 1.4.144: gear repair trip waits for Cook/Farm/Hunt/Fish tasks (they fought over movement); only items below the threshold pick the repair station.
 - 1.4.143: idle behaviours - near its job: small chores, sit, wander, socialize; says why now and then; [Idle] settings.
 - 1.4.142: build has 0 warnings (no behaviour change).
 - 1.4.141: movement phase 4 part 2 - old CompanionAI steering/ground-stuck/proactive jump/teleport removed, WaterSafety and the door command on MHR_Mover, old DoorHandler and [Door] settings gone. 
