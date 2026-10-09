@@ -31,6 +31,15 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.149 - config clean-up (user, 2026-10-09: "review the cfg file and clean that up" before going public)
+- User's choices: regroup + carry values over; rewrite all descriptions in plain style; low-level tuning into [Advanced]; dead settings listed first, then: remove them, except ViewRange/ViewAngle which now work.
+- Removed (never read): Combat StaminaRetreatPct, HealthRecoverPct, StaminaRecoverPct, PowerAttackCooldown, BowMaxRange, BowMinRange, RetreatDistance, BowDrawTime, BowFireInterval, DodgeCooldown, DodgeStaminaCost, ThreatDetectRange, ProjectileDetectRange, BlockSafetyCap, CounterWindowDuration, ConsumeCooldown; AI GiveUpTime, UpdateTargetIntervalNear/Far, SelfDefenseRange, WanderMoveInterval; General MaxLeashDistance (22; told the user 21 - miscount). User keeps notes for the combat overhaul.
+- Layout: General, Controls, Follow, Movement, Combat, Food, Stamina, Rest (+Sleep), Death (was Respawn, +Skills), Looting (+AutoPickupRange), GearRepair (was Repair), Gathering (was Harvest), Hunting, Fishing, Farming (Farm+Farming), Smelting, Cooking, RepairAndRestock, Idle, Speech, Advanced. Section order = bind order = F8 panel order. C# field names unchanged (no call-site changes).
+- ModConfig.s_moved (71 old section/key -> new) + MigrateAndClean: reads ConfigFile.OrphanedEntries (protected, via AccessTools), copies each old value with SetSerializedValue onto the new entry, then clears every orphan and saves (drops the removed keys and the old Homestead/Door sections). Runs before the ForageItems/MeadFocus fix-ups so those also see migrated values.
+- ViewRange/ViewAngle: CompanionPrefabs now uses them (was hard-coded 20/120); defaults 20/120; a file still holding the never-used old defaults 40/90 is reset to 20/120 so nothing changes in game.
+- Scratch generator for the layout lived in the session scratchpad (spec of field -> section/key/description); not in the repo.
+- README still mentions "re-engage once healed up" (HealthRecoverPct never worked) and "Clean up the settings/config options" in Future Plans - update when doing the release README.
+
 ### 1.4.148 - ship seat kinematic warnings (user, 2026-10-09, before the config review and public release)
 - CompanionAI.AttachToShip no longer sets isKinematic (Character.UpdateWalking sets linearVelocity every physics tick -> Unity warning each tick on a kinematic body; same fix as Follow chairs 1.4.77 and beds 1.4.97). Gravity off, ship colliders ignored (as before), PinToShip (ship-local seat pos/rot -> world, body velocity = ship point velocity) from UpdateShipAttach + new CompanionAI.FixedUpdate/LateUpdate, owner only. DetachFromShip unchanged (isKinematic=false, gravity back on).
 

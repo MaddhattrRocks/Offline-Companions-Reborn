@@ -2,6 +2,15 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.149
+- Config clean-up: settings regrouped into clear sections (General, Controls, Follow, Movement, Combat, Food, Stamina, Rest, Death, Looting, GearRepair, one per job, Idle, Speech, Advanced).
+- Settings that moved or were renamed keep the values you set - they're carried over automatically the first time you load in.
+- Removed 22 settings that did nothing (old combat, AI and Stay Home settings).
+- Old leftover lines are cleared out of the config file (removed settings, the old Homestead and Door sections).
+- Every setting's description rewritten in plain words, with units.
+- Low-level tuning (scan intervals, use distances, tick timings) moved to a new [Advanced] section.
+- Movement ViewRange and ViewAngle now actually work (defaults 20 m and 120 degrees - what companions always used).
+
 ## 1.4.148
 - Fixed: a companion sitting on a ship flooded the log with "Setting linear velocity of a kinematic body is not supported" warnings - ship seats now work like chairs and beds.
 

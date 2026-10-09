@@ -191,7 +191,6 @@ public class CompanionSetup : MonoBehaviour
 
 	internal static IReadOnlyList<CompanionSetup> AllCompanions => _allCompanions;
 
-	internal static float MaxLeashDistance => ModConfig.MaxLeashDistance.Value;
 
 	internal bool SuppressAutoEquip { get; set; }
 

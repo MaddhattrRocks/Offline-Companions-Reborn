@@ -225,7 +225,6 @@ public class CompanionAI : BaseAI
 
 	private static float AutoPickupRange => ModConfig.AutoPickupRange.Value;
 
-	private static float GiveUpTime => ModConfig.GiveUpTime.Value;
 
 	private static float FollowTeleportDist => ModConfig.FollowTeleportDistance.Value;
 
@@ -247,7 +246,6 @@ public class CompanionAI : BaseAI
 
 	internal bool IsRecoveringTombstone => _pendingTombstone != null;
 
-	private static float WanderMoveInterval => ModConfig.WanderMoveInterval.Value;
 
 	internal void SetPatrolPointAt(Vector3 point)
 	{
