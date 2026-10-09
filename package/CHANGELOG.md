@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.122
+- Wood and Stone jobs: a companion with only a stone or flint axe, or no axe at all, also picks up what's lying on the ground - branches on the Wood job, loose stones and flint on the Stone job (on the job's list and under its amount). Whichever is closer, a tree/rock or something on the ground, comes first.
+- With no tool for the job (no axe for Wood, no pickaxe for Stone) it only picks things up, instead of standing around.
+- New [Harvest] PickUpLoose setting (on by default) to turn this off.
+
 ## 1.4.121
 - Wood, Stone, Ore and Forage with Follow off now work an area like Hunt: around home when started near home, otherwise around where they were started (new [Harvest] Range, 40 m), and keep going when you walk away instead of stopping 40 m from you.
 - With nothing left to gather they walk back to the middle of that area.

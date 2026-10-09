@@ -812,7 +812,22 @@ public class HarvestController : MonoBehaviour
 			}
 		}
 		LogInfo($"Scanning for targets... mode={mode} " + $"pos={base.transform.position:F1} radius={ScanRadius}");
-		GameObject gameObject = MHR_GatherRules.Scan(this, mode);
+		// 1.4.122: with only a stone or flint axe, or no axe (Stone: or no pickaxe), also pick up branches / stones / flint
+		// lying around (user); with no tool for the job, that's all it does
+		GameObject loose = null;
+		bool noTool = false;
+		bool looseOn = !_isDirectedHarvest && (mode == 1 || mode == 2) && LooseOn(mode, out noTool);
+		if (looseOn)
+		{
+			loose = ScanForPickable(mode);
+		}
+		GameObject gameObject = (looseOn && noTool) ? null : MHR_GatherRules.Scan(this, mode);
+		bool pickLoose = false;
+		if (loose != null && (gameObject == null || Vector3.Distance(base.transform.position, loose.transform.position) <= Vector3.Distance(base.transform.position, gameObject.transform.position)))
+		{
+			gameObject = loose;
+			pickLoose = true;
+		}
 		if (gameObject == null)
 		{
 			LogInfo("Scan found 0 valid targets — staying idle");
@@ -828,10 +843,10 @@ public class HarvestController : MonoBehaviour
 			_goingBack = false;
 			MHR_Mover.Release(_ai);
 		}
-		if (mode == 5)
+		if (mode == 5 || pickLoose)
 		{
 			float num = Vector3.Distance(base.transform.position, gameObject.transform.position);
-			LogInfo($"Forage target: \"{gameObject.name}\" dist={num:F1}m");
+			LogInfo($"{(pickLoose ? "Picking up" : "Forage target")}: \"{gameObject.name}\" dist={num:F1}m");
 			Log($"Forage target acquired: \"{gameObject.name}\" dist={num:F1}m " + $"pos={gameObject.transform.position:F1}");
 			_target = gameObject;
 			_targetType = "Pickable";
@@ -1089,7 +1104,7 @@ public class HarvestController : MonoBehaviour
 	private void UpdateAttacking()
 	{
 		int mode = GetMode();
-		if (mode == 5)
+		if (mode == 5 || _targetType == "Pickable")
 		{
 			Pickable pickable = _target?.GetComponentInParent<Pickable>();
 			if (pickable != null)
@@ -2518,7 +2533,51 @@ public class HarvestController : MonoBehaviour
 		return gameObject;
 	}
 
-	private GameObject ScanForPickable()
+	// 1.4.122: loose pickups for the Wood and Stone jobs
+	private bool LooseOn(int mode, out bool noTool)
+	{
+		noTool = BestToolQuiet(mode) == null;
+		if (!(ModConfig.HarvestPickUpLoose?.Value ?? true))
+		{
+			return false;
+		}
+		ItemDrop.ItemData axe = BestToolQuiet(1);
+		string name = axe?.m_dropPrefab != null ? axe.m_dropPrefab.name : null;
+		return noTool || axe == null || name == "AxeStone" || name == "AxeFlint";
+	}
+
+	// the best tool for the job without the logging (FindBestTool logs every candidate)
+	private ItemDrop.ItemData BestToolQuiet(int mode)
+	{
+		Inventory inv = _humanoid?.GetInventory();
+		if (inv == null)
+		{
+			return null;
+		}
+		ItemDrop.ItemData best = null;
+		float bestDmg = 0f;
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || (it.m_shared.m_useDurability && it.m_durability <= 0f))
+			{
+				continue;
+			}
+			if (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(it.m_shared.m_ammoType) || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo)
+			{
+				continue;
+			}
+			HitData.DamageTypes d = it.GetDamage();
+			float dmg = mode == 1 ? d.m_chop : d.m_pickaxe;
+			if (dmg > bestDmg)
+			{
+				bestDmg = dmg;
+				best = it;
+			}
+		}
+		return best;
+	}
+
+	private GameObject ScanForPickable(int looseMode = 0)
 	{
 		int num = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer);
 		if (num > _scanBuffer.Length)
@@ -2538,7 +2597,7 @@ public class HarvestController : MonoBehaviour
 				continue;
 			}
 			Pickable componentInParent = collider.GetComponentInParent<Pickable>();
-			if (componentInParent == null || !MHR_ForageAllowed(componentInParent) || !ForageUnderAmount(componentInParent))
+			if (componentInParent == null || (looseMode == 0 ? (!MHR_ForageAllowed(componentInParent) || !ForageUnderAmount(componentInParent)) : !MHR_GatherRules.AllowLoose(this, componentInParent, looseMode)))
 			{
 				continue;
 			}

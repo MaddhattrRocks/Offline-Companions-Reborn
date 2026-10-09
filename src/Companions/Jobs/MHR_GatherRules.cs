@@ -237,6 +237,29 @@ namespace Companions
         }
 
         // ---------- drops ----------
+        // 1.4.122: loose things lying on the ground that the Wood job (branches -> Wood) and the Stone job (stones, flint)
+        // pick up by hand - on the job's list and under its amount, like any other target
+        public static bool LooseItem(int mode, string item)
+        {
+            return (mode == 1 && item == "Wood") || (mode == 2 && (item == "Stone" || item == "Flint"));
+        }
+
+        public static bool AllowLoose(HarvestController h, Pickable pick, int mode)
+        {
+            try
+            {
+                if (pick == null || pick.m_itemPrefab == null) return false;
+                string item = pick.m_itemPrefab.name;
+                if (!LooseItem(mode, item)) return false;
+                MHR_List list = Parse(mode);
+                if (list == null) return true;
+                if (!list.Allows(item, ItemLocal(item))) return false;
+                int limit = list.AmountFor(item, DefaultLimit(mode));
+                return limit <= 0 || Stock(h, item) < limit;
+            }
+            catch (Exception e) { Warn("AllowLoose: " + e.Message); return false; }
+        }
+
         public static bool WantDrop(HarvestController h, ItemDrop drop)
         {
             try
