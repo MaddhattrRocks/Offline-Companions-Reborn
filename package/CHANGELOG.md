@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.110
+- Companions prefer staying dry like a player: when the way somewhere crosses water they go round on land unless that's a long way in another direction, and otherwise swim (General > DryDetour).
+- Jobs (fishing spots, prey, birds, kill drops) accept a short swim to get somewhere and only give up on a long one (General > JobSwim, 20 m). Drops floating in deep water are still left.
+- Companions take a running dive into the water whenever their route really does swim, not only while following you.
+
 ## 1.4.109
 - Fixed companions counting as having stamina at zero, so a fisher out of stamina still landed its fish (a player loses it). This also applies to anything else that needs stamina.
 - The fisher fishes for fish up to 20 m out (its full cast reaches about 24 m), so it finds somewhere to fish much sooner.

@@ -74,6 +74,8 @@ namespace Companions
         // 1.4.79: the current route doesn't reach the goal (Follow switches to the player's path then)
         public static bool RoutePartial(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && s.Partial && !s.HasDetour; }
         // 1.4.81: meters of swimming on the current route
+        // 1.4.110: how much swimming a job accepts to reach something (General.JobSwim)
+        public static float JobSwim() { return ModConfig.JobSwim != null ? ModConfig.JobSwim.Value : 20f; }
         public static float RouteSwim(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? s.RouteSwim : 0f; }
         // 1.4.82: length of the current route, for callers that compare it with the straight line (0 when not moving)
         public static float RouteLength(CompanionAI ai)
@@ -339,6 +341,25 @@ namespace Companions
                 {
                     float swim = MHR_Water.SwimMeters(c, pos, s.Path, 60f);
                     s.RouteSwim = swim;
+                    // 1.4.110: prefer staying dry, like a player (user: "it can go in the water, it just should prefer not
+                    // to if there is a way that is not a long run in another direction"): a dry route that isn't much
+                    // longer wins; otherwise swim
+                    if (swim > 0.5f)
+                    {
+                        s_tmp.Clear();
+                        float wetLen = PathLength(pos, s.Path);
+                        if (GetPath(pos, goal, s_tmp, Pathfinding.AgentType.HumanoidAvoidWater, true))
+                        {
+                            float dryLen = PathLength(pos, s_tmp);
+                            float extra = ModConfig.DryDetour != null ? ModConfig.DryDetour.Value : 30f;
+                            if (dryLen <= wetLen * 1.5f + extra)
+                            {
+                                s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false; swim = 0f; s.RouteSwim = 0f;
+                                if (now >= s.NextLog) Dbg("[Move|" + s.Tag + "] going round the water (" + dryLen.ToString("F0") + "m) instead of swimming (" + wetLen.ToString("F0") + "m)");
+                            }
+                            else if (now >= s.NextLog) Dbg("[Move|" + s.Tag + "] swimming: the dry way is " + dryLen.ToString("F0") + "m against " + wetLen.ToString("F0") + "m");
+                        }
+                    }
                     if (swim > 0.5f)
                     {
                         float need = MHR_Water.SwimStamina(c, swim) * 1.25f + 5f;
@@ -403,6 +424,13 @@ namespace Companions
                     }
                 }
             }
+        }
+
+        static float PathLength(Vector3 from, List<Vector3> path)
+        {
+            float len = 0f; Vector3 prev = from;
+            for (int i = 0; i < path.Count; i++) { len += Vector3.Distance(prev, path[i]); prev = path[i]; }
+            return len;
         }
 
         static bool GetPath(Vector3 from, Vector3 to, List<Vector3> path, Pathfinding.AgentType agent, bool requireFull)
@@ -927,7 +955,7 @@ namespace Companions
                 Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
                 return true;
             }
-            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && tag == FollowTag)
+            if (landAt < 0f && now >= s.NextDive && waterAt <= 1.0f && !s.WaitStamina && s.RouteSwim > 0.5f)
             {
                 // wide water we're about to swim: running leap in for a head start
                 Leap(ai, c, dir, 5f);

@@ -469,9 +469,9 @@ public class HuntController : MonoBehaviour
 			// get within a shot quickly (birds only stay down a few seconds); never swim for one (1.4.101 test: dived into
 			// the moat after a gull)
 			MHR_Mover.Go(_ai, Time.deltaTime, _birdPos, BirdShotRange * 0.8f, true, "Hunt", MHR_Mover.SpeedJog);
-			if (MHR_Mover.GaveUp(_ai) || MHR_Mover.RouteSwim(_ai) > 0.5f || _character.IsSwimming())
+			if (MHR_Mover.GaveUp(_ai) || MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim())
 			{
-				LogDebug("Can't get a shot at the " + _birdName + (MHR_Mover.RouteSwim(_ai) > 0.5f ? " without swimming" : "") + " - leaving it");
+				LogDebug("Can't get a shot at the " + _birdName + (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim() ? " without a long swim" : "") + " - leaving it");
 				_skip[_bird.GetInstanceID()] = Time.time + 120f;
 				EndBird();
 			}

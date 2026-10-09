@@ -186,7 +186,7 @@ public class CompanionCombatAI : MonoBehaviour
 			}
 		}
 		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run, "Hunt", run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
-		if (MHR_Mover.RouteSwim(_ai) > 0.5f)
+		if (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim())
 		{
 			LeavePrey("I'd have to swim");
 		}

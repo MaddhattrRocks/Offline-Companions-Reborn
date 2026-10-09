@@ -162,6 +162,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> StatusEffectsOnRegen;
 
+	internal static ConfigEntry<float> DryDetour;
+
+	internal static ConfigEntry<float> JobSwim;
+
 	internal static ConfigEntry<float> MaxDrop;
 
 	internal static ConfigEntry<float> JumpGap;
@@ -500,6 +504,8 @@ internal static class ModConfig
 		HuntBirds = Bind(cfg, "Hunting", "Birds", true, "Also shoot birds (crows, gulls, modded birds) for their feathers: when one lands within range, the hunter sneaks up and shoots it with a bow or crossbow (only if it has one with ammo), then picks up the drops. Birds on the Prey list's exclusions (-Crow, -Seagal) are left alone.");
 		HuntFeatherTarget = Bind(cfg, "Hunting", "FeatherTarget", 100, "Shoot birds only while what they drop (feathers) is under this many, counting the pack and the chests near home. 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
 		HuntSneak = Bind(cfg, "Hunting", "Sneak", true, "Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).");
+		DryDetour = Bind(cfg, "General", "DryDetour", 30f, "Companions prefer staying dry, like a player: when the way somewhere crosses water they go round it on land, as long as the dry way is no longer than 1.5x the swimming way plus this many meters. Otherwise they swim.", new AcceptableValueRange<float>(0f, 500f));
+		JobSwim = Bind(cfg, "General", "JobSwim", 20f, "The most swimming (meters) a job accepts to reach something: loot from a kill, prey, a bird, a fishing spot. Further than that and it leaves it.", new AcceptableValueRange<float>(0f, 200f));
 		MaxDrop = Bind(cfg, "General", "MaxDrop", 3f, "When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).", new AcceptableValueRange<float>(1f, 4f));
 		JumpGap = Bind(cfg, "General", "JumpGap", 1.5f, "The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.", new AcceptableValueRange<float>(0.5f, 3f));
 		JumpWaterDepth = Bind(cfg, "General", "JumpWaterDepth", 0.3f, "Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.", new AcceptableValueRange<float>(0.05f, 2f));

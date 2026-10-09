@@ -9,7 +9,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.4.109 pushed, not yet tested (1.4.86-1.4.109 on the branch, no PR yet)
+## Current state: 1.4.110 pushed, not yet tested (1.4.86-1.4.110 on the branch, no PR yet)
+- 1.4.110: prefer dry routes unless the detour is long (DryDetour), jobs accept short swims (JobSwim).
 - 1.4.108 test: first real catch (a Pike). 1.4.109: strict HaveStamina, 20 m casts, no job dives.
 - 1.4.107 test: first real cast, float Setup crashed for the companion. 1.4.108: own float setup for companions, shore map for spots, aim clamp.
 - 1.4.106 test: never found a bank (moat walls too high for the 4 m rule). 1.4.107 fixes the bank search.

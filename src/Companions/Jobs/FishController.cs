@@ -601,7 +601,7 @@ public class FishController : MonoBehaviour
 			return;
 		}
 		MHR_Mover.Go(_ai, Time.deltaTime, _stand, 0.8f, true, "Fish");
-		if (MHR_Mover.RouteSwim(_ai) > 0.5f || MHR_Mover.GaveUp(_ai) || Time.time - _stateSince > 60f)
+		if (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim() || MHR_Mover.GaveUp(_ai) || Time.time - _stateSince > 60f)
 		{
 			Log("Can't get to the bank by the " + _fishName + " - trying another");
 			_skip[_fish.GetInstanceID()] = Time.time + 120f;

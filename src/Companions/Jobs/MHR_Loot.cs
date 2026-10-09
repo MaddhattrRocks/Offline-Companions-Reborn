@@ -150,7 +150,7 @@ namespace Companions
                 }
                 MHR_Mover.Go(ai, dt, tp, 0.8f, true, "Loot");
                 // 1.4.97: never swim for loot (1.4.96 test: took a shortcut through the water to some drops)
-                if (MHR_Mover.RouteSwim(ai) > 0.5f) { LogDebug("  " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " is only reachable by swimming - leaving it"); k.Skipped.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); return true; }
+                if (MHR_Mover.RouteSwim(ai) > MHR_Mover.JobSwim()) { LogDebug("  " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " is a long swim away - leaving it"); k.Skipped.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); return true; }
                 if (MHR_Mover.GaveUp(ai)) { LogDebug("  can't get to " + Loc(st.Target.m_itemData != null ? st.Target.m_itemData.m_shared.m_name : "?") + " - leaving it"); k.Skipped.Add(st.Target.GetInstanceID()); st.Target = null; MHR_Mover.Release(ai); }
                 return true;
             }
@@ -170,7 +170,7 @@ namespace Companions
             {
                 MHR_Mover.Go(ai, dt, spot, 2f, true, "Loot");
                 if (MHR_Mover.GaveUp(ai)) { Finish(ai, st, "stopped picking up (can't get to the body)"); return false; }
-                if (MHR_Mover.RouteSwim(ai) > 0.5f) { Finish(ai, st, "stopped picking up (would have to swim)"); return false; }
+                if (MHR_Mover.RouteSwim(ai) > MHR_Mover.JobSwim()) { Finish(ai, st, "stopped picking up (a long swim away)"); return false; }
             }
             else ai.StopMoving();
             return true;

@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.110 - prefer dry, but swimming is allowed (user, 2026-10-09)
+- User: "The NPC can go in the water. It just should prefer not to if there is a way to get to the destination that is not a long run in another direction."
+- MHR_Mover.Plan: when the route swims (SwimMeters > 0.5), also ask for a full HumanoidAvoidWater route; take it when dryLen <= wetLen x 1.5 + General.DryDetour (30 m) ("going round the water (X m) instead of swimming (Y m)"), else swim ("swimming: the dry way is X m against Y m"). The tired-swimmer fallback stays after that. Running dive: whenever the planned route swims (was Follow only in 1.4.109).
+- Job swim limits: hard "no swimming" checks (Fish moving, Hunt chase, Birding, Loot) now allow up to General.JobSwim (20 m) of swimming on the route (MHR_Mover.JobSwim()). Loot still skips drops lying in swim-depth water (they float off) and still waits on the bank for a body in deep water.
+
 ### 1.4.109 - from the 1.4.108 test (log e9335e53)
 - User: still took a few minutes to find where to fish; cast, there was a bobber; ran out of stamina and still caught the fish. Progress.
 - Log: "Mapped 19/14 places", "no bank ... 11 fish seen" twice (fish 17-30 m from the mapped places, limit was 14 m), then "Going to fish for Fish2", "diving in" on the way, "Casting at the Fish2 (14 m, 100% cast)", "Float out 24 m, bait FishingBait", "Hooked a Pike", ~3,800 lines later "Caught a Pike". No exceptions.
