@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.4.103
+- Hunters chase prey the way companions follow you: proper routes, climbing out of pits, no jumping into water. Prey they'd have to swim to, or can't find a way to, is left alone.
+- With a bow or crossbow, prey down in a moat or pit is shot from the edge instead of followed down.
+- A companion far from you and out of sight no longer warps to you while it's still making its way there; it walks.
+
 ## 1.4.102
 - Companions no longer go straight back to bed right after you load in.
 - Companions get up beside the bed onto the floor, instead of on the bed (where they slid off the end).

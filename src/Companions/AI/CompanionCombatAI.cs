@@ -145,6 +145,98 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 	}
 
+	// 1.4.103: hunting chases go through MHR_Mover like following does - routes, climbing out of pits, no jumping into
+	// water (1.4.101 test: followed a deer into the moat with the game's own movement, couldn't climb the wall and ended
+	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
+	private float _nextHuntMoveLog;
+
+	private bool HuntMove(float dt, Vector3 point, float dist, bool run)
+	{
+		if (!HuntMode || _targetCreature == null)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		Vector3 goal = point;
+		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
+		bool ranged = weapon != null && (weapon.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || weapon.m_shared.m_aiAttackRange > 10f);
+		if (ranged && point.y < me.y - 2.5f)
+		{
+			if (EdgeSpot(me, _targetCreature, out var spot))
+			{
+				goal = spot;
+				dist = 0.5f;
+			}
+			else
+			{
+				LeavePrey("it's down where I can't get a shot from up here");
+				return true;
+			}
+		}
+		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run, "Hunt", run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
+		if (MHR_Mover.RouteSwim(_ai) > 0.5f)
+		{
+			LeavePrey("I'd have to swim");
+		}
+		else if (MHR_Mover.GaveUp(_ai))
+		{
+			LeavePrey("I can't find a way to it");
+		}
+		return true;
+	}
+
+	private void LeavePrey(string why)
+	{
+		if (Time.time >= _nextHuntMoveLog)
+		{
+			_nextHuntMoveLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] Leaving " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - " + why);
+		}
+		MHR_Mover.Release(_ai);
+		Disengage();
+	}
+
+	// a spot on our level, towards the prey, from where it can be seen (the edge of the moat / pit)
+	private static bool EdgeSpot(Vector3 me, Character prey, out Vector3 spot)
+	{
+		spot = me;
+		Vector3 target = prey.GetTopPoint();
+		Vector3 d = prey.transform.position - me;
+		d.y = 0f;
+		float len = d.magnitude;
+		if (len < 0.5f)
+		{
+			return false;
+		}
+		d /= len;
+		Vector3 best = Vector3.zero;
+		bool found = false;
+		for (float x = 0f; x < len; x += 0.5f)
+		{
+			Vector3 p = me + d * x;
+			float g = MHR_Water.GroundAt(p);
+			if (Mathf.Abs(g - me.y) > 1.5f || MHR_Water.DepthAt(p) > 0.4f)
+			{
+				break;   // the edge: dropping down or into water from here
+			}
+			p.y = g;
+			bool inRange = Vector3.Distance(p, target) < RangedAttackRange - 3f;
+			if (inRange && MHR_Mover.CanSee(p + Vector3.up * 1.6f, target))
+			{
+				best = p;
+				found = true;
+				break;
+			}
+			best = p;
+		}
+		if (!found && best != Vector3.zero && Vector3.Distance(best, target) < RangedAttackRange - 3f && MHR_Mover.CanSee(best + Vector3.up * 1.6f, target))
+		{
+			found = true;
+		}
+		spot = best;
+		return found;
+	}
+
 	// skittish game (deer, hares, anything that runs when it notices you) that hasn't noticed anyone yet
 	private static bool Unaware(Character c)
 	{
@@ -330,7 +422,10 @@ public class CompanionCombatAI : MonoBehaviour
 						{
 							lastKnownTargetPos += velocity * _interceptTime;
 						}
-						_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: !_stalking);
+						if (!HuntMove(dt, lastKnownTargetPos, dist, !_stalking))
+						{
+							_ai.MoveToPoint(dt, lastKnownTargetPos, dist, run: !_stalking);
+						}
 						if (_timeSinceAttacking > 15f)
 						{
 							_unableToAttackTargetTimer = 15f;
@@ -361,7 +456,7 @@ public class CompanionCombatAI : MonoBehaviour
 							_unableToAttackTargetTimer = 15f;
 						}
 					}
-					else if (_ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: !_stalking))
+					else if (HuntMode ? (HuntMove(dt, _lastKnownTargetPos, dist2, !_stalking) && Vector3.Distance(base.transform.position, _lastKnownTargetPos) <= dist2 + 1.5f) : _ai.MoveToPoint(dt, _lastKnownTargetPos, dist2, run: !_stalking))
 					{
 						_beenAtLastPos = true;
 					}

@@ -31,6 +31,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.103 - hunting chases on MHR_Mover (user: "did not take the long way around, just appeared next to me. We should patch it now")
+- CompanionCombatAI.HuntMove: while HuntMode, the chase moves (target in sight but out of range, and moving to the last known spot) go through MHR_Mover.Go (walk while sneaking). Route would swim / Mover gave up -> "[Hunt] Leaving X - ..." + Disengage (HuntController then skips that prey 60 s). Ranged weapon and the target more than 2.5 m below: EdgeSpot - walk the flat line towards it while the ground stays within 1.5 m of our height and dry, take the first spot that sees it within 27 m; none -> leave it. Non-hunt combat still uses vanilla MoveToPoint (combat review).
+- Follow warp: beyond FollowTeleportDistance and out of sight now also needs !MHR_Mover.Progressing (no progress for 10 s or gave up); beyond 1.5x it always warps. The 1.4.101 warp out of the moat was this rule (out of sight, > 50 m).
+
 ### 1.4.102 - from the 1.4.101 test (log 67e86307)
 - User: on load the NPC keeps going back to sleep; slid off the bottom of the bed. Hunting ok. Went after a deer in the moat, jumped into the moat water, didn't swim, didn't use pathing to climb the steep wall. Tried to shoot a bird but never caught one landed.
 - Sleep: at load "Going to bed: it's night" then "day started, waking up" a few seconds later - the time of day reads as night for a moment while loading. Auto-sleep is held off for 20 s after the companion spawns (CompanionRest.Awake). Waking: MHR_StandUpFromBed put him at the bed's spawn point +0.5 m (on the bed); now MHR_Follow.StandSpot beside the bed (sides first; floor no higher than the bed base + 0.3, not furniture), vanilla spot as fallback.

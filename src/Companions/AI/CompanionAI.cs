@@ -1653,7 +1653,9 @@ public class CompanionAI : BaseAI
 			}
 			// 1.4.83: not while you can still see each other, unless it's half as far again (1.4.82 log: warped while the
 			// player watched it run the long way round)
-			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || !MHR_Mover.CanSee(base.transform.position, position)))
+			// 1.4.103: and out of sight only when it isn't getting anywhere - a companion on its way round (out of a moat, up
+			// the stairs) keeps walking (user: "they just appeared next to me")
+			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || (!MHR_Mover.CanSee(base.transform.position, position) && !MHR_Mover.Progressing(this))))
 			{
 				TeleportToFollowTarget();
 			}
