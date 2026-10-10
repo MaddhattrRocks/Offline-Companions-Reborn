@@ -31,6 +31,9 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.0 - major version (user, 2026-10-10: "bump the build to 1.5.00 so its clean and shows its a major version")
+- Version 1.5.0 (not 1.5.00: Thunderstore/BepInEx want Major.Minor.Patch without a leading zero). Same code as 1.4.156. CHANGELOG has a 1.5.0 entry pointing at the 1.4.x entries below it; README highlights header v1.5.0.
+
 ### 1.4.156 - [Cooking] MakeMead (user, 2026-10-10: "A setting to turn off making mead")
 - [Cooking] MakeMead (default on). Off: PickTask skips FillTask and both BrewTask passes, and HiveTask doesn't go for honey for priority mead bases (idle honey collection unchanged); finished fermenters are still tapped.
 - Docs (user review of GUIDE.md): removed the "Farm Zones" wheel row (there's no such slice - right-click Farm opens the editor, or Left Alt + Z); added the unloaded-area note (jobs intro + troubleshooting; README Repair and Restock); several attackers "(a tower shield, say)"; MakeMead mentioned.
