@@ -8,7 +8,6 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - README and guide: on a dedicated server the server needs the mod too - a server without it deletes companions.
 
 ## 1.5.0
-
 - Major release: everything from 1.4.86 to 1.4.156 below (new movement, idle behaviour, Repair and Restock, cooking, gathering like Hunt, orders first, multiplayer ownership and chest safety, cleaned-up settings), plus the new Companion Guide (GUIDE.md) and Settings Reference (CONFIGURATION.md).
 
 ## 1.4.156
