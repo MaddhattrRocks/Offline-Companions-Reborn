@@ -50,7 +50,7 @@ The game references used are `valheim_Data/Managed` (`assembly_valheim`, `assemb
 
 ## Releasing
 
-1. Bump `PluginVersion` in `src/Companions/CompanionsPlugin.cs` and `version_number` in `package/manifest.json`.
+1. Bump `PluginVersion` in `src/Companions/Core/CompanionsPlugin.cs` and `version_number` in `package/manifest.json`.
 2. Add the changelog entry to `package/CHANGELOG.md` and update "Recent Highlights" in `package/README.md`.
 3. Build in Release and zip `Companions.dll` with the files in `package/`.
 
