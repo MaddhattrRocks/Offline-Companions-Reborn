@@ -1406,7 +1406,18 @@ public class CompanionSetup : MonoBehaviour
 
 	private void CreateCompanionTombstone(string companionName, Vector3 position, long tombstoneId, string prefabName, string appearance, string ownerId, int actionMode, int actionModeSchema, bool follow, bool stayHome, bool autoPickup, bool wander, bool commandable, int formationSlot, string skillsSerialized, bool hasHome, Vector3 homePos, int combatStance, bool hasHomeBed, Vector3 homeBedPos)
 	{
+		// 1.5.1: the tombstone prefab came from the local player only - when the player was dead too (both drowned at sea,
+		// GitHub issue #10) there was no local player, no tombstone and no respawn data, and the companion was gone for
+		// good. The game's player prefab always has it.
 		GameObject gameObject = Player.m_localPlayer?.m_tombstone;
+		if (gameObject == null)
+		{
+			gameObject = Game.instance?.m_playerPrefab?.GetComponent<Player>()?.m_tombstone;
+		}
+		if (gameObject == null)
+		{
+			gameObject = ZNetScene.instance?.GetPrefab("Player_tombstone");
+		}
 		if (gameObject == null)
 		{
 			CompanionsPlugin.Log.LogError("[Setup] Could not find tombstone prefab!");

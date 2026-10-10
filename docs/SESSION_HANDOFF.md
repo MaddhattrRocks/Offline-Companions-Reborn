@@ -9,7 +9,7 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.5.0 on main (manifest description + GitHub link merged, PR #9); repo public. Release zips built in the session at the user's request (Hexium: package/ files + Companions.dll at the root, no dependencies; Thunderstore: same + dependency denikson-BepInExPack_Valheim-5.4.2351, the user's BepInExPack; Nexus: BepInEx/plugins/OfflineCompanionsReborn/ with the DLL and the four .md docs). Next: user uploads; then the backlog.
+## Current state: 1.5.1 on the work branch (not merged): fix for GitHub issue #10 (no tombstone when the player is dead too). 1.5.0 released (zips built). Waiting on the user: test/merge 1.5.1, reply on the issue.
 - 1.4.152: multiplayer ownership (MHR_Owner), one chest helper (MHR_Chests Usable/Open/Claim), home chests for Smelt/Cook, own-drops-only pickups; Gathering FollowRange 10.
 - 1.4.151: Forage with Follow on: own 10 m range ([Gathering] ForageFollowRange).
 - 1.4.150: full-mod conflict audit - 14 groups of fixes (steering, items, follow flags, chests, patches).
