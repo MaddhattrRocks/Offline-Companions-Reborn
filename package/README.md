@@ -197,6 +197,7 @@ Now and then it tells you why it's idle ("Waiting for the crops to grow."). It g
 - **Chests are safe to share.** A companion won't use a chest someone has open, another player's private chest, or a chest behind a ward it can't open. Items it moves are saved properly, with no losses or duplicates.
 - **Credit goes to the owner.** Crops and piles a companion makes count as built by its owner.
 - **Night skip:** companions hold the night skip (up to 30 s) while they walk to bed.
+- **Install it everywhere.** On a dedicated server, the server needs the mod too. A server or host without it deletes companions it loads (especially near the world spawn), and they can't be brought back.
 
 </details>
 
@@ -222,6 +223,8 @@ Updating from an older version? Your changed settings are carried over to their 
 ## Installation
 
 Install with a mod manager (recommended), or manually drop `Companions.dll` into your `BepInEx/plugins/` folder.
+
+**Multiplayer:** every player needs the mod, and so does a dedicated server. A server without it deletes companions.
 
 **Remove ProfMags' original Offline Companions first.** It doesn't work on Valheim 1.0, and Reborn won't start while it's installed (the BepInEx log says so).
 

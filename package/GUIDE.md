@@ -384,6 +384,7 @@ Companions get better at what they do, like a player. Fighting raises their weap
 - **Your orders always work.** When you give an order or open its wheel, your game takes over running it.
 - **Shared chests are safe.** Items a companion moves are saved properly, with no losses or duplicates. It won't use a chest another player has open.
 - **Credit goes to the owner.** Crops it plants and piles it builds count as built by its owner.
+- **Everyone needs the mod, including the server.** On a dedicated server, install the mod on the server as well as on every player's game. A server (or a host) without the mod deletes any companion it loads, and those companions can't be brought back. A dedicated server always keeps the area around the middle of the world loaded, so companions near the world spawn are at risk even while everyone is online. Players without the mod simply can't see companions.
 
 ## Troubleshooting
 
