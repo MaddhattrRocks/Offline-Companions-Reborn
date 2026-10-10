@@ -10,7 +10,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 ## Recent Highlights (v1.4.155)
 
-This is a big update. The short version:
+This is a big update. With working jobs! The short version:
 
 - **New movement.** Companions find their own way around your base like a player: opening and closing doors as they go, lining up with doorways, hopping steps, dropping off ledges, jumping streams and small gaps, and walking around water instead of swimming when the dry way isn't much longer.
 - **Idle behaviour.** A companion whose job has nothing to do no longer just stands there. It does small chores nearby, sits down, wanders over to check on stations and chests, or comes over for a chat — and gets straight back to work the moment there's something to do.
@@ -25,7 +25,7 @@ See `CHANGELOG.md` for the version-by-version detail.
 
 ## Support
 
-If you'd like to support the Valheim 1.0 work and ongoing development of this update specifically: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Buy Maddhattr a Coffee](https://ko-fi.com/maddhattr). And if you appreciate the mod itself, ProfMags' own Patreon (linked above) is the place for that.
+If you like this mod and would like to support its ongoing development or any of my other work: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Buy Maddhattr a Coffee](https://ko-fi.com/maddhattr).
 
 ## What This Mod Does
 
@@ -230,6 +230,7 @@ Install with a mod manager (recommended), or manually drop `Companions.dll` into
 ## Future Plans
 
 - Keep developing the companion AI so it behaves more like another player.
+- More multiplayer features.
 - A review of skills and stats (health, regen, stamina, skill gains) against a player's.
 - Combat improvements.
 - A full ship and cart review.
