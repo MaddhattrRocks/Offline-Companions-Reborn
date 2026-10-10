@@ -445,7 +445,7 @@ internal static class ModConfig
 	internal static void Init(ConfigFile cfg)
 	{
 		// [General]
-		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 2000, "How many coins it costs to hire a companion.", new AcceptableValueRange<int>(0, 50000));
+		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 2000, "The price of an extra companion, for getting more companions (coming soon).", new AcceptableValueRange<int>(0, 50000));
 		SpawnStarterCompanion = Bind(cfg, "General", "SpawnStarterCompanion", defaultValue: true, "The first time you enter a world with a character, you're offered one companion for free.");
 		ResetStarterFlag = Bind(cfg, "General", "ResetStarterFlag", defaultValue: false, "Set to true to be offered the free starter companion again in the current world (on the next world load). It turns itself back to false.");
 		ProtectCompanions = Bind(cfg, "General", "ProtectCompanions", defaultValue: true, "Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.");

@@ -36,7 +36,7 @@ Most numbers below are the defaults and can be changed in the settings (see `CON
 ## Getting started
 
 - The first time you enter a world with a character, you're offered a free companion.
-- More companions can be hired at the trader if you also have the Trader Overhaul mod installed (it gets a Companions tab).
+- Ways to get more companions are coming soon.
 - A new companion follows you. Give it some gear and food: it equips the best weapon, shield and armor it's carrying, and eats from its own inventory.
 - To give it a job, open the command wheel (below) and pick one. Most jobs work best once you've set its **home**.
 

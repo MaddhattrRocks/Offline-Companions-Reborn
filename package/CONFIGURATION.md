@@ -45,7 +45,7 @@ Every setting in the mod, what it does and what it starts at.
 The basics: what a companion costs, its health, stamina and carrying limits, and how far "home" reaches.
 
 **CompanionPrice** — Default: 2000 · Range: 0 – 50000  
-How many coins it costs to hire a companion.
+The price of an extra companion, for getting more companions (coming soon).
 
 **SpawnStarterCompanion** — Default: On  
 The first time you enter a world with a character, you're offered one companion for free.
