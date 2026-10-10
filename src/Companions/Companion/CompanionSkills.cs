@@ -285,7 +285,7 @@ public class CompanionSkills : MonoBehaviour
 
 	private void ShowLevelUpMessage(Skills.SkillType type, SkillData skill)
 	{
-		Player localPlayer = Player.m_localPlayer;
+		Player localPlayer = MHR_Owner.IsMine(this) ? Player.m_localPlayer : null;
 		if (localPlayer == null)
 		{
 			return;

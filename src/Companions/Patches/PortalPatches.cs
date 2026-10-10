@@ -75,6 +75,12 @@ internal static class PortalPatches
 			return;
 		}
 		Vector3 vector = FindNearbyPosition(targetPos, 3f);
+		// 1.4.152: this game takes the companion over first - a position written by a game that doesn't own it is
+		// overwritten by the owner's (the warp was undone when another player's game ran the companion)
+		if (!zDO.IsOwner())
+		{
+			zDO.SetOwner(ZDOMan.GetSessionID());
+		}
 		zDO.SetPosition(vector);
 		GameObject gameObject = ZNetScene.instance?.FindInstance(zdoid);
 		if (gameObject != null)

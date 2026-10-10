@@ -325,6 +325,11 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		if (!(companion == null))
 		{
+			// 1.4.152: its player opens the wheel - their game runs the companion, so what they pick takes effect
+			if (MHR_Owner.IsMine(companion))
+			{
+				MHR_Owner.TakeControl(companion);
+			}
 			_pendingStance = -1;
 			_animState = AnimState.Closed;
 			_companion = companion;
@@ -1726,6 +1731,7 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		bool flag = !_companion.GetFollow();
 		_companion.SetFollow(flag);
+		MHR_JobRules.FollowSetByPlayer(_companion);
 		if (flag)
 		{
 			// 1.4.78: Follow and a job can't both be on - picking Follow turns the job off. 1.4.94: except Hunt, which

@@ -243,6 +243,10 @@ public class CompanionInteractPanel : MonoBehaviour
 
 	public void Show(CompanionSetup companion)
 	{
+		if (companion != null && MHR_Owner.IsMine(companion))
+		{
+			MHR_Owner.TakeControl(companion);   // 1.4.152: see CompanionRadialMenu.Show
+		}
 		_companion = companion;
 		_companionChar = companion.GetComponent<Character>();
 		_companionFood = companion.GetComponent<CompanionFood>();

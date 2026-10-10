@@ -153,6 +153,13 @@ public class CompanionRest : MonoBehaviour
 		}
 	}
 
+	// 1.4.152: its own player in bed (not whoever's game is running it)
+	private bool OwnerInBed()
+	{
+		Player p = MHR_Owner.Of(this);
+		return p != null && p.InBed();
+	}
+
 	internal static bool MHR_LocalPlayerInBed()
 	{
 		Player localPlayer = Player.m_localPlayer;
@@ -488,7 +495,7 @@ public class CompanionRest : MonoBehaviour
 
 	private void UpdateSleeping()
 	{
-		if (_isAutoSleep && EnvMan.instance != null && !EnvMan.IsNight() && !MHR_LocalPlayerInBed())
+		if (_isAutoSleep && EnvMan.instance != null && !EnvMan.IsNight() && !OwnerInBed())
 		{
 			CompanionsPlugin.Log.LogDebug("[Rest] Auto-sleep — day started, waking up");
 			_isAutoSleep = false;
@@ -562,7 +569,7 @@ public class CompanionRest : MonoBehaviour
 			}
 			else
 			{
-				Player localPlayer = Player.m_localPlayer;
+				Player localPlayer = MHR_Owner.Of(this);
 				if (localPlayer != null)
 				{
 					float num = Vector3.Distance(base.transform.position, localPlayer.transform.position);
@@ -576,7 +583,8 @@ public class CompanionRest : MonoBehaviour
 		}
 		if (!_isDirected && !flag)
 		{
-			Player localPlayer2 = Player.m_localPlayer;
+			// 1.4.152: the sit emote is the local player's - only for their own companions
+			Player localPlayer2 = MHR_Owner.IsMine(this) ? Player.m_localPlayer : null;
 			if (localPlayer2 == null)
 			{
 				flag = true;
@@ -621,7 +629,8 @@ public class CompanionRest : MonoBehaviour
 
 	private void TryStartSitting()
 	{
-		Player localPlayer = Player.m_localPlayer;
+		// 1.4.152: the sit emote is the local player's - only their own companions sit down with them
+		Player localPlayer = MHR_Owner.IsMine(this) ? Player.m_localPlayer : null;
 		if (localPlayer == null)
 		{
 			return;
@@ -649,7 +658,7 @@ public class CompanionRest : MonoBehaviour
 			return;
 		}
 		bool flag = default(bool);
-		if (ModConfig.SleepWhenPlayerSleeps.Value && MHR_LocalPlayerInBed())
+		if (ModConfig.SleepWhenPlayerSleeps.Value && OwnerInBed())
 		{
 			flag = true;
 			_mhrStayAwake = false;
@@ -907,9 +916,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null ? MHR_Owner.Go(this) : null);
 			}
 		}
 	}
@@ -976,6 +986,21 @@ public class CompanionRest : MonoBehaviour
 
 	internal static bool MHR_ShouldPauseWork(Component c)
 	{
+		// 1.4.150: also while swimming for the shore, seated on a ship, or sitting by a fire
+		if (c != null && WaterSafety.Active(c))
+		{
+			return true;
+		}
+		CompanionAI shipAi = c != null ? c.GetComponent<CompanionAI>() : null;
+		if (shipAi != null && shipAi.IsOnShip)
+		{
+			return true;
+		}
+		CompanionRest sitting = c != null ? c.GetComponent<CompanionRest>() : null;
+		if (sitting != null && sitting._isSitting)
+		{
+			return true;
+		}
 		if (!MHR_ToolKeeper.IsBusy(c))
 		{
 			if (!(c == null))
@@ -1071,9 +1096,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null ? MHR_Owner.Go(this) : null);
 			}
 		}
 	}
@@ -1132,9 +1158,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null ? MHR_Owner.Go(this) : null);
 			}
 		}
 	}
@@ -1198,9 +1225,10 @@ public class CompanionRest : MonoBehaviour
 				_ai.SetFollowTarget(null);
 				_ai.SetPatrolPoint();
 			}
-			else if (Player.m_localPlayer != null)
+			else
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				// 1.4.150: back to following only with Follow on - a worker whose job turned Follow off stays at the job
+				_ai.SetFollowTarget(_setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null ? MHR_Owner.Go(this) : null);
 			}
 		}
 	}

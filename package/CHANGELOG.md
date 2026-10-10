@@ -2,6 +2,70 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.0
+- Major release: everything from 1.4.86 to 1.4.156 below (new movement, idle behaviour, Repair and Restock, cooking, gathering like Hunt, orders first, multiplayer ownership and chest safety, cleaned-up settings), plus the new Companion Guide (GUIDE.md) and Settings Reference (CONFIGURATION.md).
+
+## 1.4.156
+- New [Cooking] MakeMead (on by default): off = the cook makes food only - no mead bases and no filling fermenters.
+
+## 1.4.155
+- New [Combat] EngageOnNotice (on by default): companions attack a creature as soon as it has noticed you or them, as before 1.4.154. Off = they wait until it's actually coming for you.
+
+## 1.4.154
+- Companions no longer open fire on a creature that has only noticed you - only once it's actually coming for you or them (anything that attacks is still fought).
+- After a kill, a companion that finds no body and no drops yet waits a few seconds longer for them to come out instead of giving up straight away.
+
+## 1.4.153
+- A full gathering companion away from home still unloads into a nearby cart or ship (as before); it now also skips one someone has open on another player's game, or one behind a ward it can't open.
+
+## 1.4.152
+- Multiplayer: a companion run by another player's game still treats you as its player - it follows you, sleeps when you sleep and sits when you sit, not whoever's game is running it.
+- Multiplayer: orders you give your companion always take effect (they were lost when another player's game was running it).
+- Multiplayer: companions no longer lose or duplicate items when they use chests or pick things up.
+- Companions don't use chests someone has open on another player's game, private chests other players built, chests behind a ward they can't open, or carts and ship holds.
+- Companions respect wards for fermenters, beehives and planting, like a player.
+- Crops and wood piles a companion makes are credited to its own player; portal trips with another player's game running the companion now stick.
+- Smelt and Cook also use the chests around home, so they no longer take down the wood piles Repair and Restock just built.
+- Companions only pick up the honey or pile drops from the hive or pile they emptied themselves.
+- Wood, Stone and Ore with Follow on now default to 10 m, like Forage ([Gathering] FollowRange; an existing config keeps its own number).
+
+## 1.4.151
+- Forage with Follow on now only picks plants within 10 m of you (new [Gathering] ForageFollowRange) - the berries you happen to walk past, not everything around. Wood, Stone and Ore keep FollowRange (20 m).
+
+## 1.4.150
+- Fixed: a patch meant only for companions stopped every creature's attacks from leaving effects on the ground.
+- Fixed: Smelt could put ore or fuel into a smelter that was no longer in its pack (duplicating it).
+- Fixed: waking up, or getting up from the fire, made a worker whose job turned Follow off follow you out of the base.
+- Fixed: a hunter walking home with its catch barely fought back when attacked on the way.
+- Fixed: the open-door order couldn't be replaced by a new order and ran during fights and loot pickup.
+- Fixed: a gathering companion going over its carry weight in a fight walked to a chest with its back to the enemy.
+- Fixed: the walk to the stone pile and the step aside from a falling tree ignored orders and loot pickup.
+- Fixed: after switching away from Fish between casts the companion kept the rod in hand and stopped equipping new gear.
+- Fixed: a second companion could sit down in the chair an idling companion was already sitting in.
+- Fixed: a companion's tombstone didn't float in water or get moved back up if it fell through the ground.
+- Fixed: Cancel and leaving a gathering job didn't turn Follow back on; setting Follow yourself is now remembered over the job's own switch.
+- Fixed: jobs and idling kept going while seated on a ship, swimming for the shore, or sitting by a fire.
+- Fixed: jobs took over a chest you had open (items changing in your chest window) and could clear its "in use" mark.
+- Fixed: Smelt and Farm left a chest lid open when they were interrupted.
+- Fixed: tool trips could start in the middle of an order; idle chatting could follow you away from the job.
+- Fixed: an idle chore cut short kept its fuel in the pack; Farm could lose seeds from the chest with a nearly full pack.
+- Fixed: two farmers in one field could plant on the same spot; the bow could flicker while stalking a bird.
+- Fixed: after a death and respawn, turning the job off didn't turn Follow back on.
+- The "waiting for companions" sleep message only shows on the host, where companions actually hold the night skip.
+- The one-time config fix-ups (ForageItems "*", old ViewRange/ViewAngle) only run when upgrading an old config file.
+
+## 1.4.149
+- Config clean-up: settings regrouped into clear sections (General, Controls, Follow, Movement, Combat, Food, Stamina, Rest, Death, Looting, GearRepair, one per job, Idle, Speech, Advanced).
+- Settings that moved or were renamed keep the values you set - they're carried over automatically the first time you load in.
+- Removed 22 settings that did nothing (old combat, AI and Stay Home settings).
+- Old leftover lines are cleared out of the config file (removed settings, the old Homestead and Door sections).
+- Every setting's description rewritten in plain words, with units.
+- Low-level tuning (scan intervals, use distances, tick timings) moved to a new [Advanced] section.
+- Movement ViewRange and ViewAngle now actually work (defaults 20 m and 120 degrees - what companions always used).
+
+## 1.4.148
+- Fixed: a companion sitting on a ship flooded the log with "Setting linear velocity of a kinematic body is not supported" warnings - ship seats now work like chairs and beds.
+
 ## 1.4.147
 - Fixed: a running job could pull a companion away from boarding a ship, opening a door, or sitting by a fire / going to bed when you told it to - every job now waits for these orders too.
 - Repair and Restock and the idle behaviour wait for all your orders, not just "go there".

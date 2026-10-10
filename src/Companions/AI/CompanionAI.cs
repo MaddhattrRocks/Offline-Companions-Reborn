@@ -225,7 +225,6 @@ public class CompanionAI : BaseAI
 
 	private static float AutoPickupRange => ModConfig.AutoPickupRange.Value;
 
-	private static float GiveUpTime => ModConfig.GiveUpTime.Value;
 
 	private static float FollowTeleportDist => ModConfig.FollowTeleportDistance.Value;
 
@@ -247,7 +246,6 @@ public class CompanionAI : BaseAI
 
 	internal bool IsRecoveringTombstone => _pendingTombstone != null;
 
-	private static float WanderMoveInterval => ModConfig.WanderMoveInterval.Value;
 
 	internal void SetPatrolPointAt(Vector3 point)
 	{
@@ -585,9 +583,9 @@ public class CompanionAI : BaseAI
 	private void RestoreFollowOrPatrol()
 	{
 		bool flag2 = _setup != null && _setup.GetFollow();
-		if (flag2 && Player.m_localPlayer != null)
+		if (flag2 && MHR_Owner.Of(this) != null)
 		{
-			SetFollowTarget(Player.m_localPlayer.gameObject);
+			SetFollowTarget(MHR_Owner.Go(this));
 		}
 		else
 		{
@@ -624,8 +622,10 @@ public class CompanionAI : BaseAI
 			_body.position = position;
 			_body.linearVelocity = Vector3.zero;
 			ResetLiquidState();
+			// 1.4.148: not kinematic - Character.UpdateWalking sets the body's velocity every physics tick, and on a kinematic
+			// body that's a Unity warning each time. Gravity off, the ship's colliders ignored, pinned to the seat (PinToShip).
+			_body.isKinematic = false;
 			_body.useGravity = false;
-			_body.isKinematic = true;
 		}
 		bool flag = _setup != null && _setup.CanWearArmor();
 		if (_zanim != null && flag)
@@ -693,9 +693,9 @@ public class CompanionAI : BaseAI
 				flag2 = true;
 			}
 		}
-		if (!flag2 && Player.m_localPlayer != null)
+		if (!flag2 && MHR_Owner.Of(this) != null)
 		{
-			Vector3 position2 = Player.m_localPlayer.transform.position;
+			Vector3 position2 = MHR_Owner.Of(this).transform.position;
 			Vector3 position3 = position2 + Vector3.right * 2f;
 			for (int j = 0; j < 20; j++)
 			{
@@ -716,7 +716,7 @@ public class CompanionAI : BaseAI
 				ResetLiquidState();
 			}
 		}
-		if (!flag2 && Player.m_localPlayer == null)
+		if (!flag2 && MHR_Owner.Of(this) == null)
 		{
 			base.transform.position += new Vector3(0f, 0.5f, 0f);
 		}
@@ -735,19 +735,37 @@ public class CompanionAI : BaseAI
 			DetachFromShip();
 			return;
 		}
+		PinToShip();
+	}
+
+	// keeps the seated companion on its ship seat as the ship moves (every frame and every physics tick)
+	private void PinToShip()
+	{
+		if (!_isOnShip || _attachedShip == null || m_nview == null || !m_nview.IsOwner())
+		{
+			return;
+		}
 		Vector3 vector = _attachedShip.transform.TransformPoint(_shipLocalPos);
 		Quaternion rotation = _attachedShip.transform.rotation * _shipLocalRot;
 		base.transform.position = vector;
 		base.transform.rotation = rotation;
-		if (_body != null)
+		if (_body != null && !_body.isKinematic)
 		{
 			_body.position = vector;
+			_body.useGravity = false;
 			Rigidbody component = _attachedShip.GetComponent<Rigidbody>();
-			if (component != null)
-			{
-				_body.linearVelocity = component.GetPointVelocity(vector);
-			}
+			_body.linearVelocity = component != null ? component.GetPointVelocity(vector) : Vector3.zero;
 		}
+	}
+
+	private void FixedUpdate()
+	{
+		PinToShip();
+	}
+
+	private void LateUpdate()
+	{
+		PinToShip();
 	}
 
 	internal void SetPendingShipBoard(Ship ship, Chair chair)
@@ -1345,11 +1363,16 @@ public class CompanionAI : BaseAI
 			{
 				Vector3 position5 = PendingDepositContainer.transform.position;
 				float num7 = Vector3.Distance(base.transform.position, position5);
-				if (num7 < 2f)
+				if (num7 < 2f && !_depositChestOpen && !MHR_Chests.Open(PendingDepositContainer))
+				{
+					// 1.4.150: someone has the chest open - drop the deposit order, it's planned again later
+					CompanionsPlugin.Log.LogInfo("[Deposit] Someone has the chest open - trying again later");
+					CancelPendingDeposit();
+				}
+				else if (num7 < 2f)
 				{
 					StopMoving();
 					LookAtPoint(position5);
-					PendingDepositContainer.SetInUse(inUse: true);
 					_depositChestOpen = true;
 					_depositCount = 0;
 					_depositWorkTimer = 0.6f;

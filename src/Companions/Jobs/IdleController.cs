@@ -129,7 +129,7 @@ public class IdleController : MonoBehaviour
 			why = "following";
 			return false;
 		}
-		if (_ai.IsInCombat || _character.IsSwimming())
+		if (_ai.IsInCombat || _character.IsSwimming() || _ai.IsOnShip)
 		{
 			why = "busy";
 			return false;
@@ -461,7 +461,7 @@ public class IdleController : MonoBehaviour
 	{
 		Vector3 me = base.transform.position;
 		float reach = Radius * 2f;
-		Player p = Player.m_localPlayer;
+		Player p = MHR_Owner.Of(this);
 		if (p != null && !p.IsDead() && Vector3.Distance(me, p.transform.position) <= reach && Mathf.Abs(p.transform.position.y - me.y) < 3f)
 		{
 			return p;
@@ -500,7 +500,8 @@ public class IdleController : MonoBehaviour
 
 	private void UpdateSocial()
 	{
-		if (_buddy == null || _buddy.IsDead() || Time.time >= _until || Vector3.Distance(base.transform.position, _buddy.transform.position) > Radius * 3f)
+		// 1.4.150: not off after someone walking away - only company within reach of where it idles
+		if (_buddy == null || _buddy.IsDead() || Time.time >= _until || Vector3.Distance(_center, _buddy.transform.position) > Radius * 2f)
 		{
 			Pause(2f, 5f);
 			return;

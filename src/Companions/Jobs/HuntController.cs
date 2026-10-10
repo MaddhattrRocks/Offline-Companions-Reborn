@@ -84,6 +84,7 @@ public class HuntController : MonoBehaviour
 
 	public void NotifyActionModeChanged()
 	{
+		ReleaseBirdBow();
 		if (_combatAI != null && _combatAI.HuntMode)
 		{
 			_combatAI.HuntMode = false;
@@ -118,6 +119,7 @@ public class HuntController : MonoBehaviour
 		}
 		if (GetMode() != 7)
 		{
+			ReleaseBirdBow();
 			if (_state != HuntState.Idle || _prey != null)
 			{
 				if (_combatAI.HuntMode)
@@ -175,15 +177,16 @@ public class HuntController : MonoBehaviour
 
 	private Vector3 Center(bool follow)
 	{
-		if (follow && Player.m_localPlayer != null)
+		if (follow && MHR_Owner.Of(this) != null)
 		{
-			return Player.m_localPlayer.transform.position;
+			return MHR_Owner.Of(this).transform.position;
 		}
 		return _hasAnchor ? _anchor : base.transform.position;
 	}
 
 	private void Stop()
 	{
+		ReleaseBirdBow();
 		_state = HuntState.Idle;
 		_ai.StopMoving();
 		MHR_Mover.Release(_ai);
@@ -459,6 +462,12 @@ public class HuntController : MonoBehaviour
 				EndBird();
 				return;
 			}
+			// 1.4.150: keep auto-equip from swapping the bow back to the melee weapon while it stalks the bird
+			if (_setup != null)
+			{
+				_setup.SuppressAutoEquip = true;
+				_birdBowOut = true;
+			}
 			_humanoid.EquipItem(bow);
 		}
 		Vector3 me = base.transform.position;
@@ -498,8 +507,21 @@ public class HuntController : MonoBehaviour
 		LogDebug((shot ? "Shooting at the " : "Couldn't shoot at the ") + _birdName + " (" + dist.ToString("F0") + " m, " + (_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "no weapon") + ")");
 	}
 
+	private bool _birdBowOut;
+
+	private void ReleaseBirdBow()
+	{
+		if (_birdBowOut && _setup != null)
+		{
+			_birdBowOut = false;
+			_setup.SuppressAutoEquip = false;
+			_setup.SyncEquipmentToInventory();
+		}
+	}
+
 	private void EndBird()
 	{
+		ReleaseBirdBow();
 		_ai.MHR_SetCrouch(false);
 		_ai.StopMoving();
 		MHR_Mover.Release(_ai);
@@ -535,6 +557,11 @@ public class HuntController : MonoBehaviour
 
 	private void UpdateGoingHome(bool follow)
 	{
+		// 1.4.150: attacked on the way home - the fight comes first (both steered: it stuttered and barely fought back)
+		if (_combatAI.IsEngaged)
+		{
+			return;
+		}
 		if (follow || !_setup.HasHomePosition())
 		{
 			Stop();

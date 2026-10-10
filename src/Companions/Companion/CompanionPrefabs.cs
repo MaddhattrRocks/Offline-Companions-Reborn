@@ -240,8 +240,8 @@ public static class CompanionPrefabs
 	private static void SetupCompanionAI(CompanionAI ai)
 	{
 		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Setting up CompanionAI...");
-		ai.m_viewRange = 20f;
-		ai.m_viewAngle = 120f;
+		ai.m_viewRange = ModConfig.ViewRange.Value;
+		ai.m_viewAngle = ModConfig.ViewAngle.Value;
 		ai.m_hearRange = 20f;
 		ai.m_mistVision = true;
 		ai.m_alertedEffects = new EffectList();

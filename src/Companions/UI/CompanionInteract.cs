@@ -1059,7 +1059,10 @@ public class CompanionInteract : MonoBehaviour
 		{
 			if (IsOwned(item, localId) && MHR_InScope(item))
 			{
+				MHR_Owner.TakeControl(item);
 				CompanionRest.MHR_StayAwakeForRecall(item);
+				// 1.4.150: you set Follow yourself - a job that had paused it no longer turns it back on/off later
+				MHR_JobRules.FollowSetByPlayer(item);
 				if (!item.GetFollow())
 				{
 					item.SetFollow(v: true);
@@ -1673,6 +1676,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				continue;
 			}
+			MHR_Owner.TakeControl(setup);
 			if (companionTalk == null)
 			{
 				companionTalk = setup.GetComponent<CompanionTalk>();
@@ -1704,7 +1708,10 @@ public class CompanionInteract : MonoBehaviour
 			if (component2?.GetZDO() != null && component2.GetZDO().GetInt(CompanionSetup.ActionModeHash) != 0)
 			{
 				component2.GetZDO().Set(CompanionSetup.ActionModeHash, 0);
+				// 1.4.150: the job's off - Follow comes back if the job had turned it off (same rule as the wheel)
+				MHR_JobRules.OnJobSet(setup, 0);
 			}
+			setup.GetComponent<DoorHandler>()?.Cancel();
 			setup.GetComponent<HarvestController>()?.NotifyActionModeChanged();
 			CompanionRest component3 = setup.GetComponent<CompanionRest>();
 			if (component3 != null)
@@ -1769,7 +1776,19 @@ public class CompanionInteract : MonoBehaviour
 		}
 	}
 
+	// 1.4.152: every command checks IsOwned(...) && MHR_InScope(...) - a companion that answers is taken over by this
+	// game (MHR_Owner.TakeControl), so the order is carried out here and not lost on another player's game
 	internal static bool MHR_InScope(CompanionSetup s)
+	{
+		bool inScope = MHR_InScopeCheck(s);
+		if (inScope)
+		{
+			MHR_Owner.TakeControl(s);
+		}
+		return inScope;
+	}
+
+	private static bool MHR_InScopeCheck(CompanionSetup s)
 	{
 		if (_mhrSuperRecall)
 		{
@@ -1804,6 +1823,9 @@ public class CompanionInteract : MonoBehaviour
 
 	private static void CancelExistingActions(CompanionSetup setup, bool cancelRest = true)
 	{
+		// 1.4.152: an order from its player - that player's game runs the companion from now on, so the order (kept in
+		// memory) is carried out (on another player's game it was silently lost)
+		MHR_Owner.TakeControl(setup);
 		if (cancelRest)
 		{
 			CompanionRest component = setup.GetComponent<CompanionRest>();
@@ -1826,6 +1848,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		setup.GetComponent<HarvestController>()?.CancelDirectedTarget();
+		setup.GetComponent<DoorHandler>()?.Cancel();
 		RepairController component3 = setup.GetComponent<RepairController>();
 		if (component3 != null && component3.IsActive)
 		{
@@ -1853,6 +1876,7 @@ public class CompanionInteract : MonoBehaviour
 			if (component?.GetZDO() != null)
 			{
 				component.GetZDO().Set(CompanionSetup.ActionModeHash, 0);
+				MHR_JobRules.OnJobSet(setup, 0);
 				if (companionTalk == null)
 				{
 					companionTalk = setup.GetComponent<CompanionTalk>();

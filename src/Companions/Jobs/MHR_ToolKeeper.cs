@@ -99,6 +99,7 @@ namespace Companions
             CompanionAI ai = cs.GetComponent<CompanionAI>();
             if (zdo == null || hum == null || ai == null || hum.IsDead()) return;
             int id = cs.GetInstanceID();
+            s_current = cs;
             State st;
             if (!s_state.TryGetValue(id, out st)) { st = new State(); s_state[id] = st; }
             if (!st.Loaded) { Load(st, zdo); st.Loaded = true; }
@@ -133,6 +134,8 @@ namespace Companions
 
             if (st.Phase != 0) { UpdateTrip(cs, st, ai, hum, inv, zdo, mode, now, dt); return; }
             if (now < st.NextDecide) return;
+            // 1.4.150: no new trip while an order is being carried out (starting one released the order's route)
+            if (MHR_JobRules.OtherOrder(cs)) return;
             st.NextDecide = now + 1f;
 
             CompanionRest rest = cs.GetComponent<CompanionRest>();
@@ -146,8 +149,8 @@ namespace Companions
                 if (nearHome) { st.WaitHome = false; LogDebug("Back near home - sorting out the missing tool"); cs.ApplyFollowMode(mode, true); }
                 else
                 {
-                    if (now >= st.NextFollowFix && Player.m_localPlayer != null && ai.GetFollowTarget() != Player.m_localPlayer.gameObject)
-                    { st.NextFollowFix = now + 2f; ai.SetFollowTarget(Player.m_localPlayer.gameObject); }
+                    if (now >= st.NextFollowFix && MHR_Owner.Of(cs) != null && ai.GetFollowTarget() != MHR_Owner.Go(cs))
+                    { st.NextFollowFix = now + 2f; ai.SetFollowTarget(MHR_Owner.Go(cs)); }
                     if (NeedsKind(mode, st.WaitKind) && BestInInventory(inv, st.WaitKind, null) == null) return;
                     st.WaitHome = false; cs.ApplyFollowMode(mode, true);
                 }
@@ -209,7 +212,7 @@ namespace Companions
                     st.WaitHome = true; st.WaitKind = kind;
                     Log((broken != null ? "\"" + broken.m_shared.m_name + "\" broke" : "Needs " + KindName(kind)) + " and home is too far - following until we're back");
                     if (now >= st.NextWaitSpeak) { st.NextWaitSpeak = now + 120f; if (broken != null) SpeakBroke(cs, kind); else Speak(cs, kind); }
-                    if (Player.m_localPlayer != null) ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+                    if (MHR_Owner.Of(cs) != null) ai.SetFollowTarget(MHR_Owner.Go(cs));
                     return;
                 }
                 // near home: repair a broken one first
@@ -231,7 +234,7 @@ namespace Companions
                         // 1.4.74: broken, can't be repaired here and no spare: say so and keep following
                         Log("\"" + broken.m_shared.m_name + "\" is broken and there's no other in the chests - following you");
                         if (now >= st.NextSpeak) { SpeakBroke(cs, kind); st.NextSpeak = now + 120f; }
-                        if (Player.m_localPlayer != null && ai.GetFollowTarget() == null) ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+                        if (MHR_Owner.Of(cs) != null && ai.GetFollowTarget() == null) ai.SetFollowTarget(MHR_Owner.Go(cs));
                         continue;
                     }
                     Log("Needs " + KindName(kind) + " for this job and couldn't find one in nearby chests");
@@ -257,7 +260,7 @@ namespace Companions
 
         static void EndTrip(CompanionSetup cs, State st, CompanionAI ai, int mode)
         {
-            if (st.Chest != null) { try { st.Chest.SetInUse(false); } catch { } }
+            // 1.4.150: no SetInUse(false) here - the trip never sets it, and clearing it hid the player's open chest from the others
             st.Phase = 0; st.Chest = null; st.Station = null; st.ReturnEntry = null; st.NeedMove = false;
             ai.StopMoving();
             MHR_Mover.Release(ai);
@@ -315,6 +318,16 @@ namespace Companions
             st.NeedMove = false;
             ai.StopMoving();
             ai.LookAtPoint(cp);
+            // 1.4.152: not while someone has it open (here or on another player's game); this game owns it before the
+            // contents change, so they're saved (MHR_Chests)
+            if (MHR_Chests.InUse(st.Chest))
+            {
+                st.KindCooldown[st.Phase == 1 ? st.Kind : -st.Kind] = now + 30f;
+                Log("Someone has the chest open - trying again later");
+                EndTrip(cs, st, ai, mode);
+                return;
+            }
+            MHR_Chests.Claim(st.Chest);
             cs.GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
             Inventory cinv = st.Chest.GetInventory();
             if (cinv == null) { EndTrip(cs, st, ai, mode); return; }
@@ -714,22 +727,12 @@ namespace Companions
         }
 
         // ---- chests ----
-        internal static bool UsableChest(Container c)
+        // 1.4.152: the companion the current ToolKeeper tick is for (its player decides private chests)
+        static Component s_current;
+
+        internal static bool UsableChest(Container c, Component who = null)
         {
-            if (c == null || c.GetInventory() == null) return false;
-            if (c.GetComponent<Character>() != null || c.GetComponentInParent<Character>() != null) return false;
-            if (c.GetComponent<TombStone>() != null) return false;
-            if (c.GetComponent<Vagon>() != null || c.GetComponentInParent<Ship>() != null) return false;
-            if (c.IsInUse()) return false;
-            ZNetView nv = c.GetComponent<ZNetView>();
-            if (nv == null || !nv.IsValid()) return false;
-            Player p = Player.m_localPlayer;
-            if (c.m_privacy == Container.PrivacySetting.Private)
-            {
-                Piece pc = c.GetComponent<Piece>();
-                if (p == null || pc == null || pc.GetCreator() != p.GetPlayerID()) return false;
-            }
-            return true;
+            return MHR_Chests.Usable(c, who ?? s_current);
         }
         static Container FindBestInChests(Vector3 center, Vector3 me, int kind, ItemDrop.ItemData launcher, out ItemDrop.ItemData found)
         {
@@ -878,6 +881,14 @@ namespace Companions
                    mode == CompanionSetup.ModeGatherOre || mode == CompanionSetup.ModeForage;
         }
 
+        // 1.4.150: the player switched Follow on/off themselves - forget that a job had paused it
+        public static void FollowSetByPlayer(CompanionSetup cs)
+        {
+            ZNetView nv = cs != null ? cs.GetComponent<ZNetView>() : null;
+            ZDO zdo = nv != null ? nv.GetZDO() : null;
+            if (zdo != null && zdo.GetBool(FollowPausedHash)) zdo.Set(FollowPausedHash, false);
+        }
+
         public static void OnJobSet(CompanionSetup cs, int mode)
         {
             if (cs == null) return;
@@ -905,6 +916,84 @@ namespace Companions
     // ---- 1.4.66: every chest near a point (no collider cap), and which side of a chest to stand on ----
     public static class MHR_Chests
     {
+        // ---- 1.4.152: one set of chest rules for every job (multiplayer-safe) ----
+
+        // a chest a companion may use: a real storage chest (not a cart, ship, tombstone or someone's pack), inside a
+        // ward that lets it in, a private chest only if its own player built it, and nobody has it open
+        public static bool Usable(Container c, Component who)
+        {
+            if (c == null || c.GetInventory() == null) return false;
+            if (c.GetComponent<Character>() != null || c.GetComponentInParent<Character>() != null) return false;
+            if (c.GetComponent<TombStone>() != null) return false;
+            if (c.GetComponent<Vagon>() != null || c.GetComponentInParent<Ship>() != null) return false;
+            if (c.GetComponent<Piece>() == null) return false;
+            ZNetView nv = c.GetComponent<ZNetView>();
+            if (nv == null || !nv.IsValid()) return false;
+            if (InUse(c)) return false;
+            if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) return false;
+            if (c.m_privacy == Container.PrivacySetting.Private)
+            {
+                Piece pc = c.GetComponent<Piece>();
+                if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(who)) return false;
+            }
+            return true;
+        }
+
+        // someone has it open - here (the local flag) or on another player's game (the synced flag)
+        public static bool InUse(Container c)
+        {
+            if (c == null) return true;
+            if (c.IsInUse()) return true;
+            ZNetView nv = c.GetComponent<ZNetView>();
+            return nv != null && nv.IsValid() && !nv.IsOwner() && nv.GetZDO().GetInt(ZDOVars.s_inUse) == 1;
+        }
+
+        // make this game the chest's owner before changing what's in it - the game only saves a chest's contents on its
+        // owner, so changes made elsewhere were lost again (or items duplicated) in multiplayer
+        public static void Claim(Container c)
+        {
+            ZNetView nv = c != null ? c.GetComponent<ZNetView>() : null;
+            if (nv != null && nv.IsValid() && !nv.IsOwner()) nv.ClaimOwnership();
+        }
+
+        // open it like a player: false if someone else has it open; otherwise this game owns it and it shows as in use
+        public static bool Open(Container c)
+        {
+            if (c == null || InUse(c)) return false;
+            Claim(c);
+            c.SetInUse(true);
+            return true;
+        }
+
+        public static void Close(Container c)
+        {
+            if (c != null) c.SetInUse(false);
+        }
+
+        // 1.4.152: near home, the chests around home count too (HomeTripRange) - Smelt and Cook only saw the chests within
+        // their own 25 m, found no wood, and took down the piles Repair and Restock had just built from those home chests
+        public static void AddHomeChests(List<Container> list, CompanionSetup cs)
+        {
+            if (list == null || cs == null || !cs.HasHomePosition() || !MHR_ToolKeeper.NearHome(cs)) return;
+            foreach (Container c in Near(cs.GetHomePosition(), MHR_ToolKeeper.HomeRange()))
+            {
+                if (c != null && c.gameObject != cs.gameObject && !list.Contains(c) && Usable(c, cs)) list.Add(c);
+            }
+        }
+
+        // 1.4.152: the items already lying around before a companion empties a hive or takes down a pile - only what
+        // comes out of its own hive/pile is picked up afterwards (it took another companion's honey)
+        public static HashSet<int> DropsNear(Vector3 center, float radius)
+        {
+            HashSet<int> ids = new HashSet<int>();
+            foreach (Collider c in Physics.OverlapSphere(center, radius))
+            {
+                ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
+                if (d != null) ids.Add(d.GetInstanceID());
+            }
+            return ids;
+        }
+
         static readonly List<Piece> s_pieces = new List<Piece>();
         static readonly Collider[] s_small = new Collider[32];
         static readonly List<Vector3> s_path = new List<Vector3>();

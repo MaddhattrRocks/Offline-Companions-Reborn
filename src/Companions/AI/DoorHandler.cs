@@ -19,6 +19,19 @@ public class DoorHandler : MonoBehaviour
 
 	public bool IsActive => _door != null;
 
+	// 1.4.150: a new order replaces the door order (it used to keep steering for up to 60 s)
+	public void Cancel()
+	{
+		if (_door != null)
+		{
+			_door = null;
+			if (_ai != null)
+			{
+				MHR_Mover.Release(_ai);
+			}
+		}
+	}
+
 	public void DirectOpenDoor(Door door)
 	{
 		if (door == null)
@@ -61,6 +74,12 @@ public class DoorHandler : MonoBehaviour
 		if (Time.time - _start > 60f)
 		{
 			Done("couldn't get to it");
+			return;
+		}
+		// 1.4.150: a fight, picking up loot, a tool trip or its panel open comes first (they steer too)
+		if (_ai.IsInCombat || MHR_Loot.Active(this) || MHR_ToolKeeper.IsBusy(this) || CompanionInteractPanel.IsOpenFor(GetComponent<CompanionSetup>()) || CompanionRadialMenu.IsOpenFor(GetComponent<CompanionSetup>()))
+		{
+			_start += Time.deltaTime;
 			return;
 		}
 		Vector3 me = base.transform.position;

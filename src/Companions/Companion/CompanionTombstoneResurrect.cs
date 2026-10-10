@@ -21,6 +21,10 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 
 	internal static readonly int RespawnFollowHash = "HC_Respawn_Follow".GetStableHashCode();
 
+	internal static readonly int RespawnFollowPausedHash = "HC_Respawn_FollowPaused".GetStableHashCode();
+
+	internal static readonly int FollowPausedByJobHash = "HC_FollowPausedByJob".GetStableHashCode();
+
 	internal static readonly int RespawnStayHomeHash = "HC_Respawn_StayHome".GetStableHashCode();
 
 	internal static readonly int RespawnAutoPickupHash = "HC_Respawn_AutoPickup".GetStableHashCode();
@@ -335,6 +339,7 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		Vector3 vec = tombZdo.GetVec3(RespawnHomePosHash, Vector3.zero);
 		int value7 = tombZdo.GetInt(RespawnCombatStanceHash);
 		zDO2.Set(CompanionSetup.FollowHash, flag);
+		zDO2.Set(FollowPausedByJobHash, tombZdo.GetBool(RespawnFollowPausedHash));
 		zDO2.Set(CompanionSetup.ActionModeHash, value);
 		zDO2.Set(CompanionSetup.ActionModeSchemaHash, value2);
 		zDO2.Set(CompanionSetup.StayHomeHash, flag2);
@@ -457,9 +462,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			component7.SetFollowTarget(null);
 			component7.SetPatrolPointAt(vec);
 		}
-		else if (flag && Player.m_localPlayer != null)
+		else if (flag && MHR_Owner.Of(component7) != null)
 		{
-			component7?.SetFollowTarget(Player.m_localPlayer.gameObject);
+			component7?.SetFollowTarget(MHR_Owner.Go(component7));
 		}
 		comp.PlayResurrectEffects(vector);
 		if (!flag5 || tombZdo.GetInt(CompanionSetup.MHR_TombItemsHash, -1) == 0)

@@ -615,7 +615,7 @@ namespace Companions
                     CompanionRest r0 = cs.GetComponent<CompanionRest>();
                     if (ai.IsInCombat) StandUp(ai, s, false, "fight");
                     else if (r0 != null && (r0.IsSleeping || r0.IsNavigating)) StandUp(ai, s, s.SitFloor, "resting");
-                    else if (s.SitChair) Pin(ai, s);
+                    else if (s.SitChair) { Pin(ai, s); s.LastUpdate = Time.time; }   // 1.4.150: still taken (ChairTaken)
                     return;
                 }
                 GameObject f = ai.GetFollowTarget();

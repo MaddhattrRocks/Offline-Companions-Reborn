@@ -475,13 +475,14 @@ namespace Companions
                     if (c.GetComponentInParent<Character>() != null) continue;
                     bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
                     if (mobile && atHome) continue;                   // at home, chests only
-                    if (c.IsInUse()) continue;
+                    if (MHR_Chests.InUse(c)) continue;   // 1.4.153: also open on another player's game
+                    if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) continue;
                     ZNetView nv = c.GetComponent<ZNetView>();
                     if (nv == null || !nv.IsValid()) continue;
                     if (c.m_privacy == Container.PrivacySetting.Private)
                     {
                         Piece pc = c.GetComponent<Piece>();
-                        if (Player.m_localPlayer == null || pc == null || pc.GetCreator() != Player.m_localPlayer.GetPlayerID()) continue;
+                        if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) continue;
                     }
                     float d = Vector3.Distance(me, c.transform.position);
                     if (d >= bd) continue;

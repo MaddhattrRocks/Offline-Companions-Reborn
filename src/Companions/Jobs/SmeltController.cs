@@ -148,6 +148,7 @@ public class SmeltController : MonoBehaviour
 	private void OnDestroy()
 	{
 		UnclaimSmelter();
+		CloseAnyOpenChest();
 	}
 
 	private void UnclaimSmelter()
@@ -163,11 +164,14 @@ public class SmeltController : MonoBehaviour
 	{
 		if (CompanionRest.MHR_ShouldPauseWork(this) || _nview == null || _nview.GetZDO() == null || !_nview.IsOwner() || _character == null || _character.GetHealth() <= 0f)
 		{
+			// 1.4.150: a chest it had open is closed while it's away (the lid stayed open)
+			CloseAnyOpenChest();
 			return;
 		}
 		// 1.4.128: picking up what a kill dropped goes first - two jobs steering at once made the companion stutter
 		if (MHR_Loot.Active(this) || MHR_JobRules.OrderPending(this))
 		{
+			CloseAnyOpenChest();
 			return;
 		}
 		if (ShouldAbort())
@@ -513,9 +517,15 @@ public class SmeltController : MonoBehaviour
 			Abort("chest destroyed while taking");
 			return;
 		}
+		// 1.4.150/152: someone has this chest open (here or on another player's game) - don't take it over; opening
+		// it makes this game its owner so the changes are saved (MHR_Chests.Open)
+		if (!_chestOpened && !MHR_Chests.Open(_targetChest))
+		{
+			Abort("someone has the chest open");
+			return;
+		}
 		if (!_chestOpened)
 		{
-			_targetChest.SetInUse(inUse: true);
 			GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
 			_chestOpened = true;
 			_actionTimer = 0.8f;
@@ -657,9 +667,17 @@ public class SmeltController : MonoBehaviour
 			}
 			else
 			{
+				// 1.4.150: out of the pack first - it used to add to the smelter even when the item was no longer there
+				// (e.g. a tool trip had put it back in a chest), duplicating it
+				if (!ConsumeOneFromInventory(_carryingItemPrefab))
+				{
+					Log($"No {_carryingItemPrefab} left in the pack ({_carryingAmount} expected) — rescanning");
+					_carryingAmount = 0;
+					_phase = SmeltPhase.Scanning;
+					return;
+				}
 				component.InvokeRPC("RPC_AddFuel");
 				_targetSmelter.m_fuelAddedEffects.Create(_targetSmelter.transform.position, _targetSmelter.transform.rotation, _targetSmelter.transform, 1f, -1, ZDOID.None);
-				ConsumeOneFromInventory(_carryingItemPrefab);
 				_carryingAmount--;
 				Log($"Inserted fuel — {_carryingAmount} remaining");
 			}
@@ -675,10 +693,16 @@ public class SmeltController : MonoBehaviour
 			}
 			return;
 		}
+		if (!ConsumeOneFromInventory(_carryingItemPrefab))
+		{
+			Log($"No {_carryingItemPrefab} left in the pack ({_carryingAmount} expected) — rescanning");
+			_carryingAmount = 0;
+			_phase = SmeltPhase.Scanning;
+			return;
+		}
 		component.InvokeRPC("RPC_AddOre", _carryingItemPrefab, false);
 		_targetSmelter.m_oreAddedEffects.Create(_targetSmelter.transform.position, _targetSmelter.transform.rotation, null, 1f, -1, ZDOID.None);
 		s_addedOreTime?.SetValue(_targetSmelter, Time.time);
-		ConsumeOneFromInventory(_carryingItemPrefab);
 		_carryingAmount--;
 		Log($"Inserted ore {_carryingItemPrefab} — {_carryingAmount} remaining");
 	}
@@ -812,9 +836,16 @@ public class SmeltController : MonoBehaviour
 			_phase = SmeltPhase.Scanning;
 			return;
 		}
+		// 1.4.150/152: someone has this chest open (here or on another player's game) - don't take it over; opening
+		// it makes this game its owner so the changes are saved (MHR_Chests.Open)
+		if (!_chestOpened && !MHR_Chests.Open(_outputChest))
+		{
+			Log("Someone has the output chest open — back to scanning");
+			_phase = SmeltPhase.Scanning;
+			return;
+		}
 		if (!_chestOpened)
 		{
-			_outputChest.SetInUse(inUse: true);
 			GetComponent<ZSyncAnimation>()?.SetTrigger("interact");
 			_chestOpened = true;
 			_actionTimer = 0.8f;
@@ -1055,13 +1086,15 @@ public class SmeltController : MonoBehaviour
 			if (!(tempPiece == null))
 			{
 				Container componentInChildren = tempPiece.GetComponentInChildren<Container>();
-				if (!(componentInChildren == null) && componentInChildren.GetInventory() != null && !(componentInChildren.gameObject == base.gameObject) && !componentInChildren.IsInUse())
+				// 1.4.152: MHR_Chests.Usable - no carts or ships, ward access, private chests only its own player's, not in use
+				if (!(componentInChildren == null) && !(componentInChildren.gameObject == base.gameObject) && MHR_Chests.Usable(componentInChildren, this))
 				{
 					_nearbyChests.Add(componentInChildren);
 				}
 			}
 		}
-		LogDebug($"Scan: found {_nearbyChests.Count} chests within {ScanRadius}m");
+		MHR_Chests.AddHomeChests(_nearbyChests, _setup);
+		LogDebug($"Scan: found {_nearbyChests.Count} chests within {ScanRadius}m (and around home)");
 		foreach (Container nearbyChest in _nearbyChests)
 		{
 			Inventory inventory = nearbyChest.GetInventory();
@@ -1376,9 +1409,9 @@ public class SmeltController : MonoBehaviour
 		if (!(_ai == null))
 		{
 			bool flag = _setup != null && _setup.GetFollow();
-			if (flag && Player.m_localPlayer != null)
+			if (flag && MHR_Owner.Of(this) != null)
 			{
-				_ai.SetFollowTarget(Player.m_localPlayer.gameObject);
+				_ai.SetFollowTarget(MHR_Owner.Go(this));
 				Log("Restored follow target to player (Follow=ON)");
 			}
 			else
@@ -1506,21 +1539,21 @@ public class SmeltController : MonoBehaviour
 		return false;
 	}
 
-	private void ConsumeOneFromInventory(string prefabName)
+	private bool ConsumeOneFromInventory(string prefabName)
 	{
 		Inventory inventory = _humanoid?.GetInventory();
 		if (inventory == null)
 		{
-			return;
+			return false;
 		}
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
 			if (allItem?.m_dropPrefab != null && allItem.m_dropPrefab.name == prefabName)
 			{
-				inventory.RemoveItem(allItem, 1);
-				break;
+				return inventory.RemoveItem(allItem, 1);
 			}
 		}
+		return false;
 	}
 
 	private static Vector3 GetSmelterOutputPoint(Smelter smelter)
@@ -1565,6 +1598,13 @@ public class SmeltController : MonoBehaviour
 			if (!(componentInParent == null) && componentInParent.m_itemData != null)
 			{
 				ZNetView component = componentInParent.GetComponent<ZNetView>();
+				// 1.4.152: only a drop this game owns (else ask for it and come back) - two games picking up the same drop
+				// both got a copy
+				if (!(component == null) && component.GetZDO() != null && !componentInParent.CanPickup(autoPickupDelay: false))
+				{
+					componentInParent.RequestOwn();
+					continue;
+				}
 				if (!(component == null) && component.GetZDO() != null && inventory.CanAddItem(componentInParent.m_itemData, componentInParent.m_itemData.m_stack))
 				{
 					inventory.AddItem(componentInParent.m_itemData);

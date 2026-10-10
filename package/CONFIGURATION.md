@@ -1,0 +1,778 @@
+# Offline Companions Reborn — Settings Reference
+
+Every setting in the mod, what it does and what it starts at.
+
+**Where to change them:** in game, press `F8` to open the settings panel. You can also edit `BepInEx/config/Maddhattr.OfflineCompanionsReborn.cfg` with any text editor while the game is closed.
+
+**Tips**
+
+- A setting shown as a share (like `0.5`) means 50%. `0.25` is 25%, `1` is 100%.
+- Distances are in meters. For scale, a player is about 2 m tall and a workbench's build range is 20 m.
+- **List settings** all use the same format, separated by commas:
+  - `*` = everything
+  - `Name` = this one
+  - `-Name` = never this one
+  - `Name:Number` = this one, with its own amount (`0` = no limit)
+  - Names can be the item's or creature's in-game name or its internal (prefab) name. The names you can use for cooking, hunting and fishing are written to `OfflineCompanionsReborn.Cooking.txt`, `.Hunting.txt` and `.Fishing.txt` in the config folder each time the game starts.
+- Updating from an older version? Settings you had changed are moved to their new names automatically the first time you load in.
+
+## Sections
+
+- [General](#general)
+- [Controls](#controls)
+- [Follow](#follow)
+- [Movement](#movement)
+- [Combat](#combat)
+- [Food](#food)
+- [Stamina](#stamina)
+- [Rest](#rest)
+- [Death](#death)
+- [Looting](#looting)
+- [Gear Repair](#gear-repair)
+- [Gathering](#gathering)
+- [Hunting](#hunting)
+- [Fishing](#fishing)
+- [Farming](#farming)
+- [Smelting](#smelting)
+- [Cooking](#cooking)
+- [Repair and Restock](#repair-and-restock)
+- [Idle](#idle)
+- [Speech](#speech)
+- [Advanced](#advanced)
+
+## General
+
+The basics: what a companion costs, its health, stamina and carrying limits, and how far "home" reaches.
+
+**CompanionPrice** — Default: 2000 · Range: 0 – 50000  
+The price of an extra companion, for getting more companions (coming soon).
+
+**SpawnStarterCompanion** — Default: On  
+The first time you enter a world with a character, you're offered one companion for free.
+
+**ResetStarterFlag** — Default: Off  
+Set to true to be offered the free starter companion again in the current world (on the next world load). It turns itself back to false.
+
+**ProtectCompanions** — Default: On  
+Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.
+
+**ShowMinimapPanel** — Default: On  
+Show the companion status panel under the minimap.
+
+**ShowOverheadBars** — Default: On  
+Show health and stamina bars above each companion's head.
+
+**MaxCarryWeight** — Default: 300 · Range: 50 – 2000  
+How much weight a companion can carry (a player carries 300). Gathering and hunting companions head home to unload before this.
+
+**BaseHealth** — Default: 25 · Range: 1 – 500  
+A companion's health before food (a player has 25).
+
+**BaseStamina** — Default: 50 · Range: 1 – 500  
+A companion's stamina before food (a player has 50).
+
+**MaxFoodSlots** — Default: 3 · Range: 1 – 5  
+How many different foods a companion can have eaten at the same time (a player has 3).
+
+**StatusEffectsOnRegen** — Default: On  
+Status effects change a companion's health and stamina regeneration like they do for a player: Wet and Cold slow it, meads and other buffs change it. Off = companions regenerate at their normal rate whatever the effects.
+
+**HomeTripRange** — Default: 60 · Range: 10 – 500  
+How far from home (meters) a companion will still walk back for chest trips: fetching or putting back tools, repairing a broken tool, emptying its bags. Further away than this, a companion missing its job tool says so and follows you until you are both back near home.
+
+**HomeRadius** — Default: 50 · Range: 5 – 200  
+Starting size (meters) of a companion's home area around its home spot - where it looks for a bed to claim. Each companion's own size can be changed later in its home panel.
+
+## Controls
+
+Keys and how far your commands reach.
+
+**DirectTargetKey** — Default: `Z`  
+The command key. Tap it while looking at something to send your companions to it (move there, attack it, open the door, sit by the fire, repair at the station...). Hold it to call them to you.
+
+**RadialMenuKey** — Default: `E`  
+Hold this while looking at a companion to open its command wheel.
+
+**ConfigPanelKey** — Default: `F8`  
+Opens the in-game settings panel, where all of these settings can be changed.
+
+**FarmZoneKey** — Default: `Z`  
+Pressed together with FarmZoneModifier: opens the farm zone editor.
+
+**FarmZoneModifier** — Default: `LeftAlt`  
+Hold this and press FarmZoneKey to open the farm zone editor.
+
+**RecallRange** — Default: 40 · Range: 0 – 500  
+How close (meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. 0 = no limit.
+
+**SuperRecallHoldTime** — Default: 2 · Range: 0.5 – 10  
+Keep holding the command key this many seconds to recall every companion at any distance, including ones with Command switched off.
+
+## Follow
+
+How companions follow you around.
+
+**MaxDistance** — Default: 10 · Range: 4 – 30  
+How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.
+
+**IndoorDistance** — Default: 4 · Range: 2 – 10  
+The same range while you're indoors (under a roof), so companions stay in the room with you.
+
+**Regroup** — Default: On  
+When you stand still for RegroupTime seconds, companions come back and wait close to you. Off = they stay wherever they stopped.
+
+**RegroupTime** — Default: 45 · Range: 5 – 600  
+Seconds you stand still before companions regroup around you (see Regroup).
+
+**SitIndoors** — Default: On  
+When you stop indoors, companions sit down near you: on a free chair or bench if there is one, otherwise on the floor. Near home they empty their bags first.
+
+**TeleportDistance** — Default: 50 · Range: 20 – 200  
+A following companion that falls this many meters behind appears next to you: right away beyond 1.5x this distance, otherwise once it can't see you and isn't getting any closer.
+
+**StuckTeleport** — Default: Off  
+When following you, a companion that has been stuck for 15 seconds somewhere it can't see you appears next to you. Off = it keeps trying to find its own way.
+
+**FormationSpacing** — Default: 3 · Range: 1 – 10  
+Space (meters) between companions walking side by side in formation (when they follow something other than you).
+
+**FormationCatchUp** — Default: 15 · Range: 5 – 50  
+In formation, a companion this many meters away from its place runs to catch up.
+
+## Movement
+
+How companions move: speeds, how far they see, and how they get around (doors, steps, water, jumps).
+
+**WalkSpeed** — Default: 2 · Range: 0.5 – 5  
+Walking speed (a player walks at about 2). Takes effect after the world is reloaded.
+
+**RunSpeed** — Default: 7 · Range: 2 – 15  
+Running speed (a player runs at about 7). Takes effect after the world is reloaded.
+
+**SwimSpeed** — Default: 2 · Range: 0.5 – 5  
+Swimming speed (a player swims at about 2). Takes effect after the world is reloaded.
+
+**TurnSpeed** — Default: 300 · Range: 50 – 600  
+How fast a companion turns (degrees per second). Takes effect after the world is reloaded.
+
+**ViewRange** — Default: 20 · Range: 5 – 100  
+How far (meters) a companion can see enemies and other creatures. Takes effect after the world is reloaded.
+
+**ViewAngle** — Default: 120 · Range: 30 – 360  
+A companion's field of view (degrees). Takes effect after the world is reloaded.
+
+**Pathing** — Default: On  
+Companions find their way with their own map of the world, where doors don't block the way (they open them as they get there) and steps up to 0.6 m are climbable (they hop them). Off = the same map creatures use, where every closed door is a wall and most stairs don't connect. Takes effect after a restart.
+
+**WorkRunDistance** — Default: 25 · Range: 0 – 500  
+Companions walk while doing jobs (farming, chest trips, smelting, cooking, chores, repairs, gathering) and only run when what they are heading to is further away than this many meters. 0 = never run for work. Following you, fighting and hunting are not affected.
+
+**DryDetour** — Default: 30 · Range: 0 – 500  
+Companions prefer staying dry, like a player: when the way somewhere crosses water they go round it on land, as long as the dry way is no longer than 1.5x the swimming way plus this many meters. Otherwise they swim.
+
+**JobSwim** — Default: 20 · Range: 0 – 200  
+The most swimming (meters) a job accepts to reach something: loot from a kill, prey, a bird, a fishing spot. Further than that and it leaves it.
+
+**MaxDrop** — Default: 3 · Range: 1 – 4  
+When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).
+
+**JumpGap** — Default: 1.5 · Range: 0.5 – 3  
+The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.
+
+**JumpWaterDepth** — Default: 0.3 · Range: 0.05 – 2  
+Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.
+
+**JumpWaterWidth** — Default: 3 · Range: 1 – 4  
+The widest stretch of water (meters) a companion jumps over.
+
+**SwimStaminaShore** — Default: 0.25 · Range: 0 – 1  
+When a swimming companion's stamina drops below this share (0.25 = 25%), it heads for the nearest shore, whatever it was doing.
+
+## Combat
+
+When companions fight and how they pick weapons and shields.
+
+**EngageOnNotice** — Default: On  
+On: companions attack a creature as soon as it has noticed you or a companion. Off: they wait until it is actually coming for you (alerted). Anything that attacks is always fought back, and Hunt goes after its prey either way.
+
+**HealthRetreatPct** — Default: 0.3 · Range: 0.05 – 0.9  
+Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.
+
+**FleeHealthPct** — Default: 0.15 · Range: 0.05 – 0.6  
+Below this share of its health (0.15 = 15%) a companion runs away from the enemy.
+
+**WeaponSwitchMargin** — Default: 0.1 · Range: 0 – 0.5  
+A different weapon has to be this much better against the current enemy (0.1 = 10%) before a companion switches to it, so it doesn't swap back and forth.
+
+**ShieldMultiAttackerCount** — Default: 3 · Range: 1 – 10  
+When this many enemies attack a companion at once, it switches to its shield with the best block.
+
+**BowSwitchDistance** — Default: 15 · Range: 5 – 60  
+A companion with a bow or crossbow switches to it when its target is further away than this (meters).
+
+**MeleeSwitchDistance** — Default: 12 · Range: 3 – 40  
+It switches back to its melee weapon when the target comes closer than this (meters).
+
+**UseTorchOpener** — Default: On  
+Against enemies that are weak to fire, open with a torch to set them alight, then switch back to the best weapon.
+
+**TorchOpenerTimeout** — Default: 4 · Range: 1 – 10  
+Seconds to keep trying to set an enemy alight before giving up and switching back.
+
+**TorchOpenerCooldown** — Default: 10 · Range: 0 – 60  
+Seconds before the same enemy can be opened on with a torch again.
+
+**TorchOpenerMinTargetHealth** — Default: 40 · Range: 0 – 500  
+No torch opener on enemies with less maximum health than this - not worth it.
+
+## Food
+
+When companions drink meads.
+
+**HealthMeadThreshold** — Default: 0.5 · Range: 0.1 – 0.9  
+A companion drinks a healing mead from its pack when its health drops below this share (0.5 = 50%).
+
+**StaminaMeadThreshold** — Default: 0.25 · Range: 0.05 – 0.9  
+It drinks a stamina mead when its stamina drops below this share (0.25 = 25%).
+
+**MeadCooldown** — Default: 10 · Range: 1 – 60  
+Seconds after drinking a mead before it drinks another.
+
+## Stamina
+
+How fast companions use and regain stamina.
+
+**RegenRate** — Default: 6 · Range: 1 – 30  
+Stamina a companion gets back per second when it isn't using any.
+
+**RunDrainRate** — Default: 10 · Range: 1 – 30  
+Stamina used per second while running.
+
+**SneakDrainRate** — Default: 5 · Range: 1 – 30  
+Stamina used per second while sneaking.
+
+**SwimDrainRate** — Default: 10 · Range: 1 – 30  
+Stamina used per second while swimming.
+
+**RegenDelay** — Default: 1 · Range: 0.1 – 5  
+Seconds after using stamina before it starts coming back.
+
+## Rest
+
+Sleeping in beds, sitting by fires and the Rested buff.
+
+**SleepAtNight** — Default: On  
+At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working. It goes back to its job in the morning.
+
+**SleepWhenPlayerSleeps** — Default: On  
+When you get into a bed, your companions within BedRange of their claimed beds go to bed too, even in the evening. The night skip waits up to 30 seconds for them.
+
+**BedRange** — Default: 50 · Range: 10 – 200  
+How close (meters) a companion has to be to its claimed bed for the two settings above to send it to bed.
+
+**HealRate** — Default: 2 · Range: 0.5 – 20  
+Health a companion gets back per second while sitting by a fire or sleeping.
+
+**PlayerRange** — Default: 5 · Range: 2 – 20  
+When you sit down near a fire (the sit emote), companions without a job within this many meters of you sit down by it too.
+
+**FireRange** — Default: 5 · Range: 2 – 20  
+How close (meters) a fire has to be for a companion to sit down by it.
+
+**WarmupTime** — Default: 20 · Range: 5 – 120  
+Seconds of sitting by a fire before a companion becomes Rested, like a player.
+
+**DirectedTimeout** — Default: 300 · Range: 30 – 1800  
+When you tell a companion to sit by a fire, it gets up again after this many seconds.
+
+## Death
+
+What happens when a companion dies, and how it comes back.
+
+**AutoRespawn** — Default: On  
+A dead companion comes back by itself after RespawnDelay seconds if nobody brings it back from its tombstone first.
+
+**RespawnDelay** — Default: 300 · Range: 30 – 3600  
+Seconds after death before a companion comes back by itself.
+
+**RespawnAtWorldSpawn** — Default: Off  
+A companion that comes back by itself and has no claimed bed appears at the world spawn stones. Off = next to you.
+
+**DeathItemRule** — Default: 0 · Range: 0 – 3  
+What a companion loses when it dies. 0 = the world's death penalty setting, same as a player. 1 = keep everything. 2 = keep equipped gear, the rest goes in the tombstone. 3 = everything goes in the tombstone. The owner's setting is used even if another player's game handles the death.
+
+**TombstoneRecoveryRange** — Default: 50 · Range: 5 – 100  
+A companion walks over and empties its own leftover tombstone when it's within this many meters of it.
+
+**SkillLoss** — Default: 0.25 · Range: 0 – 1  
+Share of its skills a companion loses when it dies (0.25 = 25%, 0 = none).
+
+## Looting
+
+Picking up what a kill dropped.
+
+**PickUpKills** — Default: On  
+After a companion kills something it goes over and picks up what the creature dropped (things you'd auto-pickup yourself), like a player would. Needs Auto Pickup on in the wheel.
+
+**Radius** — Default: 6 · Range: 2 – 20  
+How far around the kill (meters) the drops are looked for.
+
+**WaitSeconds** — Default: 10 · Range: 2 – 60  
+Longest wait (seconds) by the body for its drops to come out.
+
+**MaxDistance** — Default: 30 · Range: 5 – 100  
+Kills further away than this (meters), or that you've moved this far away from while it follows you, are left.
+
+**AutoPickupRange** — Default: 2 · Range: 0.5 – 10  
+With Auto Pickup on in the wheel, a companion picks up items within this many meters of itself as it goes, like a player's auto-pickup.
+
+## Gear Repair
+
+Repairing a companion's own weapons, armor and tools at a crafting station.
+
+**DurabilityThreshold** — Default: 0.5 · Range: 0.1 – 0.9  
+A companion takes its gear to a crafting station to repair it when something drops below this share of durability (0.5 = 50%).
+
+**HomeThreshold** — Default: 0.8 · Range: 0.1 – 1  
+At home, where a workbench is close by, gear is repaired a bit sooner: below this share (0.8 = 80%). 1 = at any wear. Away from home DurabilityThreshold applies.
+
+**NoStationWait** — Default: 600 · Range: 30 – 3600  
+When a worn item can't be repaired at any station within reach (say it needs a black forge and there isn't one nearby), or the way to the station failed, that item is left alone for this many seconds before it looks again.
+
+**StationRange** — Default: 20 · Range: 5 – 60  
+How far (meters) a companion looks for a crafting station to repair at. Near home, any station near home counts.
+
+## Gathering
+
+The Wood, Stone, Ore and Forage jobs.
+
+**Range** — Default: 40 · Range: 10 – 150  
+Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.
+
+**FollowRange** — Default: 10 · Range: 5 – 60  
+Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)
+
+**ForageFollowRange** — Default: 10 · Range: 3 – 60  
+Forage with Follow on: a plant has to be within this many meters of you - the berries you happen to walk past, not everything around. With nothing that close the companion just follows you. (With Follow off see Range.)
+
+**PickUpLoose** — Default: On  
+Wood and Stone jobs, early in the game only: also pick up what's lying on the ground by hand - branches (Wood job), loose stones and flint (Stone job) - as long as they're on GatherWood / GatherStone and under their amount. Early game = there's no bronze-or-better axe in the companion's pack, your pack or the chests near home, and no forge at home to make one. With no tool for the job (no axe for Wood, no pickaxe for Stone) picking things up is all it does.
+
+**WoodLimit** — Default: 500 · Range: 0 – 100000  
+How many of each wood material (counting the companion's pack and chests near its home) the Wood job gathers before stopping. 0 = no limit. Per-item numbers in GatherWood override this.
+
+**StoneLimit** — Default: 500 · Range: 0 – 100000  
+Same as WoodLimit, for the Stone job and GatherStone.
+
+**OreLimit** — Default: 500 · Range: 0 – 100000  
+Same as WoodLimit, for the Ore job and GatherOre.
+
+**GatherWood** — Default: see below  
+What the Wood job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses WoodLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are prefab or in-game names.
+
+Default value:
+
+```
+Wood, FineWood, RoundLog, ElderBark, YggdrasilWood, Blackwood, Resin
+```
+
+**GatherStone** — Default: `Stone, Flint, BlackMarble, Grausten`  
+What the Stone job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses StoneLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are prefab or in-game names.
+
+**GatherOre** — Default: see below  
+What the Ore job collects. Targets are only worked if they drop something on this list that is still under its amount; drops not on the list are left on the ground. A name with no number uses OreLimit. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are prefab or in-game names.
+
+Default value:
+
+```
+CopperOre, TinOre, IronScrap, SilverOre, BlackMetalScrap, CopperScrap, FlametalOreNew, Obsidian
+```
+
+**ForageItems** — Default: see below  
+What the Forage job picks up. Name:Number stops picking that item once there are that many (pack + chests near home). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are prefab or in-game names.
+
+Default value:
+
+```
+Raspberry,Blueberries,Cloudberry,Mushroom,MushroomYellow,MushroomBlue,MushroomMagecap,MushroomJotunPuffs,MushroomSmokePuff,Thistle,Dandelion,Carrot,Turnip,Onion,Barley,Flax,RoyalJelly,Honey
+```
+
+**WoodSkipTrees** — Default: `Oak`  
+Standing trees the Wood job never fells, matched on part of the tree name (Oak, Birch, Beech, Pine, Fir, SwampTree, YggaShoot...). Logs and stumps are still cleaned up.
+
+**BaseProtectRadius** — Default: 10 · Range: 0 – 50  
+The Wood job won't fell a standing tree with anything players built within this many meters of its trunk. 0 = off.
+
+**JunkCleanup** — Default: On  
+When a gathering companion's pack is full and it has no home chest to unload into, it drops junk (materials and trophies that aren't on any gather list) to make room. Gear, tools, ammo, food, potions, seeds and anything on NeverDiscard are always kept.
+
+**NeverDiscard** — Default: `Trophy`  
+Items the junk clean-up never drops, matched on part of the item name.
+
+**OverweightThreshold** — Default: 298 · Range: 50 – 500  
+A gathering companion stops picking things up at this carry weight.
+
+## Hunting
+
+The Hunt job.
+
+**Prey** — Default: `*`  
+What the Hunt job goes after: creatures that drop meat (and birds, see Birds). Name:Number with a creature or a meat name gives that meat its own target instead of MeatTarget / FeatherTarget. Tamed animals, bosses and companions are never hunted. The names to use are listed in OfflineCompanionsReborn.Hunting.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).
+
+**MeatTarget** — Default: 100 · Range: 0 – 10000  
+Hunt a creature only while one of the meats it drops is under this many (counting the companion's pack and the chests near its home). Leather, hides and other drops are picked up as a bonus. 0 = no limit.
+
+**Range** — Default: 40 · Range: 10 – 200  
+With Follow off: how far (meters) from where it is hunting (home if it's near home, otherwise where the job was started) a companion looks for prey.
+
+**FollowRange** — Default: 25 · Range: 5 – 100  
+With Follow on: prey has to be within this many meters of you. With nothing that close the companion just follows you.
+
+**ChaseExtra** — Default: 15 · Range: 0 – 100  
+How much further than Range / FollowRange a companion chases prey that runs off before letting it go.
+
+**BagFull** — Default: 0.9 · Range: 0.3 – 1  
+With Follow off and home set: when the pack is this full (by weight, or out of free slots) the hunter walks home and puts its catch away, then goes back out.
+
+**Birds** — Default: On  
+Also shoot birds (crows, gulls, modded birds) for their feathers: when one lands within range, the hunter sneaks up and shoots it with a bow or crossbow (only if it has one with ammo), then picks up the drops. Birds on the Prey list's exclusions (-Crow, -Seagal) are left alone.
+
+**FeatherTarget** — Default: 100 · Range: 0 – 10000  
+Shoot birds only while what they drop (feathers) is under this many, counting the pack and the chests near home. 0 = no limit.
+
+**Sneak** — Default: On  
+Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).
+
+## Fishing
+
+The Fish job.
+
+**ScanRadius** — Default: 30 · Range: 5 – 100  
+How far (meters) from where the Fish job was started the companion looks for fish to catch. It stays around there and fishes the water nearby.
+
+**Fish** — Default: `*`  
+Which fish to catch. Name:Number gives that fish its own target instead of FishTarget. The fish names are listed in OfflineCompanionsReborn.Fishing.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit).
+
+**FishTarget** — Default: 100 · Range: 0 – 10000  
+Catch a kind of fish only while there are fewer than this many (pack + chests near home). 0 = no limit.
+
+**CastWait** — Default: 60 · Range: 10 – 600  
+Seconds to wait for a bite before reeling in and trying again (a fish that swam off, the wrong spot).
+
+**BagFull** — Default: 0.9 · Range: 0.3 – 1  
+Near home: when the pack is this full (by weight, or out of free slots) the companion walks home and puts the catch away, then goes back to fishing.
+
+## Farming
+
+The Farm job.
+
+**Range** — Default: 30 · Range: 5 – 100  
+How far (meters) around itself a farming companion looks for crops to pick, farm zones to plant and chests.
+
+**PlantSpacing** — Default: 0.75 · Range: 0.25 – 3  
+The least space (meters) between plants. A plant that needs more room to grow gets that instead.
+
+**SeedMinimum** — Default: 20 · Range: 0 – 1000  
+The fewest of each plantable item (carrot, turnip, onion seeds, barley, flax and so on) the farmer keeps, counting its pack and chests near its home. It never plants seeds if that would take them below this. Barley, flax and other crops that grow from themselves are still planted, and the farmer keeps this many in its pack instead of storing them.
+
+**SeedTarget** — Default: 100 · Range: 0 – 5000  
+While a seed is under this number, the farmer grows seed plants (planting carrots, turnips, onions...) alongside its regular crops to build the stock back up. Below SeedMinimum it grows only seed plants for that crop. At or above this number it grows only crops.
+
+**SeedCarry** — Default: 40 · Range: 1 – 200  
+How many of each plantable item the farmer carries. When it opens a chest for seeds it takes up to this many of every type on the PlantAny list (and vegetables for seed plants while that seed is under SeedTarget), so it can fill the fields without walking back for each type. It keeps up to this many in its pack instead of storing them.
+
+**PlantGroupSize** — Default: 4 · Range: 1 – 100  
+How many of one plant the farmer puts in before switching to the next type, so a mixed field ends up in small blocks instead of one crop. 1 = fully mixed.
+
+**NextCropRange** — Default: 3 · Range: 0 – 10  
+After picking a crop, the farmer goes straight to the next ripe crop within this many meters, like working down a row, instead of pausing and scanning the whole field. 0 = always pause and scan.
+
+**PlantAny** — Default: see below  
+What the farmer plants in farm zones set to Any crop. * = every crop that grows on cultivated ground (tree saplings are never planted in an Any zone unless named). Name:Number stops planting that crop once there are that many of what it gives (carrots for CarrotSeeds, barley for Barley...), counting pack and chests near home. Items added by other mods work too. List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).
+
+Default value:
+
+```
+CarrotSeeds, TurnipSeeds, OnionSeeds, Barley, Flax, MushroomJotunPuffs, MushroomMagecap, VineberrySeeds
+```
+
+## Smelting
+
+The Smelt job.
+
+**Range** — Default: 25 · Range: 5 – 100  
+How far (meters) around itself a smelting companion looks for smelters, kilns, furnaces and chests. Near home it also uses the chests around home ([General] HomeTripRange).
+
+**MaxCarryOre** — Default: 20 · Range: 1 – 100  
+The most ore (or other input) a companion carries to a smelter in one trip.
+
+**MaxCarryFuel** — Default: 40 · Range: 1 – 100  
+The most fuel (coal, wood) a companion carries to a smelter in one trip.
+
+**UsePiles** — Default: On  
+When the chests have none of what a smelter or kiln needs (wood for the kiln, fuel...), the Smelt job takes down a pile of it (Stack of Wood...) with a hammer, like a player, and uses that. Needs a hammer in its pack.
+
+## Cooking
+
+The Cook job.
+
+**Range** — Default: 25 · Range: 5 – 60  
+How far around itself (meters) a cooking companion looks for cooking stations, fermenters and chests. Near home it also uses the chests around home ([General] HomeTripRange).
+
+**IngredientReserve** — Default: 20 · Range: 0 – 1000  
+A raw ingredient is only used while the chests in range (plus the companion's bag) hold more than this many, so there is always some left for you to cook something yourself.
+
+**FoodTarget** — Default: 20 · Range: 1 – 1000  
+Cook a food until the chests in range hold this many of it.
+
+**BatchSize** — Default: 5 · Range: 1 – 50  
+How many of a food (or mead base) to make in one go, like a player cooking a batch. Still stops at FoodTarget / MeadBaseTarget and never goes into the ingredient reserve. On a cooking station or oven it's also limited by the free slots.
+
+**Foods** — Default: `*`  
+What may be cooked. Name:Number is that food's own target instead of FoodTarget. The names to use are listed in OfflineCompanionsReborn.Cooking.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).
+
+**StoreWithCookedFood** — Default: On  
+Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.
+
+**MakeMead** — Default: On  
+Brew mead: make mead bases and fill fermenters with them. Off = food only (mead that has already finished in a fermenter is still tapped).
+
+**MeadBaseTarget** — Default: 10 · Range: 0 – 1000  
+Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.
+
+**MeadTarget** — Default: 20 · Range: 0 – 1000  
+Keep fermenters going with a mead base until the chests in range hold this many of the finished mead.
+
+**MeadFocus** — Default: see below  
+Mead bases to brew FIRST, by the last boss beaten, to get ready for the next one (other mead bases you know are still brewed after food, within MeadBaseTarget / MeadTarget). Format: boss: Base, Base; boss: ... in the order you beat them. A boss is its name or part of it (eikthyr, gdking = The Elder, bonemass, dragon = Moder, goblinking = Yagluth, queen, fader, kall = Kall Fimbulbringer, or a modded boss); start = none beaten yet. The bosses your game has, and the mead base names, are listed in OfflineCompanionsReborn.Cooking.txt in the config folder.
+
+Default value:
+
+```
+start: MeadBaseHealthMinor, MeadBaseStaminaMinor;
+eikthyr: MeadBaseHealthMinor, MeadBaseStaminaMinor, MeadBasePoisonResist;
+gdking: MeadBasePoisonResist, MeadBaseHealthMedium, MeadBaseStaminaMinor;
+bonemass: MeadBaseFrostResist, MeadBaseHealthMedium, MeadBaseStaminaMedium;
+dragon: MeadBaseHealthMedium, MeadBaseStaminaMedium, MeadBaseTasty, BarleyWineBase;
+goblinking: MeadBaseHealthMajor, MeadBaseStaminaMedium, MeadBaseEitrMinor, MeadBaseLightfoot;
+queen: BarleyWineBase, MeadBaseHealthMajor, MeadBaseStaminaLingering, MeadBaseHealthLingering, MeadBaseEitrMinor;
+fader: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor;
+kall: MeadBaseFrostResist, MeadBaseHealthMajor, MeadBaseHealthLingering, MeadBaseStaminaLingering, MeadBaseEitrMinor
+```
+
+**FuelLevel** — Default: 0.5 · Range: 0.1 – 1  
+Cook job: keeps the fires under the cooking spots it uses (spit, iron cooking station, cauldron) and the oven at this share of full (0.5 = 50%). When one drops below half of that it tops it back up. Only enough to cook with - Repair and Restock fills fires further if it's on.
+
+**UsePiles** — Default: On  
+Cook job: with no fuel in the chests, take down a pile of it (Stack of Wood...) with a hammer, like a player. Needs a hammer in its pack.
+
+**UseCauldron** — Default: On  
+Cook job: use the cauldron (soups, stews and other crafted food).
+
+**UsePrepTable** — Default: On  
+Cook job: use the food preparation table (dough, raw pies and the like).
+
+**UseMeadKetill** — Default: On  
+Cook job: use the mead ketill (mead bases).
+
+**UseCookingStation** — Default: On  
+Cook job: use the cooking station / spit over a fire.
+
+**UseIronCookingStation** — Default: On  
+Cook job: use the iron cooking station.
+
+**UseOven** — Default: On  
+Cook job: use the stone oven (bread, pies; it also gets wood).
+
+**UseFermenter** — Default: On  
+Cook job: use fermenters (filling them with mead bases and tapping the mead).
+
+**UseBeehives** — Default: On  
+Cook job: use beehives (collecting honey).
+
+**UseOther** — Default: On  
+Cook job: use any other cooking station, e.g. one added by another mod.
+
+## Repair and Restock
+
+The Repair and Restock job (looking after your base).
+
+**Repair** — Default: On  
+Repair and Restock: repair damaged building pieces near home with a hammer, like a player (one swing per piece; the piece's crafting station has to be in range and a ward has to allow it; costs stamina and hammer wear). A hammer is fetched from a chest if it has none.
+
+**RepairBelow** — Default: 0.75 · Range: 0.1 – 1  
+Repair pieces below this much health (0.75 = 75% or less; 1 = any damage at all). Each repair is one swing that fixes the piece fully, like a player's.
+
+**Reach** — Default: 4.5 · Range: 2 – 6  
+How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.
+
+**Restock** — Default: On  
+Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.
+
+**FuelBelow** — Default: 0.8 · Range: 0.1 – 1  
+Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.
+
+**RefuelFires** — Default: On  
+Restock: campfires, fire pits and bonfires.
+
+**RefuelHearths** — Default: On  
+Restock: hearths.
+
+**RefuelBraziers** — Default: On  
+Restock: braziers (standing and hanging).
+
+**RefuelStandingTorches** — Default: On  
+Restock: standing torches (wood, iron, green, blue, mist).
+
+**RefuelWallTorches** — Default: On  
+Restock: sconces and wall torches.
+
+**RefuelHotTubs** — Default: On  
+Restock: hot tubs.
+
+**RefuelOther** — Default: On  
+Restock: anything else that burns fuel and isn't one of the kinds above (lanterns, the jack-o-turnip, things added by other mods).
+
+**Honey** — Default: On  
+Repair and Restock: empty the beehives in its area and put the honey away in the chest that already holds the most honey.
+
+**HoneyAt** — Default: 0.5 · Range: 0.1 – 1  
+Empty a beehive once it's at least this full (0.5 = half full, 1 = only when full).
+
+**Sort** — Default: On  
+Repair and Restock: sort the chests in its area (around home, or around where the job was started), like with like: each kind of item is carried to the chest that already holds the most of it, and part-stacks are merged.
+
+**SortItems** — Default: `*`  
+Which items get sorted. Comma-separated: * = everything, Name = this one, -Name = never this one (e.g. *, -Coins, -Wood keeps coins and wood where they are). Prefab or in-game names.
+
+**SortGear** — Default: Off  
+Also sort things that don't stack (weapons, armor, tools). Off: only stackable items are moved.
+
+**Piles** — Default: On  
+Repair and Restock: stack wood, stone and the like from the chests into piles (the game's Stack of Wood, Stone Pile, Fine Wood Stack...), built with a hammer like a player. Only next to piles of the same kind you already built - it never starts a new pile somewhere on its own.
+
+**PileKeep** — Default: 100 · Range: 0 – 10000  
+How many of each material stay in the chests for building: what's above this goes into piles, and when the chests drop below it a pile is taken down (with the hammer, like a player) and the material put back in the chests.
+
+**PileItems** — Default: `*`  
+Which materials go into piles. Comma-separated: * = every material you have piles of, Name = this one, -Name = never this one, Name:Number = keep this many of it in the chests instead of PileKeep. Prefab or in-game names (Wood, Stone, FineWood, RoundLog...).
+
+**AwayRadius** — Default: 30 · Range: 5 – 100  
+Started away from home (or with no home set): how far (meters) from where the job was started it repairs, restocks and sorts. Started near home, the range is [General] HomeTripRange around home.
+
+**WorkTime** — Default: 1 · Range: 0.3 – 5  
+Seconds per action: a repair swing, opening a chest. Adding fuel takes a bit over half of this per piece. (The game won't repair the same piece more than once a second.)
+
+**GiveUp** — Default: 90 · Range: 20 – 600  
+Seconds it keeps trying to get within reach of a piece, fire or chest before leaving it for a few minutes.
+
+**OrderWait** — Default: 30 · Range: 0 – 600  
+After you give the companion an order (send it somewhere, sit by a fire...), it waits this many seconds once the order is done before going back to its chores.
+
+## Idle
+
+What a companion does when its job has nothing to do.
+
+**Enabled** — Default: On  
+When its job has had nothing to do for a while (and it isn't following you), a companion idles near its job instead of standing still: small chores, sitting down, wandering about, chatting. It stops the moment the job has work again.
+
+**StartAfter** — Default: 10 · Range: 1 – 300  
+Seconds with nothing to do before it starts idling.
+
+**Radius** — Default: 8 · Range: 2 – 40  
+How far (meters) from where its job left it a companion wanders, sits or looks for company while idle.
+
+**Chores** — Default: On  
+While idle, do small chores nearby: repair damaged pieces, top up fires, collect honey, put away what it carries (uses the Repair and Restock settings).
+
+**ChoreRadius** — Default: 15 · Range: 2 – 60  
+How far (meters) it looks for idle chores.
+
+**Sit** — Default: On  
+While idle, sit down for a while - on a free chair or bench nearby, else on the ground.
+
+**Wander** — Default: On  
+While idle, stroll about nearby and look over stations and chests.
+
+**Socialize** — Default: On  
+While idle, go over to you or another companion nearby and chat now and then.
+
+**SpeechInterval** — Default: 300 · Range: 0 – 3600  
+At most every this many seconds it says why it's idle (and chats while socializing about half as often). 0 = never.
+
+## Speech
+
+How often companions talk and how long their words stay on screen.
+
+**MinInterval** — Default: 15 · Range: 5 – 120  
+Shortest time (seconds) between a companion's chatter when nothing is happening.
+
+**MaxInterval** — Default: 30 · Range: 10 – 300  
+Longest time (seconds) between a companion's chatter when nothing is happening.
+
+**Duration** — Default: 5 · Range: 1 – 15  
+Seconds a line of speech stays on screen.
+
+**SayCooldown** — Default: 3 · Range: 1 – 30  
+Least time (seconds) between two lines from any companion, so they don't all talk at once.
+
+**CullDistance** — Default: 20 · Range: 5 – 60  
+Speech from companions further away than this (meters) isn't shown.
+
+## Advanced
+
+Fine-tuning for timings and distances. Most players never need to touch these.
+
+**GatheringSearchRadius** — Default: 30 · Range: 5 – 100  
+Gathering: how far (meters) around itself a companion looks for trees, rocks and plants when it's following you or sent to one with the command key (with Follow off it's [Gathering] Range).
+
+**GatheringScanInterval** — Default: 4 · Range: 1 – 30  
+Gathering: seconds between looks for the next tree, rock or plant.
+
+**GatheringSwingInterval** — Default: 2.5 · Range: 0.5 – 5  
+Gathering: seconds between swings at a tree or rock.
+
+**GatheringDropRadius** — Default: 8 · Range: 2 – 20  
+Gathering: how far (meters) around a felled tree or broken rock the drops are picked up.
+
+**GatheringSkipTime** — Default: 60 · Range: 5 – 300  
+Gathering: seconds a tree, rock or plant it couldn't get to is skipped.
+
+**FarmScanInterval** — Default: 4 · Range: 1 – 30  
+Farming: seconds between looks for crops to pick and ground to plant.
+
+**FarmUseDistance** — Default: 2 · Range: 1 – 5  
+Farming: how close (meters) a companion has to be to a crop or chest to use it.
+
+**SmeltScanInterval** — Default: 3 · Range: 1 – 30  
+Smelting: seconds between looks at the smelters and chests.
+
+**SmeltUseDistance** — Default: 2.5 · Range: 1 – 5  
+Smelting: how close (meters) a companion has to be to a smelter to put things in or take them out.
+
+**GearRepairScanInterval** — Default: 5 · Range: 1 – 30  
+Gear repair: seconds between checks of a companion's gear for wear.
+
+**GearRepairTickInterval** — Default: 0.8 · Range: 0.1 – 5  
+Gear repair: seconds per item repaired at the station.
+
+**GearRepairUseDistance** — Default: 2.5 · Range: 1 – 5  
+Gear repair: how close (meters) a companion has to be to the station to repair.
+
+**RestockScanInterval** — Default: 5 · Range: 1 – 60  
+Repair and Restock: seconds between looks for something to repair, refuel or sort.
+
+**AttackCooldown** — Default: 0.225 · Range: 0.1 – 2  
+Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.
+
+**FoodRegenInterval** — Default: 10 · Range: 1 – 60  
+Food: seconds between health regeneration ticks from food (a player's is 10).
+
+**FoodCheckInterval** — Default: 1 · Range: 0.5 – 10  
+Food: seconds between checks whether a companion should eat or drink.
+
+**TombstoneScanInterval** — Default: 5 · Range: 1 – 30  
+Death: seconds between looks for its own leftover tombstone nearby.
+
+**TombstoneNavTimeout** — Default: 120 · Range: 10 – 600  
+Death: seconds a companion keeps trying to get to its tombstone before giving up.

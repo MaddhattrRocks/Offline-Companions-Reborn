@@ -99,8 +99,8 @@ namespace Companions
             if (inv == null || zdo == null) why = "no pack";
             else if (!zdo.GetBool(CompanionSetup.AutoPickupHash, true)) why = "auto pickup is off";
             else if (Vector3.Distance(me, k.Pos) > MaxDist() + 5f) why = "too far away";
-            else if (Player.m_localPlayer != null && cs != null && cs.GetFollow() && ai.GetFollowTarget() == Player.m_localPlayer.gameObject &&
-                     Vector3.Distance(Player.m_localPlayer.transform.position, k.Pos) > MaxDist()) why = "you've moved on";
+            else if (MHR_Owner.Of(cs) != null && cs != null && cs.GetFollow() && ai.GetFollowTarget() == MHR_Owner.Go(cs) &&
+                     Vector3.Distance(MHR_Owner.Of(cs).transform.position, k.Pos) > MaxDist()) why = "you've moved on";
             else if (inv.GetTotalWeight() >= CompanionTierData.MaxCarryWeight || inv.GetEmptySlots() == 0 && !RoomForAny(inv, k)) why = "pack is full";
             else if (Time.time - k.Start > Wait() + 25f) why = "took too long";
             if (why != null) { Finish(ai, st, "stopped picking up (" + why + ")"); return false; }
@@ -162,10 +162,12 @@ namespace Companions
             float flat = new Vector2(me.x - spot.x, me.z - spot.z).magnitude;
             if (k.ArrivedAt < 0f && flat <= 4f) k.ArrivedAt = Time.time;
             bool there = k.ArrivedAt >= 0f;
+            // 1.4.154: with no body found and nothing seen, still give the drops a few seconds from the kill to come out (log:
+            // walked 17 m to a Neck, "nothing dropped" 2 s after getting there)
             bool done = (k.SawDrop && Time.time - k.LastDrop > 1.5f && !k.Body)
-                     || (!k.SawDrop && !k.Body && there && Time.time - k.ArrivedAt > 2f)
+                     || (!k.SawDrop && !k.Body && there && Time.time - k.ArrivedAt > 2f && Time.time - k.Time > 8f)
                      || (there && Time.time - k.ArrivedAt > Wait());
-            if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped" + Around(k)); return false; }
+            if (done) { Finish(ai, st, k.SawDrop ? "picked up everything" : "nothing dropped (waited " + (Time.time - k.Time).ToString("F0") + " s after the kill)" + Around(k)); return false; }
             if (!there)
             {
                 MHR_Mover.Go(ai, dt, spot, 2f, true, "Loot");
