@@ -466,7 +466,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		{
 			component7?.SetFollowTarget(MHR_Owner.Go(component7));
 		}
-		comp.PlayResurrectEffects(vector);
+		// 1.5.1: static - the auto-respawn for a far-away tombstone passes comp == null, and the instance call threw here,
+		// before the tombstone's respawn data was cleared, so the next tick (1 s later) respawned the companion again
+		PlayResurrectEffects(vector);
 		if (!flag5 || tombZdo.GetInt(CompanionSetup.MHR_TombItemsHash, -1) == 0)
 		{
 			MHR_RemoveGravePinNear(tombZdo.GetPosition());
@@ -499,13 +501,21 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 				Object.Destroy(comp.gameObject);
 			}
 		}
+		else
+		{
+			// 1.5.1: respawned from far away with an empty tombstone - clear its respawn data and mark it for clean-up,
+			// or loading it later would bring the companion back a second time
+			tombZdo.Set(RespawnOwnerHash, "");
+			tombZdo.Set(RespawnPrefabHash, "");
+			tombZdo.Set(MHR_RespawnTracker.CleanupHash, value: true);
+		}
 		return;
 		IL_01ab:
 		vector = ((ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null)) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
 		goto IL_0211;
 	}
 
-	private void PlayResurrectEffects(Vector3 pos)
+	private static void PlayResurrectEffects(Vector3 pos)
 	{
 		GameObject gameObject = ZNetScene.instance?.GetPrefab("fx_eikthyr_forwardshockwave");
 		if (gameObject != null)
