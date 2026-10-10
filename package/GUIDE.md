@@ -68,7 +68,6 @@ Drag items in and out like a chest. Anything you give it counts as its own: it k
 | **Wander** | While following: on = it moves around and looks about when you stop, off = it keeps one spot and stands still |
 | **Pickup** | Picks up items as it goes, and after kills (like auto-pickup) |
 | **Command** | Whether this companion answers the command key (pointing and recall) |
-| **Farm Zones** | Opens the farm zone editor |
 | **Despawn** | Removes the companion (asks first) |
 
 Picking a job again, or picking **Follow**, turns the job off. The **inner ring** holds the [combat stances](#combat).
@@ -126,6 +125,8 @@ Home matters because companions:
 ## Jobs
 
 Every job pauses for a fight, your orders, bedtime and picking up loot, then carries on. When a job runs out of work, see [When there's nothing to do](#when-theres-nothing-to-do).
+
+> **Companions only work while you're nearby.** The game unloads the parts of the world that no player is near, and everything in them freezes, companions included. A companion working at home while you're far away exploring isn't working; it carries on when you come back. In multiplayer, the area stays loaded while any player is near it.
 
 ### Wood, Stone, Ore and Forage
 
@@ -185,7 +186,7 @@ The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby
 1. **Till the ground first**, with a cultivator, like you would to plant yourself. The farmer plants only on cultivated ground, and doesn't till ground itself yet.
 2. **Open the farm zone editor**, either way:
    - Stand near your farmer and press `Left Alt` + `Z`. This opens the editor for the nearest companion.
-   - Or right-click **Farm** on its command wheel, or pick **Farm Zones**.
+   - Or right-click **Farm** on its command wheel.
 3. A green square shows where the zone would go. Controls:
 
    | Mouse and keyboard | Controller | Action |
@@ -236,7 +237,7 @@ Each kind can be switched off in the settings. It only uses recipes you know.
 **What it makes**
 - **Food:** cooks each food until the chests nearby (and at home) hold 20 of it. It cooks in batches of 5, like a player.
 - **Reserve:** it always leaves at least 20 of each raw ingredient, so there's some left for you.
-- **Mead:** brews mead bases, fills the fermenters and taps the finished mead, until there are 10 of each base and 20 of each mead.
+- **Mead:** brews mead bases, fills the fermenters and taps the finished mead, until there are 10 of each base and 20 of each mead. Don't want mead? Turn off `MakeMead` and it cooks food only.
 - **Your progress:** it brews the mead bases you'll need for your next boss first. For example, after Bonemass that's frost resistance and medium healing and stamina.
 - **Storing:** cooked food goes into a chest that already holds that food (or other cooked food).
 
@@ -321,7 +322,7 @@ A companion can carry 300 weight, the same as a player.
 
 **How they fight**
 - **Blocking:** they block with a shield, parry and counter-attack.
-- **Several attackers:** they switch to their best blocking shield when 3 or more enemies attack at once.
+- **Several attackers:** they switch to their best blocking shield (a tower shield, say) when 3 or more enemies attack at once.
 - **Weapon choice:** they pick the weapon that does the most damage to *this* enemy, using its weaknesses and resistances.
 - **Fire:** they open with a torch against enemies weak to fire, then switch back.
 - **Bows and crossbows:** used only when they carry the matching ammo, at 15 m and beyond. Under 12 m they switch back to melee.
@@ -394,6 +395,9 @@ Usually its job has nothing to do, and it will start idling within a few seconds
 - **Smelt:** it has no input in the chests.
 
 Check the log (below) for the reason.
+
+**It didn't get anything done while I was away.**
+The game unloads parts of the world that no player is near, and companions there freeze until someone comes back. A companion only works while you (or another player) are close enough for its area to stay loaded.
 
 **It won't go to bed.**
 It needs a free bed in its home area (set a home first), and it has to be within 50 m of the bed.

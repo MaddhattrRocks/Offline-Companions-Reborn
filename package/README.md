@@ -8,7 +8,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it with your BepInEx `LogOutput.log` (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
-## Recent Highlights (v1.4.155)
+## Recent Highlights (v1.4.156)
 
 This is a big update. With working jobs! The short version:
 
@@ -134,7 +134,7 @@ After a fight, a companion goes over and picks up what the kill dropped (with Pi
 **Cook**
 - Uses every kind of cooking station like a player: cauldron, food preparation table, mead ketill, spit and cooking station, iron cooking station, oven, fermenters and beehives. Each one can be switched off in the settings.
 - Cooks until each food reaches its target and always leaves a reserve of ingredients for you.
-- Brews mead bases in batches, fills and taps fermenters, and puts cooked food with food of the same kind.
+- Brews mead bases in batches, fills and taps fermenters, and puts cooked food with food of the same kind. Mead making can be switched off.
 - **Brews for your progress:** mead bases are prioritised by the last boss you beat, to get you ready for the next one.
 - Keeps the fires under its cooking stations and the oven fuelled — just enough to cook with.
 
@@ -143,7 +143,7 @@ After a fight, a companion goes over and picks up what the kill dropped (with Pi
 <details>
 <summary><b>Repair and Restock (looking after your base)</b></summary>
 
-A job for the companion you leave at home (or at an outpost). It keeps an area running on its own:
+A job for the companion you leave at home (or at an outpost). It keeps an area running on its own, as long as you (or another player) are close enough for the game to keep that area loaded — companions in unloaded areas freeze until someone comes back:
 
 - **Repair:** fixes damaged building pieces with a hammer, one swing at a time like a player. It needs the right crafting station nearby and ward access.
 - **Restock:** keeps campfires, hearths, braziers, torches, sconces and hot tubs fuelled. Each kind can be switched on or off.

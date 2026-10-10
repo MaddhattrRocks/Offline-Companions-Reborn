@@ -534,6 +534,9 @@ What may be cooked. Name:Number is that food's own target instead of FoodTarget.
 **StoreWithCookedFood** — Default: On  
 Put cooked food in a chest that already holds that food; if there is none, one that holds other cooked food; otherwise the chest nearest the cooking area. Off = the nearest chest with room.
 
+**MakeMead** — Default: On  
+Brew mead: make mead bases and fill fermenters with them. Off = food only (mead that has already finished in a fermenter is still tapped).
+
 **MeadBaseTarget** — Default: 10 · Range: 0 – 1000  
 Brew a mead base (one in MeadFocus) until the chests in range hold this many of it.
 

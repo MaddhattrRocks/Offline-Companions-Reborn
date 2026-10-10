@@ -383,7 +383,9 @@ public partial class CookController : MonoBehaviour
 			}
 		}
 		// 3) mead: fill an empty fermenter (priority bases first), brew a priority base for the next boss
-		Task task2 = FillTask() ?? BrewTask(focus: true);
+		// 1.4.156: [Cooking] MakeMead off = no mead bases and no filling fermenters (finished mead is still tapped)
+		bool mead = ModConfig.CookMakeMead == null || ModConfig.CookMakeMead.Value;
+		Task task2 = mead ? (FillTask() ?? BrewTask(focus: true)) : null;
 		if (task2 != null)
 		{
 			return task2;
@@ -395,7 +397,7 @@ public partial class CookController : MonoBehaviour
 			return task3;
 		}
 		// 5) 1.4.92: any other mead base the player knows (the priority list sets the order, it doesn't limit it)
-		Task task4 = BrewTask(focus: false);
+		Task task4 = mead ? BrewTask(focus: false) : null;
 		if (task4 != null)
 		{
 			return task4;
@@ -413,7 +415,7 @@ public partial class CookController : MonoBehaviour
 	private Task HiveTask(bool idle)
 	{
 		bool needHoney = false;
-		if (!idle)
+		if (!idle && (ModConfig.CookMakeMead == null || ModConfig.CookMakeMead.Value))
 		{
 			foreach (string mead in CookCatalog.Focus())
 			{
