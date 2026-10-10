@@ -29,13 +29,13 @@ If you like this mod and would like to support its ongoing development or any of
 
 ## What This Mod Does
 
-Offline Companions Reborn adds persistent NPC allies to Valheim. A companion is offered to you the first time you enter a world, and more can be added via console commands.
+Offline Companions Reborn adds persistent NPC allies to Valheim. A companion is offered to you the first time you enter a world. More can be hired at the trader if you also use the Trader Overhaul mod.
 
 Companions aren't pets — they're teammates with their own inventory, gear, food, stamina, skills and speech. Point them at your work and they'll actually do it: fight beside you, chop wood, mine, forage, farm, fish, hunt, cook and brew, run your smelters, look after your base, haul your cart, sit by the fire, sleep in beds, and follow you through portals.
 
 Everything (appearance, inventory, gear, job, home, skills, ownership) is saved with the world and survives sessions, zone changes, server restarts and deaths.
 
-Click a section below for the details.
+Click a section below for the details. For the full picture, see the **Companion Guide** (`GUIDE.md`) and the **Settings Reference** (`CONFIGURATION.md`), included with the mod and on [GitHub](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/tree/main/package).
 
 <details>
 <summary><b>Commanding your companions</b></summary>

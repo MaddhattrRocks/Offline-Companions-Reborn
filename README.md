@@ -10,7 +10,8 @@ The player-facing description is in [`package/README.md`](package/README.md).
 |---|---|
 | `src/Companions/` | The mod: `Companions.csproj` and the C# source, one file per class (folders below) |
 | `src/Companions/Resources/Textures/UI/` | UI textures embedded in the DLL |
-| `package/` | Thunderstore/Hexium package files: `manifest.json`, `icon.png`, `README.md`, `CHANGELOG.md` |
+| `package/` | Thunderstore/Hexium package files: `manifest.json`, `icon.png`, `README.md`, `CHANGELOG.md`, plus the player docs `GUIDE.md` and `CONFIGURATION.md` |
+| `tools/gen_config_doc.py` | Regenerates `package/CONFIGURATION.md` from the settings in `ModConfig.cs` |
 | `docs/DEV_NOTES.md` | Development history, design notes and backlog |
 | `Environment.props.example` | Template for your local paths (Valheim install, deploy folder) |
 
@@ -52,6 +53,7 @@ The game references used are `valheim_Data/Managed` (`assembly_valheim`, `assemb
 
 1. Bump `PluginVersion` in `src/Companions/Core/CompanionsPlugin.cs` and `version_number` in `package/manifest.json`.
 2. Add the changelog entry to `package/CHANGELOG.md` and update "Recent Highlights" in `package/README.md`.
+   If settings changed, regenerate the settings reference: `python3 tools/gen_config_doc.py src/Companions/Core/ModConfig.cs package/CONFIGURATION.md`. Update `package/GUIDE.md` for behaviour changes.
 3. Build in Release and zip `Companions.dll` with the files in `package/`.
 
 ## License
