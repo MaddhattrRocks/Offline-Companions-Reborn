@@ -1617,6 +1617,9 @@ namespace Companions
                 if (ai == null) return true;   // not an AI creature: leave it to the normal rules
                 Character t = ai.GetTargetCreature();
                 if (t == null) return false;
+                // 1.4.154: and actually coming for us (alerted) - a creature that has only noticed you isn't a fight yet
+                // (user: "going after creatures that have not engaged us yet"; log: a Neck with target Human, alerted=False)
+                if (!ai.IsAlerted()) return false;
                 return t.IsPlayer() || t.GetComponent<CompanionSetup>() != null;
             }
             catch { return true; }

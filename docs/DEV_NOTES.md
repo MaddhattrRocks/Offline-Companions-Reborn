@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.154 - unprovoked fights, early "nothing dropped" (user test of 1.4.152/153, 2026-10-10)
+- User: short test, nothing "crazy off". "NPC did not go and gather from the neck it shot while wandering around with forage enabled. Seems to be going after creatures that have not engaged us yet."
+- Log: "[Combat] Engage -> target=$enemy_neck ... its target=\"Human\" alerted=False" from CompanionAI's FindEnemy path; MHR_Threat.IsAfterUs only checked the creature's target. Now also requires BaseAI.IsAlerted() (a monster that has only spotted the player sets its target before it's alerted). Attackers are still engaged (OnDamaged, near projectile hit), Hunt engages prey directly.
+- Log: "[Loot] Going to pick up what Neck dropped (18 m away)" -> walked to (-268, -364) next to the kill -> "nothing dropped": no ragdoll found (k.Body false) and no drop within 2 s of arriving. The no-body/no-drop finish now also needs 8 s since the kill; the log line says how long it waited. (Possible: the modded Neck_RtD's ragdoll/drops differ - check the next log.)
+
 ### 1.4.153 - carts/ships for unloading (user, 2026-10-09: "I thought we made it so the NPC could unload into a ship or cart if commanded or away from home, like at an outpost or out at a mining vein")
 - Confirmed unchanged by 1.4.152: MHR_GatherRules.DropOff (overweight unload) still allows carts (Vagon) and ships away from home, chests only near home (user decision from the HarvestController audit); a commanded deposit (DirectDeposit -> CompanionAI deposit, MHR_Chests.Open) works on any container incl. carts/ships. MHR_Chests.Usable's vehicle exclusion only applies to the jobs' own chest scans (Smelt, Cook, Farm, ToolKeeper, Upkeep sorting). DropOff now uses MHR_Chests.InUse (synced) and a ward check.
 
