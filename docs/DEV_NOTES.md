@@ -31,6 +31,9 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.4.155 - EngageOnNotice (user, 2026-10-10: "I think it was better the other way where the NPC would engage mob's that have noticed us. Maybe we can have it as a toggle")
+- [Combat] EngageOnNotice (bool, default true = the pre-1.4.154 behaviour: MHR_Threat.IsAfterUs only needs the creature's target to be a player/companion). Off = also requires BaseAI.IsAlerted() (1.4.154). Hunt unaffected. README Combat section updated.
+
 ### 1.4.154 - unprovoked fights, early "nothing dropped" (user test of 1.4.152/153, 2026-10-10)
 - User: short test, nothing "crazy off". "NPC did not go and gather from the neck it shot while wandering around with forage enabled. Seems to be going after creatures that have not engaged us yet."
 - Log: "[Combat] Engage -> target=$enemy_neck ... its target=\"Human\" alerted=False" from CompanionAI's FindEnemy path; MHR_Threat.IsAfterUs only checked the creature's target. Now also requires BaseAI.IsAlerted() (a monster that has only spotted the player sets its target before it's alerted). Attackers are still engaged (OnDamaged, near projectile hit), Hunt engages prey directly. User: "This same check should not apply to hunting ... great to catch creatures off guard" - confirmed it doesn't: HuntController picks prey itself and calls CompanionCombatAI.EngagePrey (no IsAfterUs); the mid-fight target-switch check (CombatAI ~617) skips the current target, so the prey is never dropped for being unalerted.

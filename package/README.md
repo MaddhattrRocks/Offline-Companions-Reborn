@@ -8,7 +8,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it with your BepInEx `LogOutput.log` (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
-## Recent Highlights (v1.4.154)
+## Recent Highlights (v1.4.155)
 
 This is a big update. The short version:
 
@@ -67,7 +67,7 @@ Companions fight with a defensive-minded combat AI. They raise a shield and bloc
 
 Bows and crossbows are used when the companion carries the matching ammo. They load and fire crossbows properly, and switch to melee when an enemy closes in.
 
-Companions only start fights with things that are actually coming for you or them, like a player would — not with every creature that has merely spotted you. Anything that attacks them is fought back. Below a set health level they fight defensively, and at very low health they run.
+Companions don't pick fights with creatures minding their own business. By default they attack a creature once it has noticed you or them. With `[Combat] EngageOnNotice` off, they wait until it's actually coming for you. Anything that attacks them is always fought back. Below a set health level they fight defensively, and at very low health they run.
 
 Combat stances (inner ring of the command wheel; on a controller, push the stick partway toward one):
 
