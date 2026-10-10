@@ -583,7 +583,7 @@ What was built (all items below):
 
 ### README / Nexus text (next update)
 - **Note 2** (already on Nexus, add to the Thunderstore/Hexium README): "Note 2: Smelting, Farming (still requires setting a zone with left-Alt + z), Wood, and Repair are mostly working now. There may still be some occasional odd behavior that will be cleaned up over the next few updates."
-- **Support section:** wording for this mod's README; not picked yet, don't change it until they do. Options offered: (1) "Enjoying my mods? You can support my work on [Patreon](https://www.patreon.com/cw/MaddHattr) or [buy me a coffee](https://ko-fi.com/maddhattr). Thank you!" (2) "If you'd like to support this and my other mods: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)" (3) "Support my modding: [Patreon](https://www.patreon.com/cw/MaddHattr) · [Ko-fi](https://ko-fi.com/maddhattr)". Keep the ProfMags Patreon line as its own sentence underneath. Button images (Ko-fi/Patreon official graphics) are an option; a Discord link may join the line later.
+- **Support section: DONE (1.5.0 README)** - user's wording: "If you like this mod and would like to support its ongoing development or any of my other work: Patreon · Buy Maddhattr a Coffee."
 
 ### Older findings
 - User OK with Wood doing cleanup (stumps/logs) before felling trees - nearest-first scan stays.

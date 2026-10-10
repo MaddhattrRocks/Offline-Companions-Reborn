@@ -2,6 +2,6 @@
   "name": "Offline_Companions_Reborn",
   "description": "Adds persistent NPC companion allies to Valheim. Valheim 1.0 compatibility update for ProfMags' Offline Companions, with several bug fixes and feature additions. Full credit to ProfMags for the original mod.",
   "version_number": "1.5.0",
-  "website_url": "https://www.patreon.com/cw/MaddHattr",
+  "website_url": "https://github.com/MaddhattrRocks/Offline-Companions-Reborn",
   "dependencies": []
 }
