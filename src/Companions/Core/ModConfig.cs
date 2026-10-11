@@ -18,6 +18,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> ResetStarterFlag;
 
+	internal static ConfigEntry<bool> ShowCompanionRoster;
+
+	internal static ConfigEntry<bool> RecoverLostCompanion;
+
+	internal static ConfigEntry<float> RosterSaveInterval;
+
 	internal static ConfigEntry<float> MaxCarryWeight;
 
 	internal static ConfigEntry<float> BaseHealth;
@@ -450,6 +456,8 @@ internal static class ModConfig
 		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 2000, "The price of an extra companion, for getting more companions (coming soon).", new AcceptableValueRange<int>(0, 50000));
 		SpawnStarterCompanion = Bind(cfg, "General", "SpawnStarterCompanion", defaultValue: true, "The first time you enter a world with a character, you're offered one companion for free.");
 		ResetStarterFlag = Bind(cfg, "General", "ResetStarterFlag", defaultValue: false, "Set to true to be offered the free starter companion again in the current world (on the next world load). It turns itself back to false.");
+		ShowCompanionRoster = Bind(cfg, "General", "ShowCompanionRoster", defaultValue: false, "Set to true to list your companions in this world and their status: Alive, Dead (its tombstone will bring it back), Lost (nothing left of it - it can be recovered) or Unknown (on a dedicated server, a companion that isn't nearby can't be checked). It turns itself back to false.");
+		RecoverLostCompanion = Bind(cfg, "General", "RecoverLostCompanion", defaultValue: false, "Set to true to bring back a Lost companion next to you, with its gear and settings from the last roster save. An Unknown companion needs it set a second time within 60 s to confirm (it may still be alive somewhere). If the old companion turns up later, it's removed. It turns itself back to false.");
 		ProtectCompanions = Bind(cfg, "General", "ProtectCompanions", defaultValue: true, "Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.");
 		ShowMinimapHudPanel = Bind(cfg, "General", "ShowMinimapPanel", defaultValue: true, "Show the companion status panel under the minimap.");
 		ShowOverheadBars = Bind(cfg, "General", "ShowOverheadBars", defaultValue: true, "Show health and stamina bars above each companion's head.");
@@ -654,6 +662,7 @@ internal static class ModConfig
 		SpeechSayCooldown = Bind(cfg, "Speech", "SayCooldown", 3f, "Least time (seconds) between two lines from any companion, so they don't all talk at once.", new AcceptableValueRange<float>(1f, 30f));
 		SpeechCullDistance = Bind(cfg, "Speech", "CullDistance", 20f, "Speech from companions further away than this (meters) isn't shown.", new AcceptableValueRange<float>(5f, 60f));
 		// [Advanced]
+		RosterSaveInterval = Bind(cfg, "Advanced", "RosterSaveInterval", 60f, "Seconds between saves of your companions to the roster (their gear and settings), used to recover a lost companion.", new AcceptableValueRange<float>(10f, 600f));
 		HarvestScanRadius = Bind(cfg, "Advanced", "GatheringSearchRadius", 30f, "Gathering: how far (meters) around itself a companion looks for trees, rocks and plants when it's following you or sent to one with the command key (with Follow off it's [Gathering] Range).", new AcceptableValueRange<float>(5f, 100f));
 		HarvestScanInterval = Bind(cfg, "Advanced", "GatheringScanInterval", 4f, "Gathering: seconds between looks for the next tree, rock or plant.", new AcceptableValueRange<float>(1f, 30f));
 		HarvestAttackInterval = Bind(cfg, "Advanced", "GatheringSwingInterval", 2.5f, "Gathering: seconds between swings at a tree or rock.", new AcceptableValueRange<float>(0.5f, 5f));

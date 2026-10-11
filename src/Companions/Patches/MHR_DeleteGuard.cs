@@ -12,7 +12,7 @@ public static class MHR_DeleteGuard
 		if (!(go == null) && ModConfig.ProtectCompanions != null && ModConfig.ProtectCompanions.Value)
 		{
 			CompanionSetup component = go.GetComponent<CompanionSetup>();
-			if (!(component == null) && !component._mhrDespawning && !component._mhrDying)
+			if (!(component == null) && !component._mhrDespawning && !component._mhrDying && !component._mhrStale)
 			{
 				Character component2 = go.GetComponent<Character>();
 				if (!(component2 == null) && component2.GetHealth() > 0f)

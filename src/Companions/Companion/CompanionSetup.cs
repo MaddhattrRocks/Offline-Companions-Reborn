@@ -22,6 +22,9 @@ public class CompanionSetup : MonoBehaviour
 
 	internal bool _mhrDying;
 
+	// 1.5.1: an old copy of a recovered companion, being removed (MHR_Roster)
+	internal bool _mhrStale;
+
 	internal static readonly int NameHash = "HC_Name".GetStableHashCode();
 
 	internal static readonly int ActionModeHash = "HC_ActionMode".GetStableHashCode();
@@ -556,6 +559,7 @@ public class CompanionSetup : MonoBehaviour
 		ZDO zDO = _nview.GetZDO();
 		if (zDO != null)
 		{
+			MHR_Roster.OnDied(this);
 			if (CompanionInteractPanel.IsOpenFor(this))
 			{
 				CompanionInteractPanel.Instance?.Hide();
@@ -1374,6 +1378,7 @@ public class CompanionSetup : MonoBehaviour
 	internal void PrepareForDespawn()
 	{
 		_removePinOnDestroy = true;
+		MHR_Roster.Forget(this);
 	}
 
 	internal void DespawnWithTombstone()
@@ -1535,6 +1540,8 @@ public class CompanionSetup : MonoBehaviour
 			CompanionTombstoneResurrect.WriteRespawnData(zDO, prefabName, companionName, appearance, ownerId, actionMode, actionModeSchema, follow, stayHome, autoPickup, wander, commandable, formationSlot, skillsSerialized, hasHome, homePos, combatStance, hasHomeBed, homeBedPos, inventorySerialized);
 			// 1.4.150: also whether its job had turned Follow off (so turning the job off after a respawn turns it back on)
 			zDO.Set(CompanionTombstoneResurrect.RespawnFollowPausedHash, _nview?.GetZDO()?.GetBool(CompanionTombstoneResurrect.FollowPausedByJobHash) ?? false);
+			// 1.5.1: which copy of the companion this is - a tombstone of an older copy (the companion was recovered since) won't respawn it
+			zDO.Set(MHR_Roster.RespawnGenHash, _nview?.GetZDO()?.GetInt(MHR_Roster.GenHash) ?? 0);
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
 			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");

@@ -53,6 +53,12 @@ The first time you enter a world with a character, you're offered one companion 
 **ResetStarterFlag** — Default: Off  
 Set to true to be offered the free starter companion again in the current world (on the next world load). It turns itself back to false.
 
+**ShowCompanionRoster** — Default: Off  
+Set to true to list your companions in this world and their status: Alive, Dead (its tombstone will bring it back), Lost (nothing left of it - it can be recovered) or Unknown (on a dedicated server, a companion that isn't nearby can't be checked). It turns itself back to false.
+
+**RecoverLostCompanion** — Default: Off  
+Set to true to bring back a Lost companion next to you, with its gear and settings from the last roster save. An Unknown companion needs it set a second time within 60 s to confirm (it may still be alive somewhere). If the old companion turns up later, it's removed. It turns itself back to false.
+
 **ProtectCompanions** — Default: On  
 Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.
 
@@ -722,6 +728,9 @@ Speech from companions further away than this (meters) isn't shown.
 ## Advanced
 
 Fine-tuning for timings and distances. Most players never need to touch these.
+
+**RosterSaveInterval** — Default: 60 · Range: 10 – 600  
+Seconds between saves of your companions to the roster (their gear and settings), used to recover a lost companion.
 
 **GatheringSearchRadius** — Default: 30 · Range: 5 – 100  
 Gathering: how far (meters) around itself a companion looks for trees, rocks and plants when it's following you or sent to one with the command key (with Follow off it's [Gathering] Range).

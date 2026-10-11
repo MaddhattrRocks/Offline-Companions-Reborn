@@ -161,6 +161,14 @@ public class CompanionsPlugin : BaseUnityPlugin
 		{
 			Log.LogWarning("[Respawn] Tracker error: " + ex.ToString());
 		}
+		try
+		{
+			MHR_Roster.Tick();
+		}
+		catch (Exception ex2)
+		{
+			Log.LogWarning("[Roster] Error: " + ex2.ToString());
+		}
 	}
 
 	private static bool IsBrokenTmpFont(TMP_FontAsset font)

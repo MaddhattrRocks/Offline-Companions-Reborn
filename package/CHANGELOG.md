@@ -6,6 +6,11 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: a companion that died while you were dead too (for example both drowning at sea) left no tombstone and never came back - it now leaves its tombstone and respawns as normal, wherever you respawn.
 - Fixed: a companion whose respawn time came while its tombstone was far away could be respawned again and again (one every second) - it now comes back once.
 - README and guide: on a dedicated server the server needs the mod too - a server without it deletes companions.
+- New companion roster: your game saves each companion's gear and settings every minute, per world.
+- New [General] ShowCompanionRoster: lists your companions as Alive, Dead, Lost or Unknown.
+- New [General] RecoverLostCompanion: brings a Lost companion back next to you (an Unknown one asks you to confirm).
+- A recovered companion's old copy is removed if it turns up later, and its old tombstone no longer respawns it.
+- New [Advanced] RosterSaveInterval (60 s): how often the roster is saved.
 
 ## 1.5.0
 - Major release: everything from 1.4.86 to 1.4.156 below (new movement, idle behaviour, Repair and Restock, cooking, gathering like Hunt, orders first, multiplayer ownership and chest safety, cleaned-up settings), plus the new Companion Guide (GUIDE.md) and Settings Reference (CONFIGURATION.md).

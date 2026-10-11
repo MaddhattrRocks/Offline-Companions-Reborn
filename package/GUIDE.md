@@ -364,6 +364,16 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 - **Its things:** once it's back near its tombstone it walks over and collects its own things. You can also point the command key at the tombstone.
 - **Skills:** it loses 25% of its skill progress, a bit like a player.
 
+### Recovering a lost companion
+
+Your game keeps a roster of your companions in each world, saving each one's gear and settings every minute while it's near you. If a companion goes missing for good (for example deleted by a server without the mod), you can bring it back:
+
+- **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive**, **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
+- **Bring one back:** turn on **General > RecoverLostCompanion**. The first Lost companion appears next to you with its gear and settings from the last roster save. Both settings turn themselves back off.
+- **Unknown:** on a dedicated server your game can only check the area around you, so a companion that isn't nearby is Unknown. It may still be alive somewhere. Turn RecoverLostCompanion on a second time within 60 seconds to recover it anyway. If it had died, its tombstone keeps whatever was in it too.
+- **No doubles:** if the old companion turns up later, it's removed, and its old tombstone won't bring it back (any items stay in the tombstone for you to take).
+- A companion only joins the roster once it's been near you with version 1.5.1 or later. A despawned companion is taken off the roster.
+
 ## Getting around
 
 Companions find their own way:
@@ -384,7 +394,7 @@ Companions get better at what they do, like a player. Fighting raises their weap
 - **Your orders always work.** When you give an order or open its wheel, your game takes over running it.
 - **Shared chests are safe.** Items a companion moves are saved properly, with no losses or duplicates. It won't use a chest another player has open.
 - **Credit goes to the owner.** Crops it plants and piles it builds count as built by its owner.
-- **Everyone needs the mod, including the server.** On a dedicated server, install the mod on the server as well as on every player's game. A server (or a host) without the mod deletes any companion it loads, and those companions can't be brought back. A dedicated server always keeps the area around the middle of the world loaded, so companions near the world spawn are at risk even while everyone is online. Players without the mod simply can't see companions.
+- **Everyone needs the mod, including the server.** On a dedicated server, install the mod on the server as well as on every player's game. A server (or a host) without the mod deletes any companion it loads. You can bring a deleted companion back from the roster (see [Recovering a lost companion](#recovering-a-lost-companion)), but it's better not to lose it in the first place. A dedicated server always keeps the area around the middle of the world loaded, so companions near the world spawn are at risk even while everyone is online. Players without the mod simply can't see companions.
 
 ## Troubleshooting
 
@@ -396,6 +406,9 @@ Usually its job has nothing to do, and it will start idling within a few seconds
 - **Smelt:** it has no input in the chests.
 
 Check the log (below) for the reason.
+
+**My companion has disappeared.**
+Turn on **General > ShowCompanionRoster** to see its status. If it's Lost or Unknown, see [Recovering a lost companion](#recovering-a-lost-companion).
 
 **It didn't get anything done while I was away.**
 The game unloads parts of the world that no player is near, and companions there freeze until someone comes back. A companion only works while you (or another player) are close enough for its area to stay loaded.

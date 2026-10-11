@@ -19,6 +19,7 @@ This is a big update. With working jobs! The short version:
 - **Gathering works like Hunt.** With Follow on, Wood, Stone, Ore and Forage only go for what's close to you as you travel. With Follow off they work an area. Early in the game they also pick up branches, stones and flint by hand.
 - **Your orders come first.** Every order you give takes priority over the companion's job, and the job picks up where it left off afterwards.
 - **Multiplayer.** A companion always treats its owner as its player, even when another player's game happens to be running it. It uses chests safely (no lost or duplicated items) and respects wards and private chests.
+- **Companion recovery (1.5.1).** Your game keeps a roster of your companions. General > ShowCompanionRoster shows whether each one is Alive, Dead, Lost or Unknown, and General > RecoverLostCompanion brings a lost one back with its gear.
 - **Cleaned-up settings.** The config file has been reorganised into clear sections with plain-language descriptions. Settings you'd already changed are carried over automatically.
 
 See `CHANGELOG.md` for the version-by-version detail.
@@ -197,7 +198,7 @@ Now and then it tells you why it's idle ("Waiting for the crops to grow."). It g
 - **Chests are safe to share.** A companion won't use a chest someone has open, another player's private chest, or a chest behind a ward it can't open. Items it moves are saved properly, with no losses or duplicates.
 - **Credit goes to the owner.** Crops and piles a companion makes count as built by its owner.
 - **Night skip:** companions hold the night skip (up to 30 s) while they walk to bed.
-- **Install it everywhere.** On a dedicated server, the server needs the mod too. A server or host without it deletes companions it loads (especially near the world spawn), and they can't be brought back.
+- **Install it everywhere.** On a dedicated server, the server needs the mod too. A server or host without it deletes companions it loads (especially near the world spawn). A deleted companion can be brought back with General > RecoverLostCompanion (see the guide), but it's better not to lose it.
 
 </details>
 
