@@ -269,6 +269,21 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			return;
 		}
 		MHR_RespawnTracker.RemovePending(tombZdo.m_uid);
+		// 1.5.1: this companion was recovered from the roster after this tombstone was made - the tombstone no longer
+		// brings it back (that would make two). Its items stay in it for pickup.
+		string mhrId = tombZdo.GetString(CompanionSetup.MHR_TombCompanionIdHash);
+		int mhrGen = tombZdo.GetInt(MHR_Roster.RespawnGenHash);
+		if (!string.IsNullOrEmpty(mhrId) && text4 == (Player.m_localPlayer?.GetPlayerID().ToString() ?? "") && MHR_Roster.GenOf(mhrId) > mhrGen)
+		{
+			CompanionsPlugin.Log.LogWarning("[Resurrect] \"" + text2 + "\" was recovered since this tombstone was made - it won't respawn from it (items stay in it)");
+			tombZdo.Set(RespawnOwnerHash, "");
+			tombZdo.Set(RespawnPrefabHash, "");
+			if (!(comp == null))
+			{
+				Object.Destroy(comp);
+			}
+			return;
+		}
 		foreach (CompanionSetup allCompanion in CompanionSetup.AllCompanions)
 		{
 			ZDO zDO = allCompanion.GetComponent<ZNetView>()?.GetZDO();
@@ -358,6 +373,7 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			zDO2.Set(CompanionSkills.SkillsHash, value6);
 		}
 		zDO2.Persistent = true;
+		zDO2.Set(MHR_Roster.GenHash, mhrGen);
 		string text7 = tombZdo.GetString(CompanionSetup.MHR_TombCompanionIdHash);
 		if (!string.IsNullOrEmpty(text7))
 		{
@@ -466,7 +482,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		{
 			component7?.SetFollowTarget(MHR_Owner.Go(component7));
 		}
-		comp.PlayResurrectEffects(vector);
+		// 1.5.1: static - the auto-respawn for a far-away tombstone passes comp == null, and the instance call threw here,
+		// before the tombstone's respawn data was cleared, so the next tick (1 s later) respawned the companion again
+		PlayResurrectEffects(vector);
 		if (!flag5 || tombZdo.GetInt(CompanionSetup.MHR_TombItemsHash, -1) == 0)
 		{
 			MHR_RemoveGravePinNear(tombZdo.GetPosition());
@@ -499,13 +517,21 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 				Object.Destroy(comp.gameObject);
 			}
 		}
+		else
+		{
+			// 1.5.1: respawned from far away with an empty tombstone - clear its respawn data and mark it for clean-up,
+			// or loading it later would bring the companion back a second time
+			tombZdo.Set(RespawnOwnerHash, "");
+			tombZdo.Set(RespawnPrefabHash, "");
+			tombZdo.Set(MHR_RespawnTracker.CleanupHash, value: true);
+		}
 		return;
 		IL_01ab:
 		vector = ((ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null)) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
 		goto IL_0211;
 	}
 
-	private void PlayResurrectEffects(Vector3 pos)
+	internal static void PlayResurrectEffects(Vector3 pos)
 	{
 		GameObject gameObject = ZNetScene.instance?.GetPrefab("fx_eikthyr_forwardshockwave");
 		if (gameObject != null)

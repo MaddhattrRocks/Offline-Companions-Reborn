@@ -22,6 +22,12 @@ public class CompanionSetup : MonoBehaviour
 
 	internal bool _mhrDying;
 
+	// 1.5.1: an old copy of a recovered companion, being removed (MHR_Roster)
+	internal bool _mhrStale;
+
+	// 1.5.1: when this companion was loaded - its items load from the world a moment later, so the roster waits a bit
+	internal float _mhrAwakeTime;
+
 	internal static readonly int NameHash = "HC_Name".GetStableHashCode();
 
 	internal static readonly int ActionModeHash = "HC_ActionMode".GetStableHashCode();
@@ -496,6 +502,7 @@ public class CompanionSetup : MonoBehaviour
 	private void Awake()
 	{
 		MHR_MarkNoDestroy();
+		_mhrAwakeTime = Time.time;
 		_allCompanions.Add(this);
 		_nview = GetComponent<ZNetView>();
 		_visEquip = GetComponent<VisEquipment>();
@@ -556,6 +563,7 @@ public class CompanionSetup : MonoBehaviour
 		ZDO zDO = _nview.GetZDO();
 		if (zDO != null)
 		{
+			MHR_Roster.OnDied(this);
 			if (CompanionInteractPanel.IsOpenFor(this))
 			{
 				CompanionInteractPanel.Instance?.Hide();
@@ -1374,6 +1382,7 @@ public class CompanionSetup : MonoBehaviour
 	internal void PrepareForDespawn()
 	{
 		_removePinOnDestroy = true;
+		MHR_Roster.Forget(this);
 	}
 
 	internal void DespawnWithTombstone()
@@ -1406,7 +1415,18 @@ public class CompanionSetup : MonoBehaviour
 
 	private void CreateCompanionTombstone(string companionName, Vector3 position, long tombstoneId, string prefabName, string appearance, string ownerId, int actionMode, int actionModeSchema, bool follow, bool stayHome, bool autoPickup, bool wander, bool commandable, int formationSlot, string skillsSerialized, bool hasHome, Vector3 homePos, int combatStance, bool hasHomeBed, Vector3 homeBedPos)
 	{
+		// 1.5.1: the tombstone prefab came from the local player only - when the player was dead too (both drowned at sea,
+		// GitHub issue #10) there was no local player, no tombstone and no respawn data, and the companion was gone for
+		// good. The game's player prefab always has it.
 		GameObject gameObject = Player.m_localPlayer?.m_tombstone;
+		if (gameObject == null)
+		{
+			gameObject = Game.instance?.m_playerPrefab?.GetComponent<Player>()?.m_tombstone;
+		}
+		if (gameObject == null)
+		{
+			gameObject = ZNetScene.instance?.GetPrefab("Player_tombstone");
+		}
 		if (gameObject == null)
 		{
 			CompanionsPlugin.Log.LogError("[Setup] Could not find tombstone prefab!");
@@ -1524,6 +1544,8 @@ public class CompanionSetup : MonoBehaviour
 			CompanionTombstoneResurrect.WriteRespawnData(zDO, prefabName, companionName, appearance, ownerId, actionMode, actionModeSchema, follow, stayHome, autoPickup, wander, commandable, formationSlot, skillsSerialized, hasHome, homePos, combatStance, hasHomeBed, homeBedPos, inventorySerialized);
 			// 1.4.150: also whether its job had turned Follow off (so turning the job off after a respawn turns it back on)
 			zDO.Set(CompanionTombstoneResurrect.RespawnFollowPausedHash, _nview?.GetZDO()?.GetBool(CompanionTombstoneResurrect.FollowPausedByJobHash) ?? false);
+			// 1.5.1: which copy of the companion this is - a tombstone of an older copy (the companion was recovered since) won't respawn it
+			zDO.Set(MHR_Roster.RespawnGenHash, _nview?.GetZDO()?.GetInt(MHR_Roster.GenHash) ?? 0);
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
 			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");

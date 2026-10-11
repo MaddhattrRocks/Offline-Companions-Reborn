@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Companions;
@@ -28,6 +29,20 @@ public static class MHR_RespawnTracker
 		if (localPlayer == null || localPlayer.IsDead() || ZDOMan.instance == null || ZNetScene.instance == null)
 		{
 			return;
+		}
+		if (s_deferred.Count > 0)
+		{
+			string had = GetPending(localPlayer);
+			foreach (string entry in s_deferred)
+			{
+				if (!had.Contains(";" + entry.Substring(0, entry.LastIndexOf(',') + 1)))
+				{
+					had = had + ";" + entry;
+				}
+			}
+			SetPending(localPlayer, had);
+			CompanionsPlugin.Log.LogInfo($"[Respawn] Tracking {s_deferred.Count} companion(s) that died while you were dead");
+			s_deferred.Clear();
 		}
 		string pending = GetPending(localPlayer);
 		if (string.IsNullOrEmpty(pending))
@@ -69,10 +84,26 @@ public static class MHR_RespawnTracker
 		}
 	}
 
+	private static readonly List<string> s_deferred = new List<string>();
+
 	internal static void OnCompanionDied(ZDO tombZdo, string ownerId)
 	{
 		if (tombZdo == null)
 		{
+			return;
+		}
+		// 1.5.1: died while the player is dead too (no player character right now): it's still the local player's
+		// companion if the profile matches - remember it and add it to the respawn list once the player is back
+		// (it was treated as another player's companion and only came back when the player went near its tombstone)
+		if (Player.m_localPlayer == null)
+		{
+			string owner = tombZdo.GetString(CompanionTombstoneResurrect.RespawnOwnerHash);
+			long profileId = Game.instance?.GetPlayerProfile()?.GetPlayerID() ?? 0L;
+			if (profileId != 0L && owner == profileId.ToString())
+			{
+				s_deferred.Add(EntryPrefix(tombZdo.m_uid) + tombZdo.GetLong(RespawnAtHash));
+				CompanionsPlugin.Log.LogInfo("[Respawn] Companion died while you were dead - it's added to the respawn list when you're back");
+			}
 			return;
 		}
 		if (!IsLocalOwner(tombZdo))

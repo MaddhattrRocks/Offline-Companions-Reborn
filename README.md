@@ -12,6 +12,7 @@ The player-facing description is in [`package/README.md`](package/README.md).
 | `src/Companions/Resources/Textures/UI/` | UI textures embedded in the DLL |
 | `package/` | Thunderstore/Hexium package files: `manifest.json`, `icon.png`, `README.md`, `CHANGELOG.md`, plus the player docs `GUIDE.md` and `CONFIGURATION.md` |
 | `tools/gen_config_doc.py` | Regenerates `package/CONFIGURATION.md` from the settings in `ModConfig.cs` |
+| `tools/readme_to_nexus.py` | Converts `package/README.md` into Nexus Mods BBCode for the mod page description (`[spoiler]` sections) |
 | `docs/DEV_NOTES.md` | Development history, design notes and backlog |
 | `Environment.props.example` | Template for your local paths (Valheim install, deploy folder) |
 

@@ -2,6 +2,24 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.1
+- Fixed: a companion that died while you were dead too (for example both drowning at sea) left no tombstone and never came back - it now leaves its tombstone and respawns as normal, wherever you respawn.
+- Fixed: a companion whose respawn time came while its tombstone was far away could be respawned again and again (one every second) - it now comes back once.
+- README and guide: on a dedicated server the server needs the mod too - a server without it deletes companions.
+- New companion roster: your game saves each companion's gear and settings every minute and when you log out or quit, per world.
+- New [General] ShowCompanionRoster: lists your companions as Alive, Dead, Lost or Unknown.
+- New [General] RecoverLostCompanion: brings a Lost companion back next to you (an Unknown one asks you to confirm).
+- A recovered companion's old copy is removed if it turns up later, and its old tombstone no longer respawns it.
+- New [Advanced] RosterSaveInterval (60 s): how often the roster is saved.
+- New Odin's Shrine (hammer, Misc, at a workbench: 10 stone, 5 wood, 3 greydwarf eyes): shows your companions and their status in the game's message window, and offers to bring back a lost one.
+- Fixed: a companion looked for a free bed about every 30 minutes instead of every 30 seconds (at night it still looked every few seconds).
+- Fixed: a companion kept saying it had no bed after it had found one, until the next night.
+- A bed claimed by a companion that no longer exists is free again (single player and host).
+- The log now says why a companion couldn't find a bed to claim.
+- Fixed: a companion could lose its bed when you loaded in, if the bed hadn't appeared yet - it now waits up to a minute for it.
+- A companion can use a bed of its owner's that isn't the owner's spawn point, so clicking its bed by accident no longer takes it away. Once you make it your spawn point, the companion gives it up straight away.
+- New [Death] ShrineBuildable, ShrineRecipe and ShrineModel (Tombstone or Ward): turn the shrine off, change its cost or its look.
+
 ## 1.5.0
 - Major release: everything from 1.4.86 to 1.4.156 below (new movement, idle behaviour, Repair and Restock, cooking, gathering like Hunt, orders first, multiplayer ownership and chest safety, cleaned-up settings), plus the new Companion Guide (GUIDE.md) and Settings Reference (CONFIGURATION.md).
 

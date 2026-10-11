@@ -9,6 +9,7 @@ public static class ZNetScenePatch
 	private static void Postfix(ZNetScene __instance)
 	{
 		CompanionPrefabs.Init(__instance);
+		MHR_Shrine.Init(__instance);
 		CompanionRestedBuff.ResetCache();
 	}
 }
