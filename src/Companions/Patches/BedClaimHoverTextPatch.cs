@@ -15,7 +15,10 @@ public static class BedClaimHoverTextPatch
 			string text = CompanionRest.MHR_GetBedClaimName(__instance);
 			if (text != null && Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == bedOwnerSafe && !__instance.IsCurrent())
 			{
-				__result = __result + "\n(" + text + " sleeps here)";
+				// the first line is your name - show the companion's bed instead, like an unclaimed bed it sleeps in, and keep
+				// the game's own lines below it (sleep / set spawn point)
+				int num = __result.IndexOf('\n');
+				__result = text + "'s Bed" + ((num >= 0) ? __result.Substring(num) : "");
 			}
 		}
 		else

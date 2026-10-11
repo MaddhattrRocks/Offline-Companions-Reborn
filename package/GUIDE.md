@@ -344,7 +344,7 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 **Beds**
 - Each companion claims a free bed in its home area. The bed shows its name.
-- It can also use one of your beds, as long as it isn't your spawn point. So clicking a companion's bed by accident doesn't take it away (the bed shows "(name sleeps here)"). Sleeping in it does, because that makes it your spawn point. It never uses another player's bed.
+- It can also use one of your beds, as long as it isn't your spawn point. So clicking a companion's bed by accident doesn't take it away (the bed still shows the companion's name). Sleeping in it does, because that makes it your spawn point. It never uses another player's bed.
 - Without a home set, it only takes a bed within 20 m of a bed of yours.
 - It keeps the bed through death and when you log out and back in.
 - Point the command key at a bed to send a companion to sleep in it.
