@@ -1,22 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using TMPro;
 using UnityEngine;
 
 namespace Companions;
 
-// 1.5.1: the Companion Shrine - a buildable stone (the vanilla ward's model, without the ward) that shows your companion
-// roster and brings back a lost companion. Built with the hammer at a workbench, [Death] ShrineRecipe.
+// 1.5.1: Odin's Shrine - a buildable stone that shows your companion roster and brings back a lost companion, using the
+// game's own message windows. Built with the hammer at a workbench ([Death] ShrineRecipe). The model is a copy of a
+// vanilla one ([Death] ShrineModel): the player tombstone (default) or the ward stone, with their own behaviour removed.
 internal static class MHR_Shrine
 {
 	internal const string PrefabName = "HC_CompanionShrine";
 
-	internal const string DisplayName = "Companion Shrine";
-
-	private const string ModelPrefab = "guard_stone";
+	internal const string DisplayName = "Odin's Shrine";
 
 	private static GameObject s_holder;
 
 	private static GameObject s_prefab;
+
+	private static string s_model;
 
 	// called on every ZNetScene.Awake (each world load). The piece is always registered - a world with shrines in it
 	// would otherwise lose them while ShrineBuildable is off - and only left out of the hammer when it's off.
@@ -24,7 +27,13 @@ internal static class MHR_Shrine
 	{
 		try
 		{
-			if (s_prefab == null && !Create(zs))
+			string text = ModelPrefabName();
+			if (s_prefab != null && s_model != text)
+			{
+				UnityEngine.Object.Destroy(s_prefab);
+				s_prefab = null;
+			}
+			if (s_prefab == null && !Create(zs, text))
 			{
 				return;
 			}
@@ -38,14 +47,14 @@ internal static class MHR_Shrine
 			PieceTable pieceTable = zs.GetPrefab("Hammer")?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_buildPieces;
 			if (pieceTable == null)
 			{
-				CompanionsPlugin.Log.LogWarning("[Shrine] Hammer build table not found - the Companion Shrine can't be built");
+				CompanionsPlugin.Log.LogWarning("[Shrine] Hammer build table not found - Odin's Shrine can't be built");
 				return;
 			}
 			pieceTable.m_pieces.RemoveAll((GameObject p) => p == null || p.name == PrefabName);
 			if (ModConfig.ShrineBuildable.Value)
 			{
 				pieceTable.m_pieces.Add(s_prefab);
-				CompanionsPlugin.Log.LogInfo("[Shrine] Companion Shrine added to the hammer (Misc), recipe " + ModConfig.ShrineRecipe.Value + " at a workbench");
+				CompanionsPlugin.Log.LogInfo("[Shrine] Odin's Shrine added to the hammer (Misc), recipe " + ModConfig.ShrineRecipe.Value + " at a workbench");
 			}
 		}
 		catch (Exception ex)
@@ -54,12 +63,22 @@ internal static class MHR_Shrine
 		}
 	}
 
-	private static bool Create(ZNetScene zs)
+	private static string ModelPrefabName()
 	{
-		GameObject prefab = zs.GetPrefab(ModelPrefab);
+		string text = (ModConfig.ShrineModel.Value ?? "").Trim();
+		if (!text.Equals("Ward", StringComparison.OrdinalIgnoreCase))
+		{
+			return "Player_tombstone";
+		}
+		return "guard_stone";
+	}
+
+	private static bool Create(ZNetScene zs, string model)
+	{
+		GameObject prefab = zs.GetPrefab(model);
 		if (prefab == null)
 		{
-			CompanionsPlugin.Log.LogWarning("[Shrine] Model " + ModelPrefab + " not found - no Companion Shrine");
+			CompanionsPlugin.Log.LogWarning("[Shrine] Model " + model + " not found - no Odin's Shrine");
 			return false;
 		}
 		if (s_holder == null)
@@ -71,45 +90,94 @@ internal static class MHR_Shrine
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, s_holder.transform, worldPositionStays: false);
 		gameObject.name = PrefabName;
 		float hoverOffset = 1f;
-		PrivateArea component = gameObject.GetComponent<PrivateArea>();
+		Piece piece = gameObject.GetComponent<Piece>();
+		TombStone component = gameObject.GetComponent<TombStone>();
 		if (component != null)
 		{
 			hoverOffset = component.m_hoverOffset;
-			if (component.m_areaMarker != null)
+			if (component.m_worldText != null)
 			{
-				UnityEngine.Object.DestroyImmediate(component.m_areaMarker.gameObject);
+				component.m_worldText.text = DisplayName;
 			}
-			if (component.m_inRangeEffect != null && component.m_inRangeEffect.transform.IsChildOf(gameObject.transform))
+			if (component.m_floater != null && component.m_floater != gameObject)
 			{
-				component.m_inRangeEffect.SetActive(value: false);
+				component.m_floater.SetActive(value: false);
 			}
-			// the glow of a switched-on ward - the shrine is always "on"
-			if (component.m_enabledEffect != null && component.m_enabledEffect.transform.IsChildOf(gameObject.transform))
+			// a player tombstone is a loose physics object with a chest in it - the shrine is a fixed building piece
+			Remove<TombStone>(gameObject);
+			Remove<Floating>(gameObject);
+			Remove<Container>(gameObject);
+			Remove<ZSyncTransform>(gameObject);
+			Remove<Rigidbody>(gameObject);
+		}
+		PrivateArea component2 = gameObject.GetComponent<PrivateArea>();
+		if (component2 != null)
+		{
+			hoverOffset = component2.m_hoverOffset;
+			if (component2.m_areaMarker != null)
 			{
-				component.m_enabledEffect.SetActive(value: true);
+				UnityEngine.Object.DestroyImmediate(component2.m_areaMarker.gameObject);
 			}
-			UnityEngine.Object.DestroyImmediate(component);
+			if (component2.m_inRangeEffect != null && component2.m_inRangeEffect.transform.IsChildOf(gameObject.transform))
+			{
+				component2.m_inRangeEffect.SetActive(value: false);
+			}
+			if (component2.m_enabledEffect != null && component2.m_enabledEffect.transform.IsChildOf(gameObject.transform))
+			{
+				component2.m_enabledEffect.SetActive(value: true);
+			}
+			UnityEngine.Object.DestroyImmediate(component2);
 		}
 		CircleProjector[] componentsInChildren = gameObject.GetComponentsInChildren<CircleProjector>(includeInactive: true);
-		foreach (CircleProjector circleProjector in componentsInChildren)
+		for (int i = 0; i < componentsInChildren.Length; i++)
 		{
-			UnityEngine.Object.DestroyImmediate(circleProjector);
+			UnityEngine.Object.DestroyImmediate(componentsInChildren[i]);
 		}
-		Piece component2 = gameObject.GetComponent<Piece>();
-		if (component2 == null)
+		Piece piece2 = zs.GetPrefab("guard_stone")?.GetComponent<Piece>();
+		if (piece == null)
 		{
-			CompanionsPlugin.Log.LogWarning("[Shrine] Model " + ModelPrefab + " isn't a building piece - no Companion Shrine");
-			UnityEngine.Object.Destroy(gameObject);
-			return false;
+			piece = gameObject.AddComponent<Piece>();
+			if (piece2 != null)
+			{
+				piece.m_placeEffect = piece2.m_placeEffect;
+			}
+			piece.m_icon = zs.GetPrefab("TrophySkeleton")?.GetComponent<ItemDrop>()?.m_itemData?.GetIcon() ?? piece2?.m_icon;
 		}
-		component2.m_name = DisplayName;
-		component2.m_description = "Shows your companions and whether they're alive, and brings back one that's been lost.";
-		component2.m_category = Piece.PieceCategory.Misc;
-		component2.m_enabled = true;
+		// the hammer only removes (and you only aim at) things on the building layers
+		int num = LayerMask.NameToLayer("piece");
+		Collider[] componentsInChildren2 = gameObject.GetComponentsInChildren<Collider>(includeInactive: true);
+		foreach (Collider collider in componentsInChildren2)
+		{
+			if (num >= 0 && !collider.isTrigger)
+			{
+				collider.gameObject.layer = num;
+			}
+		}
+		piece.m_name = DisplayName;
+		piece.m_description = "Shows your companions and whether they're alive, and brings back one that's been lost.";
+		piece.m_category = Piece.PieceCategory.Misc;
+		piece.m_enabled = true;
 		gameObject.AddComponent<CompanionShrine>().m_hoverOffset = hoverOffset;
 		s_prefab = gameObject;
-		CompanionsPlugin.Log.LogInfo("[Shrine] Companion Shrine piece created (model: " + ModelPrefab + ")");
+		s_model = model;
+		CompanionsPlugin.Log.LogInfo("[Shrine] Odin's Shrine piece created (model: " + model + ")");
 		return true;
+	}
+
+	private static void Remove<T>(GameObject go) where T : Component
+	{
+		T[] components = go.GetComponents<T>();
+		foreach (T val in components)
+		{
+			try
+			{
+				UnityEngine.Object.DestroyImmediate(val);
+			}
+			catch (Exception ex)
+			{
+				CompanionsPlugin.Log.LogWarning("[Shrine] Couldn't remove " + typeof(T).Name + ": " + ex.Message);
+			}
+		}
 	}
 
 	// "Stone:10,Wood:5,GreydwarfEye:3"
@@ -143,6 +211,89 @@ internal static class MHR_Shrine
 		}
 		return list.ToArray();
 	}
+
+	private static string StatusText(MHR_Roster.Status s)
+	{
+		return s switch
+		{
+			MHR_Roster.Status.Alive => "<color=#80E080>Alive</color>",
+			MHR_Roster.Status.Dead => "<color=#C0C0C0>Dead</color> (its tombstone will bring it back)",
+			MHR_Roster.Status.Lost => "<color=#FF7060>Lost</color>",
+			_ => "<color=#FFCC50>Unknown</color> (not nearby - it may still be alive)",
+		};
+	}
+
+	// Using the shrine: the roster in the game's message window, then a Yes / No for each companion that can be brought
+	// back (Lost first, then Unknown). No moves on to the next one.
+	internal static void Use(CompanionShrine shrine)
+	{
+		if (!UnifiedPopup.IsAvailable() || UnifiedPopup.IsVisible())
+		{
+			return;
+		}
+		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> roster = MHR_Roster.GetRoster();
+		CompanionsPlugin.Log.LogInfo($"[Shrine] Used - {roster.Count} companion(s) on the roster");
+		StringBuilder stringBuilder = new StringBuilder();
+		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> list = new List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>>();
+		foreach (KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> item in roster)
+		{
+			stringBuilder.Append(item.Key.Name).Append(": ").Append(StatusText(item.Value))
+				.Append('\n');
+			if (item.Value == MHR_Roster.Status.Lost)
+			{
+				list.Add(item);
+			}
+		}
+		foreach (KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> item2 in roster)
+		{
+			if (item2.Value == MHR_Roster.Status.Unknown)
+			{
+				list.Add(item2);
+			}
+		}
+		string text = stringBuilder.ToString().TrimEnd('\n');
+		if (roster.Count == 0)
+		{
+			text = "No companions on your roster in this world yet. A companion joins the roster once it has been near you for a few seconds.";
+		}
+		if (list.Count == 0)
+		{
+			UnifiedPopup.Push(new WarningPopup(DisplayName, text + ((roster.Count > 0) ? "\n\nNone of your companions needs bringing back." : ""), delegate
+			{
+				UnifiedPopup.Pop();
+			}, localizeText: false));
+		}
+		else
+		{
+			Ask(shrine, text, list, 0);
+		}
+	}
+
+	private static void Ask(CompanionShrine shrine, string rosterText, List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> candidates, int index)
+	{
+		if (index >= candidates.Count || shrine == null)
+		{
+			return;
+		}
+		MHR_Roster.Entry entry = candidates[index].Key;
+		string text = rosterText + "\n\nBring " + entry.Name + " back here? It returns with its gear and settings from the last roster save. If the old " + entry.Name + " turns up later, it will be removed.";
+		if (candidates[index].Value == MHR_Roster.Status.Unknown)
+		{
+			text = text + "\n\n<color=#FFCC50>Warning:</color> " + entry.Name + " may still be alive somewhere that isn't loaded" + (entry.Dead ? " (last known: it died, and its tombstone keeps its items too)." : ".");
+		}
+		UnifiedPopup.Push(new YesNoPopup(DisplayName, text, delegate
+		{
+			UnifiedPopup.Pop();
+			if (shrine != null)
+			{
+				MHR_Roster.RecoverAt(entry, shrine.transform.position + shrine.transform.forward * 2f);
+			}
+		}, delegate
+		{
+			UnifiedPopup.Pop();
+			Ask(shrine, rosterText, candidates, index + 1);
+		}, localizeText: false));
+	}
 }
 
 public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
@@ -170,8 +321,7 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 		{
 			return false;
 		}
-		ShrinePanel.EnsureInstance();
-		ShrinePanel.Instance.Show(this);
+		MHR_Shrine.Use(this);
 		return true;
 	}
 

@@ -11,8 +11,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - New [General] RecoverLostCompanion: brings a Lost companion back next to you (an Unknown one asks you to confirm).
 - A recovered companion's old copy is removed if it turns up later, and its old tombstone no longer respawns it.
 - New [Advanced] RosterSaveInterval (60 s): how often the roster is saved.
-- New Companion Shrine (hammer, Misc, at a workbench: 10 stone, 5 wood, 3 greydwarf eyes): lists your companions and their status, and recovers a lost one with a confirmation.
-- New [Death] ShrineBuildable and ShrineRecipe: turn the shrine off or change its cost.
+- New Odin's Shrine (hammer, Misc, at a workbench: 10 stone, 5 wood, 3 greydwarf eyes): shows your companions and their status in the game's message window, and offers to bring back a lost one.
+- New [Death] ShrineBuildable, ShrineRecipe and ShrineModel (Tombstone or Ward): turn the shrine off, change its cost or its look.
 
 ## 1.5.0
 - Major release: everything from 1.4.86 to 1.4.156 below (new movement, idle behaviour, Repair and Restock, cooking, gathering like Hunt, orders first, multiplayer ownership and chest safety, cleaned-up settings), plus the new Companion Guide (GUIDE.md) and Settings Reference (CONFIGURATION.md).

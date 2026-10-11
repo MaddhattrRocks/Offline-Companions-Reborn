@@ -368,7 +368,7 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 Your game keeps a roster of your companions in each world, saving each one's gear and settings every minute while it's near you, and whenever the game saves your character (including when you log out or quit). If a companion goes missing for good (for example deleted by a server without the mod), you can bring it back.
 
-**The Companion Shrine.** Build one with the hammer (Misc tab, next to a workbench) for 10 stone, 5 wood and 3 greydwarf eyes. Use it to open a list of your companions in this world and their status. Pick one that's Lost or Unknown, press **Recover** and confirm, and it comes back next to the shrine. You can change the cost with Death > ShrineRecipe, or turn the shrine off with Death > ShrineBuildable.
+**Odin's Shrine.** Build one with the hammer (Misc tab, next to a workbench) for 10 stone, 5 wood and 3 greydwarf eyes. It looks like a gravestone (or a ward stone, with Death > ShrineModel). Use it to see your companions in this world and their status. For each one that's Lost or Unknown it asks whether to bring it back; say Yes and it appears next to the shrine, say No to move on to the next one. You can change the cost with Death > ShrineRecipe, or turn the shrine off with Death > ShrineBuildable.
 
 **From the config** (no shrine needed):
 
@@ -377,7 +377,7 @@ Your game keeps a roster of your companions in each world, saving each one's gea
 
 What the statuses mean:
 
-- **Unknown:** on a dedicated server your game can only check the area around you, so a companion that isn't nearby is Unknown. It may still be alive somewhere. The shrine asks you to confirm with a warning; from the config, turn RecoverLostCompanion on a second time within 60 seconds to recover it anyway. If it had died, its tombstone keeps whatever was in it too.
+- **Unknown:** on a dedicated server your game can only check the area around you, so a companion that isn't nearby is Unknown. It may still be alive somewhere. The shrine adds a warning when it asks; from the config, turn RecoverLostCompanion on a second time within 60 seconds to recover it anyway. If it had died, its tombstone keeps whatever was in it too.
 - **No doubles:** if the old companion turns up later, it's removed, and its old tombstone won't bring it back.
 - **Old tombstones:** a recovered companion still knows its own tombstones. Like a respawned one, it walks over and collects its things when it's near one (within Death > TombstoneRecoveryRange, 50 m). You can also empty it yourself.
 - A companion only joins the roster once it's been near you with version 1.5.1 or later. A despawned companion is taken off the roster.
@@ -416,7 +416,7 @@ Usually its job has nothing to do, and it will start idling within a few seconds
 Check the log (below) for the reason.
 
 **My companion has disappeared.**
-Use a Companion Shrine, or turn on **General > ShowCompanionRoster**, to see its status. If it's Lost or Unknown, see [Recovering a lost companion](#recovering-a-lost-companion).
+Use Odin's Shrine, or turn on **General > ShowCompanionRoster**, to see its status. If it's Lost or Unknown, see [Recovering a lost companion](#recovering-a-lost-companion).
 
 **It didn't get anything done while I was away.**
 The game unloads parts of the world that no player is near, and companions there freeze until someone comes back. A companion only works while you (or another player) are close enough for its area to stay loaded.

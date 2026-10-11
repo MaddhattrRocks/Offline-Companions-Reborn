@@ -19,7 +19,7 @@ This is a big update. With working jobs! The short version:
 - **Gathering works like Hunt.** With Follow on, Wood, Stone, Ore and Forage only go for what's close to you as you travel. With Follow off they work an area. Early in the game they also pick up branches, stones and flint by hand.
 - **Your orders come first.** Every order you give takes priority over the companion's job, and the job picks up where it left off afterwards.
 - **Multiplayer.** A companion always treats its owner as its player, even when another player's game happens to be running it. It uses chests safely (no lost or duplicated items) and respects wards and private chests.
-- **Companion recovery (1.5.1).** Your game keeps a roster of your companions. General > ShowCompanionRoster shows whether each one is Alive, Dead, Lost or Unknown, and General > RecoverLostCompanion brings a lost one back with its gear. Or build a Companion Shrine (cheap, early game) to see them in a list and recover one with a click.
+- **Companion recovery (1.5.1).** Your game keeps a roster of your companions. General > ShowCompanionRoster shows whether each one is Alive, Dead, Lost or Unknown, and General > RecoverLostCompanion brings a lost one back with its gear. Or build Odin's Shrine (cheap, early game) to see them and bring one back.
 - **Cleaned-up settings.** The config file has been reorganised into clear sections with plain-language descriptions. Settings you'd already changed are carried over automatically.
 
 See `CHANGELOG.md` for the version-by-version detail.

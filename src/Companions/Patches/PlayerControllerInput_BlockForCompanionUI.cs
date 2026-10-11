@@ -39,12 +39,6 @@ internal static class PlayerControllerInput_BlockForCompanionUI
 		if (instance5 != null && instance5.IsVisible)
 		{
 			__result = false;
-			return;
-		}
-		ShrinePanel instance6 = ShrinePanel.Instance;
-		if (instance6 != null && instance6.IsVisible)
-		{
-			__result = false;
 		}
 	}
 }

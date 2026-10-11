@@ -27,12 +27,6 @@ internal static class InRadial_BlockForStarterPanel
 		if (instance3 != null && instance3.IsVisible)
 		{
 			__result = true;
-			return;
-		}
-		ShrinePanel instance4 = ShrinePanel.Instance;
-		if (instance4 != null && instance4.IsVisible)
-		{
-			__result = true;
 		}
 	}
 }
