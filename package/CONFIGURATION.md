@@ -310,6 +310,12 @@ What a companion loses when it dies. 0 = the world's death penalty setting, same
 **TombstoneRecoveryRange** — Default: 50 · Range: 5 – 100  
 A companion walks over and empties its own leftover tombstone when it's within this many meters of it.
 
+**ShrineBuildable** — Default: On  
+The Companion Shrine can be built with the hammer (Misc tab, needs a workbench). Use it to see your companions and bring back a lost one. Takes effect on the next world load; shrines already built keep working.
+
+**ShrineRecipe** — Default: `Stone:10,Wood:5,GreydwarfEye:3`  
+What the Companion Shrine costs to build, as Item:Amount pairs separated by commas (item names as in the game's spawn command). Takes effect on the next world load.
+
 **SkillLoss** — Default: 0.25 · Range: 0 – 1  
 Share of its skills a companion loses when it dies (0.25 = 25%, 0 = none).
 

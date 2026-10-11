@@ -24,6 +24,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RosterSaveInterval;
 
+	internal static ConfigEntry<bool> ShrineBuildable;
+
+	internal static ConfigEntry<string> ShrineRecipe;
+
 	internal static ConfigEntry<float> MaxCarryWeight;
 
 	internal static ConfigEntry<float> BaseHealth;
@@ -539,6 +543,8 @@ internal static class ModConfig
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Death", "RespawnAtWorldSpawn", defaultValue: false, "A companion that comes back by itself and has no claimed bed appears at the world spawn stones. Off = next to you.");
 		DeathItemRule = Bind(cfg, "Death", "DeathItemRule", 0, "What a companion loses when it dies. 0 = the world's death penalty setting, same as a player. 1 = keep everything. 2 = keep equipped gear, the rest goes in the tombstone. 3 = everything goes in the tombstone. The owner's setting is used even if another player's game handles the death.", new AcceptableValueRange<int>(0, 3));
 		TombstoneRecoveryRange = Bind(cfg, "Death", "TombstoneRecoveryRange", 50f, "A companion walks over and empties its own leftover tombstone when it's within this many meters of it.", new AcceptableValueRange<float>(5f, 100f));
+		ShrineBuildable = Bind(cfg, "Death", "ShrineBuildable", defaultValue: true, "The Companion Shrine can be built with the hammer (Misc tab, needs a workbench). Use it to see your companions and bring back a lost one. Takes effect on the next world load; shrines already built keep working.");
+		ShrineRecipe = Bind(cfg, "Death", "ShrineRecipe", "Stone:10,Wood:5,GreydwarfEye:3", "What the Companion Shrine costs to build, as Item:Amount pairs separated by commas (item names as in the game's spawn command). Takes effect on the next world load.");
 		SkillDeathLossFactor = Bind(cfg, "Death", "SkillLoss", 0.25f, "Share of its skills a companion loses when it dies (0.25 = 25%, 0 = none).", new AcceptableValueRange<float>(0f, 1f));
 		// [Looting]
 		LootKills = Bind(cfg, "Looting", "PickUpKills", true, "After a companion kills something it goes over and picks up what the creature dropped (things you'd auto-pickup yourself), like a player would. Needs Auto Pickup on in the wheel.");

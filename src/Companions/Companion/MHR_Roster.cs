@@ -490,7 +490,7 @@ internal static class MHR_Roster
 	// works out each companion's status. Single player and the host hold every object in the world, so they can tell
 	// Alive, Dead (a tombstone that will bring it back) and Lost (nothing left). A client of a dedicated server only
 	// holds the area around it, so a companion that isn't nearby is Unknown there.
-	private static Dictionary<string, Status> GetStatuses()
+	internal static Dictionary<string, Status> GetStatuses()
 	{
 		Dictionary<string, Status> dictionary = new Dictionary<string, Status>();
 		foreach (Entry s_entry in s_entries)
@@ -534,7 +534,7 @@ internal static class MHR_Roster
 		return dictionary;
 	}
 
-	private static string Describe(Entry e, Status s)
+	internal static string Describe(Entry e, Status s)
 	{
 		string text = $"{e.Name}: {s}";
 		switch (s)
@@ -624,7 +624,40 @@ internal static class MHR_Roster
 		Recover(entry, statuses[entry.Id]);
 	}
 
-	private static void Recover(Entry e, Status status)
+	// the Companion Shrine's list: every companion on the roster with its status
+	internal static List<KeyValuePair<Entry, Status>> GetRoster()
+	{
+		List<KeyValuePair<Entry, Status>> list = new List<KeyValuePair<Entry, Status>>();
+		if (ZNet.instance == null || ZNetScene.instance == null || !EnsureLoaded())
+		{
+			return list;
+		}
+		Dictionary<string, Status> statuses = GetStatuses();
+		foreach (Entry s_entry in s_entries)
+		{
+			list.Add(new KeyValuePair<Entry, Status>(s_entry, statuses[s_entry.Id]));
+		}
+		return list;
+	}
+
+	// the Companion Shrine's Recover button (after the player confirmed) - checks the status again first
+	internal static bool RecoverAt(Entry e, Vector3 near)
+	{
+		if (e == null || ZNet.instance == null || ZNetScene.instance == null || !EnsureLoaded() || !s_entries.Contains(e))
+		{
+			return false;
+		}
+		Status status = GetStatuses()[e.Id];
+		if (status != Status.Lost && status != Status.Unknown)
+		{
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, Describe(e, status));
+			return false;
+		}
+		Recover(e, status, near);
+		return true;
+	}
+
+	private static void Recover(Entry e, Status status, Vector3? near = null)
 	{
 		Player localPlayer = Player.m_localPlayer;
 		GameObject prefab = ZNetScene.instance.GetPrefab(e.Prefab);
@@ -633,7 +666,7 @@ internal static class MHR_Roster
 			CompanionsPlugin.Log.LogError("[Roster] Recover: prefab not found: " + e.Prefab);
 			return;
 		}
-		Vector3 vector = CompanionManager.FindSpawnPosition(localPlayer.transform.position, 3f);
+		Vector3 vector = CompanionManager.FindSpawnPosition(near ?? localPlayer.transform.position, 3f);
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, vector, Quaternion.Euler(0f, UnityEngine.Random.Range(0f, 360f), 0f));
 		ZDO zDO = gameObject.GetComponent<ZNetView>()?.GetZDO();
 		if (zDO == null)

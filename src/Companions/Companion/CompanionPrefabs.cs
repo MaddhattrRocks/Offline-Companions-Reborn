@@ -323,7 +323,7 @@ public static class CompanionPrefabs
 		go.AddComponent<CookController>();
 	}
 
-	private static void RegisterPrefab(GameObject go, ZNetScene zNetScene)
+	internal static void RegisterPrefab(GameObject go, ZNetScene zNetScene)
 	{
 		int stableHashCode = go.name.GetStableHashCode();
 		zNetScene.m_prefabs.Add(go);
