@@ -534,6 +534,46 @@ internal static class MHR_Roster
 		return dictionary;
 	}
 
+	private static readonly Dictionary<string, KeyValuePair<bool, float>> s_goneCache = new Dictionary<string, KeyValuePair<bool, float>>();
+
+	private static readonly HashSet<string> s_goneLogged = new HashSet<string>();
+
+	// true only when this game holds the whole world (single player / host) and no companion or respawning tombstone
+	// with this ID is in it. A client of a dedicated server can't tell, so it says false.
+	internal static bool CompanionGone(string id)
+	{
+		if (string.IsNullOrEmpty(id) || ZNet.instance == null || !ZNet.instance.IsServer() || ZDOMan.instance == null)
+		{
+			return false;
+		}
+		if (s_goneCache.TryGetValue(id, out var value) && Time.unscaledTime - value.Value < 120f)
+		{
+			return value.Key;
+		}
+		bool flag = true;
+		if (s_objectsById?.GetValue(ZDOMan.instance) is IDictionary dictionary)
+		{
+			foreach (object value2 in dictionary.Values)
+			{
+				if (value2 is ZDO zDO && (zDO.GetString(CompanionSetup.MHR_CompanionIdHash) == id || (zDO.GetString(CompanionSetup.MHR_TombCompanionIdHash) == id && zDO.GetString(CompanionTombstoneResurrect.RespawnOwnerHash).Length > 0)))
+				{
+					flag = false;
+					break;
+				}
+			}
+		}
+		else
+		{
+			flag = false;
+		}
+		s_goneCache[id] = new KeyValuePair<bool, float>(flag, Time.unscaledTime);
+		if (flag && s_goneLogged.Add(id))
+		{
+			CompanionsPlugin.Log.LogInfo("[Rest] A bed is claimed by a companion that no longer exists (ID " + id + ") - the claim is ignored");
+		}
+		return flag;
+	}
+
 	internal static string Describe(Entry e, Status s)
 	{
 		string text = $"{e.Name}: {s}";

@@ -31,6 +31,14 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.1 - bed claiming (user test, 2026-10-11: "The NPC kept reporting that it had no bed. I went to try and sleep and somehow claimed the unused bed and then had to rebuild the bed and the NPC still did not claim it.")
+- Log had no [Rest] bed lines at all (no claim, no re-link, no "Going to bed").
+- Bug 1: CompanionRest.Update's daytime bed search ran inside the once-a-second block but subtracted Time.deltaTime from the 30 s timer -> ~30 min between searches. Now -= 1f. (At night TryAutoSleep searches every 5 s, but only when it's trying to sleep: SleepAtNight on, night, no enemy within 15 m, not told to stay awake.)
+- Bug 2: _needsBed (drives the "no bed" speech) was only cleared by the night pass - now also cleared on ClaimBed and the re-link.
+- Stale claims: a bed whose HC claim ID belongs to a companion that isn't anywhere in the world (no companion ZDO, no respawning tombstone - MHR_Roster.CompanionGone, scan of ZDOMan.m_objectsByID cached 120 s, single player/host only) no longer counts as taken. Before, such a bed was blocked forever.
+- Diagnostics: "[Rest] No bed to claim: <reason>" when the reason changes - no home and none of the player's beds within 20 m (the no-home rule needs a player-owned bed nearby), no bed within the radius, or N beds / slept in by a player / taken by another companion.
+- Note for the user: sleeping in an unclaimed bed makes it the player's (vanilla), and a companion never takes a player's bed.
+
 ### 1.5.1 - companion roster and recovery, step 1 (user, 2026-10-11: "We can have button that is in the config to recover a lost NPC ... if ever the player came upon that NPC again in the wild the found NPC that was replaced would get removed")
 - User chose: roster + config recovery first, the Companion Shrine (buildable, cheap early-game recipe, vanilla stone/runestone model, list window Alive/Lost/Unknown, select + confirm) in the next update; Unknown companions recoverable with a warning.
 - Companion/MHR_Roster.cs: Player.m_customData["HC_Roster_<worldUID>"], one base64 ZPackage per companion (version 1) with id, generation, name, prefab, appearance, owner, mode/schema, follow/followPaused/stayHome/autoPickup/wander/commandable/formation/combatStance, skills, home, bed, inventory (Inventory.Save), last position/time (ZNet time), dead flag. Snapshot every [Advanced] RosterSaveInterval (60 s) for live companions we own (ZDO owner + owner id = local player), saved to disk only on recovery/despawn (the game saves the profile on its own).

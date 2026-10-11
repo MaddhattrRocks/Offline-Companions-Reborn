@@ -52,6 +52,9 @@ public class CompanionRest : MonoBehaviour
 
 	private float _bedClaimScanTimer;
 
+	// 1.5.1: why the last bed search found nothing (logged when it changes)
+	private string _bedFailReason;
+
 	private bool _needsBed;
 
 	private bool _isAutoSleep;
@@ -465,7 +468,8 @@ public class CompanionRest : MonoBehaviour
 			_checkTimer = 1f;
 			TryStartSitting();
 			TryAutoSleep();
-			_bedClaimScanTimer -= Time.deltaTime;
+			// 1.5.1: this runs once a second - it took off one frame's time, so the 30 s bed search ran about every 30 minutes
+			_bedClaimScanTimer -= 1f;
 			if (_bedClaimScanTimer <= 0f)
 			{
 				_bedClaimScanTimer = 30f;
@@ -732,6 +736,8 @@ public class CompanionRest : MonoBehaviour
 					_bedClaimNames[bed.GetInstanceID()] = value;
 					MHR_SetBedClaim(bed, value, MHR_MyId());
 					CompanionsPlugin.Log.LogInfo($"[Rest] Re-linked to its claimed bed as \"{value}\"");
+					_needsBed = false;
+					_bedFailReason = null;
 					return;
 				}
 				zDO.Set(CompanionSetup.HasHomeBedHash, value: false);
@@ -754,6 +760,7 @@ public class CompanionRest : MonoBehaviour
 			radius = 20f;
 			if (!HasOwnerBedNearby(anchor, radius))
 			{
+				MHR_BedFail("it has no home set, so it only takes a bed within 20 m of a bed of yours, and there's none");
 				return;
 			}
 		}
@@ -761,6 +768,38 @@ public class CompanionRest : MonoBehaviour
 		if (!(bed2 == null))
 		{
 			ClaimBed(bed2);
+			return;
+		}
+		int num = 0;
+		int num2 = 0;
+		int num3 = 0;
+		HashSet<int> hashSet = new HashSet<int>();
+		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		foreach (Collider collider in array)
+		{
+			Bed bed3 = ((collider != null) ? collider.GetComponentInParent<Bed>() : null);
+			if (!(bed3 == null) && hashSet.Add(bed3.GetInstanceID()))
+			{
+				num++;
+				if (GetBedOwnerSafe(bed3) != 0)
+				{
+					num2++;
+				}
+				else if (MHR_BedClaimedByOther(bed3) || _claimedBeds.Contains(bed3.GetInstanceID()))
+				{
+					num3++;
+				}
+			}
+		}
+		MHR_BedFail((num == 0) ? $"no bed within {radius:F0} m of its {(_setup.HasHomePosition() ? "home" : "position")}" : $"{num} bed(s) within {radius:F0} m, {num2} slept in by a player, {num3} taken by another companion");
+	}
+
+	private void MHR_BedFail(string reason)
+	{
+		if (reason != _bedFailReason)
+		{
+			_bedFailReason = reason;
+			CompanionsPlugin.Log.LogInfo("[Rest] No bed to claim: " + reason);
 		}
 	}
 
@@ -942,6 +981,8 @@ public class CompanionRest : MonoBehaviour
 			}
 		}
 		CompanionsPlugin.Log.LogInfo($"[Rest] Claimed bed \"{bed.name}\" as standing home bed");
+		_needsBed = false;
+		_bedFailReason = null;
 	}
 
 	private void BeginSleep(Bed bed, bool isAuto)
@@ -1378,11 +1419,22 @@ public class CompanionRest : MonoBehaviour
 
 	internal bool MHR_BedClaimedByOther(Bed bed)
 	{
-		if (string.IsNullOrEmpty(MHR_GetBedClaimId(bed)) && MHR_GetBedClaimName(bed) == null)
+		string text = MHR_GetBedClaimId(bed);
+		if (string.IsNullOrEmpty(text) && MHR_GetBedClaimName(bed) == null)
 		{
 			return false;
 		}
-		return !MHR_BedIsMine(bed);
+		if (MHR_BedIsMine(bed))
+		{
+			return false;
+		}
+		// 1.5.1: a claim left by a companion that no longer exists anywhere (despawned by something else, deleted) doesn't
+		// block the bed forever
+		if (!string.IsNullOrEmpty(text) && MHR_Roster.CompanionGone(text))
+		{
+			return false;
+		}
+		return true;
 	}
 
 	internal bool MHR_BedIsMine(Bed bed)

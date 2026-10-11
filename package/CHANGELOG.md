@@ -12,6 +12,10 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - A recovered companion's old copy is removed if it turns up later, and its old tombstone no longer respawns it.
 - New [Advanced] RosterSaveInterval (60 s): how often the roster is saved.
 - New Odin's Shrine (hammer, Misc, at a workbench: 10 stone, 5 wood, 3 greydwarf eyes): shows your companions and their status in the game's message window, and offers to bring back a lost one.
+- Fixed: a companion looked for a free bed about every 30 minutes instead of every 30 seconds (at night it still looked every few seconds).
+- Fixed: a companion kept saying it had no bed after it had found one, until the next night.
+- A bed claimed by a companion that no longer exists is free again (single player and host).
+- The log now says why a companion couldn't find a bed to claim.
 - New [Death] ShrineBuildable, ShrineRecipe and ShrineModel (Tombstone or Ward): turn the shrine off, change its cost or its look.
 
 ## 1.5.0
