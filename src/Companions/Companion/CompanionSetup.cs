@@ -25,6 +25,9 @@ public class CompanionSetup : MonoBehaviour
 	// 1.5.1: an old copy of a recovered companion, being removed (MHR_Roster)
 	internal bool _mhrStale;
 
+	// 1.5.1: when this companion was loaded - its items load from the world a moment later, so the roster waits a bit
+	internal float _mhrAwakeTime;
+
 	internal static readonly int NameHash = "HC_Name".GetStableHashCode();
 
 	internal static readonly int ActionModeHash = "HC_ActionMode".GetStableHashCode();
@@ -499,6 +502,7 @@ public class CompanionSetup : MonoBehaviour
 	private void Awake()
 	{
 		MHR_MarkNoDestroy();
+		_mhrAwakeTime = Time.time;
 		_allCompanions.Add(this);
 		_nview = GetComponent<ZNetView>();
 		_visEquip = GetComponent<VisEquipment>();

@@ -22,6 +22,11 @@ internal static class MHR_Roster
 
 	private const float ConfirmSeconds = 60f;
 
+	// a companion's items load from the world a moment after it does - don't save it before then (it'd look empty)
+	private const float LoadSettleSeconds = 10f;
+
+	private static bool s_saving;
+
 	internal enum Status
 	{
 		Alive,
@@ -105,6 +110,7 @@ internal static class MHR_Roster
 		s_loadedKey = text;
 		s_entries.Clear();
 		s_confirmId = null;
+		s_nextSnapshot = Time.unscaledTime + LoadSettleSeconds + 2f;
 		if (localPlayer.m_customData.TryGetValue(text, out var value) && !string.IsNullOrEmpty(value))
 		{
 			string[] array = value.Split(new char[1] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -135,7 +141,15 @@ internal static class MHR_Roster
 		localPlayer.m_customData[s_loadedKey] = stringBuilder.ToString();
 		if (toDisk && Game.instance != null)
 		{
-			Game.instance.SavePlayerProfile(setLogoutPoint: false);
+			s_saving = true;
+			try
+			{
+				Game.instance.SavePlayerProfile(setLogoutPoint: false);
+			}
+			finally
+			{
+				s_saving = false;
+			}
 		}
 	}
 
@@ -327,12 +341,32 @@ internal static class MHR_Roster
 		}
 	}
 
+	// the game is saving your character (autosave, logging out, quitting) - save the companions with it
+	internal static void OnProfileSave()
+	{
+		if (s_saving)
+		{
+			return;
+		}
+		try
+		{
+			if (ZNet.instance != null && ZNetScene.instance != null && EnsureLoaded())
+			{
+				SnapshotAll();
+			}
+		}
+		catch (Exception ex)
+		{
+			CompanionsPlugin.Log.LogWarning("[Roster] Couldn't save the roster with the character: " + ex.Message);
+		}
+	}
+
 	private static void SnapshotAll()
 	{
 		bool flag = false;
 		foreach (CompanionSetup allCompanion in CompanionSetup.AllCompanions)
 		{
-			if (allCompanion._mhrStale || allCompanion._mhrDespawning || allCompanion._mhrDying || !IsMine(allCompanion, out var _, out var zdo))
+			if (allCompanion._mhrStale || allCompanion._mhrDespawning || allCompanion._mhrDying || Time.time - allCompanion._mhrAwakeTime < LoadSettleSeconds || !IsMine(allCompanion, out var _, out var zdo))
 			{
 				continue;
 			}
@@ -363,7 +397,7 @@ internal static class MHR_Roster
 				Id = id
 			};
 			s_entries.Add(entry);
-			CompanionsPlugin.Log.LogInfo(string.Format("[Roster] Added \"{0}\" to your companion roster for this world", zdo.GetString(CompanionSetup.NameHash, "Companion")));
+			CompanionsPlugin.Log.LogInfo(string.Format("[Roster] Added \"{0}\" to your companion roster for this world ({1} item(s))", zdo.GetString(CompanionSetup.NameHash, "Companion"), c.GetComponent<Humanoid>()?.GetInventory()?.NrOfItems() ?? 0));
 		}
 		entry.Gen = zdo.GetInt(GenHash);
 		entry.Name = zdo.GetString(CompanionSetup.NameHash, "Companion");
@@ -609,6 +643,7 @@ internal static class MHR_Roster
 			return;
 		}
 		int num = e.Gen + 1;
+		int num2 = 0;
 		zDO.Set(CompanionSetup.AppearanceHash, e.Appearance);
 		zDO.Set(CompanionSetup.OwnerHash, e.Owner);
 		zDO.Set(CompanionSetup.NameHash, e.Name);
@@ -642,6 +677,7 @@ internal static class MHR_Roster
 			if (inventory != null)
 			{
 				inventory.Load(new ZPackage(e.Inventory));
+				num2 = inventory.NrOfItems();
 				foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 				{
 					allItem.m_equipped = false;
@@ -678,6 +714,6 @@ internal static class MHR_Roster
 		Save(toDisk: true);
 		CompanionTombstoneResurrect.PlayResurrectEffects(vector);
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, e.Name + " has been recovered!");
-		CompanionsPlugin.Log.LogInfo($"[Roster] Recovered \"{e.Name}\" ({status}) at {vector:F1} as copy {num}, with its gear from the last roster save");
+		CompanionsPlugin.Log.LogInfo($"[Roster] Recovered \"{e.Name}\" ({status}) at {vector:F1} as copy {num}, with {num2} item(s) from the last roster save");
 	}
 }

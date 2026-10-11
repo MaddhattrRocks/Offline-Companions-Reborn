@@ -366,7 +366,7 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 ### Recovering a lost companion
 
-Your game keeps a roster of your companions in each world, saving each one's gear and settings every minute while it's near you. If a companion goes missing for good (for example deleted by a server without the mod), you can bring it back:
+Your game keeps a roster of your companions in each world, saving each one's gear and settings every minute while it's near you, and whenever the game saves your character (including when you log out or quit). If a companion goes missing for good (for example deleted by a server without the mod), you can bring it back:
 
 - **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive**, **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
 - **Bring one back:** turn on **General > RecoverLostCompanion**. The first Lost companion appears next to you with its gear and settings from the last roster save. Both settings turn themselves back off.
