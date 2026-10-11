@@ -371,7 +371,8 @@ Your game keeps a roster of your companions in each world, saving each one's gea
 - **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive**, **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
 - **Bring one back:** turn on **General > RecoverLostCompanion**. The first Lost companion appears next to you with its gear and settings from the last roster save. Both settings turn themselves back off.
 - **Unknown:** on a dedicated server your game can only check the area around you, so a companion that isn't nearby is Unknown. It may still be alive somewhere. Turn RecoverLostCompanion on a second time within 60 seconds to recover it anyway. If it had died, its tombstone keeps whatever was in it too.
-- **No doubles:** if the old companion turns up later, it's removed, and its old tombstone won't bring it back (any items stay in the tombstone for you to take).
+- **No doubles:** if the old companion turns up later, it's removed, and its old tombstone won't bring it back.
+- **Old tombstones:** a recovered companion still knows its own tombstones. Like a respawned one, it walks over and collects its things when it's near one (within Death > TombstoneRecoveryRange, 50 m). You can also empty it yourself.
 - A companion only joins the roster once it's been near you with version 1.5.1 or later. A despawned companion is taken off the roster.
 
 ## Getting around
