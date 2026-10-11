@@ -17,7 +17,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - A bed claimed by a companion that no longer exists is free again (single player and host).
 - The log now says why a companion couldn't find a bed to claim.
 - Fixed: a companion could lose its bed when you loaded in, if the bed hadn't appeared yet - it now waits up to a minute for it.
-- A companion can use a bed of its owner's that isn't the owner's spawn point, so clicking its bed by accident no longer takes it away.
+- A companion can use a bed of its owner's that isn't the owner's spawn point, so clicking its bed by accident no longer takes it away. Once you make it your spawn point, the companion gives it up straight away.
 - New [Death] ShrineBuildable, ShrineRecipe and ShrineModel (Tombstone or Ward): turn the shrine off, change its cost or its look.
 
 ## 1.5.0

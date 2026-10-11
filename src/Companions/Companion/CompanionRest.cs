@@ -95,6 +95,19 @@ public class CompanionRest : MonoBehaviour
 
 	internal static IReadOnlyList<CompanionRest> Instances => _instances;
 
+	// 1.5.1: the player just set a new spawn point (slept in a bed) - companions check their bed straight away, so one
+	// whose bed that is gives it up now rather than up to 30 s later
+	internal static void MHR_RecheckBedsSoon()
+	{
+		foreach (CompanionRest instance in _instances)
+		{
+			if (instance != null)
+			{
+				instance._bedClaimScanTimer = 0f;
+			}
+		}
+	}
+
 	private static float HealRate => ModConfig.RestHealRate.Value;
 
 	private static float PlayerRange => ModConfig.RestPlayerRange.Value;

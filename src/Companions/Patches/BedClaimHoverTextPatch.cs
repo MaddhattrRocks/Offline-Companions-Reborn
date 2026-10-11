@@ -8,11 +8,12 @@ public static class BedClaimHoverTextPatch
 	[HarmonyPostfix]
 	private static void Postfix(Bed __instance, ref string __result)
 	{
-		if (CompanionRest.GetBedOwnerSafe(__instance) != 0)
+		long bedOwnerSafe = CompanionRest.GetBedOwnerSafe(__instance);
+		if (bedOwnerSafe != 0)
 		{
-			// 1.5.1: a bed of yours a companion sleeps in
+			// 1.5.1: a bed of yours a companion sleeps in - not once it's your spawn point (the companion gives it up then)
 			string text = CompanionRest.MHR_GetBedClaimName(__instance);
-			if (text != null)
+			if (text != null && Player.m_localPlayer != null && Player.m_localPlayer.GetPlayerID() == bedOwnerSafe && !__instance.IsCurrent())
 			{
 				__result = __result + "\n(" + text + " sleeps here)";
 			}
