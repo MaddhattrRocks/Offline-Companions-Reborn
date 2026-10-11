@@ -8,7 +8,16 @@ public static class BedClaimHoverTextPatch
 	[HarmonyPostfix]
 	private static void Postfix(Bed __instance, ref string __result)
 	{
-		if (CompanionRest.GetBedOwnerSafe(__instance) == 0)
+		if (CompanionRest.GetBedOwnerSafe(__instance) != 0)
+		{
+			// 1.5.1: a bed of yours a companion sleeps in
+			string text = CompanionRest.MHR_GetBedClaimName(__instance);
+			if (text != null)
+			{
+				__result = __result + "\n(" + text + " sleeps here)";
+			}
+		}
+		else
 		{
 			string value = CompanionRest.MHR_GetBedClaimName(__instance);
 			if (value != null || CompanionRest._bedClaimNames.TryGetValue(__instance.GetInstanceID(), out value))
