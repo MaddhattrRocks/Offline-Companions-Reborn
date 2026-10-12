@@ -29,6 +29,7 @@ namespace Companions
             public Door LastRouteDoor; public float LastRouteDoorAt;
             public float RouteSwim;
             // 1.5.2: a ladder it's heading for (a skeleton up a Black Forest tower: the way up is the ladder)
+            public Vector3 LastWaterJumpDir; public float LastWaterJumpAt = -99f;
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -1020,12 +1021,16 @@ namespace Companions
                 if (waterAt >= 0f && depth > lim) swim = true;
             }
             if (waterAt < 0f) return false;
+            // 1.5.2: no hopping straight back over water it just jumped (user: following him to a portal it jumped a stream
+            // and right back - the moving player changed the route). Wade it or go round instead.
+            if (now - s.LastWaterJumpAt < 6f && Vector3.Dot(dir, s.LastWaterJumpDir) < -0.3f) { s.NextWaterPeek = now + 1.0f; return false; }
             float landY = landAt > 0f ? MHR_Water.GroundAt(pos + dir * landAt) : pos.y;
             if (landAt > 0f && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
                 Dbg("[Move|" + tag + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
                 return true;
             }
@@ -1043,6 +1048,7 @@ namespace Companions
                     {
                         Leap(ai, c, dir, 6.5f);
                         s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                        s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
                         Dbg("[Move|" + tag + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
                         return true;
                     }
@@ -1643,6 +1649,15 @@ namespace Companions
         static float s_nextLog;
 
         // animals that never attack (vanilla deer and the like, modded fish, dolphins...) and creatures we gave up chasing
+        // 1.5.2: recently given up on because reaching it means swimming, and it's still in deep water - even if it's after
+        // us (a crocodile watching from the river). Only for starting a fight on its own; an attack is still answered.
+        public static bool IgnoredInWater(Character c)
+        {
+            if (c == null) return false;
+            float until;
+            return s_ignore.TryGetValue(c.GetInstanceID(), out until) && Time.time < until && MHR_Water.DepthAt(c.transform.position) > 1.0f;
+        }
+
         public static bool IsPassive(Character c)
         {
             if (c == null) return false;
