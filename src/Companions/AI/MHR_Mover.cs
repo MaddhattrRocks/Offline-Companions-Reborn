@@ -1177,7 +1177,8 @@ namespace Companions
                     // don't walk off an edge getting there: the foot is past a drop from here, so this ladder isn't for now
                     // 1.5.3: never test past the foot itself (a foot 0.3 m away by the ladder hole read as "past a drop")
                     Vector3 ahead = pos + toBase.normalized * Mathf.Min(0.6f, toBase.magnitude);
-                    if (!Physics.Raycast(ahead + Vector3.up * 0.5f, Vector3.down, 1.6f, Mask()))
+                    // 1.5.3: a drop that would hurt (over 4 m), not any opening - a player walks round the corner of a small hole
+                    if (!Physics.Raycast(ahead + Vector3.up * 0.5f, Vector3.down, 4.5f, Mask()))
                     {
                         s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
                         Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
@@ -1191,13 +1192,20 @@ namespace Companions
             {
                 s.ClimbUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (s.ClimbLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
-                if (s.ClimbLadder && atTop) LadderTopHop(ai, c, s, pos, now, tag);
-                // look for the next ladder up straight away (ladders with a small floor between them: walking on towards the
-                // goal for the 2 s until the next search took him off the edge)
-                if (s.ClimbLadder && atTop) { s.NextLadderClimbSearch = 0f; s.NextLadderSearch = 0f; }
-                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (s.ClimbLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
+                bool wasLadder = s.ClimbLadder;
+                if (wasLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
+                if (wasLadder && atTop)
+                {
+                    // 1.5.3: still further up to go - the next ladder first, straight from here (user log: in the ruin the next
+                    // ladder's foot is right by this one's top; stepping off first took him away from it, round a hole)
+                    if (s.Goal.y > pos.y + 1.5f && c.IsOnGround() && TryStartLadderClimb(ai, c, s, pos, now, tag)) return;
+                    LadderTopHop(ai, c, s, pos, now, tag);
+                    // look for the next ladder up straight away (ladders with a small floor between them: walking on towards
+                    // the goal for the 2 s until the next search took him off the edge)
+                    s.NextLadderClimbSearch = 0f; s.NextLadderSearch = 0f;
+                }
                 return;
             }
             dir.Normalize();
