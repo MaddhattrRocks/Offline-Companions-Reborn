@@ -748,6 +748,12 @@ public class CompanionRest : MonoBehaviour
 				Bed bed = FindAnyBedNear(vec, 2f);
 				// 1.5.1: the game builds a loaded area a few objects a frame, so right after loading in the bed may not be
 				// there yet - it used to give the bed up on the spot and lose it for good. Now it waits up to a minute.
+				// 1.5.2: a bed far away (we're out hunting, its area isn't loaded) isn't gone - only look for it when near it
+				// (user log: "Its bed at (-273, 40, -314) is gone" with the companion 2700 m away)
+				if (bed == null && Vector3.Distance(base.transform.position, vec) > 40f)
+				{
+					return;
+				}
 				if (bed == null)
 				{
 					if (_bedMissingSince < 0f)

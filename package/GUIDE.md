@@ -157,6 +157,8 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 
 - **What:** creatures that drop meat, until there's enough of each kind of meat (100 by default, counting pack and chests at home). Leather and other drops are picked up as a bonus. Tamed animals, bosses and other companions are never hunted.
 - **Sneaking:** they sneak up on skittish game like deer and hares, crouched and not running, so it doesn't bolt.
+- **Weapons:** a bow or crossbow with ammo comes first. Without one they hunt with a melee weapon: they sneak right up and strike.
+- **Throwing spears:** a hunter holding a spear throws it at skittish game from up to 12 m (Hunting > ThrowRange), as long as it has another weapon in its pack to fight on with. After the hunt it walks over and picks the spear back up. Turn this off with Hunting > ThrowSpear.
 - **Birds:** with a bow or crossbow and ammo, they shoot crows and gulls for feathers.
 - **Follow on:** they hunt within 25 m of you. **Follow off:** they hunt up to 40 m around where they were set to work.
 - **Chasing:** they chase prey that runs, up to 15 m further, then let it go.
@@ -390,6 +392,11 @@ Companions find their own way:
 
 - **Doors:** they open doors and gates as they reach them, line up with the doorway, and close the door behind them.
 - **Steps and ledges:** they hop up steps and drop off ledges up to 3 m (no fall damage) when that's much shorter than going round.
+- **Ladders:** to get up to where you are (a tower, a platform), they climb a wooden ladder like you would: walk to its foot and into it, and the ladder lifts them up. If the ladder starts above the ground, or pushing into it doesn't lift them, they jump onto it; after a few jumps that don't get them on, they try another way up. A ladder that starts from a floor is climbed from that floor, not jumped at from underneath it. Ladders stacked on top of each other are climbed all the way up. If the ladder stops a little short, they jump from the top onto the floor or ledge next to it, or up onto the top of a wall and from there onto the floor. They pick a ladder whose foot they can walk to on their own level and whose top gets them closest to where they're going, and go up a chain of ladders one after another. A ladder that didn't work, or keeps landing them back where they started, is left alone for a few minutes.
+- **Following your path:** when you're on another floor and they can't find a way there themselves (a tight tower of short ladders and small floors), they go to the last spot where you were on their level and follow your exact steps from there, into each ladder the way you went and jumping where you jumped. If you jumped down something that would cost them more than 30% of their health, they find another way down instead.
+- **Edges:** they don't walk off a drop of more than 3 m (Movement > MaxDrop) onto dry ground - they stop at the edge and look for a ladder, stairs or a safe drop instead.
+- **Getting down:** they take the stairs or the way round when there is one, or go back down the ladder they came up. Only when there's no other way down do they jump down a drop, up to 8 m (Movement > StuckDrop) and never one that would cost more than 30% of their health right now A gap over a harmful drop is only jumped with room to spare.
+- **Fall damage:** companions take fall damage like a player: none up to 4 m, more the further they fall (Feather Fall helps them too).
 - **Water:** they jump narrow streams and small gaps. They walk around water when the dry way isn't much longer, and otherwise swim.
 - **Walking or running:** they walk while working and run when what they're heading for is more than 25 m away.
 - **Fire and tar:** they avoid fire and tar pits.

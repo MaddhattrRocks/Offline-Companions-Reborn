@@ -171,7 +171,7 @@ public class CompanionCombatAI : MonoBehaviour
 		Vector3 me = base.transform.position;
 		Vector3 goal = point;
 		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
-		bool ranged = weapon != null && (weapon.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || weapon.m_shared.m_aiAttackRange > 10f);
+		bool ranged = MHR_IsProjectileWeapon(weapon);
 		if (ranged && point.y < me.y - 2.5f)
 		{
 			if (EdgeSpot(me, _targetCreature, out var spot))
@@ -250,6 +250,38 @@ public class CompanionCombatAI : MonoBehaviour
 	}
 
 	// skittish game (deer, hares, anything that runs when it notices you) that hasn't noticed anyone yet
+	// how close a melee weapon has to be: its AI range, but never more than the swing really reaches (a spear's AI range
+	// is its throwing distance)
+	private static float MHR_MeleeReach(ItemDrop.ItemData item)
+	{
+		float num = item.m_shared.m_aiAttackRange;
+		Attack attack = item.m_shared.m_attack;
+		if (attack != null && attack.m_attackRange > 0f)
+		{
+			num = Mathf.Min(num, attack.m_attackRange + 0.5f);
+		}
+		return Mathf.Max(num, 1f);
+	}
+
+	// a weapon that shoots (bow, crossbow, a staff that fires bolts) - as opposed to one you hit with
+	internal static bool MHR_IsProjectileWeapon(ItemDrop.ItemData item)
+	{
+		if (item == null || item.m_shared == null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData.ItemType itemType = item.m_shared.m_itemType;
+		if (itemType == ItemDrop.ItemData.ItemType.Ammo || itemType == ItemDrop.ItemData.ItemType.AmmoNonEquipable || itemType == ItemDrop.ItemData.ItemType.Consumable)
+		{
+			return false;
+		}
+		if (itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(item.m_shared.m_ammoType))
+		{
+			return true;
+		}
+		return item.m_shared.m_attack != null && item.m_shared.m_attack.m_attackType == Attack.AttackType.Projectile;
+	}
+
 	private static bool Unaware(Character c)
 	{
 		if (c == null)
@@ -385,7 +417,9 @@ public class CompanionCombatAI : MonoBehaviour
 		{
 			_ai.ChargeStart(itemData.m_shared.m_attack.m_chargeAnimationBool);
 		}
-		bool flag6 = ((itemData == null) ? (_stance == 2) : ((itemData.m_shared.m_aiAttackRange > 10f || itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) ? true : false));
+		// 1.5.2: ranged = a weapon that shoots. It used to be "AI attack range over 10 m" too, and a spear's AI range is
+		// its throwing distance - so a spear counted as ranged and stabbed at the air from 16 m (user log, bear hunt).
+		bool flag6 = ((itemData == null) ? (_stance == 2) : MHR_IsProjectileWeapon(itemData));
 		if (_targetCreature != null && itemData != null && !flag5 && !_character.InAttack() && !flag6 && !HuntMode && !flag)
 		{
 			Vector3 position = _targetCreature.transform.position;
@@ -412,11 +446,14 @@ public class CompanionCombatAI : MonoBehaviour
 					{
 						_ai.SetAlerted(alert: true);
 					}
+					// 1.5.2: the 30 m reach and 20 m standoff are for a ranged weapon only. Hunting used them for any weapon,
+					// so a hunter with a spear or axe (no bow ready) stopped 20 m off and stabbed at the air (user video).
+					// Now it sneaks right up and strikes like a melee fighter.
 					bool flag7 = flag6;
-					float num5 = ((HuntMode || flag7) ? 30f : itemData.m_shared.m_aiAttackRange);
+					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
 					bool flag8 = num3 < num5;
-					float dist = ((HuntMode || flag7) ? 20f : 0f);
-					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!(HuntMode || flag7) && itemData.m_shared.m_aiAttackRangeMin < 0f);
+					float dist = (flag7 ? 20f : 0f);
+					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
 					{
 						_ai.FleeFrom(dt, _targetCreature.transform.position);
@@ -447,7 +484,17 @@ public class CompanionCombatAI : MonoBehaviour
 					{
 						_ai.StopMoving();
 					}
-					if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
+					// 1.5.2: hunting skittish game with a spear (and another weapon in the pack): throw it from range
+					if (HuntMode && canSeeTarget && !blocking && MHR_SpearThrow.WantsThrow(_ai, _humanoid, _targetCreature, num3))
+					{
+						_ai.StopMoving();
+						_ai.LookAtPoint(_targetCreature.GetCenterPoint());
+						if (_ai.IsLookingAtPoint(_targetCreature.GetCenterPoint(), 10f))
+						{
+							MHR_SpearThrow.Throw(_ai, _humanoid, _targetCreature);
+						}
+					}
+					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
 					{
 						_ai.LookAtPoint(_targetCreature.GetTopPoint());
 						if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, itemData.m_shared.m_aiAttackMaxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
@@ -814,10 +861,13 @@ public class CompanionCombatAI : MonoBehaviour
 					{
 						if (currentWeapon == null || currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow)
 						{
-							_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend, out var friend);
-							_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend, friend);
-							if (!TryForceRangedWeapon())
+							// 1.5.2: a ready bow first; no bow: a spear to throw at skittish game (with another weapon in the pack),
+							// else the best melee weapon. The spear check comes before the game's own pick, which would swap the
+							// spear out every second.
+							if (!TryForceRangedWeapon() && !(HuntMode && MHR_SpearThrow.EquipForHunt(_ai, _humanoid, _huntPrey)))
 							{
+								_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend, out var friend);
+								_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend, friend);
 								TryForceMeleeWeapon();
 							}
 							flag = true;
@@ -909,7 +959,8 @@ public class CompanionCombatAI : MonoBehaviour
 		float num = -1f;
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
-			if (!allItem.IsEquipable() || allItem.m_shared.m_aiAttackRange > 10f)
+			// 1.5.2: skip weapons that shoot (a spear's long AI range is its throw, it's still a melee weapon)
+			if (!allItem.IsEquipable() || MHR_IsProjectileWeapon(allItem))
 			{
 				continue;
 			}

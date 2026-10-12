@@ -26,11 +26,14 @@ namespace Companions
             public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim;
             public Collider[] ChairCols;
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
+            // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
+            public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
         }
         // one per followed player, shared by all companions following them
         class T
         {
             public readonly List<Vector3> Trail = new List<Vector3>();
+            public readonly List<Vector3> Steps = new List<Vector3>();   // 1.5.2: every 0.35 m in 3D, so climbs are in it
             public Vector3 Travel, LastPos; public float Speed, StillSince, MovingSince, NextIndoorCheck; public bool Indoors; public int Frame = -1;
         }
 
@@ -83,7 +86,7 @@ namespace Companions
             // speed from how far the player moved (works for any player, not only the one on this machine)
             Vector3 v = p - t.LastPos; v.y = 0f;
             t.LastPos = p;
-            if (v.magnitude > 8f) { t.Trail.Clear(); v = Vector3.zero; }   // teleport / portal: old path is no use
+            if (v.magnitude > 8f) { t.Trail.Clear(); t.Steps.Clear(); v = Vector3.zero; }   // teleport / portal: old path is no use
             float frameDt = Mathf.Max(Time.deltaTime, 0.001f);
             v /= frameDt;
             t.Speed = Mathf.Lerp(t.Speed, v.magnitude, Mathf.Clamp01(frameDt * 8f));
@@ -93,6 +96,11 @@ namespace Companions
                 t.StillSince = now;
                 Vector3 d = Vector3.Slerp(t.Travel, v.sqrMagnitude > 0.0001f ? v.normalized : t.Travel, Mathf.Clamp01(frameDt * 2.5f)); d.y = 0f;
                 if (d.sqrMagnitude > 0.0001f) t.Travel = d.normalized;
+            }
+            if (t.Steps.Count == 0 || Vector3.Distance(p, t.Steps[t.Steps.Count - 1]) > 0.35f)
+            {
+                t.Steps.Add(p);
+                if (t.Steps.Count > 400) t.Steps.RemoveAt(0);
             }
             if (t.Trail.Count == 0 || Flat(p, t.Trail[t.Trail.Count - 1]) > 0.75f)
             {
@@ -136,6 +144,11 @@ namespace Companions
             bool wander = setup == null || setup.GetWander();
             float distP = Mathf.Abs(me.y - pp.y) > 3f ? Vector3.Distance(me, pp) : Flat(me, pp);
             int tid = target.GetInstanceID();
+            // 1.5.2: a floor or more above/below the player isn't "with them" however close in a straight line (user: "Does the
+            // wander logic conflict with climbing a ladder?" - it did: up the tower it counted as arrived, stopped mid-ladder
+            // and shuffled around); and a climb under way is never cut short
+            bool offLevel = Mathf.Abs(me.y - pp.y) > 2.5f && !c.IsSwimming() && !player.IsSwimming();
+            bool climbing = MHR_Mover.OnTheWayUp(ai);
             if (now - s.LastUpdate > 0.5f || s.TargetId != tid)
             {
                 // starting, or back from a fight / trip / job: start fresh
@@ -150,6 +163,9 @@ namespace Companions
                 if (s.SitChair) Pin(ai, s);
                 return;
             }
+
+            // 1.5.2: on another floor and the route planner has no way there: go the way the player went
+            if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
 
             float still = now - t.StillSince;
             bool playerMoving = still < 1.0f;
@@ -176,7 +192,7 @@ namespace Companions
                 // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
                 // 1.4.82: and while the player stands within 2.5 m of it (doesn't start it moving, never stops it)
                 bool hold = now - t.MovingSince < 1.5f || (distP < 2.5f && !c.IsSwimming());
-                if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
+                if (!s.Moving && ((!hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming() || offLevel)) || climbing)) s.Moving = true;
                 if (s.Moving)
                 {
                     // aim well ahead of the spot so it keeps walking with the player instead of arriving, stopping and
@@ -207,14 +223,16 @@ namespace Companions
 
             ai.MHR_SetCrouch(player.IsCrouching());
 
-            // the player has stopped. Too far (or treading water): come back within range, then wait there.
-            if (distP > maxD || c.IsSwimming())
+            // the player has stopped. Too far (or treading water, or on another floor, or mid-climb): come back within range,
+            // then wait there.
+            if (distP > maxD || c.IsSwimming() || offLevel || climbing)
             {
                 if (!s.HasSpot || s.Radius > maxD * 0.7f) PickSpot(ai, s, t, pp, maxD, false, maxD * 0.6f);
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
-                if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
+                // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
+                if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
                 return;
             }
             if (s.Moving || !s.HasIdle)
@@ -263,6 +281,100 @@ namespace Companions
                 if (UnityEngine.Random.value < 0.35f || !IdlePoint(ai, s, pp, maxD, t.Indoors ? 1.0f : 2.0f, tid, out g)) ai.LookAtPoint(pp + Vector3.up * 1.5f);
                 else { s.IdleGoal = g; s.IdleMoving = true; }
             }
+        }
+
+        // ---------- 1.5.2: the player's own way up (user: "Near the end of the log I climbed up the ladders to the top. Thats
+        // the path the NPC should follow" / "Its a narrow small space"). Guessing at ladders from their shapes kept failing in a
+        // tight tower of short ladders and small floors, so when the companion is on another floor and the route planner has no
+        // way there, it walks the player's recorded steps: same spots, same direction into each ladder (which is what makes a
+        // ladder lift you), a jump where the next step is up and walking hasn't lifted it. ----------
+        static bool WalkPlayerPath(CompanionAI ai, S s, T t, Character c, Vector3 me, Vector3 pp, float now, float dt, bool offLevel)
+        {
+            List<Vector3> st = t.Steps;
+            // once on the player's path keep to it until really level with them (user log: it kept stopping and starting
+            // as the height difference went either side of 2.5 m, and the ladder search took over in between)
+            if (s.OnPath && !c.IsSwimming() && Mathf.Abs(me.y - pp.y) > 1.2f) offLevel = true;
+            if (!offLevel || c.IsSwimming() || st.Count < 3 || Mathf.Abs(st[st.Count - 1].y - pp.y) > 1.5f)
+            {
+                if (s.OnPath) EndPath(s, "");
+                return false;
+            }
+            if (!s.OnPath)
+            {
+                if (now < s.NoPathUntil) return false;
+                // only when the planner can't do it (a full route - stairs, a ramp - is better than retracing)
+                if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
+                // the last place the player was on our level (within a short walk): from there their steps lead to them
+                int best = -1; float bd = 0f;
+                for (int i = st.Count - 2; i >= 0; i--)
+                {
+                    if (Mathf.Abs(st[i].y - me.y) > 0.5f) continue;     // standing on our floor, not passing it on a ladder
+                    float d = Flat(me, st[i]);
+                    if (d > 12f) continue;
+                    best = i; bd = d; break;
+                }
+                if (best < 0)
+                {
+                    if (now >= s.NextPathLog) { s.NextPathLog = now + 15f; Dbg(c.m_name + " can't follow your path: none of your last " + st.Count + " steps is on its level within 12 m (came by portal, or the path is older than that)"); }
+                    return false;
+                }
+                s.OnPath = true; s.PathIdx = best; s.PathProgressAt = now; s.PathApproach = bd > 1.0f;
+                MHR_Mover.Release(ai);
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + Mathf.Abs(pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
+            }
+            if (s.PathIdx >= st.Count) s.PathIdx = st.Count - 1;
+            // getting to where the player's path starts: the normal planner
+            if (s.PathApproach)
+            {
+                Vector3 start = st[s.PathIdx];
+                if (Flat(me, start) < 0.6f && Mathf.Abs(me.y - start.y) < 1.0f) { s.PathApproach = false; s.PathProgressAt = now; MHR_Mover.Release(ai); }
+                else
+                {
+                    MHR_Mover.Go(ai, dt, start, 0.4f, true, MHR_Mover.FollowTag, MHR_Mover.SpeedJog);
+                    if (MHR_Mover.GaveUp(ai) || now - s.PathProgressAt > 15f) { EndPath(s, "couldn't get to where your path starts"); s.NoPathUntil = now + 10f; MHR_Mover.Release(ai); return false; }
+                    return true;
+                }
+            }
+            // move along: past every step we're at (or already above), and skip ahead if lifted further along it
+            while (s.PathIdx < st.Count - 1 && Flat(me, st[s.PathIdx]) < 0.5f && me.y > st[s.PathIdx].y - 1.0f) { s.PathIdx++; s.PathProgressAt = now; }
+            for (int j = Mathf.Min(s.PathIdx + 10, st.Count - 1); j > s.PathIdx; j--)
+                if (Flat(me, st[j]) < 0.6f && Mathf.Abs(me.y - st[j].y) < 0.8f) { s.PathIdx = j; s.PathProgressAt = now; break; }
+            Vector3 next = st[s.PathIdx];
+            if (me.y < next.y - 2.5f && c.IsOnGround()) { EndPath(s, "fell off your path"); s.NoPathUntil = now + 3f; return false; }
+            if (now - s.PathProgressAt > 6f) { EndPath(s, "stuck on your path at " + next.ToString("F1")); s.NoPathUntil = now + 15f; return false; }
+            Vector3 dir = next - me; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.04f && s.PathIdx < st.Count - 1) { dir = st[s.PathIdx + 1] - next; dir.y = 0f; }
+            if (dir.sqrMagnitude < 0.0001f) dir = ai.transform.forward;
+            dir.Normalize();
+            // the player jumped down further than this companion can take right now (it has its own health to think of):
+            // a ladder's rungs or a floor ahead are fine, open air down past a safe drop is not
+            if (c.IsOnGround() && next.y < me.y - 1f)
+            {
+                float safe = CompanionFallDamagePatch.SafeDrop(c, 0.3f);
+                if (!Physics.Raycast(me + dir * 0.7f + Vector3.up * 1f, Vector3.down, 1f + safe, GroundMask()))
+                {
+                    ai.StopMoving();
+                    EndPath(s, "you went down a drop of more than " + safe.ToString("F1") + "m there - too far for me");
+                    s.NoPathUntil = now + 15f;
+                    return false;
+                }
+            }
+            ai.transform.rotation = Quaternion.LookRotation(dir);
+            c.SetWalk(false);
+            ai.MoveTowards(dir, false);
+            // the next step is up and walking at it hasn't lifted us: jump, as the player would
+            if (next.y > me.y + 0.6f && c.IsOnGround() && now >= s.PathJumpAt && now - s.PathProgressAt > 0.5f)
+            {
+                c.Jump(false); s.PathJumpAt = now + 1.0f;
+            }
+            if (now >= s.NextPathLog) { s.NextPathLog = now + 3f; Dbg(c.m_name + " on your path: step " + s.PathIdx + "/" + (st.Count - 1) + " at " + next.ToString("F1") + ", me " + me.ToString("F1")); }
+            return true;
+        }
+
+        static void EndPath(S s, string why)
+        {
+            s.OnPath = false; s.PathApproach = false;
+            if (why.Length > 0 && CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] stopped following your path: " + why);
         }
 
         // walk while the player walks, run while they run, a step faster to close a gap, run when far behind

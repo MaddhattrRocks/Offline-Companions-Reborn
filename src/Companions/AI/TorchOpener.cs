@@ -285,7 +285,7 @@ internal static class TorchOpener
 			if (itemData != null && itemData.m_shared != null && Usable(itemData))
 			{
 				ItemDrop.ItemData.ItemType itemType = itemData.m_shared.m_itemType;
-				if ((itemType == ItemDrop.ItemData.ItemType.OneHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft) && !(itemData.m_shared.m_aiAttackRange > 10f) && !(itemData.GetDamage().m_pickaxe > 0f))
+				if ((itemType == ItemDrop.ItemData.ItemType.OneHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft) && !CompanionCombatAI.MHR_IsProjectileWeapon(itemData) && !(itemData.GetDamage().m_pickaxe > 0f))
 				{
 					return true;
 				}

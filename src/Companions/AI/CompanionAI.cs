@@ -1485,7 +1485,7 @@ public class CompanionAI : BaseAI
 					// another companion), like a player would. Something that attacks the companion is still fought
 					// (OnDamaged engages the attacker), and Hunt goes after game on purpose. 1.4.78 log: he shot at a
 					// Neck and a crab that were minding their own business.
-					if (character != null && !MHR_Threat.IsAfterUs(character))
+					if (character != null && (!MHR_Threat.IsAfterUs(character) || MHR_Threat.IgnoredInWater(character)))
 					{
 						character = null;
 					}
@@ -1498,7 +1498,9 @@ public class CompanionAI : BaseAI
 							return true;
 						}
 					}
-					else if (m_targetCreature != null)
+					// 1.5.2: not a creature it's ignoring (one it can't reach in deep water, harmless game) - that re-engaged and
+					// dropped it every frame while it stood still (user log: a crocodile in the water, 40 "Engage" lines in a row)
+					else if (m_targetCreature != null && !MHR_Threat.IsPassive(m_targetCreature) && !MHR_Threat.IgnoredInWater(m_targetCreature))
 					{
 						SetAlerted(alert: true);
 						_combatAI.Engage(m_targetCreature);
@@ -1527,6 +1529,12 @@ public class CompanionAI : BaseAI
 			MHR_SetCrouch(sneak: false);
 		}
 		UpdateTorch();
+		// 1.5.2: fetch a spear it threw while hunting
+		if (MHR_SpearThrow.Drive(this, dt, _combatAI != null && _combatAI.IsEngaged))
+		{
+			ClearFollowMovementOverrides();
+			return true;
+		}
 		if (MHR_ToolKeeper.Drive(this, dt))
 		{
 			return true;

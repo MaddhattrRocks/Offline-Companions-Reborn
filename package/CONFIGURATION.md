@@ -182,6 +182,9 @@ The most swimming (meters) a job accepts to reach something: loot from a kill, p
 **MaxDrop** — Default: 3 · Range: 1 – 4  
 When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).
 
+**StuckDrop** — Default: 8 · Range: 3 – 20  
+When a companion is stuck above where it needs to be with no other way down (off the top of a ladder, a platform, a ledge), it jumps down a drop up to this many meters, like a player who takes a bit of fall damage rather than stay put. A ladder down comes first, and it never takes a drop that would cost more than 30% of its health right now (companions take fall damage like a player: none up to 4 m).
+
 **JumpGap** — Default: 1.5 · Range: 0.5 – 3  
 The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.
 
@@ -457,6 +460,12 @@ Shoot birds only while what they drop (feathers) is under this many, counting th
 
 **Sneak** — Default: On  
 Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).
+
+**ThrowSpear** — Default: On  
+A hunter holding a spear throws it at skittish game (deer, hares...) from a distance, like a player, then walks over and picks it back up. Only when it has another weapon in its pack to fight on with.
+
+**ThrowRange** — Default: 12 · Range: 4 – 25  
+How far (meters) a hunter throws its spear from. Further throws drop short more often.
 
 ## Fishing
 
