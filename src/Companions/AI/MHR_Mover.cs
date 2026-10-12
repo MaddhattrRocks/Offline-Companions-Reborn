@@ -231,7 +231,13 @@ namespace Companions
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
                     return false;
                 }
-                if (now > s.DetourUntil || !s.HasDetour)
+                if (!s.DescendLadder && pos.y < s.ClimbBase.y - 1.5f && c.IsOnGround())
+                {
+                    s.LadderPending = false; s.HasDetour = false; s.NextLadderClimbSearch = 0f; s.NextPlan = 0f;
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                    Plan(ai, c, s, pos, now);
+                }
+                else if (now > s.DetourUntil || !s.HasDetour)
                 {
                     s.LadderPending = false; s.HasDetour = false; MarkBadLadder(s.ClimbLadderId, now, 120f);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to the " + (s.DescendLadder ? "top of the ladder at " + Fmt(s.DescendTop) : "foot of the ladder at " + Fmt(s.ClimbBase)));
@@ -702,7 +708,7 @@ namespace Companions
         const int LadderJumpTries = 4;
         static readonly List<Vector3> s_ladderPath = new List<Vector3>();
 
-        // 1.5.2 (user: "Ignore ladders that cause it to get stuck"): the same ladder started a third time inside two minutes
+        // 1.5.2 (user: "Ignore ladders that cause it to get stuck"): the same ladder started a fourth time inside two minutes
         // isn't getting it anywhere (it climbs, can't go on, ends up back at the bottom) - leave it alone for a few minutes
         static void NoteLadderClimb(S s, float now, string tag)
         {
@@ -710,7 +716,7 @@ namespace Companions
             if (!s.LadderUses.TryGetValue(s.ClimbLadderId, out u) || now - u.y > 120f) u = new Vector2(0f, now);
             u.x += 1f;
             s.LadderUses[s.ClimbLadderId] = u;
-            if (u.x >= 3f)
+            if (u.x >= 4f)
             {
                 MarkBadLadder(s.ClimbLadderId, now, 180f); s.LadderUses.Remove(s.ClimbLadderId);
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
@@ -905,7 +911,9 @@ namespace Companions
             s.ClimbLadderId = bestId; s.ClimbBottomY = bestB.min.y;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             // 1.5.2: get to the foot of it by the normal route first (user: "running into a wall" walking straight at it)
-            if (s.ClimbAuto && Flat(pos, s.ClimbBase) > 1.0f)
+            // 1.5.2: a foot close by on our level is walked to straight (with a look for edges); a route there across the
+            // small floors between ladders took him off the edge (user log: "fell 4.1 m" on the way to the next ladder)
+            if (s.ClimbAuto && (Flat(pos, s.ClimbBase) > 3.0f || Mathf.Abs(pos.y - s.ClimbBase.y) > 1.0f))
             {
                 s.LadderPending = true; s.HasDetour = true; s.Detour = s.ClimbBase; s.DetourUntil = now + 15f; s.NextPlan = 0f;
                 s.StepUntil = 0f;
@@ -1078,6 +1086,15 @@ namespace Companions
             if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f) atTop = false;
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
             bool toFoot = false;
+            // 1.5.2: fell off on the way (a small floor between ladders) - not the ladder's fault; look again from down here
+            // (user log: kept jumping at the ladder from the ground under the floor it starts from, then marked it bad)
+            if (s.ClimbLadder && pos.y < s.ClimbStartY - 1.0f && c.IsOnGround())
+            {
+                s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0; s.NextLadderClimbSearch = 0f;
+                s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                return;
+            }
             if (s.ClimbLadder && !atTop)
             {
                 dir = s.ClimbDir;
@@ -1088,6 +1105,15 @@ namespace Companions
                 {
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
                     dir = toBase; toFoot = true;
+                    // don't walk off an edge getting there: the foot is past a drop from here, so this ladder isn't for now
+                    Vector3 ahead = pos + toBase.normalized * 0.6f;
+                    if (!Physics.Raycast(ahead + Vector3.up * 0.5f, Vector3.down, 1.6f, Mask()))
+                    {
+                        s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
+                        Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the foot of the ladder at " + Fmt(s.ClimbBase) + " is past a drop from here - trying another");
+                        return;
+                    }
                     if (now - s.ClimbStartAt < 8f) s.ClimbProgressAt = Mathf.Max(s.ClimbProgressAt, now - 4f);   // walking there isn't "stuck" yet
                 }
             }
