@@ -5,6 +5,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 ## 1.5.3
 - Companions recognise ladders that are part of the world (a ruined tower's), not only ones you built, so they can climb to an enemy at the top.
 - Quieter log: the weapon-choice line during fights is now debug-only.
+- Fixed: at the top of a ladder a companion leapt onto the floor next to it and could carry straight on over a small floor and off the far side. It now steps off onto a floor that is level and close, looks first the way the ladder faces, and only takes spots with real footing.
 
 ## 1.5.2
 - Fixed: hunting with a melee weapon (spear, axe, knife - no bow ready) - the companion stopped 20 m away and swung at the air. It now sneaks up and strikes.

@@ -982,7 +982,9 @@ namespace Companions
         {
             Vector3 goal = s.HasGood && s.GoodPos.y > pos.y - 1f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos : s.Goal;
             Vector3 toGoal = goal - pos; toGoal.y = 0f;
-            Vector3[] dirs = toGoal.sqrMagnitude > 0.04f ? new[] { toGoal.normalized, s.ClimbDir } : new[] { s.ClimbDir };
+            // 1.5.3: the way the ladder faces first - that's where its top floor is; towards the goal only after
+            // (user: "went up one flight then jumped off" - the goal's way led across a small floor and off it)
+            Vector3[] dirs = toGoal.sqrMagnitude > 0.04f ? new[] { s.ClimbDir, toGoal.normalized } : new[] { s.ClimbDir };
             float up = c.m_jumpForce * c.m_jumpForce / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;   // how high a jump gets it, with a margin
             foreach (Vector3 dir in dirs)
             {
@@ -994,7 +996,19 @@ namespace Companions
                     float dy = hit.point.y - pos.y;
                     if (dy < -0.5f || dy > up) continue;                                   // a floor at about our height or a jump up
                     if (Physics.Raycast(new Vector3(p.x, hit.point.y + 0.1f, p.z), Vector3.up, 1.6f, Mask())) continue;   // room to stand
+                    // 1.5.3: a floor, not just an edge or a beam - there's footing a bit further on too
+                    RaycastHit more;
+                    Vector3 q = p + dir * 0.5f;
+                    if (!Physics.Raycast(new Vector3(q.x, hit.point.y + 1.0f, q.z), Vector3.down, out more, 1.5f, Mask()) || Mathf.Abs(more.point.y - hit.point.y) > 0.4f) continue;
                     if (MHR_Jump.Reach(c, dir, dy) < d) continue;
+                    if (dy < 0.4f && d <= 1.3f)
+                    {
+                        // level and close: just step across, like a player walking off the top of a ladder - a full leap
+                        // carried it over a small floor and off the far side
+                        s.StepDir = dir; s.StepRun = false; s.StepUntil = now + 0.5f;
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
+                        return;
+                    }
                     MHR_Jump.Leap(ai, c, dir);
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
@@ -1005,7 +1019,7 @@ namespace Companions
             // step off the top - not over an edge that hurts (the stuck steps take it from here instead)
             float edge;
             if (LedgeAhead(pos, s.ClimbDir, 0.7f, out edge)) { Halt(ai, c, s); return; }
-            Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f;
+            s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.5f;   // walk off the top, no leap
         }
 
         // 1.5.2: the way down is the ladder it came up (user: "The NPC should prefer to go back down the ladder"). A ladder
