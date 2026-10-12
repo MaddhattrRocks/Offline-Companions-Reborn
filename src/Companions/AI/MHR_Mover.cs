@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -232,7 +232,7 @@ namespace Companions
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
                 {
                     s.LadderPending = false; s.HasDetour = false;
-                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     NoteLadderClimb(s, now, tag);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
                     return false;
@@ -867,7 +867,7 @@ namespace Companions
             {
                 Vector3 p = a + d * Mathf.Min(x, len);
                 float top = Mathf.Max(a.y, b.y) + 0.6f;
-                if (Physics.Raycast(new Vector3(p.x, top, p.z), Vector3.down, top - (Mathf.Min(a.y, b.y) - 1.0f), Mask())) miss = 0;
+                if (Physics.SphereCast(new Vector3(p.x, top, p.z), 0.25f, Vector3.down, out _, top - (Mathf.Min(a.y, b.y) - 1.0f), Mask())) miss = 0;
                 else if (++miss >= 2) return false;
             }
             return true;
@@ -882,7 +882,7 @@ namespace Companions
                 {
                     Vector3 w = pos + Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward * r;
                     RaycastHit g;
-                    if (!Physics.Raycast(new Vector3(w.x, pos.y + 1.0f, w.z), Vector3.down, out g, 1.8f, Mask())) continue;
+                    if (!Physics.SphereCast(new Vector3(w.x, pos.y + 1.0f, w.z), 0.25f, Vector3.down, out g, 1.8f, Mask())) continue;
                     if (Mathf.Abs(g.point.y - pos.y) > 0.6f) continue;
                     w.y = g.point.y;
                     float len = Flat(pos, w) + Flat(w, target);
@@ -1003,7 +1003,7 @@ namespace Companions
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
                 return true;
             }
-            s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f;
+            s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now;
             NoteLadderClimb(s, now, tag);
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
@@ -1032,6 +1032,9 @@ namespace Companions
                     if (!Physics.Raycast(new Vector3(p.x, pos.y + up + 1.5f, p.z), Vector3.down, out hit, up + 3f, Mask())) continue;
                     float dy = hit.point.y - pos.y;
                     if (dy < -0.5f || dy > up) continue;                                   // a floor at about our height or a jump up
+                    // 1.5.3: up onto something only when the goal is up there too (user log: already at the player's height, it
+                    // jumped 0.9 m up onto the tower's wall top and over the side - "fell 11.3 m and took 45 fall damage")
+                    if (dy > 0.4f && goal.y < pos.y + 1.0f) continue;
                     if (Physics.Raycast(new Vector3(p.x, hit.point.y + 0.1f, p.z), Vector3.up, 1.6f, Mask())) continue;   // room to stand
                     // 1.5.3: a floor, not just an edge or a beam - there's footing a bit further on too
                     RaycastHit more;
@@ -1046,6 +1049,9 @@ namespace Companions
                         if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
                         return;
                     }
+                    // a jump carries on past where it lands: not onto something with a harmful drop just beyond (a wall top)
+                    float beyond;
+                    if (LedgeAhead(hit.point, dir, 1.0f, out beyond)) continue;
                     MHR_Jump.Leap(ai, c, dir);
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
@@ -1207,7 +1213,11 @@ namespace Companions
                 // still on the ground short of the ladder's foot (or round the back of it): walk to the foot first
                 // 1.5.2: only a few seconds of this close by - he used to shuffle round the foot for 25 s without pushing in
                 float off = Flat(pos, s.ClimbBase);
-                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && (off > 1.2f || (off > 0.6f && now - s.ClimbStartAt < 6f)))
+                // 1.5.3: not getting any closer for 1.5 s (up against a wall beside the ladder - user: "Still stops at the wall
+                // and sits there"): this is as near as it gets - push in / jump on from here
+                if (off < s.ClimbFootBest - 0.15f) { s.ClimbFootBest = off; s.ClimbFootAt = now; }
+                bool footBlocked = now - s.ClimbFootAt > 1.5f;
+                if (s.ClimbAuto && !footBlocked && pos.y < s.ClimbBase.y + 0.8f && (off > 1.2f || (off > 0.6f && now - s.ClimbStartAt < 6f)))
                 {
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
                     dir = toBase; toFoot = true;
@@ -1531,7 +1541,9 @@ namespace Companions
             float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
             Vector3 p = pos + dir.normalized * dist;
             RaycastHit hit;
-            if (Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
+            // 1.5.3: a foot-sized probe, not a line - a stair-like ladder is separate rungs with gaps between (a line slipped
+            // between two rungs and read as an edge: "stopping at the edge" in the middle of the user's ruin ladders)
+            if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
             if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask())) { drop = 60f; return true; }
             if (MHR_Water.DepthAt(hit.point) >= 1.0f) return false;
             drop = pos.y - hit.point.y;
