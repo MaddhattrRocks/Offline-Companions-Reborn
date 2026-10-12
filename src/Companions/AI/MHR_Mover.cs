@@ -1170,15 +1170,28 @@ namespace Companions
                 // still on the ground short of the ladder's foot (or round the back of it): walk to the foot first
                 // 1.5.2: only a few seconds of this close by - he used to shuffle round the foot for 25 s without pushing in
                 float off = Flat(pos, s.ClimbBase);
-                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && (off > 1.5f || (off > 0.6f && now - s.ClimbStartAt < 3f)))
+                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && (off > 1.2f || (off > 0.6f && now - s.ClimbStartAt < 6f)))
                 {
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
                     dir = toBase; toFoot = true;
                     // don't walk off an edge getting there: the foot is past a drop from here, so this ladder isn't for now
-                    // 1.5.3: never test past the foot itself (a foot 0.3 m away by the ladder hole read as "past a drop")
-                    Vector3 ahead = pos + toBase.normalized * Mathf.Min(0.6f, toBase.magnitude);
-                    // 1.5.3: a drop that would hurt (over 4 m), not any opening - a player walks round the corner of a small hole
-                    if (!Physics.Raycast(ahead + Vector3.up * 0.5f, Vector3.down, 4.5f, Mask()))
+                    // 1.5.3: walking to the foot, stop only for a real hole: a gap at least 0.6 m wide (a narrow opening is
+                    // stepped over - he's too wide to fall through it) with a drop that would hurt (> 5 m; user's ruin: a 4.1 m
+                    // opening between one ladder's top and the next one's foot made him give the ladder up every time).
+                    // Within a step of the foot, no check at all.
+                    bool gap = false;
+                    float toFootDist = toBase.magnitude;
+                    if (toFootDist > 1.2f)
+                    {
+                        Vector3 along = toBase / toFootDist; int run = 0;
+                        for (float d = 0.2f; d <= Mathf.Min(1.4f, toFootDist) + 0.01f; d += 0.2f)
+                        {
+                            Vector3 sp = pos + along * d;
+                            if (Physics.Raycast(sp + Vector3.up * 0.5f, Vector3.down, 5.5f, Mask())) run = 0;
+                            else if (++run >= 3) { gap = true; break; }
+                        }
+                    }
+                    if (gap)
                     {
                         s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
                         Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
