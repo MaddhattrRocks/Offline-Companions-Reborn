@@ -306,7 +306,11 @@ namespace Companions
                 if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
                 // the last place the player was on our level (within a short walk): from there their steps lead to them
                 int best = -1; float bd = 0f;
+                // 1.5.3: right beside the player's path already: step onto it there (user log: the last spot on its level
+                // was 2.4 m away across a shaft opening; walking there by route stopped at the edge, twice)
                 for (int i = st.Count - 2; i >= 0; i--)
+                    if (Mathf.Abs(st[i].y - me.y) <= 0.5f && Flat(me, st[i]) <= 1.5f) { best = i; bd = Flat(me, st[i]); break; }
+                for (int i = best >= 0 ? -1 : st.Count - 2; i >= 0; i--)
                 {
                     if (Mathf.Abs(st[i].y - me.y) > 0.5f) continue;     // standing on our floor, not passing it on a ladder
                     float d = Flat(me, st[i]);

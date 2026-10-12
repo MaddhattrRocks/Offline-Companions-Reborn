@@ -1178,10 +1178,10 @@ namespace Companions
                     // 1.5.3: walking to the foot, stop only for a real hole: a gap at least 0.6 m wide (a narrow opening is
                     // stepped over - he's too wide to fall through it) with a drop that would hurt (> 5 m; user's ruin: a 4.1 m
                     // opening between one ladder's top and the next one's foot made him give the ladder up every time).
-                    // Within a step of the foot, no check at all.
+                    // Within 2.5 m of the foot (the next ladder in a chain), no check at all.
                     bool gap = false;
                     float toFootDist = toBase.magnitude;
-                    if (toFootDist > 1.2f)
+                    if (toFootDist > 2.5f)
                     {
                         Vector3 along = toBase / toFootDist; int run = 0;
                         for (float d = 0.2f; d <= Mathf.Min(1.4f, toFootDist) + 0.01f; d += 0.2f)
