@@ -756,6 +756,39 @@ namespace Companions
             return b;
         }
 
+        // 1.5.2: where a ladder is climbed from, on the side its auto-jump faces. A floor at about the ladder's bottom just in
+        // front of it means it's climbed from that floor; otherwise from the ground below, with a jump. room = nothing
+        // overhead to bang into (user: "standing under the small floor section between the 2 ladders and just jumping in
+        // place ... kept hitting the floor tile just above their head").
+        static bool LadderFoot(Bounds b, Vector3 f, out Vector3 spot, out bool room)
+        {
+            float depth = Mathf.Abs(f.x) * b.extents.x + Mathf.Abs(f.z) * b.extents.z;
+            Vector3 c0 = new Vector3(b.center.x, b.min.y, b.center.z);
+            RaycastHit g;
+            spot = c0 - f * (depth + 0.7f); room = true;
+            bool found = false;
+            foreach (float d in new[] { 0.7f, 0.4f, 1.0f, 1.3f })
+            {
+                if (found) break;
+                Vector3 p = c0 - f * (depth + d);
+                if (Physics.Raycast(new Vector3(p.x, b.min.y + 0.6f, p.z), Vector3.down, out g, 1.2f, Mask())) { spot = new Vector3(p.x, g.point.y, p.z); found = true; }
+            }
+            if (!found)
+            {
+                if (!Physics.Raycast(spot + Vector3.up * 0.6f, Vector3.down, out g, 5f, Mask())) return false;
+                spot.y = g.point.y;
+            }
+            // head room where it stands and on the way in (a jump needs about 2 m clear)
+            for (float d = 0f; d <= 0.31f && room; d += 0.3f)
+                foreach (RaycastHit h in Physics.RaycastAll(spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
+                {
+                    Piece hp = h.collider.GetComponentInParent<Piece>();
+                    if (hp != null && IsLadder(hp.gameObject, hp, h.collider)) continue;   // the ladder itself
+                    room = false; break;
+                }
+            return true;
+        }
+
         static bool TryStartLadderClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             s.NextLadderClimbSearch = now + 2f;
@@ -778,6 +811,17 @@ namespace Companions
                 if (!seen.Add(id) && id != root.GetInstanceID()) continue;              // a piece of a stack already looked at
                 if (s.LadderClimbsTried.Contains(id) || BadLadder(id, now)) continue;
                 if (b.min.y > pos.y + 2.2f || b.max.y < pos.y + 2f) continue;          // starts within a jump of our level and goes up
+                AutoJumpLedge lg = root.GetComponentInChildren<AutoJumpLedge>(true);
+                if (lg != null)
+                {
+                    Vector3 lf = lg.transform.forward; lf.y = 0f;
+                    Vector3 spot; bool room;
+                    if (lf.sqrMagnitude > 0.01f && LadderFoot(b, lf.normalized, out spot, out room))
+                    {
+                        if (spot.y > pos.y + 1.0f) continue;     // climbed from a floor above us - that floor has to be reached first
+                        if (!room) continue;                     // a floor right overhead: no way to jump on from here
+                    }
+                }
                 // 1.5.2: the one that gets us highest wins over the nearest (user: two ladders, one "is not a good path")
                 // one whose bottom is up off the ground needs a jump to get on: a little worse than one that reaches the ground
                 float d = Flat(pos, b.center) + 3f * Mathf.Max(0f, needY - b.max.y) + 5f * Mathf.Max(0f, b.min.y - pos.y - 0.5f);
@@ -817,11 +861,10 @@ namespace Companions
                     f.Normalize();
                     into = f; s.ClimbAuto = true;
                     // the foot of the ladder, on the side it's climbed from: get there first, then walk into it
-                    float depth = Mathf.Abs(f.x) * bestB.extents.x + Mathf.Abs(f.z) * bestB.extents.z;
-                    s.ClimbBase = new Vector3(bestB.center.x, bestB.min.y, bestB.center.z) - f * (depth + 0.7f);
-                    // stand on the ground there: the ladder's bottom can sit above it (user log: foot 2 m up, never "at the foot")
-                    RaycastHit g;
-                    if (Physics.Raycast(s.ClimbBase + Vector3.up * 1.0f, Vector3.down, out g, 4f, Mask())) s.ClimbBase.y = g.point.y;
+                    // stand on what's there: the ladder's bottom can sit above the ground (user log: foot 2 m up, never "at the foot")
+                    Vector3 spot; bool room;
+                    if (LadderFoot(bestB, f, out spot, out room)) s.ClimbBase = spot;
+                    else { float depth = Mathf.Abs(f.x) * bestB.extents.x + Mathf.Abs(f.z) * bestB.extents.z; s.ClimbBase = new Vector3(bestB.center.x, bestB.min.y, bestB.center.z) - f * (depth + 0.7f); }
                 }
             }
             s.ClimbDir = into.normalized;
