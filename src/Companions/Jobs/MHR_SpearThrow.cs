@@ -242,7 +242,17 @@ internal static class MHR_SpearThrow
 		}
 		if (value.Drop == null)
 		{
-			CompanionsPlugin.Log.LogInfo("[Hunt] Its " + Loc(value.Name) + " isn't on the ground any more (someone picked it up)");
+			// 1.5.2: usually it walked over it and its own auto-pickup took it (user log: "someone picked it up" 3 m away)
+			bool flag2 = false;
+			foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
+			{
+				if (allItem?.m_shared != null && allItem.m_shared.m_name == value.Name)
+				{
+					flag2 = true;
+					break;
+				}
+			}
+			CompanionsPlugin.Log.LogInfo("[Hunt] " + (flag2 ? ("Picked its " + Loc(value.Name) + " back up on the way") : ("Its " + Loc(value.Name) + " isn't on the ground any more (someone else picked it up)")));
 			Clear(value);
 			return false;
 		}
@@ -292,3 +302,74 @@ internal static class SpearLandedPatch
 		MHR_SpearThrow.OnDropped(item, __result);
 	}
 }
+
+// 1.5.2: a companion's thrown spear (or arrow, bolt) is aimed like a player would: ahead of a running target and a bit
+// high for the drop. The game aims an AI's projectile straight at the target's middle (Attack.GetProjectileSpawnPoint),
+// so it fell short and behind a deer on the run (user: "the aim with the spear throw is not great against deer").
+[HarmonyPatch(typeof(Attack), "GetProjectileSpawnPoint")]
+internal static class CompanionProjectileAimPatch
+{
+	private static readonly AccessTools.FieldRef<Attack, Humanoid> s_character = AccessTools.FieldRefAccess<Attack, Humanoid>("m_character");
+
+	private static readonly AccessTools.FieldRef<Attack, BaseAI> s_baseAI = AccessTools.FieldRefAccess<Attack, BaseAI>("m_baseAI");
+
+	private static readonly AccessTools.FieldRef<Attack, ItemDrop.ItemData> s_ammo = AccessTools.FieldRefAccess<Attack, ItemDrop.ItemData>("m_ammoItem");
+
+	private static void Postfix(Attack __instance, ref Vector3 spawnPoint, ref Vector3 aimDir)
+	{
+		try
+		{
+			Humanoid humanoid = s_character(__instance);
+			if (humanoid == null || humanoid.GetComponent<CompanionSetup>() == null)
+			{
+				return;
+			}
+			Character character = s_baseAI(__instance)?.GetTargetCreature();
+			if (character == null)
+			{
+				return;
+			}
+			float num = __instance.m_projectileVel;
+			GameObject gameObject = __instance.m_attackProjectile;
+			ItemDrop.ItemData itemData = s_ammo(__instance);
+			if (itemData?.m_shared?.m_attack != null)
+			{
+				num += itemData.m_shared.m_attack.m_projectileVel;
+				if (itemData.m_shared.m_attack.m_attackProjectile != null)
+				{
+					gameObject = itemData.m_shared.m_attack.m_attackProjectile;
+				}
+			}
+			if (num < 1f)
+			{
+				return;
+			}
+			float num2 = 0f;
+			Projectile projectile = ((gameObject != null) ? gameObject.GetComponent<Projectile>() : null);
+			if (projectile != null)
+			{
+				num2 = projectile.m_gravity;
+			}
+			Vector3 centerPoint = character.GetCenterPoint();
+			Vector3 velocity = character.GetVelocity();
+			Vector3 vector = centerPoint;
+			float num3 = 0f;
+			for (int i = 0; i < 3; i++)
+			{
+				num3 = Vector3.Distance(spawnPoint, vector) / num;
+				vector = centerPoint + velocity * num3;
+			}
+			vector.y += 0.5f * num2 * num3 * num3;
+			Vector3 vector2 = vector - spawnPoint;
+			// only a correction: if the AI's target isn't what it's shooting at (birds, a stale target), leave the game's aim
+			if (vector2.sqrMagnitude > 0.01f && Vector3.Angle(aimDir, vector2) <= 25f)
+			{
+				aimDir = vector2.normalized;
+			}
+		}
+		catch
+		{
+		}
+	}
+}
+
