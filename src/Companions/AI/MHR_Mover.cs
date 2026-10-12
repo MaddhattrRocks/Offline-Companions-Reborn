@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -892,12 +892,39 @@ namespace Companions
             return best < float.MaxValue;
         }
 
+        // where to face at the top of a ladder: the foot of the nearest other ladder that starts on this level, else the goal
+        static Vector3 NextFootDir(S s, Vector3 pos)
+        {
+            Vector3 best = s.Goal - pos; best.y = 0f; float bd = float.MaxValue;
+            var seen = new HashSet<int>();
+            foreach (Collider col in Physics.OverlapSphere(pos, 3.5f, Mask()))
+            {
+                if (col == null || col.isTrigger) continue;
+                Piece piece;
+                GameObject root = LadderRoot(col, out piece);
+                if (root == null || !seen.Add(root.GetInstanceID()) || !IsLadder(root, piece, col)) continue;
+                AutoJumpLedge lg = root.GetComponentInChildren<AutoJumpLedge>(true);
+                if (lg == null) continue;
+                int id;
+                Bounds b = LadderBounds(root, out id);
+                if (id == s.ClimbLadderId || b.max.y < pos.y + 1.0f) continue;
+                Vector3 f = lg.transform.forward; f.y = 0f;
+                Vector3 spot; bool room;
+                if (f.sqrMagnitude < 0.01f || !LadderFoot(b, f.normalized, out spot, out room) || Mathf.Abs(spot.y - pos.y) > 1.0f) continue;
+                float d = Flat(pos, spot);
+                if (d < bd) { bd = d; best = spot - pos; best.y = 0f; if (best.sqrMagnitude < 0.04f) best = f; }
+            }
+            return best.sqrMagnitude > 0.01f ? best.normalized : Vector3.zero;
+        }
+
         static bool TryStartLadderClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             s.NextLadderClimbSearch = now + 2f;
             if (c.IsSwimming() || !c.IsOnGround() || now < s.ClimbUntil) return false;
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
-            if (needY < pos.y + 2f) return false;
+            // 1.5.3: 1.5 m, not 2 - a skeleton exactly 2.0 m up on the next floor got no ladder search (user log: stepped off
+            // the ladder's top instead and fell)
+            if (needY < pos.y + 1.5f) return false;
             Collider[] cols = Physics.OverlapSphere(pos + Vector3.up * 2f, 14f, Mask());
             GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue; int bestId = 0;
             var seen = new HashSet<int>();
@@ -1193,7 +1220,16 @@ namespace Companions
             // 2-3 m past the top end, off to the side of the next ladder (user: "keep going off to one side")
             if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.5f)
             {
-                if (c.IsOnGround()) { Halt(ai, c, s); return; }
+                if (c.IsOnGround())
+                {
+                    Halt(ai, c, s);
+                    // 1.5.3 (user: "can they start to turn in the direction they need to move next while they wait"): face the
+                    // next ladder's foot, else the goal, turning at a walking pace
+                    if (s.ClimbFaceAt < s.ClimbStartAt) { s.ClimbFaceAt = now; s.ClimbFace = NextFootDir(s, pos); }
+                    if (s.ClimbFace.sqrMagnitude > 0.01f)
+                        ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(s.ClimbFace), 360f * Time.deltaTime);
+                    return;
+                }
                 atTop = false;
             }
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
@@ -1259,6 +1295,9 @@ namespace Companions
                 if (wasLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
+                // 1.5.3: a ladder that worked isn't "tried" - after a fall it's the way back up (user log: "no ladder found"
+                // beside the two ladders he had just climbed)
+                if (wasLadder && atTop) s.LadderClimbsTried.Clear();
                 if (wasLadder && atTop)
                 {
                     // 1.5.3: still further up to go - the next ladder first, straight from here (user log: in the ruin the next
