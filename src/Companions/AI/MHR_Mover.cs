@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -339,6 +339,21 @@ namespace Companions
                 }
                 Vector3 round;
                 if (FireExit(pos, dir, out round)) dir = round;
+            }
+
+            // 1.5.2: never walk off a ledge that hurts (user log: a "full" route off the small 57.4 floor of a ladder tower -
+            // "fell 7.6 m and took 22 fall damage", twice). Stop at the edge and let the stuck steps choose: a ladder down,
+            // a safe drop, another way. Applies to everything that moves through here - following, combat chases, jobs.
+            if (!c.IsSwimming() && c.IsOnGround())
+            {
+                float drop;
+                if (LedgeAhead(pos, dir, 0.7f, out drop))
+                {
+                    Halt(ai, c, s);
+                    if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; Dbg("[Move|" + tag + "] stopping at the edge at " + Fmt(pos + dir * 0.7f) + " (" + drop.ToString("F1") + "m down)"); }
+                    if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
+                    return false;
+                }
             }
 
             float runDist = ModConfig.WorkRunDistance != null ? ModConfig.WorkRunDistance.Value : 25f;
@@ -1086,7 +1101,7 @@ namespace Companions
         static void Climb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             Vector3 dir = s.ClimbTop - pos; dir.y = 0f;
-            if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; }
+            if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.ClimbJumps = 0; }
             bool atTop = pos.y >= s.ClimbTop.y - 0.6f;
             // 1.5.2: the ladder lifts in bounces every half second - only off the top once it has stopped lifting us
             if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f) atTop = false;
@@ -1172,11 +1187,12 @@ namespace Companions
                     // still not on it after a few jumps: this one is out of reach - try another way up (user log: jumped at
                     // a ladder 1.9 m up until out of stamina, then stood resting at its foot)
                     bool onIt = pos.y > s.ClimbStartY + 0.8f;
-                    if (!onIt && s.ClimbJumps >= LadderJumpTries)
+                    // 1.5.2: also part way up - jumping on the spot there for 20 s (user log) gets nowhere either
+                    if (s.ClimbJumps >= LadderJumpTries)
                     {
                         s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0; s.NextPlan = 0f;
                         MarkBadLadder(s.ClimbLadderId, now, 120f);
-                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get onto the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (onIt ? "further up" : "onto") + " the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
                         s.ClimbLadder = false;
                         return;
                     }
@@ -1184,8 +1200,8 @@ namespace Companions
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
                     s.NextClimbJump = now + 1.2f;
-                    if (!onIt) s.ClimbJumps++;
-                    Dbg("[Move|" + tag + "] jumping onto the ladder" + (onIt ? "" : " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")"));
+                    s.ClimbJumps++;
+                    Dbg("[Move|" + tag + "] jumping " + (onIt ? "up the ladder" : "onto the ladder") + " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")");
                 }
                 return;
             }
@@ -1392,6 +1408,20 @@ namespace Companions
         }
 
         // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)
+        // a dry drop of more than a harmless fall (MaxDrop, 3 m) just ahead; deep water below is fine to land in
+        static bool LedgeAhead(Vector3 pos, Vector3 dir, float dist, out float drop)
+        {
+            drop = 0f;
+            float maxDrop = ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f;
+            Vector3 p = pos + dir.normalized * dist;
+            RaycastHit hit;
+            if (Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
+            if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask())) { drop = 60f; return true; }
+            if (MHR_Water.DepthAt(hit.point) >= 1.0f) return false;
+            drop = pos.y - hit.point.y;
+            return drop > maxDrop;
+        }
+
         public static bool DropAhead(Vector3 pos, Vector3 dir, float dist, float maxDrop)
         {
             dir.y = 0f;

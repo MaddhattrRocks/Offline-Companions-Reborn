@@ -310,7 +310,11 @@ namespace Companions
                     if (d > 12f) continue;
                     best = i; bd = d; break;
                 }
-                if (best < 0) return false;
+                if (best < 0)
+                {
+                    if (now >= s.NextPathLog) { s.NextPathLog = now + 15f; Dbg(c.m_name + " can't follow your path: none of your last " + st.Count + " steps is on its level within 12 m (came by portal, or the path is older than that)"); }
+                    return false;
+                }
                 s.OnPath = true; s.PathIdx = best; s.PathProgressAt = now; s.PathApproach = bd > 1.0f;
                 MHR_Mover.Release(ai);
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + (pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
