@@ -1146,7 +1146,13 @@ namespace Companions
             if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.ClimbJumps = 0; }
             bool atTop = pos.y >= s.ClimbTop.y - 0.6f;
             // 1.5.2: the ladder lifts in bounces every half second - only off the top once it has stopped lifting us
-            if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f) atTop = false;
+            // 1.5.3: and stand still while waiting - these ladders slope like stairs, and walking on for that moment took him
+            // 2-3 m past the top end, off to the side of the next ladder (user: "keep going off to one side")
+            if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f)
+            {
+                if (c.IsOnGround()) { Halt(ai, c, s); return; }
+                atTop = false;
+            }
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
             bool toFoot = false;
             // 1.5.2: fell off on the way (a small floor between ladders) - not the ladder's fault; look again from down here
@@ -1169,7 +1175,8 @@ namespace Companions
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
                     dir = toBase; toFoot = true;
                     // don't walk off an edge getting there: the foot is past a drop from here, so this ladder isn't for now
-                    Vector3 ahead = pos + toBase.normalized * 0.6f;
+                    // 1.5.3: never test past the foot itself (a foot 0.3 m away by the ladder hole read as "past a drop")
+                    Vector3 ahead = pos + toBase.normalized * Mathf.Min(0.6f, toBase.magnitude);
                     if (!Physics.Raycast(ahead + Vector3.up * 0.5f, Vector3.down, 1.6f, Mask()))
                     {
                         s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
