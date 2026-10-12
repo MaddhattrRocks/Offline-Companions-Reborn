@@ -31,7 +31,7 @@ namespace Companions
             // 1.5.2: a ladder it's heading for (a skeleton up a Black Forest tower: the way up is the ladder)
             public Vector3 LastWaterJumpDir; public float LastWaterJumpAt = -99f;
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
-            public bool ClimbLadder; public Vector3 ClimbDir; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
+            public bool ClimbLadder, ClimbAuto; public Vector3 ClimbDir, ClimbBase; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -664,7 +664,8 @@ namespace Companions
                 int id = root.GetInstanceID();
                 if (!seen.Add(id) || s.LadderClimbsTried.Contains(id)) continue;
                 string n = (root.name + " " + col.gameObject.name + " " + (piece != null ? piece.m_name : "")).ToLowerInvariant();
-                if (!n.Contains("ladder")) continue;
+                // the game's ladders carry an AutoJumpLedge trigger that bounces anyone moving its way up the rungs
+                if (!n.Contains("ladder") && root.GetComponentInChildren<AutoJumpLedge>(true) == null) continue;
                 Bounds b = col.bounds;
                 foreach (Collider other in root.GetComponentsInChildren<Collider>()) if (other != null && !other.isTrigger) b.Encapsulate(other.bounds);
                 if (b.min.y > pos.y + 1.5f || b.max.y < pos.y + 2f) continue;          // starts at our level and goes up
@@ -693,6 +694,22 @@ namespace Companions
             Vector3 into = bestB.center - pos; into.y = 0f;
             if (into.sqrMagnitude < 0.04f) { into = s.Goal - pos; into.y = 0f; }
             if (into.sqrMagnitude < 0.04f) into = ai.transform.forward;
+            // 1.5.2: the ladder's own auto-jump only lifts someone moving its way (within 60 degrees of its forward) -
+            // the same as a player just walking into it. Use its direction and let it do the jumping.
+            AutoJumpLedge ledge = best.GetComponentInChildren<AutoJumpLedge>(true);
+            s.ClimbAuto = false;
+            if (ledge != null)
+            {
+                Vector3 f = ledge.transform.forward; f.y = 0f;
+                if (f.sqrMagnitude > 0.01f)
+                {
+                    f.Normalize();
+                    into = f; s.ClimbAuto = true;
+                    // the foot of the ladder, on the side it's climbed from: get there first, then walk into it
+                    float depth = Mathf.Abs(f.x) * bestB.extents.x + Mathf.Abs(f.z) * bestB.extents.z;
+                    s.ClimbBase = new Vector3(bestB.center.x, bestB.min.y, bestB.center.z) - f * (depth + 0.7f);
+                }
+            }
             s.ClimbDir = into.normalized;
             s.ClimbLadder = true;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
@@ -760,7 +777,17 @@ namespace Companions
             Vector3 dir = s.ClimbTop - pos; dir.y = 0f;
             bool atTop = pos.y >= s.ClimbTop.y - 0.6f;
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
-            if (s.ClimbLadder && !atTop) dir = s.ClimbDir;
+            if (s.ClimbLadder && !atTop)
+            {
+                dir = s.ClimbDir;
+                // still on the ground short of the ladder's foot (or round the back of it): walk to the foot first
+                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && Flat(pos, s.ClimbBase) > 0.8f)
+                {
+                    Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
+                    dir = toBase;
+                    s.ClimbProgressAt = Mathf.Max(s.ClimbProgressAt, now - 4f);   // walking there isn't "stuck" yet
+                }
+            }
             if (atTop || dir.sqrMagnitude < 0.25f)
             {
                 s.ClimbUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
@@ -791,7 +818,10 @@ namespace Companions
             }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             Steer(ai, c, s, dir, true, false);
-            // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward
+            // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward.
+            // 1.5.2: not on a ladder with its own auto-jump - walking into it is all a player does there; only help out
+            // if that hasn't lifted us for a couple of seconds.
+            if (s.ClimbLadder && s.ClimbAuto && now - s.ClimbProgressAt < 2f) return;
             if (c.IsOnGround() && now >= s.NextClimbJump)
             {
                 Vector3 v = c.GetVelocity(); v.y = 0f;
