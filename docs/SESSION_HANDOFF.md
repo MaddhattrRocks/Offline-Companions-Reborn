@@ -9,7 +9,7 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Version lives in `src/Companions/Core/CompanionsPlugin.cs` (PluginVersion), `package/manifest.json`, `package/CHANGELOG.md` (one line per item, issue and fix together).
 - Each version: user builds, tests, sends LogOutput.log; next version fixes what the log shows. Show the README "Recent Highlights" before any packaging; no packaged release until the movement update (phases 2-4) is done.
 
-## Current state: 1.5.2 released (PR #12 merged as bc094b4, zips built: Hexium, Thunderstore with denikson-BepInExPack_Valheim-5.4.2351, Nexus). Next: user uploads; replies on the GitHub issues; combat overhaul (backlog: ladder routes for combat/jobs, mining falls, speech review).
+## Current state: 1.5.2 released (PR #12 merged as bc094b4, zips built: Hexium, Thunderstore with denikson-BepInExPack_Valheim-5.4.2351, Nexus). 1.5.3 on the work branch (not merged): world (ruin) ladders, quieter weapon log; waiting on a test at the Black Forest ruin. Branch rule: after a merge, never reset/force-push the work branch (the user's GitHub Desktop copy conflicted) - start the next version on a new branch name or merge main in. Next: user uploads; replies on the GitHub issues; combat overhaul (backlog: ladder routes for combat/jobs, mining falls, speech review).
 - 1.4.152: multiplayer ownership (MHR_Owner), one chest helper (MHR_Chests Usable/Open/Claim), home chests for Smelt/Cook, own-drops-only pickups; Gathering FollowRange 10.
 - 1.4.151: Forage with Follow on: own 10 m range ([Gathering] ForageFollowRange).
 - 1.4.150: full-mod conflict audit - 14 groups of fixes (steering, items, follow flags, chests, patches).

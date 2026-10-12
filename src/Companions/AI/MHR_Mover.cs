@@ -747,7 +747,7 @@ namespace Companions
         static void MarkBadLadder(int id, float now, float secs) { if (id != 0) s_badLadders[id] = now + secs; }
         static bool BadLadder(int id, float now) { float until; return s_badLadders.TryGetValue(id, out until) && now < until; }
 
-        // 1.5.2: the object a ladder collider belongs to. A built ladder is its Piece. A ladder that is part of the world (user:
+        // 1.5.3: the object a ladder collider belongs to. A built ladder is its Piece. A ladder that is part of the world (user:
         // "a spot with ladders and a mob at the top" - a ruined tower; the log listed no pieces at all, it used to take
         // the whole location as the "ladder") is the nearest object up from the collider that is named a ladder or holds
         // the ladder's auto-jump - and only if it's ladder-sized, never the building around it.
