@@ -6,6 +6,9 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: hunting with a melee weapon (spear, axe, knife - no bow ready) - the companion stopped 20 m away and swung at the air. It now sneaks up and strikes.
 - Hunters throw their spear at skittish game (deer, hares...) when they have another weapon in their pack, then go and pick it back up.
 - New [Hunting] ThrowSpear (on) and ThrowRange (12 m).
+- Fixed: a spear counted as a ranged weapon (its long AI range is the throw), so a companion stabbed at the air from far off. Melee weapons now close to their real reach.
+- Fixed: arrows were picked as a "bow" when the companion had arrows but no bow.
+- Fixed: a companion out hunting far from home gave up its bed because the bed wasn't loaded; it only looks for its bed when it's nearby.
 - Companions can use the game's use-to-climb ladders to reach something up out of reach.
 
 ## 1.5.1

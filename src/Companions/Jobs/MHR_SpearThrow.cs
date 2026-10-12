@@ -122,6 +122,44 @@ internal static class MHR_SpearThrow
 		return false;
 	}
 
+	// hunting skittish game with no bow: hold a throwable spear (when there's another weapon to fall back on and no spear
+	// is out already). True when one is in hand.
+	internal static bool EquipForHunt(CompanionAI ai, Humanoid hum, Character prey)
+	{
+		if (ai == null || hum == null || prey == null || !(ModConfig.HuntThrowSpear?.Value ?? true) || !Skittish(prey))
+		{
+			return false;
+		}
+		if (s_states.TryGetValue(ai, out var value) && value.Thrown != null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
+		if (IsThrowable(currentWeapon) && HasOtherWeapon(hum, currentWeapon))
+		{
+			return true;
+		}
+		Inventory inventory = hum.GetInventory();
+		if (inventory == null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData itemData = null;
+		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
+		{
+			if (IsThrowable(allItem) && (!allItem.m_shared.m_useDurability || allItem.m_durability > 0f) && HasOtherWeapon(hum, allItem) && (itemData == null || allItem.GetDamage().GetTotalDamage() > itemData.GetDamage().GetTotalDamage()))
+			{
+				itemData = allItem;
+			}
+		}
+		if (itemData == null || !hum.EquipItem(itemData))
+		{
+			return false;
+		}
+		CompanionsPlugin.Log.LogDebug("[Hunt] Took out its " + Loc(itemData.m_shared.m_name) + " to throw at " + Loc(prey.m_name));
+		return true;
+	}
+
 	internal static void Throw(CompanionAI ai, Humanoid hum, Character prey)
 	{
 		State state = Get(ai);

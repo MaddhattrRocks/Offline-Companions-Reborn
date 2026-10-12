@@ -411,6 +411,11 @@ internal static class WeaponLogic
 		{
 			return false;
 		}
+		// 1.5.2: arrows and bolts carry an ammo type too - they're ammunition, not a bow (user log: "FindReadyBow -> arrows")
+		if (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.AmmoNonEquipable)
+		{
+			return false;
+		}
 		return it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(it.m_shared.m_ammoType);
 	}
 
