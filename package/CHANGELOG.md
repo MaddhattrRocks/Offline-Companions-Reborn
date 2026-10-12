@@ -14,7 +14,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: a companion out hunting far from home gave up its bed because the bed wasn't loaded; it only looks for its bed when it's nearby.
 - Companions climb wooden ladders (push into them and hop up, like a player) to follow you up a tower or reach something on a platform, and jump from the top onto a ledge (or up onto a wall top and on to the floor) when the ladder stops short.
 - Ladders stacked on top of each other are climbed as one tall ladder, all the way to the top.
-- Companions jump onto a ladder whose bottom is off the ground, or when walking into it doesn't lift them, like a player.
+- Companions jump onto a ladder whose bottom is off the ground, or when walking into it doesn't lift them, like a player, and try another way after 4 jumps that don't get them on.
 - Ladders: companions walk round to the foot of a ladder instead of into the wall beside it, pick the ladder that gets them highest, and skip a ladder that didn't get them up for a few minutes.
 - Companions take fall damage like a player (none up to 4 m; Feather Fall works for them too).
 - Companions go back down the ladder they came up. Only with no other way down do they jump down a drop: up to 8 m and never one costing more than 30% of their health. New [Movement] StuckDrop.

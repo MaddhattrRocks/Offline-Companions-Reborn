@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextLadderJumpLog; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -226,7 +226,7 @@ namespace Companions
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
                 {
                     s.LadderPending = false; s.HasDetour = false;
-                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
                     return false;
                 }
@@ -698,6 +698,7 @@ namespace Companions
         // the foot of one (user log: following him up a Black Forest outpost ladder, 12 m up, sidestepping at the bottom).
         // Found by name ("ladder" in the object or piece name): walk at it and keep pushing into it, hopping, up to the top.
         // 1.5.2: ladders that didn't get a companion up (a short one, one that leads nowhere) are skipped for a few minutes
+        const int LadderJumpTries = 4;
         static readonly Dictionary<int, float> s_badLadders = new Dictionary<int, float>();
         static void MarkBadLadder(int id, float now, float secs) { if (id != 0) s_badLadders[id] = now + secs; }
         static bool BadLadder(int id, float now) { float until; return s_badLadders.TryGetValue(id, out until) && now < until; }
@@ -778,7 +779,8 @@ namespace Companions
                 if (s.LadderClimbsTried.Contains(id) || BadLadder(id, now)) continue;
                 if (b.min.y > pos.y + 2.2f || b.max.y < pos.y + 2f) continue;          // starts within a jump of our level and goes up
                 // 1.5.2: the one that gets us highest wins over the nearest (user: two ladders, one "is not a good path")
-                float d = Flat(pos, b.center) + 3f * Mathf.Max(0f, needY - b.max.y);
+                // one whose bottom is up off the ground needs a jump to get on: a little worse than one that reaches the ground
+                float d = Flat(pos, b.center) + 3f * Mathf.Max(0f, needY - b.max.y) + 5f * Mathf.Max(0f, b.min.y - pos.y - 0.5f);
                 if (d < bestD) { bestD = d; best = root; bestB = b; bestId = id; }
             }
             if (best == null)
@@ -833,7 +835,7 @@ namespace Companions
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
                 return true;
             }
-            s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now;
+            s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
@@ -1054,11 +1056,23 @@ namespace Companions
                 if (toFoot || (!bottomUp && now - s.ClimbProgressAt < 1f)) return;
                 if (c.IsOnGround() && now >= s.NextClimbJump)
                 {
+                    // still not on it after a few jumps: this one is out of reach - try another way up (user log: jumped at
+                    // a ladder 1.9 m up until out of stamina, then stood resting at its foot)
+                    bool onIt = pos.y > s.ClimbStartY + 0.8f;
+                    if (!onIt && s.ClimbJumps >= LadderJumpTries)
+                    {
+                        s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0; s.NextPlan = 0f;
+                        MarkBadLadder(s.ClimbLadderId, now, 120f);
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get onto the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
+                        s.ClimbLadder = false;
+                        return;
+                    }
                     c.Jump(false);
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
-                    s.NextClimbJump = now + 0.8f;
-                    if (now >= s.NextLadderJumpLog) { s.NextLadderJumpLog = now + 10f; Dbg("[Move|" + tag + "] jumping onto the ladder" + (bottomUp ? " (its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up)" : "")); }
+                    s.NextClimbJump = now + 1.2f;
+                    if (!onIt) s.ClimbJumps++;
+                    Dbg("[Move|" + tag + "] jumping onto the ladder" + (onIt ? "" : " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")"));
                 }
                 return;
             }
