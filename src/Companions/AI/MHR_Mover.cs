@@ -31,6 +31,7 @@ namespace Companions
             // 1.5.2: a ladder it's heading for (a skeleton up a Black Forest tower: the way up is the ladder)
             public Vector3 LastWaterJumpDir; public float LastWaterJumpAt = -99f;
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
+            public int HopUpTries;
             public bool ClimbLadder, ClimbAuto; public Vector3 ClimbDir, ClimbBase; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
@@ -333,7 +334,7 @@ namespace Companions
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
-            s.ClimbLadder = false; s.NextLadderClimbSearch = 0f; s.LadderClimbsTried.Clear();
+            s.ClimbLadder = false; s.NextLadderClimbSearch = 0f; s.LadderClimbsTried.Clear(); s.HopUpTries = 0;
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; s.ClimbTop = cTop; s.ClimbDir = cDir; }
             if (keepLadder) { s.UseLadder = ladder; s.LadderUntil = ladderUntil; s.HasDetour = true; s.Detour = ladder.transform.position; s.DetourUntil = ladderUntil; }
             else s.LaddersUsed.Clear();
@@ -584,6 +585,7 @@ namespace Companions
             // 1.5.2: a ladder up to where it needs to be comes first
             if (step == 0 && TryLadder(ai, s, pos, now, tag)) { s.Ladder = 0; return; }
             if (step == 0 && TryStartLadderClimb(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
+            if (step == 0 && TryHopUp(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
             // 1.4.82: down in a pit with no route out: climb out like a player before anything else
             if (step == 0 && TryStartClimb(ai, c, s, pos, now, tag, why)) { s.Ladder = 0; return; }
             switch (step)
@@ -628,7 +630,8 @@ namespace Companions
             Vector3 a = leftFirst ? left : right, b = leftFirst ? right : left;
             Vector3 side = Quaternion.Euler(0f, 90f, 0f) * dir;
             if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
-            Vector3 pick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, back) ? back : side;
+            // 1.5.2: never step back off a ledge either (user log: stuck at the top of a ladder, it stepped back down the shaft)
+            Vector3 pick = SafeClear(pos, a) ? a : SafeClear(pos, b) ? b : SafeClear(pos, back) ? back : side;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
             Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
         }
@@ -745,6 +748,7 @@ namespace Companions
                     return;
                 }
             }
+            if (TryHopUp(ai, c, s, pos, now, tag)) return;   // something to jump up onto beside the ladder (a wall top)
             Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f;   // step off the top
         }
 
@@ -1077,6 +1081,47 @@ namespace Companions
         }
 
         static bool Clear(Vector3 pos, Vector3 dir) { return Clear(pos, dir, 1.5f); }
+        static bool SafeClear(Vector3 pos, Vector3 dir) { return Clear(pos, dir) && !DropAhead(pos, dir, 1.5f, 1.2f); }
+
+        // 1.5.2: stuck a little below where it needs to be with something to stand on in reach (the top of a wall beside the
+        // ladder, a crate, a ledge): jump up onto it like a player, then again from there (user: "The top of this one ends in
+        // a wall and you have to jump on the wall to really get up onto the floor").
+        static bool TryHopUp(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            if (c.IsSwimming() || !c.IsOnGround() || s.HopUpTries >= 6) return false;
+            Vector3 goal = s.HasGood && s.GoodPos.y > pos.y + 0.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos : s.Goal;
+            float need = goal.y - pos.y;
+            if (need < 0.5f || need > 6f || Flat(pos, goal) > 15f) return false;
+            float up = c.m_jumpForce * c.m_jumpForce / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;
+            Vector3 toGoal = goal - pos; toGoal.y = 0f;
+            Vector3 fwd = toGoal.sqrMagnitude > 0.04f ? toGoal.normalized : ai.transform.forward;
+            float bestY = float.MinValue, bestD = 0f; Vector3 bestDir = Vector3.zero, bestPt = Vector3.zero;
+            for (int k = 0; k < 12; k++)
+            {
+                Vector3 dir = Quaternion.Euler(0f, k * 30f, 0f) * fwd;
+                for (float d = 0.6f; d <= 2.61f; d += 0.4f)
+                {
+                    Vector3 p = pos + dir * d;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(new Vector3(p.x, pos.y + up + 1.0f, p.z), Vector3.down, out hit, up + 1.5f, Mask())) continue;
+                    float dy = hit.point.y - pos.y;
+                    if (dy < 0.4f || dy > up) continue;                                       // a real step up, within a jump
+                    if (hit.normal.y < 0.6f) continue;                                         // something flat enough to stand on
+                    if (Physics.Raycast(new Vector3(p.x, hit.point.y + 0.1f, p.z), Vector3.up, 1.2f, Mask())) continue;   // room for it
+                    if (MHR_Jump.Reach(c, dir, dy) < d) continue;
+                    // the higher the better (closer to where it's going), then the one more towards the goal
+                    float score = hit.point.y - Vector3.Angle(dir, fwd) * 0.004f;
+                    if (score > bestY) { bestY = score; bestDir = dir; bestPt = hit.point; bestD = d; }
+                    break;   // nearest footing this way
+                }
+            }
+            if (bestDir == Vector3.zero) return false;
+            s.HopUpTries++;
+            MHR_Jump.Leap(ai, c, bestDir);
+            s.StepDir = bestDir; s.StepRun = true; s.StepUntil = now + 0.6f;
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
+            return true;
+        }
         static bool Clear(Vector3 pos, Vector3 dir, float dist)
         {
             Vector3 from = pos + Vector3.up * 0.5f;

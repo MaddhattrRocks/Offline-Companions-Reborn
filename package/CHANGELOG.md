@@ -12,7 +12,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: a creature it can't reach in deep water (a crocodile watching from the river) made a companion stand still, starting and dropping the fight over and over. It now leaves it unless it's attacked.
 - Fixed: arrows were picked as a "bow" when the companion had arrows but no bow.
 - Fixed: a companion out hunting far from home gave up its bed because the bed wasn't loaded; it only looks for its bed when it's nearby.
-- Companions climb wooden ladders (push into them and hop up, like a player) to follow you up a tower or reach something on a platform, and jump from the top onto a ledge when the ladder stops short.
+- Companions climb wooden ladders (push into them and hop up, like a player) to follow you up a tower or reach something on a platform, and jump from the top onto a ledge (or up onto a wall top and on to the floor) when the ladder stops short.
+- When stuck just below where it needs to be, a companion jumps up onto something it can stand on nearby, like a player; it no longer steps backwards off a high ledge when stuck.
 - Companions can use the game's use-to-climb ladders to reach something up out of reach.
 
 ## 1.5.1
