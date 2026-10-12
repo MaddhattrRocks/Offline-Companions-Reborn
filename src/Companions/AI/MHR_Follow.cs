@@ -136,6 +136,11 @@ namespace Companions
             bool wander = setup == null || setup.GetWander();
             float distP = Mathf.Abs(me.y - pp.y) > 3f ? Vector3.Distance(me, pp) : Flat(me, pp);
             int tid = target.GetInstanceID();
+            // 1.5.2: a floor or more above/below the player isn't "with them" however close in a straight line (user: "Does the
+            // wander logic conflict with climbing a ladder?" - it did: up the tower it counted as arrived, stopped mid-ladder
+            // and shuffled around); and a climb under way is never cut short
+            bool offLevel = Mathf.Abs(me.y - pp.y) > 2.5f && !c.IsSwimming() && !player.IsSwimming();
+            bool climbing = MHR_Mover.OnTheWayUp(ai);
             if (now - s.LastUpdate > 0.5f || s.TargetId != tid)
             {
                 // starting, or back from a fight / trip / job: start fresh
@@ -176,7 +181,7 @@ namespace Companions
                 // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
                 // 1.4.82: and while the player stands within 2.5 m of it (doesn't start it moving, never stops it)
                 bool hold = now - t.MovingSince < 1.5f || (distP < 2.5f && !c.IsSwimming());
-                if (!s.Moving && !hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming())) s.Moving = true;
+                if (!s.Moving && ((!hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming() || offLevel)) || climbing)) s.Moving = true;
                 if (s.Moving)
                 {
                     // aim well ahead of the spot so it keeps walking with the player instead of arriving, stopping and
@@ -207,14 +212,16 @@ namespace Companions
 
             ai.MHR_SetCrouch(player.IsCrouching());
 
-            // the player has stopped. Too far (or treading water): come back within range, then wait there.
-            if (distP > maxD || c.IsSwimming())
+            // the player has stopped. Too far (or treading water, or on another floor, or mid-climb): come back within range,
+            // then wait there.
+            if (distP > maxD || c.IsSwimming() || offLevel || climbing)
             {
                 if (!s.HasSpot || s.Radius > maxD * 0.7f) PickSpot(ai, s, t, pp, maxD, false, maxD * 0.6f);
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
-                if (MHR_Mover.GaveUp(ai)) ai.MHR_FollowFallback(target, dt);
+                // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
+                if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
                 return;
             }
             if (s.Moving || !s.HasIdle)

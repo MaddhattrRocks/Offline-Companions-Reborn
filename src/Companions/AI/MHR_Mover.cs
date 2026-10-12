@@ -95,6 +95,12 @@ namespace Companions
             if (s == null || Time.time - s.LastGo >= 0.5f || !s.PathOk || s.Path.Count == 0) return 0f;
             return Remaining(s, ai.transform.position);
         }
+        // 1.5.2: on a ladder, heading for one, going down one or mid-hop - a caller shouldn't stop it here
+        public static bool OnTheWayUp(CompanionAI ai)
+        {
+            S s = Peek(ai); float now = Time.time;
+            return s != null && now - s.LastGo < 1f && (now < s.ClimbUntil || s.LadderPending || s.DescendLadder || now < s.StepUntil);
+        }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
