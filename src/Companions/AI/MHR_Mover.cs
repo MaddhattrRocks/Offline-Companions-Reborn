@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -227,6 +227,7 @@ namespace Companions
                 {
                     s.LadderPending = false; s.HasDetour = false;
                     s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+                    NoteLadderClimb(s, now, tag);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
                     return false;
                 }
@@ -699,6 +700,22 @@ namespace Companions
         // Found by name ("ladder" in the object or piece name): walk at it and keep pushing into it, hopping, up to the top.
         // 1.5.2: ladders that didn't get a companion up (a short one, one that leads nowhere) are skipped for a few minutes
         const int LadderJumpTries = 4;
+        static readonly List<Vector3> s_ladderPath = new List<Vector3>();
+
+        // 1.5.2 (user: "Ignore ladders that cause it to get stuck"): the same ladder started a third time inside two minutes
+        // isn't getting it anywhere (it climbs, can't go on, ends up back at the bottom) - leave it alone for a few minutes
+        static void NoteLadderClimb(S s, float now, string tag)
+        {
+            Vector2 u;
+            if (!s.LadderUses.TryGetValue(s.ClimbLadderId, out u) || now - u.y > 120f) u = new Vector2(0f, now);
+            u.x += 1f;
+            s.LadderUses[s.ClimbLadderId] = u;
+            if (u.x >= 3f)
+            {
+                MarkBadLadder(s.ClimbLadderId, now, 180f); s.LadderUses.Remove(s.ClimbLadderId);
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
+            }
+        }
         static readonly Dictionary<int, float> s_badLadders = new Dictionary<int, float>();
         static void MarkBadLadder(int id, float now, float secs) { if (id != 0) s_badLadders[id] = now + secs; }
         static bool BadLadder(int id, float now) { float until; return s_badLadders.TryGetValue(id, out until) && now < until; }
@@ -810,21 +827,38 @@ namespace Companions
                 Bounds b = LadderBounds(root, out id);
                 if (!seen.Add(id) && id != root.GetInstanceID()) continue;              // a piece of a stack already looked at
                 if (s.LadderClimbsTried.Contains(id) || BadLadder(id, now)) continue;
-                if (b.min.y > pos.y + 2.2f || b.max.y < pos.y + 2f) continue;          // starts within a jump of our level and goes up
+                // 1.5.2: it goes up from here. Ladder pieces are ~2.2 m, so one starting at our feet only rises about that much
+                // (user log: on the first floor the next ladder up was skipped as "not going up 2 m" - "no ladder found").
+                if (b.max.y < pos.y + 1.0f) continue;
+                // 1.5.2 (user: "look for a path to where it needs to go, or at least close. Picking a ladder near its feet that
+                // it can either walk up or jump onto"): its foot is on our level and we can get there; best = short walk to it
+                // and its top as near the goal as possible (height counts double)
+                Vector3 topAt = new Vector3(b.center.x, b.max.y, b.center.z);
+                float toGoal = Flat(topAt, s.Goal) + 2f * Mathf.Abs(needY - b.max.y);
+                float d;
                 AutoJumpLedge lg = root.GetComponentInChildren<AutoJumpLedge>(true);
-                if (lg != null)
+                Vector3 lf = lg != null ? lg.transform.forward : Vector3.zero; lf.y = 0f;
+                Vector3 spot; bool room;
+                if (lf.sqrMagnitude > 0.01f && LadderFoot(b, lf.normalized, out spot, out room))
                 {
-                    Vector3 lf = lg.transform.forward; lf.y = 0f;
-                    Vector3 spot; bool room;
-                    if (lf.sqrMagnitude > 0.01f && LadderFoot(b, lf.normalized, out spot, out room))
+                    if (Mathf.Abs(spot.y - pos.y) > 1.0f) continue;                        // its foot is on a floor above or below us
+                    float up = b.min.y - spot.y;
+                    if (up > 0.4f && (!room || up > 2.0f)) continue;                     // a jump on: within reach, room overhead
+                    float walk = Flat(pos, spot);
+                    if (walk > 3f)
                     {
-                        if (spot.y > pos.y + 1.0f) continue;     // climbed from a floor above us - that floor has to be reached first
-                        if (!room) continue;                     // a floor right overhead: no way to jump on from here
+                        if (!GetPath(pos, spot, s_ladderPath, MHR_CompanionNavMesh.AgentOrHumanoid, false)) continue;
+                        Vector3 end = s_ladderPath[s_ladderPath.Count - 1];
+                        if (Flat(end, spot) > 1.0f || Mathf.Abs(end.y - spot.y) > 1.0f) continue;   // no way to its foot
+                        walk = PathLength(pos, s_ladderPath);
                     }
+                    d = walk + toGoal + 2f * Mathf.Max(0f, up - 0.4f);
                 }
-                // 1.5.2: the one that gets us highest wins over the nearest (user: two ladders, one "is not a good path")
-                // one whose bottom is up off the ground needs a jump to get on: a little worse than one that reaches the ground
-                float d = Flat(pos, b.center) + 3f * Mathf.Max(0f, needY - b.max.y) + 5f * Mathf.Max(0f, b.min.y - pos.y - 0.5f);
+                else
+                {
+                    if (b.min.y > pos.y + 2.2f) continue;
+                    d = Flat(pos, b.center) + toGoal + 5f * Mathf.Max(0f, b.min.y - pos.y - 0.5f);
+                }
                 if (d < bestD) { bestD = d; best = root; bestB = b; bestId = id; }
             }
             if (best == null)
@@ -879,6 +913,7 @@ namespace Companions
                 return true;
             }
             s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0;
+            NoteLadderClimb(s, now, tag);
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
@@ -1062,6 +1097,9 @@ namespace Companions
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
                 if (s.ClimbLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
                 if (s.ClimbLadder && atTop) LadderTopHop(ai, c, s, pos, now, tag);
+                // look for the next ladder up straight away (ladders with a small floor between them: walking on towards the
+                // goal for the 2 s until the next search took him off the edge)
+                if (s.ClimbLadder && atTop) { s.NextLadderClimbSearch = 0f; s.NextLadderSearch = 0f; }
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (s.ClimbLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
                 return;

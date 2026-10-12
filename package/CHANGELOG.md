@@ -15,6 +15,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Companions climb wooden ladders (push into them and hop up, like a player) to follow you up a tower or reach something on a platform, and jump from the top onto a ledge (or up onto a wall top and on to the floor) when the ladder stops short.
 - Ladders stacked on top of each other are climbed as one tall ladder, all the way to the top.
 - Companions jump onto a ladder whose bottom is off the ground, or when walking into it doesn't lift them, like a player, and try another way after 4 jumps that don't get them on.
+- Ladder choice: companions pick a ladder whose foot is on their level and that they can walk to, and whose top gets them closest to where they are going; they climb a chain of short ladders one after another and leave a ladder alone for a while if it keeps getting them nowhere.
 - Companions no longer try to jump onto a ladder from under a floor: a ladder that starts from a floor above them is climbed from that floor once they get up there.
 - Ladders: companions walk round to the foot of a ladder instead of into the wall beside it, pick the ladder that gets them highest, and skip a ladder that didn't get them up for a few minutes.
 - Companions take fall damage like a player (none up to 4 m; Feather Fall works for them too).
