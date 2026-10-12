@@ -13,6 +13,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Ladders: floor and edge checks look at a foot-sized area, so the gaps between a stair-like ladder's rungs no longer read as an edge or "no floor".
 - Ladders: a companion pressed against a wall beside a ladder stops trying to get closer after a moment and climbs on from where it is.
 - Fixed: at the top of a ladder a companion already at your height could jump up onto a wall top and over the side (an 11 m fall). It only jumps up when you're higher, and never onto something with a harmful drop just past it.
+- Ladders: smoother climbing up a chain of ladders - shorter pauses on each landing (it steps on to the next ladder sooner).
 - Follow: a companion standing right beside the path you took steps onto it there, instead of walking round to where you last were on its level (which could mean going round a hole).
 
 ## 1.5.2

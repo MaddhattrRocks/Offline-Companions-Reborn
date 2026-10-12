@@ -1191,7 +1191,7 @@ namespace Companions
             // 1.5.2: the ladder lifts in bounces every half second - only off the top once it has stopped lifting us
             // 1.5.3: and stand still while waiting - these ladders slope like stairs, and walking on for that moment took him
             // 2-3 m past the top end, off to the side of the next ladder (user: "keep going off to one side")
-            if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f)
+            if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.5f)
             {
                 if (c.IsOnGround()) { Halt(ai, c, s); return; }
                 atTop = false;
@@ -1301,7 +1301,10 @@ namespace Companions
             if (s.ClimbLadder && s.ClimbAuto)
             {
                 bool bottomUp = s.ClimbBottomY > pos.y + 0.4f;
-                if (toFoot || (!bottomUp && now - s.ClimbProgressAt < 1f)) return;
+                // 1.5.3: at the foot, jump on after 0.4 s like a player stepping up (every ladder in the user's ruin needed it, and
+                // the full second each time made him "pause on each landing"); part way up, give the ladder a second first
+                float liftWait = pos.y < s.ClimbStartY + 0.3f ? 0.4f : 1f;
+                if (toFoot || (!bottomUp && now - s.ClimbProgressAt < liftWait)) return;
                 if (c.IsOnGround() && now >= s.NextClimbJump)
                 {
                     // still not on it after a few jumps: this one is out of reach - try another way up (user log: jumped at
