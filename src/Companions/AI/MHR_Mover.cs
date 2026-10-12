@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -226,7 +226,7 @@ namespace Companions
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
                 {
                     s.LadderPending = false; s.HasDetour = false;
-                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+                    s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
                     return false;
                 }
@@ -364,7 +364,7 @@ namespace Companions
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
-            float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
+            float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
             bool cAuto = s.ClimbAuto; int cId = s.ClimbLadderId;
             Ladder ladder = s.UseLadder; float ladderUntil = s.LadderUntil;
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
@@ -376,7 +376,7 @@ namespace Companions
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
             s.ClimbLadder = false; s.NextLadderClimbSearch = 0f; s.LadderClimbsTried.Clear(); s.HopUpTries = 0;
             s.LadderPending = false;
-            if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; }
+            if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
             s.DescendLadder = false; s.DescendUntil = 0f;
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
@@ -702,6 +702,59 @@ namespace Companions
         static void MarkBadLadder(int id, float now, float secs) { if (id != 0) s_badLadders[id] = now + secs; }
         static bool BadLadder(int id, float now) { float until; return s_badLadders.TryGetValue(id, out until) && now < until; }
 
+        static bool IsLadder(GameObject root, Piece piece, Collider col)
+        {
+            string n = (root.name + " " + (col != null ? col.gameObject.name : "") + " " + (piece != null ? piece.m_name : "")).ToLowerInvariant();
+            return n.Contains("ladder") || root.GetComponentInChildren<AutoJumpLedge>(true) != null;
+        }
+
+        // one ladder piece: its solid parts plus the auto-jump trigger (where it actually lifts you)
+        static bool OwnBounds(GameObject root, out Bounds b)
+        {
+            b = default(Bounds); bool any = false;
+            foreach (Collider o in root.GetComponentsInChildren<Collider>())
+            {
+                if (o == null || !o.enabled) continue;
+                if (o.isTrigger && o.GetComponentInParent<AutoJumpLedge>() == null) continue;
+                if (!any) { b = o.bounds; any = true; } else b.Encapsulate(o.bounds);
+            }
+            return any;
+        }
+
+        // 1.5.2: a ladder's full height, counting ladder pieces stacked on top of it or under it (user's outpost: three
+        // ladders one above the other read as three short ones, so he got off each one partway up). id = the bottom piece.
+        static Bounds LadderBounds(GameObject root, out int id)
+        {
+            id = root.GetInstanceID();
+            Bounds b;
+            if (!OwnBounds(root, out b)) return b;
+            var used = new HashSet<int> { id };
+            for (int dirUp = 0; dirUp < 2; dirUp++)
+            {
+                Bounds end = b; GameObject endObj = root;
+                for (int i = 0; i < 8; i++)
+                {
+                    float y = dirUp == 0 ? end.max.y : end.min.y;
+                    GameObject next = null; Bounds nb = default(Bounds);
+                    foreach (Collider o in Physics.OverlapSphere(new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
+                    {
+                        if (o == null) continue;
+                        Piece p = o.GetComponentInParent<Piece>();
+                        if (p == null || used.Contains(p.gameObject.GetInstanceID()) || !IsLadder(p.gameObject, p, o)) continue;
+                        Bounds ob;
+                        if (!OwnBounds(p.gameObject, out ob) || Flat(ob.center, end.center) > 0.8f) continue;
+                        bool joins = dirUp == 0 ? ob.min.y > end.max.y - 1.5f && ob.min.y < end.max.y + 0.8f
+                                                : ob.max.y < end.min.y + 1.5f && ob.max.y > end.min.y - 0.8f;
+                        if (joins) { next = p.gameObject; nb = ob; break; }
+                    }
+                    if (next == null) break;
+                    used.Add(next.GetInstanceID()); b.Encapsulate(nb); end = nb; endObj = next;
+                }
+                if (dirUp == 1) id = endObj.GetInstanceID();
+            }
+            return b;
+        }
+
         static bool TryStartLadderClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             s.NextLadderClimbSearch = now + 2f;
@@ -709,24 +762,24 @@ namespace Companions
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             if (needY < pos.y + 2f) return false;
             Collider[] cols = Physics.OverlapSphere(pos + Vector3.up * 2f, 14f, Mask());
-            GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue;
+            GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue; int bestId = 0;
             var seen = new HashSet<int>();
             foreach (Collider col in cols)
             {
                 if (col == null || col.isTrigger) continue;
                 Piece piece = col.GetComponentInParent<Piece>();
                 GameObject root = piece != null ? piece.gameObject : col.transform.root.gameObject;
-                int id = root.GetInstanceID();
-                if (!seen.Add(id) || s.LadderClimbsTried.Contains(id) || BadLadder(id, now)) continue;
-                string n = (root.name + " " + col.gameObject.name + " " + (piece != null ? piece.m_name : "")).ToLowerInvariant();
+                if (!seen.Add(root.GetInstanceID())) continue;
                 // the game's ladders carry an AutoJumpLedge trigger that bounces anyone moving its way up the rungs
-                if (!n.Contains("ladder") && root.GetComponentInChildren<AutoJumpLedge>(true) == null) continue;
-                Bounds b = col.bounds;
-                foreach (Collider other in root.GetComponentsInChildren<Collider>()) if (other != null && !other.isTrigger) b.Encapsulate(other.bounds);
-                if (b.min.y > pos.y + 1.5f || b.max.y < pos.y + 2f) continue;          // starts at our level and goes up
+                if (!IsLadder(root, piece, col)) continue;
+                int id;
+                Bounds b = LadderBounds(root, out id);
+                if (!seen.Add(id) && id != root.GetInstanceID()) continue;              // a piece of a stack already looked at
+                if (s.LadderClimbsTried.Contains(id) || BadLadder(id, now)) continue;
+                if (b.min.y > pos.y + 2.2f || b.max.y < pos.y + 2f) continue;          // starts within a jump of our level and goes up
                 // 1.5.2: the one that gets us highest wins over the nearest (user: two ladders, one "is not a good path")
                 float d = Flat(pos, b.center) + 3f * Mathf.Max(0f, needY - b.max.y);
-                if (d < bestD) { bestD = d; best = root; bestB = b; }
+                if (d < bestD) { bestD = d; best = root; bestB = b; bestId = id; }
             }
             if (best == null)
             {
@@ -746,7 +799,7 @@ namespace Companions
                 }
                 return false;
             }
-            s.LadderClimbsTried.Add(best.GetInstanceID());
+            s.LadderClimbsTried.Add(bestId);
             Vector3 into = bestB.center - pos; into.y = 0f;
             if (into.sqrMagnitude < 0.04f) { into = s.Goal - pos; into.y = 0f; }
             if (into.sqrMagnitude < 0.04f) into = ai.transform.forward;
@@ -764,20 +817,23 @@ namespace Companions
                     // the foot of the ladder, on the side it's climbed from: get there first, then walk into it
                     float depth = Mathf.Abs(f.x) * bestB.extents.x + Mathf.Abs(f.z) * bestB.extents.z;
                     s.ClimbBase = new Vector3(bestB.center.x, bestB.min.y, bestB.center.z) - f * (depth + 0.7f);
+                    // stand on the ground there: the ladder's bottom can sit above it (user log: foot 2 m up, never "at the foot")
+                    RaycastHit g;
+                    if (Physics.Raycast(s.ClimbBase + Vector3.up * 1.0f, Vector3.down, out g, 4f, Mask())) s.ClimbBase.y = g.point.y;
                 }
             }
             s.ClimbDir = into.normalized;
-            s.ClimbLadderId = best.GetInstanceID();
+            s.ClimbLadderId = bestId;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             // 1.5.2: get to the foot of it by the normal route first (user: "running into a wall" walking straight at it)
             if (s.ClimbAuto && Flat(pos, s.ClimbBase) > 1.0f)
             {
                 s.LadderPending = true; s.HasDetour = true; s.Detour = s.ClimbBase; s.DetourUntil = now + 15f; s.NextPlan = 0f;
                 s.StepUntil = 0f;
-                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase));
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
                 return true;
             }
-            s.ClimbLadder = true; s.ClimbStartY = pos.y;
+            s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
@@ -826,19 +882,18 @@ namespace Companions
             if (below < 1.5f) return false;
             Collider[] cols = Physics.OverlapSphere(pos, 14f, Mask());
             var seen = new HashSet<int>();
-            float bestScore = float.MaxValue; GameObject best = null; Vector3 bestTop = Vector3.zero, bestBase = Vector3.zero, bestF = Vector3.zero;
+            float bestScore = float.MaxValue; GameObject best = null; int bestId = 0; Vector3 bestTop = Vector3.zero, bestBase = Vector3.zero, bestF = Vector3.zero;
             foreach (Collider col in cols)
             {
                 if (col == null || col.isTrigger) continue;
                 Piece piece = col.GetComponentInParent<Piece>();
                 GameObject root = piece != null ? piece.gameObject : col.transform.root.gameObject;
-                int id = root.GetInstanceID();
-                if (!seen.Add(id) || BadLadder(id, now)) continue;
-                string n = (root.name + " " + col.gameObject.name + " " + (piece != null ? piece.m_name : "")).ToLowerInvariant();
+                if (!seen.Add(root.GetInstanceID()) || !IsLadder(root, piece, col)) continue;
                 AutoJumpLedge ledge = root.GetComponentInChildren<AutoJumpLedge>(true);
-                if (!n.Contains("ladder") && ledge == null) continue;
-                Bounds b = col.bounds;
-                foreach (Collider other in root.GetComponentsInChildren<Collider>()) if (other != null && !other.isTrigger) b.Encapsulate(other.bounds);
+                int id;
+                Bounds b = LadderBounds(root, out id);
+                if (!seen.Add(id) && id != root.GetInstanceID()) continue;
+                if (BadLadder(id, now)) continue;
                 if (b.max.y < pos.y - 1.5f || b.max.y > pos.y + 1.2f) continue;            // its top is on our level
                 if (b.min.y > pos.y - 1.5f) continue;                                       // and it goes down
                 if (Mathf.Abs(b.min.y - s.Goal.y) > below - 1f) continue;                  // to nearer the goal's level
@@ -850,10 +905,10 @@ namespace Companions
                 Vector3 top = new Vector3(b.center.x, pos.y, b.center.z) + f * (depth + 0.6f);     // where you step off at the top
                 Vector3 foot = new Vector3(b.center.x, b.min.y, b.center.z) - f * (depth + 0.7f);
                 float score = Flat(pos, top) + Mathf.Abs(b.min.y - s.Goal.y);
-                if (score < bestScore) { bestScore = score; best = root; bestTop = top; bestBase = foot; bestF = f; }
+                if (score < bestScore) { bestScore = score; best = root; bestId = id; bestTop = top; bestBase = foot; bestF = f; }
             }
             if (best == null) return false;
-            s.DescendLadder = true; s.DescendTop = bestTop; s.ClimbBase = bestBase; s.ClimbDir = bestF; s.ClimbLadderId = best.GetInstanceID();
+            s.DescendLadder = true; s.DescendTop = bestTop; s.ClimbBase = bestBase; s.ClimbDir = bestF; s.ClimbLadderId = bestId;
             s.StepUntil = 0f; s.ClimbUntil = 0f;
             if (Flat(pos, bestTop) > 1.0f)
             {
@@ -937,31 +992,35 @@ namespace Companions
         static void Climb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             Vector3 dir = s.ClimbTop - pos; dir.y = 0f;
+            if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; }
             bool atTop = pos.y >= s.ClimbTop.y - 0.6f;
+            // 1.5.2: the ladder lifts in bounces every half second - only off the top once it has stopped lifting us
+            if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f) atTop = false;
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
             if (s.ClimbLadder && !atTop)
             {
                 dir = s.ClimbDir;
                 // still on the ground short of the ladder's foot (or round the back of it): walk to the foot first
-                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && Flat(pos, s.ClimbBase) > 0.8f)
+                // 1.5.2: only a few seconds of this close by - he used to shuffle round the foot for 25 s without pushing in
+                float off = Flat(pos, s.ClimbBase);
+                if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && (off > 1.5f || (off > 0.6f && now - s.ClimbStartAt < 3f)))
                 {
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
                     dir = toBase;
-                    s.ClimbProgressAt = Mathf.Max(s.ClimbProgressAt, now - 4f);   // walking there isn't "stuck" yet
+                    if (now - s.ClimbStartAt < 8f) s.ClimbProgressAt = Mathf.Max(s.ClimbProgressAt, now - 4f);   // walking there isn't "stuck" yet
                 }
             }
             if (atTop || dir.sqrMagnitude < 0.25f)
             {
                 s.ClimbUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (s.ClimbLadder && atTop && pos.y - s.ClimbStartY < 1.5f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
+                if (s.ClimbLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
                 if (s.ClimbLadder && atTop) LadderTopHop(ai, c, s, pos, now, tag);
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (s.ClimbLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
                 return;
             }
             dir.Normalize();
-            if (pos.y > s.ClimbBestY + 0.3f) { s.ClimbBestY = pos.y; s.ClimbProgressAt = now; }
             // out of breath: stand and get some back, like a player would, then go again
             float max = MaxStamina(ai);
             if (max > 0f && (now < s.ClimbRestUntil || Stamina(ai) < max * 0.15f) && c.IsOnGround())
