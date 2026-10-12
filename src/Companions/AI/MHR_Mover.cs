@@ -977,7 +977,10 @@ namespace Companions
                 }
             }
             if (TryHopUp(ai, c, s, pos, now, tag)) return;   // something to jump up onto beside the ladder (a wall top)
-            Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f;   // step off the top
+            // step off the top - not over an edge that hurts (the stuck steps take it from here instead)
+            float edge;
+            if (LedgeAhead(pos, s.ClimbDir, 0.7f, out edge)) { Halt(ai, c, s); return; }
+            Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f;
         }
 
         // 1.5.2: the way down is the ladder it came up (user: "The NPC should prefer to go back down the ladder"). A ladder
@@ -1298,7 +1301,13 @@ namespace Companions
             {
                 Vector3 q = pos + dir * x;
                 if (Physics.Raycast(q + Vector3.up * 1.5f, Vector3.down, out hit, 1.5f + maxDrop, Mask()))
-                    return hit.point.y < pos.y + 0.3f && MHR_Water.DepthAt(hit.point) < 0.8f && MHR_Jump.CanAfford(c) && x <= MHR_Jump.Reach(c, dir, hit.point.y - pos.y);
+                {
+                    float reach = MHR_Jump.Reach(c, dir, hit.point.y - pos.y);
+                    // 1.5.2: over a drop that would hurt (a miss isn't just a stumble), only with room to spare, like a player
+                    float under;
+                    if (LedgeAhead(pos, dir, 0.6f, out under)) reach *= 0.8f;
+                    return hit.point.y < pos.y + 0.3f && MHR_Water.DepthAt(hit.point) < 0.8f && MHR_Jump.CanAfford(c) && x <= reach;
+                }
             }
             return false;
         }
