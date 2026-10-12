@@ -250,6 +250,20 @@ public class CompanionCombatAI : MonoBehaviour
 	}
 
 	// skittish game (deer, hares, anything that runs when it notices you) that hasn't noticed anyone yet
+	// a weapon that shoots (bow, crossbow, a staff that fires bolts) - as opposed to one you hit with
+	private static bool MHR_IsProjectileWeapon(ItemDrop.ItemData item)
+	{
+		if (item == null)
+		{
+			return false;
+		}
+		if (item.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(item.m_shared.m_ammoType))
+		{
+			return true;
+		}
+		return item.m_shared.m_attack != null && item.m_shared.m_attack.m_attackType == Attack.AttackType.Projectile;
+	}
+
 	private static bool Unaware(Character c)
 	{
 		if (c == null)
@@ -412,11 +426,14 @@ public class CompanionCombatAI : MonoBehaviour
 					{
 						_ai.SetAlerted(alert: true);
 					}
-					bool flag7 = flag6;
-					float num5 = ((HuntMode || flag7) ? 30f : itemData.m_shared.m_aiAttackRange);
+					// 1.5.2: the 30 m reach and 20 m standoff are for a ranged weapon only. Hunting used them for any weapon,
+					// so a hunter with a spear or axe (no bow ready) stopped 20 m off and stabbed at the air (user video).
+					// Now it sneaks right up and strikes like a melee fighter.
+					bool flag7 = flag6 || MHR_IsProjectileWeapon(itemData);
+					float num5 = (flag7 ? 30f : itemData.m_shared.m_aiAttackRange);
 					bool flag8 = num3 < num5;
-					float dist = ((HuntMode || flag7) ? 20f : 0f);
-					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!(HuntMode || flag7) && itemData.m_shared.m_aiAttackRangeMin < 0f);
+					float dist = (flag7 ? 20f : 0f);
+					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
 					{
 						_ai.FleeFrom(dt, _targetCreature.transform.position);
@@ -459,7 +476,7 @@ public class CompanionCombatAI : MonoBehaviour
 				else
 				{
 					_ai.ChargeStop();
-					float dist2 = (flag6 ? 20f : 0f);
+					float dist2 = ((flag6 || MHR_IsProjectileWeapon(itemData)) ? 20f : 0f);
 					if (_beenAtLastPos)
 					{
 						_ai.RandomMovement(dt, _lastKnownTargetPos);

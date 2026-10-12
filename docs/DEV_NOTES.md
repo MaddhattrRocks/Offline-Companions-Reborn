@@ -31,6 +31,11 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.2 - melee hunting (user, 2026-10-12: a player's video of a spear hunter; "If they have no ranged weapon they should try to sneak up and attack whatever they are hunting.")
+- CompanionCombatAI.UpdateCombat used the 30 m reach and 20 m standoff whenever HuntMode was on, whatever the weapon - a hunter with no bow ready stood 20 m off and stabbed at the air. Now only a ranged weapon gets them: flag6 (aiAttackRange > 10 or ItemType.Bow) or the new MHR_IsProjectileWeapon (Bow, any m_ammoType - crossbows - or a Projectile primary attack). Melee hunting closes to the weapon's own range; sneaking (UpdateStalk) is unchanged, so it creeps up while the prey is unaware.
+- Sneaking (answered): only prey that runs away - AnimalAI (deer, hares...) or a MonsterAI with m_fleeIfNotAlerted - while it's not alerted and has no target. Anything else is approached normally.
+- Combat breakdown for the overhaul was given in the chat (stances, weapon choice, blocking, flee, gaps) - not written here.
+
 ### 1.5.1 - bed claiming (user test, 2026-10-11: "The NPC kept reporting that it had no bed. I went to try and sleep and somehow claimed the unused bed and then had to rebuild the bed and the NPC still did not claim it.")
 - Log had no [Rest] bed lines at all (no claim, no re-link, no "Going to bed").
 - Bug 1: CompanionRest.Update's daytime bed search ran inside the once-a-second block but subtracted Time.deltaTime from the 30 s timer -> ~30 min between searches. Now -= 1f. (At night TryAutoSleep searches every 5 s, but only when it's trying to sleep: SleepAtNight on, night, no enemy within 15 m, not told to stay awake.)

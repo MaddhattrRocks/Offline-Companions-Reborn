@@ -8,7 +8,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it with your BepInEx `LogOutput.log` (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
-## Recent Highlights (v1.5.1)
+## Recent Highlights (v1.5.2)
 
 This is a big update. With working jobs! The short version:
 
