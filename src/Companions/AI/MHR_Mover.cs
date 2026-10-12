@@ -33,7 +33,7 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextLadderJumpLog; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -364,7 +364,7 @@ namespace Companions
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
-            float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
+            float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, cBottom = s.ClimbBottomY, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
             bool cAuto = s.ClimbAuto; int cId = s.ClimbLadderId;
             Ladder ladder = s.UseLadder; float ladderUntil = s.LadderUntil;
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
@@ -376,7 +376,7 @@ namespace Companions
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
             s.ClimbLadder = false; s.NextLadderClimbSearch = 0f; s.LadderClimbsTried.Clear(); s.HopUpTries = 0;
             s.LadderPending = false;
-            if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; }
+            if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; s.ClimbBottomY = cBottom; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
             s.DescendLadder = false; s.DescendUntil = 0f;
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
@@ -823,7 +823,7 @@ namespace Companions
                 }
             }
             s.ClimbDir = into.normalized;
-            s.ClimbLadderId = bestId;
+            s.ClimbLadderId = bestId; s.ClimbBottomY = bestB.min.y;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             // 1.5.2: get to the foot of it by the normal route first (user: "running into a wall" walking straight at it)
             if (s.ClimbAuto && Flat(pos, s.ClimbBase) > 1.0f)
@@ -997,6 +997,7 @@ namespace Companions
             // 1.5.2: the ladder lifts in bounces every half second - only off the top once it has stopped lifting us
             if (atTop && s.ClimbLadder && s.ClimbAuto && pos.y < s.ClimbTop.y + 0.3f && now - s.ClimbProgressAt < 0.8f) atTop = false;
             // 1.5.2: on a ladder keep pushing the same way into it - its top is right above, so "close enough" sideways means nothing
+            bool toFoot = false;
             if (s.ClimbLadder && !atTop)
             {
                 dir = s.ClimbDir;
@@ -1006,7 +1007,7 @@ namespace Companions
                 if (s.ClimbAuto && pos.y < s.ClimbBase.y + 0.8f && (off > 1.5f || (off > 0.6f && now - s.ClimbStartAt < 3f)))
                 {
                     Vector3 toBase = s.ClimbBase - pos; toBase.y = 0f;
-                    dir = toBase;
+                    dir = toBase; toFoot = true;
                     if (now - s.ClimbStartAt < 8f) s.ClimbProgressAt = Mathf.Max(s.ClimbProgressAt, now - 4f);   // walking there isn't "stuck" yet
                 }
             }
@@ -1044,7 +1045,23 @@ namespace Companions
             // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward.
             // 1.5.2: not on a ladder with its own auto-jump - walking into it is all a player does there; only help out
             // if that hasn't lifted us for a couple of seconds.
-            if (s.ClimbLadder && s.ClimbAuto && now - s.ClimbProgressAt < 2f) return;
+            // 1.5.2 (user: "The NPC should be able to jump onto the bottom of a ladder if they need. I do that all the time
+            // rather than trying to run up from the bottom"): at the foot, jump on when its bottom rung is above us or a
+            // second of pushing hasn't lifted us; otherwise let the ladder do it.
+            if (s.ClimbLadder && s.ClimbAuto)
+            {
+                bool bottomUp = s.ClimbBottomY > pos.y + 0.4f;
+                if (toFoot || (!bottomUp && now - s.ClimbProgressAt < 1f)) return;
+                if (c.IsOnGround() && now >= s.NextClimbJump)
+                {
+                    c.Jump(false);
+                    Rigidbody rb = ai.GetComponent<Rigidbody>();
+                    if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
+                    s.NextClimbJump = now + 0.8f;
+                    if (now >= s.NextLadderJumpLog) { s.NextLadderJumpLog = now + 10f; Dbg("[Move|" + tag + "] jumping onto the ladder" + (bottomUp ? " (its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up)" : "")); }
+                }
+                return;
+            }
             if (c.IsOnGround() && now >= s.NextClimbJump)
             {
                 Vector3 v = c.GetVelocity(); v.y = 0f;
