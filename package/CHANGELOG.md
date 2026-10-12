@@ -22,7 +22,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Follow: when you go up or down somewhere the companion can't find its own way (a narrow tower of ladders), it follows the exact path you took, ladders and jumps included - except a drop that would cost it more than 30% of its health.
 - Follow: a companion on another floor from you keeps working its way to you (ladders included) instead of counting as "close enough" and idling, and never stops in the middle of a climb.
 - Companions no longer try to jump onto a ladder from under a floor: a ladder that starts from a floor above them is climbed from that floor once they get up there.
-- Ladders: companions walk round to the foot of a ladder instead of into the wall beside it, pick the ladder that gets them highest, and skip a ladder that didn't get them up for a few minutes.
+- Ladders: companions walk round to the foot of a ladder instead of into the wall beside it, and skip a ladder that didn't get them up for a few minutes.
 - Companions take fall damage like a player (none up to 4 m; Feather Fall works for them too).
 - Companions go back down the ladder they came up. Only with no other way down do they jump down a drop: up to 8 m and never one costing more than 30% of their health. New [Movement] StuckDrop.
 - When stuck just below where it needs to be, a companion jumps up onto something it can stand on nearby, like a player; it no longer steps backwards off a high ledge when stuck.

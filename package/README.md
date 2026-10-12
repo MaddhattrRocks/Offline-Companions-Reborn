@@ -20,6 +20,8 @@ This is a big update. With working jobs! The short version:
 - **Your orders come first.** Every order you give takes priority over the companion's job, and the job picks up where it left off afterwards.
 - **Multiplayer.** A companion always treats its owner as its player, even when another player's game happens to be running it. It uses chests safely (no lost or duplicated items) and respects wards and private chests.
 - **Companion recovery (1.5.1).** Your game keeps a roster of your companions. General > ShowCompanionRoster shows whether each one is Alive, Dead, Lost or Unknown, and General > RecoverLostCompanion brings a lost one back with its gear. Or build Odin's Shrine (cheap, early game) to see them and bring one back.
+- **Ladders and safer movement (1.5.2).** Companions climb wooden ladders, including chains of short ones, and follow your exact path up or down a tight tower when they can't find their own way. They stop at the edge of drops that would hurt and take fall damage like a player.
+- **Better hunting (1.5.2).** With a melee weapon they sneak up and strike. With a spear and another weapon in their pack they throw it at skittish game and go pick it back up.
 - **Cleaned-up settings.** The config file has been reorganised into clear sections with plain-language descriptions. Settings you'd already changed are carried over automatically.
 
 See `CHANGELOG.md` for the version-by-version detail.
