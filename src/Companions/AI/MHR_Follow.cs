@@ -304,6 +304,7 @@ namespace Companions
                 if (now < s.NoPathUntil) return false;
                 // only when the planner can't do it (a full route - stairs, a ramp - is better than retracing)
                 if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
+                if (MHR_Mover.OnLadderChain(ai)) return false;   // 1.5.3: already climbing a planned chain of ladders
                 // the last place the player was on our level (within a short walk): from there their steps lead to them
                 int best = -1; float bd = 0f;
                 // 1.5.3: right beside the player's path already: step onto it there (user log: the last spot on its level

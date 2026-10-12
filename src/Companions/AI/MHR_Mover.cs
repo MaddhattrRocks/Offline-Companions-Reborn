@@ -33,7 +33,10 @@ namespace Companions
             // 1.5.2: climbing a built ladder (push into it and hop, like a player); NextLadderLog throttles the "nothing found" diagnostic
             public int HopUpTries;
             public bool DescendLadder; public float DescendUntil; public Vector3 DescendTop;
-            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace;
+            // 1.5.3: a whole chain of ladders planned at once and climbed in one go
+            public List<LadderStep> Chain, PendingChain; public bool OnChain; public int ChainIdx, ChainJumps;
+            public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -99,8 +102,10 @@ namespace Companions
         public static bool OnTheWayUp(CompanionAI ai)
         {
             S s = Peek(ai); float now = Time.time;
-            return s != null && now - s.LastGo < 1f && (now < s.ClimbUntil || s.LadderPending || s.DescendLadder || now < s.StepUntil);
+            return s != null && now - s.LastGo < 1f && (now < s.ClimbUntil || s.LadderPending || s.DescendLadder || now < s.StepUntil || s.OnChain);
         }
+        // 1.5.3: climbing a planned chain of ladders (Follow leaves it to finish rather than switching to the player's path)
+        public static bool OnLadderChain(CompanionAI ai) { S s = Peek(ai); return s != null && s.OnChain && Time.time - s.LastGo < 1f; }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -183,6 +188,8 @@ namespace Companions
             Log(s, pos, remain, now, c);
 
             // 1.4.82: climbing out of a pit
+            // 1.5.3: a planned chain of ladders, climbed without stopping
+            if (s.OnChain) { RunChain(ai, c, s, pos, now, tag); if (s.OnChain) return false; }
             if (now < s.ClimbUntil) { Climb(ai, c, s, pos, now, tag); return false; }
             // 1.5.2: going back down a ladder
             if (s.DescendLadder && !s.LadderPending)
@@ -232,6 +239,7 @@ namespace Companions
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
                 {
                     s.LadderPending = false; s.HasDetour = false;
+                    if (s.PendingChain != null && s.PendingChain.Count >= 2) { StartChain(s, s.PendingChain, 0, pos, now, tag); s.PendingChain = null; return false; }
                     s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     NoteLadderClimb(s, now, tag);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
@@ -391,6 +399,7 @@ namespace Companions
             bool keepClimb = s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
+            bool keepChain = s.OnChain && s.Tag == tag && goal.y > pos.y + 1.0f;
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
             float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, cBottom = s.ClimbBottomY, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
             bool cAuto = s.ClimbAuto; int cId = s.ClimbLadderId;
@@ -404,6 +413,8 @@ namespace Companions
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
             s.ClimbLadder = false; s.NextLadderClimbSearch = 0f; s.LadderClimbsTried.Clear(); s.HopUpTries = 0;
             s.LadderPending = false;
+            if (!keepChain) s.OnChain = false;
+            if (!keepPending) s.PendingChain = null;
             if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; s.ClimbBottomY = cBottom; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
             s.DescendLadder = false; s.DescendUntil = 0f;
@@ -892,6 +903,189 @@ namespace Companions
             return best < float.MaxValue;
         }
 
+        // ---------- 1.5.3: ladder chains ----------
+        // A tower of short ladders with small landings between (the user's Black Forest ruin) reads to a player as one
+        // staircase. Climbing them one at a time - find, walk to, climb, stop, look around, find the next - paused on every
+        // landing and gave a wrong choice (a wall top, a step off the edge) a chance at each one. Instead: plan the chain
+        // once, climb it without stopping, and remember chains that worked so a fall or the next visit reuses them.
+        internal class LadderStep { public Vector3 Foot, Dir; public float Bottom, Top; public int Id; }
+        class KnownChain { public List<LadderStep> Steps; public float Until; }
+        static readonly List<KnownChain> s_knownChains = new List<KnownChain>();
+
+        static LadderStep MakeStep(Bounds b, Vector3 foot, Vector3 dir, int id)
+        {
+            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Id = id };
+        }
+
+        // the next ladder up from a ladder's top: its foot on the landing (within 1 m of the top's height, 3.5 m of it) and
+        // it goes higher; nearest foot wins
+        static List<LadderStep> PlanChain(GameObject first, Bounds firstB, int firstId, Vector3 firstFoot, Vector3 firstDir, float needY)
+        {
+            var chain = new List<LadderStep> { MakeStep(firstB, firstFoot, firstDir, firstId) };
+            var used = new HashSet<int> { firstId };
+            Bounds cur = firstB; Vector3 curDir = firstDir;
+            for (int n = 0; n < 12 && cur.max.y < needY - 0.8f; n++)
+            {
+                float depth = Mathf.Abs(curDir.x) * cur.extents.x + Mathf.Abs(curDir.z) * cur.extents.z;
+                Vector3 top = new Vector3(cur.center.x, cur.max.y, cur.center.z) + curDir * depth;
+                LadderStep next = null; Bounds nextB = default(Bounds); float bd = float.MaxValue;
+                var seen = new HashSet<int>();
+                foreach (Collider col in Physics.OverlapSphere(top, 4f, Mask()))
+                {
+                    if (col == null || col.isTrigger) continue;
+                    Piece piece;
+                    GameObject root = LadderRoot(col, out piece);
+                    if (root == null || !seen.Add(root.GetInstanceID()) || !IsLadder(root, piece, col)) continue;
+                    AutoJumpLedge lg = root.GetComponentInChildren<AutoJumpLedge>(true);
+                    if (lg == null) continue;
+                    int id;
+                    Bounds b = LadderBounds(root, out id);
+                    if (used.Contains(id) || b.max.y < cur.max.y + 1.0f) continue;
+                    Vector3 f = lg.transform.forward; f.y = 0f;
+                    if (f.sqrMagnitude < 0.01f) continue;
+                    f.Normalize();
+                    Vector3 spot; bool room;
+                    if (!LadderFoot(b, f, out spot, out room) || Mathf.Abs(spot.y - cur.max.y) > 1.0f || Flat(spot, top) > 3.5f) continue;
+                    float d = Flat(spot, top);
+                    if (d < bd) { bd = d; next = MakeStep(b, spot, f, id); nextB = b; }
+                }
+                if (next == null) break;
+                chain.Add(next); used.Add(next.Id); cur = nextB; curDir = next.Dir;
+            }
+            return chain;
+        }
+
+        static void StartChain(S s, List<LadderStep> chain, int idx, Vector3 pos, float now, string tag)
+        {
+            s.Chain = chain; s.ChainIdx = idx; s.OnChain = true;
+            s.ClimbLadder = false; s.ClimbUntil = 0f; s.LadderPending = false; s.HasDetour = false; s.StepUntil = 0f;
+            ChainStepReset(s, pos, now);
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] climbing a chain of " + (chain.Count - idx) + " ladders up to " + chain[chain.Count - 1].Top.ToString("F1") + " (first foot " + Fmt(chain[idx].Foot) + ")");
+        }
+
+        static void ChainStepReset(S s, Vector3 pos, float now)
+        {
+            s.ChainProgressAt = now; s.ChainBestY = pos.y; s.ChainJumps = 0; s.ChainJumpAt = 0f;
+            s.ChainFootBest = float.MaxValue; s.ChainFootAt = now; s.ChainViaUntil = 0f;
+        }
+
+        static void EndChain(S s, float now)
+        {
+            s.OnChain = false; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
+            s.ProgressTime = now; s.AnchorTime = now; s.NextLadderClimbSearch = 0f; s.NextLadderSearch = 0f;
+        }
+
+        static bool UseKnownChain(S s, Vector3 pos, float needY, float now, string tag)
+        {
+            s_knownChains.RemoveAll(k => now > k.Until);
+            foreach (KnownChain k in s_knownChains)
+                for (int i = 0; i < k.Steps.Count; i++)
+                {
+                    LadderStep st = k.Steps[i];
+                    if (BadLadder(st.Id, now) || Mathf.Abs(st.Foot.y - pos.y) > 1.0f || Flat(pos, st.Foot) > 3f) continue;
+                    if (k.Steps[k.Steps.Count - 1].Top < pos.y + 1.5f) continue;
+                    StartChain(s, k.Steps, i, pos, now, tag);
+                    return true;
+                }
+            return false;
+        }
+
+        static void RememberChain(List<LadderStep> chain, float now)
+        {
+            foreach (KnownChain k in s_knownChains) if (k.Steps == chain) { k.Until = now + 900f; return; }
+            s_knownChains.Add(new KnownChain { Steps = chain, Until = now + 900f });
+            if (s_knownChains.Count > 20) s_knownChains.RemoveAt(0);
+        }
+
+        static void RunChain(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            if (s.Chain == null || s.ChainIdx >= s.Chain.Count) { EndChain(s, now); return; }
+            LadderStep st = s.Chain[s.ChainIdx];
+            // up this one: straight on to the next foot - no stopping on the landing
+            if (pos.y >= st.Top - 0.6f)
+            {
+                s.ChainIdx++;
+                ChainStepReset(s, pos, now);
+                if (s.ChainIdx >= s.Chain.Count)
+                {
+                    RememberChain(s.Chain, now);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] up the ladders at " + Fmt(pos));
+                    EndChain(s, now);
+                    // walk on off the last one the way it faces - not over a harmful drop
+                    float edge;
+                    if (!LedgeAhead(pos, st.Dir, 0.7f, out edge)) { s.StepDir = st.Dir; s.StepRun = false; s.StepUntil = now + 0.5f; }
+                    return;
+                }
+                st = s.Chain[s.ChainIdx];
+                Dbg("[Move|" + tag + "] next ladder (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), foot at " + Fmt(st.Foot));
+            }
+            // fell off: back onto the chain at the ladder whose foot is on this level, else give it up
+            if (c.IsOnGround() && pos.y < st.Foot.y - 1.0f)
+            {
+                for (int i = 0; i < s.Chain.Count; i++)
+                    if (Mathf.Abs(s.Chain[i].Foot.y - pos.y) < 1.0f && Flat(pos, s.Chain[i].Foot) < 6f)
+                    {
+                        s.ChainIdx = i; ChainStepReset(s, pos, now);
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders - back on at ladder " + (i + 1) + "/" + s.Chain.Count);
+                        return;
+                    }
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders (now at " + Fmt(pos) + ") - looking again");
+                EndChain(s, now);
+                return;
+            }
+            if (pos.y > s.ChainBestY + 0.3f) { s.ChainBestY = pos.y; s.ChainProgressAt = now; s.ChainJumps = 0; }
+            float off = Flat(pos, st.Foot);
+            if (pos.y < st.Foot.y + 1.0f && off < s.ChainFootBest - 0.15f) { s.ChainFootBest = off; s.ChainFootAt = now; s.ChainProgressAt = Mathf.Max(s.ChainProgressAt, now - 2f); }
+            // on this ladder only once its foot has been reached (or got as close as it gets) - still bouncing at the top of
+            // the last one is not "on" this one
+            bool reached = s.ChainFootBest <= 0.6f || now - s.ChainFootAt > 1.0f;
+            bool lifted = reached && pos.y > st.Foot.y + 0.4f;
+            Vector3 dir = st.Dir;
+            if (!lifted)
+            {
+                bool blocked = now - s.ChainFootAt > 1.0f;
+                if (off > 0.45f && !blocked)
+                {
+                    // to the foot by the floor, round a corner if the straight line leaves it
+                    Vector3 target = st.Foot;
+                    if (now < s.ChainViaUntil && Flat(pos, s.ChainVia) > 0.35f) target = s.ChainVia;
+                    else if (!FloorAlong(pos, st.Foot))
+                    {
+                        Vector3 via;
+                        if (FindFloorVia(pos, st.Foot, out via)) { s.ChainVia = via; s.ChainViaUntil = now + 3f; target = via; }
+                    }
+                    dir = target - pos; dir.y = 0f;
+                    if (dir.sqrMagnitude < 0.0001f) dir = st.Dir;
+                }
+            }
+            dir.Normalize();
+            if (now - s.ChainProgressAt > 6f)
+            {
+                MarkBadLadder(st.Id, now, 120f);
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck on ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
+                EndChain(s, now);
+                return;
+            }
+            ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(dir), 540f * Time.deltaTime);
+            Steer(ai, c, s, dir, true, false);
+            // at the foot (or as close as it gets): hop on, like a player stepping up - these ladders rarely lift a walker
+            bool atFoot = !lifted && (off <= 0.45f || now - s.ChainFootAt > 1.0f);
+            if (c.IsOnGround() && now >= s.ChainJumpAt && (atFoot ? now - s.ChainFootAt > 0.15f || off <= 0.45f : now - s.ChainProgressAt > 0.6f))
+            {
+                if (++s.ChainJumps > 6)
+                {
+                    MarkBadLadder(st.Id, now, 120f);
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
+                    EndChain(s, now);
+                    return;
+                }
+                c.Jump(false);
+                Rigidbody rb = ai.GetComponent<Rigidbody>();
+                if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
+                s.ChainJumpAt = now + 0.7f;
+            }
+        }
+
         // where to face at the top of a ladder: the foot of the nearest other ladder that starts on this level, else the goal
         static Vector3 NextFootDir(S s, Vector3 pos)
         {
@@ -925,6 +1119,8 @@ namespace Companions
             // 1.5.3: 1.5 m, not 2 - a skeleton exactly 2.0 m up on the next floor got no ladder search (user log: stepped off
             // the ladder's top instead and fell)
             if (needY < pos.y + 1.5f) return false;
+            // 1.5.3: a chain of ladders that has worked before, starting by our feet: straight onto it
+            if (UseKnownChain(s, pos, needY, now, tag)) return true;
             Collider[] cols = Physics.OverlapSphere(pos + Vector3.up * 2f, 14f, Mask());
             GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue; int bestId = 0;
             var seen = new HashSet<int>();
@@ -1023,6 +1219,15 @@ namespace Companions
             // 1.5.2: get to the foot of it by the normal route first (user: "running into a wall" walking straight at it)
             // 1.5.2: a foot close by on our level is walked to straight (with a look for edges); a route there across the
             // small floors between ladders took him off the edge (user log: "fell 4.1 m" on the way to the next ladder)
+            // 1.5.3 (user: "Is there a better way ... less awkward for the NPC flow?"): plan the chain of ladders above this one
+            // now - this one's top by the next one's foot, and so on - and climb it in one go
+            List<LadderStep> chain = s.ClimbAuto ? PlanChain(best, bestB, bestId, s.ClimbBase, s.ClimbDir, needY) : null;
+            if (chain != null && chain.Count >= 2 && !(Flat(pos, s.ClimbBase) > 3.0f || Mathf.Abs(pos.y - s.ClimbBase.y) > 1.0f))
+            {
+                StartChain(s, chain, 0, pos, now, tag);
+                return true;
+            }
+            s.PendingChain = chain != null && chain.Count >= 2 ? chain : null;
             if (s.ClimbAuto && (Flat(pos, s.ClimbBase) > 3.0f || Mathf.Abs(pos.y - s.ClimbBase.y) > 1.0f))
             {
                 s.LadderPending = true; s.HasDetour = true; s.Detour = s.ClimbBase; s.DetourUntil = now + 15f; s.NextPlan = 0f;
