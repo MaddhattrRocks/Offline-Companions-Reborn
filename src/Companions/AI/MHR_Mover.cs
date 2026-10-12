@@ -719,6 +719,35 @@ namespace Companions
             return true;
         }
 
+        // 1.5.2: off the top of a ladder (user: "If a ladder does not fully connect can the NPC jump up onto something nearby
+        // to finish getting to the destination?"). Look for footing towards where it's going - up to a jump's height above
+        // and within a jump's reach - and leap onto it like a player would. Nothing there: step off the ladder's way.
+        static void LadderTopHop(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            Vector3 goal = s.HasGood && s.GoodPos.y > pos.y - 1f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos : s.Goal;
+            Vector3 toGoal = goal - pos; toGoal.y = 0f;
+            Vector3[] dirs = toGoal.sqrMagnitude > 0.04f ? new[] { toGoal.normalized, s.ClimbDir } : new[] { s.ClimbDir };
+            float up = c.m_jumpForce * c.m_jumpForce / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;   // how high a jump gets it, with a margin
+            foreach (Vector3 dir in dirs)
+            {
+                for (float d = 0.8f; d <= 3.01f; d += 0.4f)
+                {
+                    Vector3 p = pos + dir * d;
+                    RaycastHit hit;
+                    if (!Physics.Raycast(new Vector3(p.x, pos.y + up + 1.5f, p.z), Vector3.down, out hit, up + 3f, Mask())) continue;
+                    float dy = hit.point.y - pos.y;
+                    if (dy < -0.5f || dy > up) continue;                                   // a floor at about our height or a jump up
+                    if (Physics.Raycast(new Vector3(p.x, hit.point.y + 0.1f, p.z), Vector3.up, 1.6f, Mask())) continue;   // room to stand
+                    if (MHR_Jump.Reach(c, dir, dy) < d) continue;
+                    MHR_Jump.Leap(ai, c, dir);
+                    s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
+                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
+                    return;
+                }
+            }
+            Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f;   // step off the top
+        }
+
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
@@ -792,7 +821,7 @@ namespace Companions
             {
                 s.ClimbUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (s.ClimbLadder && atTop) { Leap(ai, c, s.ClimbDir, 3f); s.StepDir = s.ClimbDir; s.StepRun = false; s.StepUntil = now + 0.6f; }   // step off the top
+                if (s.ClimbLadder && atTop) LadderTopHop(ai, c, s, pos, now, tag);
                 if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (s.ClimbLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
                 return;
