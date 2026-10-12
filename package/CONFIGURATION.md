@@ -182,6 +182,9 @@ The most swimming (meters) a job accepts to reach something: loot from a kill, p
 **MaxDrop** — Default: 3 · Range: 1 – 4  
 When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).
 
+**StuckDrop** — Default: 8 · Range: 3 – 20  
+When a companion is stuck above where it needs to be with no other way down (off the top of a ladder, a platform, a ledge), it jumps down a drop up to this many meters, like a player who takes a bit of fall damage rather than stay put. (Companions don't take fall damage; this keeps them player-like.)
+
 **JumpGap** — Default: 1.5 · Range: 0.5 – 3  
 The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.
 

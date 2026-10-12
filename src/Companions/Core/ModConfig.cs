@@ -181,6 +181,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> MaxDrop;
 
+	internal static ConfigEntry<float> StuckDrop;
+
 	internal static ConfigEntry<float> JumpGap;
 
 	internal static ConfigEntry<float> JumpWaterDepth;
@@ -508,6 +510,7 @@ internal static class ModConfig
 		DryDetour = Bind(cfg, "Movement", "DryDetour", 30f, "Companions prefer staying dry, like a player: when the way somewhere crosses water they go round it on land, as long as the dry way is no longer than 1.5x the swimming way plus this many meters. Otherwise they swim.", new AcceptableValueRange<float>(0f, 500f));
 		JobSwim = Bind(cfg, "Movement", "JobSwim", 20f, "The most swimming (meters) a job accepts to reach something: loot from a kill, prey, a bird, a fishing spot. Further than that and it leaves it.", new AcceptableValueRange<float>(0f, 200f));
 		MaxDrop = Bind(cfg, "Movement", "MaxDrop", 3f, "When a straight line is much shorter than the way round (down the stairs and back, round a wall), companions take it like a player: hopping steps, dropping off ledges up to this many meters (players take no fall damage below 4 m) and jumping small gaps (JumpGap).", new AcceptableValueRange<float>(1f, 4f));
+		StuckDrop = Bind(cfg, "Movement", "StuckDrop", 8f, "When a companion is stuck above where it needs to be with no other way down (off the top of a ladder, a platform, a ledge), it jumps down a drop up to this many meters, like a player who takes a bit of fall damage rather than stay put. (Companions don't take fall damage; this keeps them player-like.)", new AcceptableValueRange<float>(3f, 20f));
 		JumpGap = Bind(cfg, "Movement", "JumpGap", 1.5f, "The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.", new AcceptableValueRange<float>(0.5f, 3f));
 		JumpWaterDepth = Bind(cfg, "Movement", "JumpWaterDepth", 0.3f, "Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.", new AcceptableValueRange<float>(0.05f, 2f));
 		JumpWaterWidth = Bind(cfg, "Movement", "JumpWaterWidth", 3f, "The widest stretch of water (meters) a companion jumps over.", new AcceptableValueRange<float>(1f, 4f));

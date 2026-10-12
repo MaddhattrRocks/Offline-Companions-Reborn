@@ -392,7 +392,8 @@ Companions find their own way:
 
 - **Doors:** they open doors and gates as they reach them, line up with the doorway, and close the door behind them.
 - **Steps and ledges:** they hop up steps and drop off ledges up to 3 m (no fall damage) when that's much shorter than going round.
-- **Ladders:** to get up to where you are (a tower, a platform), they climb a wooden ladder like you would: walk to its foot and into it, and the ladder lifts them up. If the ladder stops a little short, they jump from the top onto the floor or ledge next to it, or up onto the top of a wall and from there onto the floor.
+- **Ladders:** to get up to where you are (a tower, a platform), they climb a wooden ladder like you would: walk to its foot and into it, and the ladder lifts them up. If the ladder stops a little short, they jump from the top onto the floor or ledge next to it, or up onto the top of a wall and from there onto the floor. With two ladders to choose from they take the one that gets them highest, and skip one that didn't work for a while.
+- **Getting down:** they take the stairs or the way round when there is one. When there's no other way down (off a platform or the top of a ladder), they jump down drops of up to 8 m (Movement > StuckDrop), like a player who'd rather take a bit of fall damage than stay put.
 - **Water:** they jump narrow streams and small gaps. They walk around water when the dry way isn't much longer, and otherwise swim.
 - **Walking or running:** they walk while working and run when what they're heading for is more than 25 m away.
 - **Fire and tar:** they avoid fire and tar pits.

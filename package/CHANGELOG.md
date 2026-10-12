@@ -13,6 +13,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: arrows were picked as a "bow" when the companion had arrows but no bow.
 - Fixed: a companion out hunting far from home gave up its bed because the bed wasn't loaded; it only looks for its bed when it's nearby.
 - Companions climb wooden ladders (push into them and hop up, like a player) to follow you up a tower or reach something on a platform, and jump from the top onto a ledge (or up onto a wall top and on to the floor) when the ladder stops short.
+- Ladders: companions walk round to the foot of a ladder instead of into the wall beside it, pick the ladder that gets them highest, and skip a ladder that didn't get them up for a few minutes.
+- When stuck above where it needs to be with no other way down, a companion jumps down a drop of up to 8 m. New [Movement] StuckDrop.
 - When stuck just below where it needs to be, a companion jumps up onto something it can stand on nearby, like a player; it no longer steps backwards off a high ledge when stuck.
 - Companions can use the game's use-to-climb ladders to reach something up out of reach.
 
