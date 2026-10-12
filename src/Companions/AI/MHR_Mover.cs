@@ -747,6 +747,26 @@ namespace Companions
         static void MarkBadLadder(int id, float now, float secs) { if (id != 0) s_badLadders[id] = now + secs; }
         static bool BadLadder(int id, float now) { float until; return s_badLadders.TryGetValue(id, out until) && now < until; }
 
+        // 1.5.2: the object a ladder collider belongs to. A built ladder is its Piece. A ladder that is part of the world (user:
+        // "a spot with ladders and a mob at the top" - a ruined tower; the log listed no pieces at all, it used to take
+        // the whole location as the "ladder") is the nearest object up from the collider that is named a ladder or holds
+        // the ladder's auto-jump - and only if it's ladder-sized, never the building around it.
+        static GameObject LadderRoot(Collider col, out Piece piece)
+        {
+            piece = col.GetComponentInParent<Piece>();
+            if (piece != null) return piece.gameObject;
+            Transform t = col.transform;
+            for (int i = 0; i < 4 && t != null; i++, t = t.parent)
+            {
+                bool named = t.name.ToLowerInvariant().Contains("ladder");
+                if (!named && t.GetComponentInChildren<AutoJumpLedge>(true) == null) continue;
+                Bounds b;
+                if (!OwnBounds(t.gameObject, out b) || b.size.y > 14f || b.size.x > 4f && b.size.z > 4f) return null;
+                return t.gameObject;
+            }
+            return null;
+        }
+
         static bool IsLadder(GameObject root, Piece piece, Collider col)
         {
             string n = (root.name + " " + (col != null ? col.gameObject.name : "") + " " + (piece != null ? piece.m_name : "")).ToLowerInvariant();
@@ -784,13 +804,14 @@ namespace Companions
                     foreach (Collider o in Physics.OverlapSphere(new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
                     {
                         if (o == null) continue;
-                        Piece p = o.GetComponentInParent<Piece>();
-                        if (p == null || used.Contains(p.gameObject.GetInstanceID()) || !IsLadder(p.gameObject, p, o)) continue;
+                        Piece p;
+                        GameObject r = LadderRoot(o, out p);
+                        if (r == null || used.Contains(r.GetInstanceID()) || !IsLadder(r, p, o)) continue;
                         Bounds ob;
-                        if (!OwnBounds(p.gameObject, out ob) || Flat(ob.center, end.center) > 0.8f) continue;
+                        if (!OwnBounds(r, out ob) || Flat(ob.center, end.center) > 0.8f) continue;
                         bool joins = dirUp == 0 ? ob.min.y > end.max.y - 1.5f && ob.min.y < end.max.y + 0.8f
                                                 : ob.max.y < end.min.y + 1.5f && ob.max.y > end.min.y - 0.8f;
-                        if (joins) { next = p.gameObject; nb = ob; break; }
+                        if (joins) { next = r; nb = ob; break; }
                     }
                     if (next == null) break;
                     used.Add(next.GetInstanceID()); b.Encapsulate(nb); end = nb; endObj = next;
@@ -826,8 +847,9 @@ namespace Companions
             for (float d = 0f; d <= 0.31f && room; d += 0.3f)
                 foreach (RaycastHit h in Physics.RaycastAll(spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
                 {
-                    Piece hp = h.collider.GetComponentInParent<Piece>();
-                    if (hp != null && IsLadder(hp.gameObject, hp, h.collider)) continue;   // the ladder itself
+                    Piece hp;
+                    GameObject hr = LadderRoot(h.collider, out hp);
+                    if (hr != null && IsLadder(hr, hp, h.collider)) continue;   // the ladder itself
                     room = false; break;
                 }
             return true;
@@ -845,9 +867,9 @@ namespace Companions
             foreach (Collider col in cols)
             {
                 if (col == null || col.isTrigger) continue;
-                Piece piece = col.GetComponentInParent<Piece>();
-                GameObject root = piece != null ? piece.gameObject : col.transform.root.gameObject;
-                if (!seen.Add(root.GetInstanceID())) continue;
+                Piece piece;
+                GameObject root = LadderRoot(col, out piece);
+                if (root == null || !seen.Add(root.GetInstanceID())) continue;
                 // the game's ladders carry an AutoJumpLedge trigger that bounces anyone moving its way up the rungs
                 if (!IsLadder(root, piece, col)) continue;
                 int id;
@@ -898,11 +920,14 @@ namespace Companions
                     foreach (Collider col in cols)
                     {
                         if (col == null) continue;
+                        if (col.bounds.max.y <= pos.y + 2f || Flat(pos, col.bounds.center) >= 6f) continue;
                         Piece piece = col.GetComponentInParent<Piece>();
-                        if (piece != null && col.bounds.max.y > pos.y + 2f && Flat(pos, col.bounds.center) < 6f) names.Add(piece.gameObject.name.Replace("(Clone)", ""));
+                        // world objects too (a ruin's ladders aren't pieces): the collider's object and the one above it
+                        string nm = piece != null ? piece.gameObject.name : (col.transform.parent != null ? col.transform.parent.name + "/" : "") + col.gameObject.name;
+                        names.Add(nm.Replace("(Clone)", ""));
                         if (names.Count >= 8) break;
                     }
-                    Dbg("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall pieces close by: " + string.Join(", ", names) + ")");
+                    Dbg("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall things close by: " + string.Join(", ", names) + ")");
                 }
                 return false;
             }
@@ -998,9 +1023,9 @@ namespace Companions
             foreach (Collider col in cols)
             {
                 if (col == null || col.isTrigger) continue;
-                Piece piece = col.GetComponentInParent<Piece>();
-                GameObject root = piece != null ? piece.gameObject : col.transform.root.gameObject;
-                if (!seen.Add(root.GetInstanceID()) || !IsLadder(root, piece, col)) continue;
+                Piece piece;
+                GameObject root = LadderRoot(col, out piece);
+                if (root == null || !seen.Add(root.GetInstanceID()) || !IsLadder(root, piece, col)) continue;
                 AutoJumpLedge ledge = root.GetComponentInChildren<AutoJumpLedge>(true);
                 int id;
                 Bounds b = LadderBounds(root, out id);
