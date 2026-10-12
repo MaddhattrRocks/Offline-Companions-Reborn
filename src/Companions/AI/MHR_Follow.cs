@@ -291,6 +291,9 @@ namespace Companions
         static bool WalkPlayerPath(CompanionAI ai, S s, T t, Character c, Vector3 me, Vector3 pp, float now, float dt, bool offLevel)
         {
             List<Vector3> st = t.Steps;
+            // once on the player's path keep to it until really level with them (user log: it kept stopping and starting
+            // as the height difference went either side of 2.5 m, and the ladder search took over in between)
+            if (s.OnPath && !c.IsSwimming() && Mathf.Abs(me.y - pp.y) > 1.2f) offLevel = true;
             if (!offLevel || c.IsSwimming() || st.Count < 3 || Mathf.Abs(st[st.Count - 1].y - pp.y) > 1.5f)
             {
                 if (s.OnPath) EndPath(s, "");
@@ -317,7 +320,7 @@ namespace Companions
                 }
                 s.OnPath = true; s.PathIdx = best; s.PathProgressAt = now; s.PathApproach = bd > 1.0f;
                 MHR_Mover.Release(ai);
-                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + (pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + Mathf.Abs(pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
             }
             if (s.PathIdx >= st.Count) s.PathIdx = st.Count - 1;
             // getting to where the player's path starts: the normal planner
@@ -343,6 +346,19 @@ namespace Companions
             if (dir.sqrMagnitude < 0.04f && s.PathIdx < st.Count - 1) { dir = st[s.PathIdx + 1] - next; dir.y = 0f; }
             if (dir.sqrMagnitude < 0.0001f) dir = ai.transform.forward;
             dir.Normalize();
+            // the player jumped down further than this companion can take right now (it has its own health to think of):
+            // a ladder's rungs or a floor ahead are fine, open air down past a safe drop is not
+            if (c.IsOnGround() && next.y < me.y - 1f)
+            {
+                float safe = CompanionFallDamagePatch.SafeDrop(c, 0.3f);
+                if (!Physics.Raycast(me + dir * 0.7f + Vector3.up * 1f, Vector3.down, 1f + safe, GroundMask()))
+                {
+                    ai.StopMoving();
+                    EndPath(s, "you went down a drop of more than " + safe.ToString("F1") + "m there - too far for me");
+                    s.NoPathUntil = now + 15f;
+                    return false;
+                }
+            }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.SetWalk(false);
             ai.MoveTowards(dir, false);

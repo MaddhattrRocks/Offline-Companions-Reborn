@@ -946,7 +946,7 @@ namespace Companions
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
-            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + bestD.ToString("F1") + "m away)");
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + Flat(pos, bestB.center).ToString("F1") + "m away)");
             return true;
         }
 
