@@ -458,6 +458,12 @@ Shoot birds only while what they drop (feathers) is under this many, counting th
 **Sneak** — Default: On  
 Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).
 
+**ThrowSpear** — Default: On  
+A hunter holding a spear throws it at skittish game (deer, hares...) from a distance, like a player, then walks over and picks it back up. Only when it has another weapon in its pack to fight on with.
+
+**ThrowRange** — Default: 12 · Range: 4 – 25  
+How far (meters) a hunter throws its spear from. Further throws drop short more often.
+
 ## Fishing
 
 The Fish job.

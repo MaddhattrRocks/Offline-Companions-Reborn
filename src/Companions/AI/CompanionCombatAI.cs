@@ -464,7 +464,17 @@ public class CompanionCombatAI : MonoBehaviour
 					{
 						_ai.StopMoving();
 					}
-					if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
+					// 1.5.2: hunting skittish game with a spear (and another weapon in the pack): throw it from range
+					if (HuntMode && canSeeTarget && !blocking && MHR_SpearThrow.WantsThrow(_ai, _humanoid, _targetCreature, num3))
+					{
+						_ai.StopMoving();
+						_ai.LookAtPoint(_targetCreature.GetCenterPoint());
+						if (_ai.IsLookingAtPoint(_targetCreature.GetCenterPoint(), 10f))
+						{
+							MHR_SpearThrow.Throw(_ai, _humanoid, _targetCreature);
+						}
+					}
+					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
 					{
 						_ai.LookAtPoint(_targetCreature.GetTopPoint());
 						if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, itemData.m_shared.m_aiAttackMaxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)

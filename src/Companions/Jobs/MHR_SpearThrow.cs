@@ -1,0 +1,256 @@
+using System.Collections.Generic;
+using HarmonyLib;
+using UnityEngine;
+
+namespace Companions;
+
+// 1.5.2: hunting skittish game (deer, hares...) with a spear: throw it like a player (the spear's own secondary attack),
+// but only with another weapon in the pack to fight on with, then walk over and pick the spear back up.
+// (user: "make the NPC throw the spear when hunting one of the timid / flee animals ... only if they have another
+// weapon in their inventory. The NPC should then go over and recover the spear.")
+// The game drops a thrown spear as a normal item where it lands (Projectile.m_respawnItemOnHit); a patch on
+// ItemDrop.DropItem spots our spear landing by its item, so the companion knows exactly where to go.
+internal static class MHR_SpearThrow
+{
+	private class State
+	{
+		public ItemDrop.ItemData Thrown;
+
+		public string Name;
+
+		public float ThrownAt;
+
+		public ItemDrop Drop;
+
+		public float NextTry;
+	}
+
+	private const float MinThrowDistance = 3f;
+
+	private const float LandWaitSeconds = 15f;
+
+	private const float GiveUpSeconds = 120f;
+
+	private static readonly Dictionary<CompanionAI, State> s_states = new Dictionary<CompanionAI, State>();
+
+	private static readonly Dictionary<ItemDrop.ItemData, State> s_inFlight = new Dictionary<ItemDrop.ItemData, State>();
+
+	private static State Get(CompanionAI ai)
+	{
+		if (!s_states.TryGetValue(ai, out var value))
+		{
+			value = new State();
+			s_states[ai] = value;
+		}
+		return value;
+	}
+
+	internal static bool IsThrowable(ItemDrop.ItemData w)
+	{
+		if (w == null || !w.HaveSecondaryAttack())
+		{
+			return false;
+		}
+		Attack secondaryAttack = w.m_shared.m_secondaryAttack;
+		if (secondaryAttack != null && secondaryAttack.m_attackType == Attack.AttackType.Projectile)
+		{
+			return secondaryAttack.m_consumeItem;
+		}
+		return false;
+	}
+
+	// game that runs away: AnimalAI (deer, hares...) or a monster that flees until it's alerted
+	private static bool Skittish(Character c)
+	{
+		BaseAI baseAI = c?.GetBaseAI();
+		if (!(baseAI is AnimalAI))
+		{
+			if (baseAI is MonsterAI monsterAI)
+			{
+				return monsterAI.m_fleeIfNotAlerted;
+			}
+			return false;
+		}
+		return true;
+	}
+
+	// something else to fight with once the spear is gone (not a tool, pickaxe, fishing rod or broken item)
+	private static bool HasOtherWeapon(Humanoid hum, ItemDrop.ItemData spear)
+	{
+		Inventory inventory = hum.GetInventory();
+		if (inventory == null)
+		{
+			return false;
+		}
+		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
+		{
+			if (allItem == spear || allItem?.m_shared == null)
+			{
+				continue;
+			}
+			ItemDrop.ItemData.ItemType itemType = allItem.m_shared.m_itemType;
+			if ((itemType == ItemDrop.ItemData.ItemType.OneHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeapon || itemType == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft || itemType == ItemDrop.ItemData.ItemType.Bow) && (!allItem.m_shared.m_useDurability || !(allItem.m_durability <= 0f)) && !(allItem.m_shared.m_damages.m_pickaxe > 0f) && allItem.m_shared.m_skillType != Skills.SkillType.Fishing)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// hunting: holding a throwable spear, the prey is skittish game within throwing range, another weapon in the pack,
+	// no spear already out
+	internal static bool WantsThrow(CompanionAI ai, Humanoid hum, Character prey, float dist)
+	{
+		if (ai == null || hum == null || prey == null || !(ModConfig.HuntThrowSpear?.Value ?? true) || hum.InAttack())
+		{
+			return false;
+		}
+		State state = Get(ai);
+		if (state.Thrown != null || Time.time < state.NextTry)
+		{
+			return false;
+		}
+		if (dist < MinThrowDistance || dist > (ModConfig.HuntThrowRange?.Value ?? 12f))
+		{
+			return false;
+		}
+		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
+		if (IsThrowable(currentWeapon) && Skittish(prey))
+		{
+			return HasOtherWeapon(hum, currentWeapon);
+		}
+		return false;
+	}
+
+	internal static void Throw(CompanionAI ai, Humanoid hum, Character prey)
+	{
+		State state = Get(ai);
+		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
+		if (currentWeapon == null)
+		{
+			return;
+		}
+		state.NextTry = Time.time + 2f;
+		if (hum.StartAttack(prey, secondaryAttack: true))
+		{
+			state.Thrown = currentWeapon;
+			state.Name = currentWeapon.m_shared.m_name;
+			state.ThrownAt = Time.time;
+			state.Drop = null;
+			s_inFlight[currentWeapon] = state;
+			CompanionsPlugin.Log.LogInfo("[Hunt] Threw its " + Loc(state.Name) + " at " + Loc(prey.m_name) + $" ({Vector3.Distance(ai.transform.position, prey.transform.position):F0} m)");
+		}
+	}
+
+	// the thrown spear has landed as an item
+	internal static void OnDropped(ItemDrop.ItemData item, ItemDrop drop)
+	{
+		if (item != null && !(drop == null) && s_inFlight.TryGetValue(item, out var value))
+		{
+			s_inFlight.Remove(item);
+			value.Drop = drop;
+			CompanionsPlugin.Log.LogDebug("[Hunt] The thrown " + Loc(value.Name) + $" landed at {drop.transform.position:F1}");
+		}
+	}
+
+	private static void Clear(State st)
+	{
+		if (st.Thrown != null)
+		{
+			s_inFlight.Remove(st.Thrown);
+		}
+		st.Thrown = null;
+		st.Drop = null;
+	}
+
+	// after the fight: walk over to the spear and pick it up. True while busy with it.
+	internal static bool Drive(CompanionAI ai, float dt, bool inCombat)
+	{
+		if (ai == null || !s_states.TryGetValue(ai, out var value) || value.Thrown == null)
+		{
+			return false;
+		}
+		Humanoid component = ai.GetComponent<Humanoid>();
+		Inventory inventory = component?.GetInventory();
+		if (inventory == null)
+		{
+			Clear(value);
+			return false;
+		}
+		// the attack never went off (staggered mid-throw): the spear is still in the pack
+		if (value.Drop == null && inventory.ContainsItem(value.Thrown) && Time.time - value.ThrownAt > 3f)
+		{
+			Clear(value);
+			return false;
+		}
+		if (inCombat)
+		{
+			return false;
+		}
+		if (Time.time - value.ThrownAt > GiveUpSeconds)
+		{
+			CompanionsPlugin.Log.LogInfo("[Hunt] Gave up on getting its " + Loc(value.Name) + " back (took too long)");
+			Clear(value);
+			return false;
+		}
+		if ((object)value.Drop == null)
+		{
+			if (Time.time - value.ThrownAt > LandWaitSeconds)
+			{
+				CompanionsPlugin.Log.LogInfo("[Hunt] Lost its " + Loc(value.Name) + " - it never landed anywhere it could find (water?)");
+				Clear(value);
+			}
+			return false;
+		}
+		if (value.Drop == null)
+		{
+			CompanionsPlugin.Log.LogInfo("[Hunt] Its " + Loc(value.Name) + " isn't on the ground any more (someone picked it up)");
+			Clear(value);
+			return false;
+		}
+		Vector3 position = value.Drop.transform.position;
+		Vector3 position2 = ai.transform.position;
+		if (new Vector2(position2.x - position.x, position2.z - position.z).magnitude <= 1.6f && Mathf.Abs(position2.y - position.y) <= 2f)
+		{
+			if (!value.Drop.CanPickup())
+			{
+				value.Drop.RequestOwn();
+				ai.StopMoving();
+				return true;
+			}
+			value.Drop.Load();
+			bool flag = component.Pickup(value.Drop.gameObject, autoequip: false, autoPickupDelay: false);
+			CompanionsPlugin.Log.LogInfo("[Hunt] " + (flag ? "Picked its " : "Couldn't pick up its ") + Loc(value.Name) + (flag ? " back up" : " (pack full?)"));
+			MHR_Mover.Release(ai);
+			Clear(value);
+			return false;
+		}
+		MHR_Mover.Go(ai, dt, position, 0.8f, allowRun: true, "Spear");
+		if (MHR_Mover.RouteSwim(ai) > MHR_Mover.JobSwim() || MHR_Mover.GaveUp(ai))
+		{
+			CompanionsPlugin.Log.LogInfo("[Hunt] Can't get to its " + Loc(value.Name) + " - leaving it where it landed");
+			MHR_Mover.Release(ai);
+			Clear(value);
+			return false;
+		}
+		return true;
+	}
+
+	private static string Loc(string s)
+	{
+		if (Localization.instance == null || string.IsNullOrEmpty(s))
+		{
+			return s ?? "";
+		}
+		return Localization.instance.Localize(s);
+	}
+}
+
+[HarmonyPatch(typeof(ItemDrop), "DropItem")]
+internal static class SpearLandedPatch
+{
+	private static void Postfix(ItemDrop.ItemData item, ItemDrop __result)
+	{
+		MHR_SpearThrow.OnDropped(item, __result);
+	}
+}

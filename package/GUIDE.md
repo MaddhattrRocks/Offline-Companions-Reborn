@@ -157,6 +157,8 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 
 - **What:** creatures that drop meat, until there's enough of each kind of meat (100 by default, counting pack and chests at home). Leather and other drops are picked up as a bonus. Tamed animals, bosses and other companions are never hunted.
 - **Sneaking:** they sneak up on skittish game like deer and hares, crouched and not running, so it doesn't bolt.
+- **Weapons:** a bow or crossbow with ammo comes first. Without one they hunt with a melee weapon: they sneak right up and strike.
+- **Throwing spears:** a hunter holding a spear throws it at skittish game from up to 12 m (Hunting > ThrowRange), as long as it has another weapon in its pack to fight on with. After the hunt it walks over and picks the spear back up. Turn this off with Hunting > ThrowSpear.
 - **Birds:** with a bow or crossbow and ammo, they shoot crows and gulls for feathers.
 - **Follow on:** they hunt within 25 m of you. **Follow off:** they hunt up to 40 m around where they were set to work.
 - **Chasing:** they chase prey that runs, up to 15 m further, then let it go.

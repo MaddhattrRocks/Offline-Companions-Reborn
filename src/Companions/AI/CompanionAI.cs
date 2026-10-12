@@ -1527,6 +1527,12 @@ public class CompanionAI : BaseAI
 			MHR_SetCrouch(sneak: false);
 		}
 		UpdateTorch();
+		// 1.5.2: fetch a spear it threw while hunting
+		if (MHR_SpearThrow.Drive(this, dt, _combatAI != null && _combatAI.IsEngaged))
+		{
+			ClearFollowMovementOverrides();
+			return true;
+		}
 		if (MHR_ToolKeeper.Drive(this, dt))
 		{
 			return true;
