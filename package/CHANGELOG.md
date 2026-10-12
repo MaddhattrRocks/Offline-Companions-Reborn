@@ -6,6 +6,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: hunting with a melee weapon (spear, axe, knife - no bow ready) - the companion stopped 20 m away and swung at the air. It now sneaks up and strikes.
 - Hunters throw their spear at skittish game (deer, hares...) when they have another weapon in their pack, then go and pick it back up.
 - New [Hunting] ThrowSpear (on) and ThrowRange (12 m).
+- Companions use ladders (Black Forest towers and the like) to reach an enemy or anything else up out of reach, instead of running around underneath.
 
 ## 1.5.1
 - Fixed: a companion that died while you were dead too (for example both drowning at sea) left no tombstone and never came back - it now leaves its tombstone and respawns as normal, wherever you respawn.

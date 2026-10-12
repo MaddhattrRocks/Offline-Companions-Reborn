@@ -28,6 +28,8 @@ namespace Companions
             public float NextStartSearch;
             public Door LastRouteDoor; public float LastRouteDoorAt;
             public float RouteSwim;
+            // 1.5.2: a ladder it's heading for (a skeleton up a Black Forest tower: the way up is the ladder)
+            public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
@@ -186,7 +188,15 @@ namespace Companions
                 else { Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; return false; }
             }
 
-            if (s.HasDetour && (Flat(pos, s.Detour) < 1.0f || now > s.DetourUntil)) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
+            // 1.5.2: ladders - use one we've reached; look for one when the goal is up out of reach
+            if (s.UseLadder != null || (object)s.UseLadder != null)
+            {
+                if (UseLadderNow(ai, c, s, pos, now, tag)) return false;
+                if (s.UseLadder == null) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
+            }
+            else if (s.MainPartial && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && now >= s.NextLadderSearch && s.Goal.y > pos.y + 2f)
+                TryLadder(ai, s, pos, now, tag);
+            if (s.HasDetour && s.UseLadder == null && (Flat(pos, s.Detour) < 1.0f || now > s.DetourUntil)) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
             if (s.RouteDoor != null)
             {
                 if (!DoorClosed(s.RouteDoor)) { s.RouteDoor = null; Plan(ai, c, s, pos, now); }
@@ -305,12 +315,63 @@ namespace Companions
 
         static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
         {
+            // 1.5.2: a target that moves about (a skeleton pacing on the tower) mustn't make us forget the ladder on the way to it
+            bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
+            Ladder ladder = s.UseLadder; float ladderUntil = s.LadderUntil;
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
+            s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
+            if (keepLadder) { s.UseLadder = ladder; s.LadderUntil = ladderUntil; s.HasDetour = true; s.Detour = ladder.transform.position; s.DetourUntil = ladderUntil; }
+            else s.LaddersUsed.Clear();
+        }
+
+        // ---------- ladders ----------
+        // 1.5.2: the game's ladders (Black Forest towers and the like) are used, not climbed: standing next to one and using
+        // it puts you at its top spot. When the goal is up out of reach (no full route), look for a ladder near us whose
+        // top is closer to the goal, walk to it and use it like a player would.
+        static bool TryLadder(CompanionAI ai, S s, Vector3 pos, float now, string tag)
+        {
+            s.NextLadderSearch = now + 2f;
+            if (s.UseLadder != null || s.Goal.y < pos.y + 1.5f) return false;
+            Ladder best = null; float bestScore = float.MaxValue;
+            float here = Vector3.Distance(pos, s.Goal);
+            foreach (Ladder l in UnityEngine.Object.FindObjectsByType<Ladder>(FindObjectsSortMode.None))
+            {
+                if (l == null || l.m_targetPos == null || s.LaddersUsed.Contains(l)) continue;
+                Vector3 bottom = l.transform.position, top = l.m_targetPos.position;
+                if (Flat(pos, bottom) > 25f || Mathf.Abs(bottom.y - pos.y) > 3f) continue;   // near us, on our level
+                if (top.y < pos.y + 1.5f) continue;                                           // it has to take us up
+                float after = Vector3.Distance(top, s.Goal);
+                if (after > here - 2f) continue;                                               // and closer to the goal
+                float score = Vector3.Distance(pos, bottom) + after;
+                if (score < bestScore) { bestScore = score; best = l; }
+            }
+            if (best == null) return false;
+            s.UseLadder = best; s.LadderUntil = now + 20f;
+            s.HasDetour = true; s.Detour = best.transform.position; s.DetourUntil = s.LadderUntil; s.NextPlan = 0f;
+            s.StepUntil = 0f; s.ClimbUntil = 0f;
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be - going up the ladder at " + Fmt(best.transform.position));
+            return true;
+        }
+
+        // next to the ladder: use it (moves us to its top). True when it did.
+        static bool UseLadderNow(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            Ladder l = s.UseLadder;
+            if (l == null || now > s.LadderUntil) { if (s.UseLadder != null || (object)s.UseLadder != null) { Dbg("[Move|" + tag + "] couldn't get to the ladder"); } s.UseLadder = null; return false; }
+            if (Vector3.Distance(pos, l.transform.position) >= l.m_useDistance - 0.1f) return false;
+            Humanoid h = c as Humanoid;
+            if (h == null) { s.UseLadder = null; return false; }
+            l.Interact(h, false, false);
+            s.LaddersUsed.Add(l);
+            s.UseLadder = null; s.HasDetour = false; s.NextPlan = 0f; s.Path.Clear();
+            s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue; s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = ai.transform.position;
+            if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] went up the ladder to " + Fmt(ai.transform.position));
+            return true;
         }
 
         static void Halt(CompanionAI ai, Character c, S s)
@@ -510,6 +571,8 @@ namespace Companions
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
             dir.Normalize();
+            // 1.5.2: a ladder up to where it needs to be comes first
+            if (step == 0 && TryLadder(ai, s, pos, now, tag)) { s.Ladder = 0; return; }
             // 1.4.82: down in a pit with no route out: climb out like a player before anything else
             if (step == 0 && TryStartClimb(ai, c, s, pos, now, tag, why)) { s.Ladder = 0; return; }
             switch (step)
