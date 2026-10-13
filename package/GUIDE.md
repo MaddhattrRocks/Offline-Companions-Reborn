@@ -120,7 +120,7 @@ Home matters because companions:
 
 - A following companion picks its own spot near you: beside, behind, sometimes ahead. It moves when you get more than 10 m away (4 m indoors).
 - **Stand still for 45 seconds** and your companions come back and wait close to you.
-- **Stop indoors** and they sit down near you: on a free chair or bench, otherwise the floor. Near home, they empty their bags first.
+- **Stop indoors** and they sit down near you: on a free chair or bench, otherwise the floor. Near home, they empty their bags first. Once seated they stay put while you move about within 10 m (Follow > SitStayRange), and get up when you go further or step outside.
 - If a companion falls far behind (50 m) and can't see you, it catches up by appearing next to you.
 - They go through portals with you.
 
