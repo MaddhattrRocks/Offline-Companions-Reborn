@@ -94,4 +94,5 @@ Paste this into a new session to pick up where we left off. Details per version 
 - **Command wheel revisit** (Rename, guard/patrol, late-game features; maybe a sub-menu) and a **rename fallback** via the vanilla TextInput dialog (SeneaL_UI blocks the panel's name box).
 - Movement phase 3 part 2 (Smelt, Cook, Homestead on MHR_Mover), part 3 (Hunt, Fish), phase 4 (remove old per-job stuck code and DoorHandler).
 - Combat polish, ship-seat kinematic warnings, config cleanup, release packaging; older items in DEV_NOTES BACKLOG.
+- More sneaking (user, 2026-10-13): widen sneaking beyond hunting (follow the player's sneak, unaware enemies, dungeons) - see DEV_NOTES BACKLOG.
 - Log cleanup once the mod is more complete: repeated debug lines (food checks, repair scans) log once until something changes (user, 2026-10-13).
