@@ -23,6 +23,8 @@ internal static class MHR_SpearThrow
 		public ItemDrop Drop;
 
 		public float NextTry;
+
+		public float NextWhyLog;
 	}
 
 	private const float MinThrowDistance = 3f;
@@ -97,6 +99,42 @@ internal static class MHR_SpearThrow
 		return false;
 	}
 
+	// 1.5.4: a throw is on for this prey (spear in hand, skittish game, another weapon in the pack, no spear out), whatever
+	// the distance - the hunter then stops at ThrowStandoff instead of walking up to stab it
+	internal static bool ReadyToThrow(CompanionAI ai, Humanoid hum, Character prey)
+	{
+		if (ai == null || hum == null || prey == null || !(ModConfig.HuntThrowSpear?.Value ?? true) || !Skittish(prey))
+		{
+			return false;
+		}
+		if (s_states.TryGetValue(ai, out var value) && value.Thrown != null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
+		if (IsThrowable(currentWeapon))
+		{
+			return HasOtherWeapon(hum, currentWeapon);
+		}
+		return false;
+	}
+
+	// how close to stop for a throw
+	internal static float Standoff()
+	{
+		float range = ModConfig.HuntThrowRange?.Value ?? 12f;
+		return Mathf.Clamp(ModConfig.HuntThrowStandoff?.Value ?? 8f, MinThrowDistance + 0.5f, Mathf.Max(MinThrowDistance + 0.5f, range - 1f));
+	}
+
+	private static void Why(State st, string text)
+	{
+		if (Time.time >= st.NextWhyLog)
+		{
+			st.NextWhyLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] Not throwing yet: " + text);
+		}
+	}
+
 	// hunting: holding a throwable spear, the prey is skittish game within throwing range, another weapon in the pack,
 	// no spear already out
 	internal static bool WantsThrow(CompanionAI ai, Humanoid hum, Character prey, float dist)
@@ -115,11 +153,19 @@ internal static class MHR_SpearThrow
 			return false;
 		}
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
-		if (IsThrowable(currentWeapon) && Skittish(prey))
+		if (!IsThrowable(currentWeapon) || !Skittish(prey) || !HasOtherWeapon(hum, currentWeapon))
 		{
-			return HasOtherWeapon(hum, currentWeapon);
+			return false;
 		}
-		return false;
+		// 1.5.4: the game refuses an attack it can't pay for - wait for the stamina rather than walking in to stab
+		float cost = currentWeapon.m_shared.m_secondaryAttack.m_attackStamina;
+		if (cost > 0f && !hum.HaveStamina(cost + 0.1f))
+		{
+			CompanionStamina stam = hum.GetComponent<CompanionStamina>();
+			Why(state, $"not enough stamina for a throw ({(stam != null ? stam.Stamina : 0f):F0}, needs {cost:F0})");
+			return false;
+		}
+		return true;
 	}
 
 	// hunting skittish game with no bow: hold a throwable spear (when there's another weapon to fall back on and no spear

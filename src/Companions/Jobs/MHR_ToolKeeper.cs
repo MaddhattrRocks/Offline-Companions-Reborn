@@ -26,6 +26,9 @@ namespace Companions
             public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
+            // 1.5.4: kinds the player took out of its pack for this job - it doesn't go and fetch another
+            public HashSet<int> Refused = new HashSet<int>();
+            public bool PanelOpen; public HashSet<int> PanelHad;
         }
         static readonly Dictionary<int, State> s_state = new Dictionary<int, State>();
 
@@ -117,9 +120,34 @@ namespace Companions
             if (mode != st.LastMode)
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
+                st.Refused.Clear();
                 LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
+                // 1.5.4: a fetch the new job has no use for is called off (user log: Hunt turned off, and he still walked
+                // 50 m back to a chest for a bow, again after every recall)
+                if (st.Phase == 1 && !NeedsKind(mode, st.Kind))
+                {
+                    Log("Not fetching " + KindName(st.Kind) + " any more - the job changed");
+                    EndTrip(cs, st, ai, mode);
+                }
             }
             st.LastMode = mode;
+            // 1.5.4: the player took a tool the job uses out of its pack (user log: took the crossbow, and he went 58 m to a
+            // chest for a hunting bow, then for another bow). Like a player handed that hint: work without it for this job.
+            bool panelOpen = CompanionInteractPanel.IsOpenFor(cs);
+            if (panelOpen && !st.PanelOpen) st.PanelHad = OwnedKinds(inv, mode);
+            else if (!panelOpen && st.PanelOpen && st.PanelHad != null)
+            {
+                HashSet<int> now2 = OwnedKinds(inv, mode);
+                foreach (int k in st.PanelHad)
+                {
+                    if (now2.Contains(k) || !st.Refused.Add(k)) continue;
+                    string kn = KindName(k); kn = kn.StartsWith("an ") ? kn.Substring(3) : kn.StartsWith("a ") ? kn.Substring(2) : kn;
+                    Log("You took its " + kn + " - it won't fetch another for this job");
+                    if (st.Phase == 1 && st.Kind == k) EndTrip(cs, st, ai, mode);
+                }
+                st.PanelHad = null;
+            }
+            st.PanelOpen = panelOpen;
             // 1.4.84: coming home with no job (or loading in at home) also empties the bags, like a player back from a
             // trip. It used to happen only on a job change, and that's forgotten on a restart (1.4.83 test: back home
             // with tin ore, bone fragments, meat... and he kept it all until a job was picked). 1.4.94: a hunter that
@@ -195,6 +223,7 @@ namespace Companions
             for (int k = 0; k < kinds.Length; k++)
             {
                 int kind = kinds[k];
+                if (st.Refused.Contains(kind)) continue;
                 ItemDrop.ItemData owned = BestInInventory(inv, kind, launcher);
                 if (owned != null) { if (kind == K_BOW || kind == K_ROD) launcher = owned; continue; }
                 if ((kind == K_ARROW || kind == K_BAIT) && launcher == null) continue;
@@ -624,6 +653,16 @@ namespace Companions
                 case 15: return new[] { K_HAMMER };
                 default: return null;
             }
+        }
+        // the tools (not ammo, bait or food) the job uses that are in the pack
+        static HashSet<int> OwnedKinds(Inventory inv, int mode)
+        {
+            HashSet<int> set = new HashSet<int>();
+            int[] k = KindsFor(mode);
+            if (k == null || inv == null) return set;
+            for (int i = 0; i < k.Length; i++)
+                if (k[i] != K_ARROW && k[i] != K_BAIT && k[i] != K_FOOD && BestInInventory(inv, k[i], null) != null) set.Add(k[i]);
+            return set;
         }
         static bool NeedsKind(int mode, int kind)
         {

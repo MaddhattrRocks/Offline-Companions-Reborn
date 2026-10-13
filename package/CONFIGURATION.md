@@ -467,6 +467,18 @@ A hunter holding a spear throws it at skittish game (deer, hares...) from a dist
 **ThrowRange** — Default: 12 · Range: 4 – 25  
 How far (meters) a hunter throws its spear from. Further throws drop short more often.
 
+**ThrowStandoff** — Default: 8 · Range: 3 – 25  
+With a spear to throw at skittish game, a hunter sneaks only this close (meters), stops and throws, instead of walking right up to stab it. Never more than ThrowRange less 1 m.
+
+**SneakRestStamina** — Default: 0.3 · Range: 0 – 0.9  
+Sneaking costs stamina, like for a player (standing still doesn't). When a hunter sneaking up on prey drops below this share of its stamina, it stops where it is, stays crouched and gets its breath back. 0 = never stops.
+
+**SneakResumeStamina** — Default: 0.6 · Range: 0.1 – 1  
+A hunter resting while sneaking carries on once its stamina is back above this share.
+
+**ChaseRunStamina** — Default: 0.3 · Range: 0 – 1  
+Chasing prey that has bolted, a hunter only runs while its stamina is above this share; below it, it jogs and lets its stamina come back, like a player. 0 = always runs.
+
 ## Fishing
 
 The Fish job.

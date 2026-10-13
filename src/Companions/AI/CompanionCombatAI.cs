@@ -163,12 +163,56 @@ public class CompanionCombatAI : MonoBehaviour
 		return there;
 	}
 
+	// 1.5.4: stamina while hunting, like a player (user: "the NPC should be conserving stamina when sneaking and try to
+	// avoid jumping. They can also pause to recover stamina." Log: sneaking, a jump and a running chase left him at 13/104
+	// when he reached the deer). Sneaking drains stamina, standing crouched doesn't.
+	private CompanionStamina _stam;
+
+	private bool _sneakRest;
+
+	private float StaminaShare()
+	{
+		if (_stam == null)
+		{
+			_stam = GetComponent<CompanionStamina>();
+		}
+		return (_stam != null && _stam.MaxStamina > 0f) ? _stam.Stamina / _stam.MaxStamina : 1f;
+	}
+
 	private bool HuntMove(float dt, Vector3 point, float dist, bool run)
 	{
 		if (!HuntMode || _targetCreature == null)
 		{
 			return false;
 		}
+		float share = StaminaShare();
+		if (_stalking)
+		{
+			float restBelow = ModConfig.HuntSneakRestStamina?.Value ?? 0.3f;
+			float resumeAt = Mathf.Max(restBelow, ModConfig.HuntSneakResumeStamina?.Value ?? 0.6f);
+			if (!_sneakRest && share < restBelow)
+			{
+				_sneakRest = true;
+				CompanionsPlugin.Log.LogDebug($"[Hunt] Out of breath sneaking up on {_targetCreature.m_name} - resting crouched ({share:P0} stamina)");
+			}
+			else if (_sneakRest && share >= resumeAt)
+			{
+				_sneakRest = false;
+				CompanionsPlugin.Log.LogDebug($"[Hunt] Got its breath back ({share:P0}) - sneaking on");
+			}
+			if (_sneakRest)
+			{
+				_ai.StopMoving();
+				_ai.LookAtPoint(_targetCreature.GetCenterPoint());
+				return true;
+			}
+		}
+		else
+		{
+			_sneakRest = false;
+		}
+		// a bolting deer outruns anyone: run only while there's stamina to spare, else jog and let it come back
+		bool tired = run && share < (ModConfig.HuntChaseRunStamina?.Value ?? 0.3f);
 		Vector3 me = base.transform.position;
 		Vector3 goal = point;
 		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
@@ -186,7 +230,7 @@ public class CompanionCombatAI : MonoBehaviour
 				return true;
 			}
 		}
-		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run, "Hunt", run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
+		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run && !tired, "Hunt", tired ? MHR_Mover.SpeedJog : run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
 		if (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim())
 		{
 			LeavePrey("I'd have to swim");
@@ -463,6 +507,12 @@ public class CompanionCombatAI : MonoBehaviour
 					// half way up the last ladder and fought from it)
 					if (!flag7 && reachDy > 0.5f && MHR_Mover.OnLadderChain(_ai)) flag8 = false;
 					float dist = (flag7 ? 20f : 0f);
+					// 1.5.4: a spear to throw at skittish game: sneak to throwing distance, stop and throw, rather than walking
+					// right up to it and stabbing (bug report: stabbed the deer up close, threw only once it had run off)
+					if (!flag7 && HuntMode && MHR_SpearThrow.ReadyToThrow(_ai, _humanoid, _targetCreature))
+					{
+						dist = MHR_SpearThrow.Standoff();
+					}
 					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
 					{

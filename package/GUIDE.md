@@ -107,7 +107,7 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 Home matters because companions:
 
 - **claim a bed** inside the home area (shown with their name)
-- **fetch tools** from the chests around home and put borrowed ones back
+- **fetch tools** from the chests around home and put borrowed ones back (take a tool out of its pack and it works without one for that job)
 - **empty their bags** into the chests around home when they come back or change jobs
 - **work around home** when a job is started near it
 - **repair gear** a bit sooner at home, where a workbench is close
@@ -156,9 +156,9 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 ### Hunt
 
 - **What:** creatures that drop meat, until there's enough of each kind of meat (100 by default, counting pack and chests at home). Leather and other drops are picked up as a bonus. Tamed animals, bosses and other companions are never hunted.
-- **Sneaking:** they sneak up on skittish game like deer and hares, crouched and not running, so it doesn't bolt.
+- **Sneaking:** they sneak up on skittish game like deer and hares, crouched and not running, so it doesn't bolt. Sneaking costs stamina like a player's: when they run low they stop, stay crouched and get their breath back (Hunting > SneakRestStamina). They wade shallow water instead of jumping it while sneaking. Chasing prey that bolted, they only run while they have stamina to spare (Hunting > ChaseRunStamina).
 - **Weapons:** a bow or crossbow with ammo comes first. Without one they hunt with a melee weapon: they sneak right up and strike.
-- **Throwing spears:** a hunter holding a spear throws it at skittish game from up to 12 m (Hunting > ThrowRange), as long as it has another weapon in its pack to fight on with. After the hunt it walks over and picks the spear back up. Turn this off with Hunting > ThrowSpear.
+- **Throwing spears:** a hunter holding a spear throws it at skittish game from up to 12 m (Hunting > ThrowRange), as long as it has another weapon in its pack to fight on with. It sneaks only to throwing distance (Hunting > ThrowStandoff, 8 m), stops and throws, and waits for the stamina the throw needs rather than walking in to stab. After the hunt it walks over and picks the spear back up. Turn this off with Hunting > ThrowSpear.
 - **Birds:** with a bow or crossbow and ammo, they shoot crows and gulls for feathers.
 - **Follow on:** they hunt within 25 m of you. **Follow off:** they hunt up to 40 m around where they were set to work.
 - **Chasing:** they chase prey that runs, up to 15 m further, then let it go.

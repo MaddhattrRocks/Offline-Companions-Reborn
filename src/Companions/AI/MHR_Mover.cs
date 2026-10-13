@@ -14,6 +14,7 @@ namespace Companions
         class S
         {
             public Vector3 Goal, Dest; public float Dist; public string Tag = "";
+            public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
@@ -169,6 +170,10 @@ namespace Companions
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
             else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
             s.LastGo = now; s.Goal = goal; s.Dist = dist;
+            // 1.5.4: crouched (sneaking up on prey): wade shallow water and walk round instead of jumping - a jump is loud,
+            // stands it up and costs stamina (user log: jumped the water while sneaking up on a deer, which then bolted)
+            CompanionStamina cst = ai.GetComponent<CompanionStamina>();
+            s.Quiet = cst != null && cst.IsCrouching;
 
             // arrived: within reach on the same level (not standing under it on the floor below)
             if (Flat(pos, goal) <= dist && Mathf.Abs(pos.y - goal.y) <= 1.5f) { Halt(ai, c, s); return true; }
@@ -323,7 +328,7 @@ namespace Companions
             }
 
             // 1.4.97: going straight and there's a gap right ahead: leap it
-            if (s.Direct && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(c, pos, dir))
+            if (s.Direct && !s.Quiet && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(c, pos, dir))
             {
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
@@ -375,7 +380,7 @@ namespace Companions
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
             // 1.4.86: walk up stairs like a player; only hop when a step actually holds him up (1.4.85 hopped every step)
-            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Direct || now - s.AnchorTime > 0.5f) && StepAhead(pos, dir))
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir))
             {
                 s.NextHop = now + 0.6f;
                 ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -2246,7 +2251,7 @@ namespace Companions
             // and right back - the moving player changed the route). Wade it or go round instead.
             if (now - s.LastWaterJumpAt < 6f && Vector3.Dot(dir, s.LastWaterJumpDir) < -0.3f) { s.NextWaterPeek = now + 1.0f; return false; }
             float landY = landAt > 0f ? MHR_Water.GroundAt(pos + dir * landAt) : pos.y;
-            if (landAt > 0f && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
+            if (!s.Quiet && landAt > 0f && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
@@ -2258,7 +2263,7 @@ namespace Companions
             // 1.4.99: close enough is good enough (user: "if it can make it most of the way across the water with a jump
             // into shallow water on the other side its worth the jump. They can always jump again"). Landing somewhere it
             // can stand counts, as long as it keeps some stamina back for the rest of the way.
-            if (waterAt <= 1.5f && MHR_Jump.HasSpare(c, 0.25f))
+            if (!s.Quiet && waterAt <= 1.5f && MHR_Jump.HasSpare(c, 0.25f))
             {
                 float reach = MHR_Jump.Reach(c, dir, 0f);
                 if (reach >= 2f)
