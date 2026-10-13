@@ -203,6 +203,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HuntSneakRestStamina;
 
+	internal static ConfigEntry<float> HuntSneakFrom;
+
 	internal static ConfigEntry<float> HuntSneakResumeStamina;
 
 	internal static ConfigEntry<float> HuntChaseRunStamina;
@@ -607,6 +609,7 @@ internal static class ModConfig
 		HuntThrowSpear = Bind(cfg, "Hunting", "ThrowSpear", true, "A hunter holding a spear throws it at skittish game (deer, hares...) from a distance, like a player, then walks over and picks it back up. Only when it has another weapon in its pack to fight on with.");
 		HuntThrowRange = Bind(cfg, "Hunting", "ThrowRange", 12f, "How far (meters) a hunter throws its spear from. Further throws drop short more often.", new AcceptableValueRange<float>(4f, 25f));
 		HuntThrowStandoff = Bind(cfg, "Hunting", "ThrowStandoff", 10f, "With a spear to throw at skittish game, a hunter sneaks only this close (meters), stops and throws, instead of walking right up to stab it. Never more than ThrowRange less 1 m.", new AcceptableValueRange<float>(3f, 25f));
+		HuntSneakFrom = Bind(cfg, "Hunting", "SneakFrom", 20f, "Further than this (meters) from prey that hasn't noticed it, a hunter walks (no running) instead of sneaking, like a player - sneaking all the way costs a lot of stamina. Closer, it crouches and sneaks.", new AcceptableValueRange<float>(5f, 60f));
 		HuntSneakRestStamina = Bind(cfg, "Hunting", "SneakRestStamina", 0.3f, "Sneaking costs stamina, like for a player (standing still doesn't). When a hunter sneaking up on prey drops below this share of its stamina, it stops where it is, stays crouched and gets its breath back. 0 = never stops.", new AcceptableValueRange<float>(0f, 0.9f));
 		HuntSneakResumeStamina = Bind(cfg, "Hunting", "SneakResumeStamina", 0.6f, "A hunter resting while sneaking carries on once its stamina is back above this share.", new AcceptableValueRange<float>(0.1f, 1f));
 		HuntChaseRunStamina = Bind(cfg, "Hunting", "ChaseRunStamina", 0.3f, "Chasing prey that has bolted, a hunter only runs while its stamina is above this share; below it, it jogs and lets its stamina come back, like a player. 0 = always runs.", new AcceptableValueRange<float>(0f, 1f));

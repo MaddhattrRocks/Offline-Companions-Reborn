@@ -119,6 +119,13 @@ public class CompanionCombatAI : MonoBehaviour
 	private void UpdateStalk()
 	{
 		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && !_character.IsSwimming() && Unaware(_targetCreature);
+		// 1.5.4: walk up to SneakFrom, then crouch (user log: sneaking from 30 m out took three breathers per deer)
+		bool far = false;
+		if (stalk && Vector3.Distance(base.transform.position, _targetCreature.transform.position) > (ModConfig.HuntSneakFrom?.Value ?? 20f) + (_stalking ? 2f : 0f))
+		{
+			stalk = false;
+			far = true;
+		}
 		if (stalk == _stalking)
 		{
 			return;
@@ -132,7 +139,7 @@ public class CompanionCombatAI : MonoBehaviour
 		if (Time.time >= _nextStalkLog)
 		{
 			_nextStalkLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
+			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : far ? "Too far off to sneak yet - walking towards " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
 		}
 	}
 
@@ -275,6 +282,12 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		// a bolting deer outruns anyone: run only while there's stamina to spare, else jog and let it come back
 		bool tired = run && share < (ModConfig.HuntChaseRunStamina?.Value ?? 0.3f);
+		// still out of sneaking range of prey that hasn't noticed: walk up quietly, no running
+		if (!_stalking && (ModConfig.HuntSneak?.Value ?? true) && Unaware(_targetCreature))
+		{
+			run = false;
+			tired = false;
+		}
 		Vector3 me = base.transform.position;
 		Vector3 goal = point;
 		ItemDrop.ItemData weapon = _humanoid.GetCurrentWeapon();
@@ -922,9 +935,15 @@ public class CompanionCombatAI : MonoBehaviour
 		if (_ai.IsAlerted() || _targetCreature != null)
 		{
 			_timeSinceAttacking += dt;
-			float num2 = 60f;
+			// 1.5.4: a stalk with a few breathers takes longer than a minute without an attack (user log: dropped the deer it
+			// was sneaking up on, "Lost Deer", skipped it for a minute and went for one further off) - hunting gets 3 minutes
+			float num2 = HuntMode ? 180f : 60f;
 			if (_timeSinceSensedTarget > 30f || _timeSinceAttacking > num2)
 			{
+				if (_targetCreature != null)
+				{
+					CompanionsPlugin.Log.LogDebug("[Combat] Giving up on " + _targetCreature.m_name + (_timeSinceSensedTarget > 30f ? " - lost sight and sound of it for 30 s" : $" - no attack in {num2:F0} s"));
+				}
 				_ai.SetAlerted(alert: false);
 				_targetCreature = null;
 				_targetStatic = null;
