@@ -590,6 +590,14 @@ public class CompanionCombatAI : MonoBehaviour
 					// Now it sneaks right up and strikes like a melee fighter.
 					bool flag7 = flag6;
 					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
+					// 1.5.4: a sneak attack (it hasn't noticed us) is one free hit - strike from well inside the reach, not its edge
+					// (user log: stabbed an unaware deer from 2.0 m, the very edge, and missed; the next ones from 1.7-1.9 hit)
+					if (!flag7 && Unaware(_targetCreature))
+					{
+						Attack sneakAttack = itemData.m_shared.m_attack;
+						float baseReach = (sneakAttack != null && sneakAttack.m_attackRange > 0f) ? sneakAttack.m_attackRange : num5;
+						num5 = Mathf.Min(num5, Mathf.Max(0.8f, baseReach * (ModConfig.SneakStabReach?.Value ?? 0.8f)));
+					}
 					bool flag8 = num3 < num5;
 					// 1.5.3: a sword only reaches someone about on our level - a skeleton a floor up (user log: 2.8 m away, 2 m up)
 					// had him swinging at the ladder between them instead of climbing on. Out of reach: keep moving.

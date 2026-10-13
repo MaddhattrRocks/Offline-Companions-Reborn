@@ -160,7 +160,7 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 - **Weapons:** a bow or crossbow with ammo comes first. Without one they hunt with a melee weapon: they sneak right up and strike.
 - **Throwing spears:** a hunter holding a spear throws it at skittish game from up to 12 m (Hunting > ThrowRange), as long as it has another weapon in its pack to fight on with - or, with the spear as its only weapon, once the prey has noticed it (then it fetches the spear before hunting on). It sneaks only to throwing distance (Hunting > ThrowStandoff, 10 m), stops and throws, and waits for the stamina the throw needs rather than walking in to stab. After the hunt it walks over and picks the spear back up. Turn this off with Hunting > ThrowSpear.
 - **Birds:** with a bow or crossbow and ammo, they shoot crows and gulls for feathers.
-- **Follow on:** they hunt within 25 m of you. **Follow off:** they hunt up to 40 m around where they were set to work.
+- **Follow on:** they hunt within 40 m of you (Hunting > FollowRange). **Follow off:** they hunt up to 40 m around where they were set to work.
 - **Chasing:** they chase prey that runs, up to 15 m further, then let it go.
 - **Full pack:** with Follow off and a home set, they bring the catch home and go back out.
 
