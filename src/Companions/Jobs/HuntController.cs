@@ -46,6 +46,8 @@ public class HuntController : MonoBehaviour
 
 	private Character _prey;
 
+	private float _nextSwapCheck;
+
 	private Vector3 _lastPreyPos;
 
 	private string _preyName;
@@ -325,6 +327,30 @@ public class HuntController : MonoBehaviour
 			return;
 		}
 		_wasChasing = true;
+		// 1.5.4: a much closer animal turns up before the first strike: go for that one instead, like a player would
+		// (user: "switch to a closer deer if it hasn't attacked yet")
+		if (Time.time >= _nextSwapCheck && !_combatAI.HasAttackedTarget)
+		{
+			_nextSwapCheck = Time.time + 2f;
+			Character closer = FindPrey(follow, out string _);
+			if (closer != null && closer != prey)
+			{
+				float dNow = Vector3.Distance(base.transform.position, prey.transform.position);
+				float dNew = Vector3.Distance(base.transform.position, closer.transform.position);
+				if (dNew < dNow * 0.6f && dNow - dNew > 5f)
+				{
+					_combatAI.EngagePrey(closer);
+					if (_combatAI.HuntMode && _combatAI.TargetCreature == closer)
+					{
+						Log("Going for a closer " + Loc(closer.m_name) + " (" + dNew.ToString("F0") + " m) instead of the " + Loc(_preyName) + " " + dNow.ToString("F0") + " m away");
+						_prey = closer;
+						_preyName = closer.m_name;
+						_lastPreyPos = closer.transform.position;
+						return;
+					}
+				}
+			}
+		}
 		float leash = Range(follow) + (ModConfig.HuntChaseExtra?.Value ?? 15f);
 		if (Vector3.Distance(prey.transform.position, Center(follow)) > leash)
 		{

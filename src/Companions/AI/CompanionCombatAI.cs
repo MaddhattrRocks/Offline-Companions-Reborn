@@ -175,8 +175,14 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 	}
 
+	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
+	private bool _attackedTarget;
+
+	internal bool HasAttackedTarget => _attackedTarget;
+
 	internal void NoteSwing(Character target, string kind, string detail, float window)
 	{
+		_attackedTarget = true;
 		CheckMiss(force: true);
 		_swingAt = Time.time;
 		_swingWindow = window;
@@ -451,6 +457,7 @@ public class CompanionCombatAI : MonoBehaviour
 				_unableToAttackTargetTimer = 0f;
 				_parryAttackCount = 0;
 				_engaged = true;
+				_attackedTarget = false;
 				Character after = target.GetBaseAI()?.GetTargetCreature();
 				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
 				_ai.SetAlerted(alert: true);
