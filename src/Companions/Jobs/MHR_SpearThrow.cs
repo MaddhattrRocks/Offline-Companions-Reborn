@@ -123,7 +123,7 @@ internal static class MHR_SpearThrow
 	internal static float Standoff()
 	{
 		float range = ModConfig.HuntThrowRange?.Value ?? 12f;
-		return Mathf.Clamp(ModConfig.HuntThrowStandoff?.Value ?? 8f, MinThrowDistance + 0.5f, Mathf.Max(MinThrowDistance + 0.5f, range - 1f));
+		return Mathf.Clamp(ModConfig.HuntThrowStandoff?.Value ?? 10f, MinThrowDistance + 0.5f, Mathf.Max(MinThrowDistance + 0.5f, range - 1f));
 	}
 
 	private static void Why(State st, string text)

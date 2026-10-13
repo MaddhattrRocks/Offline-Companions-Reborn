@@ -467,7 +467,7 @@ A hunter holding a spear throws it at skittish game (deer, hares...) from a dist
 **ThrowRange** — Default: 12 · Range: 4 – 25  
 How far (meters) a hunter throws its spear from. Further throws drop short more often.
 
-**ThrowStandoff** — Default: 8 · Range: 3 – 25  
+**ThrowStandoff** — Default: 10 · Range: 3 – 25  
 With a spear to throw at skittish game, a hunter sneaks only this close (meters), stops and throws, instead of walking right up to stab it. Never more than ThrowRange less 1 m.
 
 **SneakRestStamina** — Default: 0.3 · Range: 0 – 0.9  
