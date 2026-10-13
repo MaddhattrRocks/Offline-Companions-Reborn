@@ -473,6 +473,12 @@ With a spear to throw at skittish game, a hunter sneaks only this close (meters)
 **SneakFrom** — Default: 20 · Range: 5 – 60  
 Further than this (meters) from prey that hasn't noticed it, a hunter walks (no running) instead of sneaking, like a player - sneaking all the way costs a lot of stamina. Closer, it crouches and sneaks.
 
+**SwitchCloserBy** — Default: 5 · Range: 0 – 50  
+Before its first strike, a hunter switches to another animal that is at least this many meters closer than its prey (and see SwitchShare). 0 = never switches.
+
+**SwitchShare** — Default: 0.6 · Range: 0.1 – 1  
+...and that is at most this share of the distance to its prey (0.6 = 60%).
+
 **SneakRestStamina** — Default: 0.3 · Range: 0 – 0.9  
 Sneaking costs stamina, like for a player (standing still doesn't). When a hunter sneaking up on prey drops below this share of its stamina, it stops where it is, stays crouched and gets its breath back. 0 = never stops.
 

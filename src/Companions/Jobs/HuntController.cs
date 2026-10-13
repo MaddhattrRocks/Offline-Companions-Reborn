@@ -329,7 +329,8 @@ public class HuntController : MonoBehaviour
 		_wasChasing = true;
 		// 1.5.4: a much closer animal turns up before the first strike: go for that one instead, like a player would
 		// (user: "switch to a closer deer if it hasn't attacked yet")
-		if (Time.time >= _nextSwapCheck && !_combatAI.HasAttackedTarget)
+		float closerBy = ModConfig.HuntSwitchCloserBy?.Value ?? 5f;
+		if (closerBy > 0f && Time.time >= _nextSwapCheck && !_combatAI.HasAttackedTarget)
 		{
 			_nextSwapCheck = Time.time + 2f;
 			Character closer = FindPrey(follow, out string _);
@@ -337,7 +338,7 @@ public class HuntController : MonoBehaviour
 			{
 				float dNow = Vector3.Distance(base.transform.position, prey.transform.position);
 				float dNew = Vector3.Distance(base.transform.position, closer.transform.position);
-				if (dNew < dNow * 0.6f && dNow - dNew > 5f)
+				if (dNew < dNow * (ModConfig.HuntSwitchShare?.Value ?? 0.6f) && dNow - dNew > closerBy)
 				{
 					_combatAI.EngagePrey(closer);
 					if (_combatAI.HuntMode && _combatAI.TargetCreature == closer)
