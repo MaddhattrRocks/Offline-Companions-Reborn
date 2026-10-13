@@ -590,6 +590,11 @@ public class CompanionCombatAI : MonoBehaviour
 					// Now it sneaks right up and strikes like a melee fighter.
 					bool flag7 = flag6;
 					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
+					// 1.5.4: not right at the edge of the reach (user: "using 1.8 and forcing the NPC to ensure it is under 2.0")
+					if (!flag7)
+					{
+						num5 = Mathf.Max(0.8f, num5 - (ModConfig.MeleeReachMargin?.Value ?? 0.2f));
+					}
 					// 1.5.4: a sneak attack (it hasn't noticed us) is one free hit - strike from well inside the reach, not its edge
 					// (user log: stabbed an unaware deer from 2.0 m, the very edge, and missed; the next ones from 1.7-1.9 hit)
 					if (!flag7 && Unaware(_targetCreature))
@@ -689,7 +694,7 @@ public class CompanionCombatAI : MonoBehaviour
 								Vector3 flat = new Vector3(to.x, 0f, to.z);
 								Vector3 fwd = base.transform.forward; fwd.y = 0f;
 								NoteSwing(_targetCreature, flag7 ? "Shot" : "Swing", $"{itemData.m_shared.m_name}, {num3:F1} m from its edge, {to.y:+0.0;-0.0} m up, facing {Vector3.Angle(fwd, flat):F0} deg off (limit {maxAngle:F0}), reach {num5:F1} m, " +
-									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide, tilt up to {melee.m_maxYAngle:F0} deg" : "no attack data") + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
+									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide ({melee.m_attackType}), tilt up to {melee.m_maxYAngle:F0} deg, weapon range {melee.m_attackRange:F2} m, AI range {itemData.m_shared.m_aiAttackRange:F2} m, hit width {melee.m_attackRayWidth:F2} m (+{melee.m_attackRayWidthCharExtra:F2} vs creatures), hit height {melee.m_attackHeight:F2} m" : "no attack data") + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
 								if (_parryAttackCount > 0)
 								{
 									_parryAttackCount--;

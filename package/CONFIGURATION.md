@@ -816,6 +816,9 @@ Combat: least time (seconds) between a companion's attacks, on top of each weapo
 **MeleeTooClose** — Default: 0.3 · Range: 0 – 1.5  
 Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.
 
+**MeleeReachMargin** — Default: 0.2 · Range: 0 – 1  
+Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.
+
 **SneakStabReach** — Default: 1.5 · Range: 0.5 – 3  
 Combat: against something that hasn't noticed it (a sneak attack), a companion strikes from no further than this (meters, from the edge of the target), so the one free hit doesn't fall short. A weapon with a shorter reach still uses its own.
 
