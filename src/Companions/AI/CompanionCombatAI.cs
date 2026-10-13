@@ -494,6 +494,15 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		_ai.m_targetCreature = _targetCreature;
 		_ai.m_targetStatic = _targetStatic;
+		// 1.5.4: threw its only weapon at the prey: let it go and fetch the spear first, like a player (MHR_SpearThrow.Drive
+		// walks to where it landed once out of combat)
+		if (HuntMode && MHR_SpearThrow.UnarmedAfterThrow(_ai, _humanoid))
+		{
+			CompanionsPlugin.Log.LogDebug("[Hunt] Threw its only weapon at " + _targetCreature?.m_name + " - going to pick the spear up first");
+			StopStalk();
+			Disengage();
+			return false;
+		}
 		UpdateStalk();
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();

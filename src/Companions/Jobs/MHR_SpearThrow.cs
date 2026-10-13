@@ -76,6 +76,42 @@ internal static class MHR_SpearThrow
 		return true;
 	}
 
+	// 1.5.4: the prey has noticed the hunter (it's alerted or after someone) - no sneaking up on it any more
+	private static bool Noticed(Character c)
+	{
+		BaseAI baseAI = c?.GetBaseAI();
+		if (baseAI != null)
+		{
+			if (!baseAI.IsAlerted())
+			{
+				return baseAI.GetTargetCreature() != null;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	// 1.5.4: a throw needs another weapon to fight on with - or prey that has noticed us and is about to bolt, when the
+	// spear is the only chance (user: "Throw the spear when hunting timid animals when noticed.")
+	private static bool MayThrow(Humanoid hum, ItemDrop.ItemData spear, Character prey)
+	{
+		if (!HasOtherWeapon(hum, spear))
+		{
+			return Noticed(prey);
+		}
+		return true;
+	}
+
+	// a spear is out (thrown, not picked back up) and nothing else to fight with is left in the pack
+	internal static bool UnarmedAfterThrow(CompanionAI ai, Humanoid hum)
+	{
+		if (ai != null && hum != null && s_states.TryGetValue(ai, out var value) && value.Thrown != null)
+		{
+			return !HasOtherWeapon(hum, null);
+		}
+		return false;
+	}
+
 	// something else to fight with once the spear is gone (not a tool, pickaxe, fishing rod or broken item)
 	private static bool HasOtherWeapon(Humanoid hum, ItemDrop.ItemData spear)
 	{
@@ -114,7 +150,7 @@ internal static class MHR_SpearThrow
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
 		if (IsThrowable(currentWeapon))
 		{
-			return HasOtherWeapon(hum, currentWeapon);
+			return MayThrow(hum, currentWeapon, prey);
 		}
 		return false;
 	}
@@ -153,7 +189,7 @@ internal static class MHR_SpearThrow
 			return false;
 		}
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
-		if (!IsThrowable(currentWeapon) || !Skittish(prey) || !HasOtherWeapon(hum, currentWeapon))
+		if (!IsThrowable(currentWeapon) || !Skittish(prey) || !MayThrow(hum, currentWeapon, prey))
 		{
 			return false;
 		}
@@ -181,7 +217,7 @@ internal static class MHR_SpearThrow
 			return false;
 		}
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
-		if (IsThrowable(currentWeapon) && HasOtherWeapon(hum, currentWeapon))
+		if (IsThrowable(currentWeapon) && MayThrow(hum, currentWeapon, prey))
 		{
 			return true;
 		}
@@ -193,7 +229,7 @@ internal static class MHR_SpearThrow
 		ItemDrop.ItemData itemData = null;
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
-			if (IsThrowable(allItem) && (!allItem.m_shared.m_useDurability || allItem.m_durability > 0f) && HasOtherWeapon(hum, allItem) && (itemData == null || allItem.GetDamage().GetTotalDamage() > itemData.GetDamage().GetTotalDamage()))
+			if (IsThrowable(allItem) && (!allItem.m_shared.m_useDurability || allItem.m_durability > 0f) && MayThrow(hum, allItem, prey) && (itemData == null || allItem.GetDamage().GetTotalDamage() > itemData.GetDamage().GetTotalDamage()))
 			{
 				itemData = allItem;
 			}

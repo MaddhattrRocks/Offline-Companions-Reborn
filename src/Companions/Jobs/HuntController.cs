@@ -253,6 +253,11 @@ public class HuntController : MonoBehaviour
 			}
 			return;
 		}
+		// 1.5.4: its only weapon (a spear) is lying where it was thrown - fetch it before going after anything else
+		if (MHR_SpearThrow.UnarmedAfterThrow(_ai, _humanoid))
+		{
+			return;
+		}
 		Character prey = FindPrey(follow, out string why);
 		if (prey == null && StartBird(follow))
 		{
