@@ -36,7 +36,7 @@ namespace Companions
             public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace;
             // 1.5.3: a whole chain of ladders planned at once and climbed in one go
             public List<LadderStep> Chain, PendingChain; public bool OnChain, ChainDown, PendingDown; public int ChainIdx, ChainJumps;
-            public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -973,7 +973,7 @@ namespace Companions
 
         static void ChainStepReset(S s, Vector3 pos, float now)
         {
-            s.ChainProgressAt = now; s.ChainBestY = pos.y; s.ChainJumps = 0; s.ChainJumpAt = 0f;
+            s.ChainProgressAt = now; s.ChainBestY = pos.y; s.ChainJumps = 0; s.ChainJumpAt = 0f; s.ChainPushAt = 0f;
             s.ChainFootBest = float.MaxValue; s.ChainFootAt = now; s.ChainViaUntil = 0f;
         }
 
@@ -1010,8 +1010,10 @@ namespace Companions
             if (s.Chain == null || s.ChainIdx >= s.Chain.Count) { EndChain(s, now); return; }
             if (s.ChainDown) { RunChainDown(ai, c, s, pos, now, tag); return; }
             LadderStep st = s.Chain[s.ChainIdx];
-            // up this one: straight on to the next foot - no stopping on the landing
-            if (pos.y >= st.Top - 0.6f)
+            // up this one: straight on to the next foot - no stopping on the landing. Only once standing at its top, though:
+            // turning for the next foot 0.6 m short, still on the slope, walked him off its side ("fell off the ladders -
+            // back on at ladder 1/5" again and again); against a wall at the top, also when it stops lifting for 0.5 s
+            if (c.IsOnGround() && (pos.y >= st.Top - 0.3f || (pos.y >= st.Top - 0.8f && now - s.ChainProgressAt > 0.5f)))
             {
                 s.ChainIdx++;
                 ChainStepReset(s, pos, now);
@@ -1077,9 +1079,13 @@ namespace Companions
             }
             ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(dir), 540f * Time.deltaTime);
             Steer(ai, c, s, dir, true, false);
-            // at the foot (or as close as it gets): hop on, like a player stepping up - these ladders rarely lift a walker
+            // walk into it and let the ladder lift us, like a player (user: "trying to jump up the ladder rather than just go up
+            // them and let the game bump them" - a jump leaves the ground, and the ladder only bumps someone on the ground).
+            // A hop only after a second at the foot with no lift, or 1.5 s part way up without rising.
             bool atFoot = !lifted && (off <= 0.45f || now - s.ChainFootAt > 1.0f);
-            if (c.IsOnGround() && now >= s.ChainJumpAt && (atFoot ? now - s.ChainFootAt > 0.15f || off <= 0.45f : now - s.ChainProgressAt > 0.6f))
+            if ((atFoot || lifted) && s.ChainPushAt <= 0f) s.ChainPushAt = now;
+            float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
+            if ((atFoot || lifted) && s.ChainPushAt > 0f && c.IsOnGround() && now >= s.ChainJumpAt && since > (lifted ? 1.5f : 1.0f))
             {
                 if (++s.ChainJumps > 6)
                 {

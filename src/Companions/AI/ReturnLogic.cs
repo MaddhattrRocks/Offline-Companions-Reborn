@@ -156,6 +156,10 @@ internal static class ReturnLogic
 				catch (Exception)
 				{
 				}
+				// 1.5.3: put its follow target back to match its setting too (SetFollow only stores the flag)
+				CompanionSetup csBack = setupComp as CompanionSetup;
+				ZDO zBack = csBack != null ? csBack.GetComponent<ZNetView>()?.GetZDO() : null;
+				if (csBack != null && zBack != null) csBack.ApplyFollowMode(zBack.GetInt(CompanionSetup.ActionModeHash), true);
 				Log("[Return] back in range (" + num.ToString("F1") + "m) for \"" + setupComp.name + "\" - resuming normal behavior.");
 				return;
 			}
@@ -212,6 +216,14 @@ internal static class ReturnLogic
 			if (!IsInFollowMode(setupComp))
 			{
 				Log("[Return] skipped for \"" + setupComp.name + "\" - not currently set to Follow, left alone");
+				return;
+			}
+			// 1.5.3: mode 0 with the Follow toggle off is "stay where it is", not following (user: "The NPC was following me
+			// even though follow was off" - Return switched follow on at load and never put it back)
+			CompanionSetup csFollow = setupComp as CompanionSetup;
+			if (csFollow != null && !csFollow.GetFollow())
+			{
+				Log("[Return] skipped for \"" + setupComp.name + "\" - Follow is off, left alone");
 				return;
 			}
 			int instanceID = setupComp.GetInstanceID();
