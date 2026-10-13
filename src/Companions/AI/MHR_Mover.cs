@@ -1078,7 +1078,8 @@ namespace Companions
                 return;
             }
             ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(dir), 540f * Time.deltaTime);
-            Steer(ai, c, s, dir, true, false);
+            // walking pace on ladders (user: "There is no reason to have the NPC sprint up the ladder. Save the stamina.")
+            Steer(ai, c, s, dir, false, false);
             // walk into it and let the ladder lift us, like a player (user: "trying to jump up the ladder rather than just go up
             // them and let the game bump them" - a jump leaves the ground, and the ladder only bumps someone on the ground).
             // A hop only after a second at the foot with no lift, or 1.5 s part way up without rising.
@@ -1670,7 +1671,7 @@ namespace Companions
                 return;
             }
             ai.transform.rotation = Quaternion.LookRotation(dir);
-            Steer(ai, c, s, dir, true, false);
+            Steer(ai, c, s, dir, !s.ClimbLadder, false);   // 1.5.3: walk up ladders, save the stamina
             // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward.
             // 1.5.2: not on a ladder with its own auto-jump - walking into it is all a player does there; only help out
             // if that hasn't lifted us for a couple of seconds.
