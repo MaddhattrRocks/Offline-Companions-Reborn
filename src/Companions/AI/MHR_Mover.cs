@@ -36,7 +36,7 @@ namespace Companions
             public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace;
             // 1.5.3: a whole chain of ladders planned at once and climbed in one go
             public List<LadderStep> Chain, PendingChain; public bool OnChain, ChainDown, PendingDown; public int ChainIdx, ChainJumps;
-            public AutoJumpLedge[] ClimbLedges; public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainRestUntil, NextChainTrace, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public AutoJumpLedge[] ClimbLedges; public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainRestUntil, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -909,7 +909,7 @@ namespace Companions
         // staircase. Climbing them one at a time - find, walk to, climb, stop, look around, find the next - paused on every
         // landing and gave a wrong choice (a wall top, a step off the edge) a chance at each one. Instead: plan the chain
         // once, climb it without stopping, and remember chains that worked so a fall or the next visit reuses them.
-        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top, Run; public int Id; public AutoJumpLedge[] Ledges; public bool LinedUp, BumpLogged; }
+        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top, Run; public int Id; public bool LinedUp; }
         class KnownChain { public List<LadderStep> Steps; public float Until; }
         static readonly List<KnownChain> s_knownChains = new List<KnownChain>();
 
@@ -924,7 +924,7 @@ namespace Companions
             // spot) - just short of the trigger's nearest point, on the floor
             Vector3 zone;
             if (LiftZoneEdge(ledges, foot, dir, out zone)) { run -= Vector3.Dot(new Vector3(zone.x - foot.x, 0f, zone.z - foot.z), dir); foot = zone; }
-            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Run = Mathf.Max(run, 0.5f), Id = id, Ledges = ledges };
+            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Run = Mathf.Max(run, 0.5f), Id = id };
         }
 
         // the next ladder up from a ladder's top: its foot on the landing (within 1 m of the top's height, 3.5 m of it) and
@@ -966,45 +966,10 @@ namespace Companions
             return chain;
         }
 
-        // 1.5.3: the ladder's bump, as the game gives a player. A built ladder's AutoJumpLedge lifts whoever walks into it
-        // along its direction - but it never lifted the companion on any ladder in the user's logs (the game's ladders seem
-        // to react to players only), so it hopped instead ("trying to jump up the ladder rather than just go up them and let
-        // the game bump them"). Inside the ledge's trigger and walking its way: the same Character.OnAutoJump call the game
-        // makes for a player (it checks the ground, the direction and its own 0.5 s spacing).
-        static bool LadderBump(Character c, AutoJumpLedge[] ledges, Vector3 pos) { string why; return LadderBump(c, ledges, pos, out why); }
-        static readonly System.Reflection.FieldInfo s_moveDirF = HarmonyLib.AccessTools.Field(typeof(Character), "m_moveDir");
-        static bool LadderBump(Character c, AutoJumpLedge[] ledges, Vector3 pos, out string why)
-        {
-            why = "no lift trigger on this ladder";
-            if (ledges == null || c == null) return false;
-            Vector3 p = pos + Vector3.up * 0.5f;
-            float nearest = float.MaxValue; int triggers = 0;
-            foreach (AutoJumpLedge lg in ledges)
-            {
-                if (lg == null) continue;
-                foreach (Collider tc in lg.GetComponentsInChildren<Collider>(true))
-                {
-                    if (tc == null || !tc.isTrigger) continue;
-                    triggers++;
-                    float d = Vector3.Distance(tc.ClosestPoint(p), p);
-                    if (d < nearest) nearest = d;
-                    if (!tc.enabled || d > 0.6f) continue;
-                    // 1.5.3: no bump of our own any more (user: "Why does it work perfectly fine for the player ..."). Called from
-                    // the AI rather than the physics step, while he was still touching the floor, the game's walking code capped the
-                    // lift at 3 m/s (Character.UpdateWalking: on the ground, velocity.y = min(y, 3)) - a half-strength bounce that
-                    // didn't clear the ladder's edge - and it took the 0.5 s slot, so the ladder's own full bump was refused as "too
-                    // soon" every time. The ladder's trigger does the bumping, as for a player (CompanionLadderBumpPatch only makes
-                    // sure his walking direction reads right). This only reports what it sees.
-                    Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
-                    why = "in the lift zone (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
-                    if (c.InAttack()) why += " - mid-swing, the ladder won't bump him";
-                    return true;
-                }
-            }
-            why = triggers == 0 ? "no lift trigger found under " + ledges.Length + " ledge(s)" : "nearest lift zone " + nearest.ToString("F2") + "m away";
-            return false;
-        }
-
+        // 1.5.3: the ladder's own trigger (AutoJumpLedge) bumps a companion up it, as for a player - the mover doesn't bump.
+        // CompanionLadderBumpPatch makes his walking input read right when he walks the ladder's way. (An own bump from the AI
+        // was tried and dropped: the game's walking code capped it at 3 m/s while he was still on the floor, and it took the
+        // 0.5 s slot so the ladder's real bump was refused.)
         // nothing but ladder within `height` above a spot
         static bool HeadRoom(Vector3 spot, float height)
         {
@@ -1052,7 +1017,7 @@ namespace Companions
         static void StartChain(S s, List<LadderStep> chain, int idx, Vector3 pos, float now, string tag, bool down = false)
         {
             s.Chain = chain; s.ChainIdx = idx; s.OnChain = true; s.ChainDown = down;
-            foreach (LadderStep cs in chain) { cs.LinedUp = false; cs.BumpLogged = false; }
+            foreach (LadderStep cs in chain) cs.LinedUp = false;
             s.DescendLadder = false; s.DescendUntil = 0f;
             s.ClimbLadder = false; s.ClimbUntil = 0f; s.LadderPending = false; s.HasDetour = false; s.StepUntil = 0f;
             ChainStepReset(s, pos, now);
@@ -1229,11 +1194,6 @@ namespace Companions
             if (atFoot || lifted)
             {
                 if (s.ChainPushAt <= 0f) s.ChainPushAt = now;
-                string why;
-                // the ladder he's actually on - still the last rungs of the previous one right after switching
-                if (!LadderBump(c, st.Ledges, pos, out why) && s.ChainIdx > 0) LadderBump(c, s.Chain[s.ChainIdx - 1].Ledges, pos);
-                // one line per ladder after a second at it: what the bump saw (user test: the bump didn't lift him)
-                if (!st.BumpLogged && now - s.ChainPushAt > 1.0f) { st.BumpLogged = true; Dbg("[Move|" + tag + "] ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " bump: " + why + (lifted ? ", lifted" : ", not lifted yet")); }
                 // stuck: a hop, like a player would (user: "Its ok to have the NPC jump if they are stuck") - after 2.5 s
                 // without rising, not when short of stamina
                 float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
@@ -1259,17 +1219,6 @@ namespace Companions
                     s.ChainJumpAt = now + 1.0f;
                     Dbg("[Move|" + tag + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
                 }
-            }
-            // 1.5.3: ladder trace, ~3 a second while on a chain (user: "We need to look at the ladders more closely")
-            if (now >= s.NextChainTrace)
-            {
-                s.NextChainTrace = now + 0.3f;
-                Rigidbody trb = ai.GetComponent<Rigidbody>();
-                CompanionLadderBumpTrace.Counts k = CompanionLadderBumpTrace.Take(c);
-                string stage = lifted ? "climbing" : atFoot ? "at the foot" : (!st.LinedUp ? "lining up" : "to the foot");
-                Dbg("[Ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + "] " + stage + " y=" + pos.y.ToString("F2") + " (foot " + st.Foot.y.ToString("F1") + ", top " + st.Top.ToString("F1") + ") off=" + off.ToString("F2")
-                    + " ground=" + c.IsOnGround() + " vy=" + (trb != null ? trb.linearVelocity.y.ToString("F1") : "?") + " facing=" + Vector3.Dot(ai.transform.forward, st.Dir).ToString("F2") + " headroom=" + (HeadRoom(pos, 2.2f) ? "yes" : "NO")
-                    + (k == null ? " bumps: none" : " bumps: " + k.GameOk + "/" + k.Game + " accepted" + (k.LastRefusal.Length > 0 ? " (refused: " + k.LastRefusal + ")" : "")));
             }
         }
 
@@ -1858,7 +1807,6 @@ namespace Companions
                 // 1.5.3: at the foot, jump on after 0.4 s like a player stepping up (every ladder in the user's ruin needed it, and
                 // the full second each time made him "pause on each landing"); part way up, give the ladder a second first
                 // 1.5.3: the ladder's bump first (as for a player); a hop only when its bottom is up off the floor, or after 2 s
-                if (!toFoot) LadderBump(c, s.ClimbLedges, pos);
                 float liftWait = 2f;
                 if (toFoot || (!bottomUp && now - s.ClimbProgressAt < liftWait)) return;
                 if (c.IsOnGround() && now >= s.NextClimbJump)
