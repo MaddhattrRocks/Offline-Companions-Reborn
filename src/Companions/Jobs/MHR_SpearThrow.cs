@@ -223,6 +223,7 @@ internal static class MHR_SpearThrow
 			state.Drop = null;
 			s_inFlight[currentWeapon] = state;
 			CompanionsPlugin.Log.LogInfo("[Hunt] Threw its " + Loc(state.Name) + " at " + Loc(prey.m_name) + $" ({Vector3.Distance(ai.transform.position, prey.transform.position):F0} m)");
+			ai.GetComponent<CompanionCombatAI>()?.NoteSwing(prey, "Throw", $"{Vector3.Distance(ai.transform.position, prey.transform.position):F1} m, {prey.transform.position.y - ai.transform.position.y:+0.0;-0.0} m up, prey moving {prey.GetVelocity().magnitude:F1} m/s", 4f);
 		}
 	}
 

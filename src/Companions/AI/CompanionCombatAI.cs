@@ -152,6 +152,52 @@ public class CompanionCombatAI : MonoBehaviour
 	private float _nextFleeLog;
 	private float _nextCloseLog;
 
+	// 1.5.4: attack log - each swing or throw, then whether it hit (CompanionHitLog) or not within a moment
+	private float _swingAt = -1f;
+	private float _swingWindow;
+	private Character _swingTarget;
+	private string _swingKind;
+
+	internal void NoteSwing(Character target, string kind, string detail, float window)
+	{
+		CheckMiss(force: true);
+		_swingAt = Time.time;
+		_swingWindow = window;
+		_swingTarget = target;
+		_swingKind = kind;
+		CompanionsPlugin.Log.LogDebug("[Attack] " + kind + " at " + (target != null ? target.m_name : "?") + ": " + detail);
+	}
+
+	internal void NoteHit(Character target, HitData hit)
+	{
+		if (_swingAt < 0f)
+		{
+			CompanionsPlugin.Log.LogDebug($"[Attack] hit {target.m_name} for {hit.GetTotalDamage():F1}");
+			return;
+		}
+		CompanionsPlugin.Log.LogDebug($"[Attack] {_swingKind} hit {target.m_name}{(target != _swingTarget ? " (not the one aimed at)" : "")} for {hit.GetTotalDamage():F1} after {Time.time - _swingAt:F2} s");
+		if (target == _swingTarget)
+		{
+			_swingAt = -1f;
+		}
+	}
+
+	private void CheckMiss(bool force)
+	{
+		if (_swingAt < 0f || (!force && Time.time - _swingAt < _swingWindow))
+		{
+			return;
+		}
+		string where = "";
+		if (_swingTarget != null)
+		{
+			Vector3 d = _swingTarget.transform.position - base.transform.position;
+			where = $" (now {new Vector2(d.x, d.z).magnitude:F1} m away, {d.y:+0.0;-0.0} m up, {(_swingTarget.IsDead() ? "dead" : $"{_swingTarget.GetHealth():F0} hp")})";
+		}
+		CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + (_swingTarget != null ? _swingTarget.m_name : "?") + where);
+		_swingAt = -1f;
+	}
+
 	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
 	// for now, the game's own movement still closes in (a fight can't just stand still)
 	private bool ChaseMove(float dt, Vector3 point, float dist, bool run)
@@ -386,6 +432,7 @@ public class CompanionCombatAI : MonoBehaviour
 
 	internal bool UpdateCombat(float dt)
 	{
+		CheckMiss(force: false);
 		if (WaterSafety.ShouldAvoidChase(_humanoid, _targetCreature))
 		{
 			return false;
@@ -586,9 +633,17 @@ public class CompanionCombatAI : MonoBehaviour
 							{
 								maxAngle = Mathf.Min(maxAngle, Mathf.Max(8f, melee.m_attackAngle * 0.5f + 5f));
 							}
-							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
+							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
 							{
-								_parryAttackCount--;
+								Vector3 to = _targetCreature.transform.position - base.transform.position;
+								Vector3 flat = new Vector3(to.x, 0f, to.z);
+								Vector3 fwd = base.transform.forward; fwd.y = 0f;
+								NoteSwing(_targetCreature, flag7 ? "Shot" : "Swing", $"{itemData.m_shared.m_name}, {num3:F1} m from its edge, {to.y:+0.0;-0.0} m up, facing {Vector3.Angle(fwd, flat):F0} deg off (limit {maxAngle:F0}), reach {num5:F1} m, " +
+									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide, tilt up to {melee.m_maxYAngle:F0} deg" : "no attack data") + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
+								if (_parryAttackCount > 0)
+								{
+									_parryAttackCount--;
+								}
 							}
 						}
 					}
