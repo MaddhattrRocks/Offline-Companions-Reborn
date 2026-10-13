@@ -594,9 +594,7 @@ public class CompanionCombatAI : MonoBehaviour
 					// (user log: stabbed an unaware deer from 2.0 m, the very edge, and missed; the next ones from 1.7-1.9 hit)
 					if (!flag7 && Unaware(_targetCreature))
 					{
-						Attack sneakAttack = itemData.m_shared.m_attack;
-						float baseReach = (sneakAttack != null && sneakAttack.m_attackRange > 0f) ? sneakAttack.m_attackRange : num5;
-						num5 = Mathf.Min(num5, Mathf.Max(0.8f, baseReach * (ModConfig.SneakStabReach?.Value ?? 0.8f)));
+						num5 = Mathf.Min(num5, ModConfig.SneakStabReach?.Value ?? 1.5f);
 					}
 					bool flag8 = num3 < num5;
 					// 1.5.3: a sword only reaches someone about on our level - a skeleton a floor up (user log: 2.8 m away, 2 m up)

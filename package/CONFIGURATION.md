@@ -816,8 +816,8 @@ Combat: least time (seconds) between a companion's attacks, on top of each weapo
 **MeleeTooClose** — Default: 0.3 · Range: 0 – 1.5  
 Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.
 
-**SneakStabReach** — Default: 0.8 · Range: 0.3 – 1  
-Combat: against something that hasn't noticed it (a sneak attack), a companion strikes only from within this share of its weapon's reach, so the one free hit doesn't fall short. 1 = from the edge of its reach.
+**SneakStabReach** — Default: 1.5 · Range: 0.5 – 3  
+Combat: against something that hasn't noticed it (a sneak attack), a companion strikes from no further than this (meters, from the edge of the target), so the one free hit doesn't fall short. A weapon with a shorter reach still uses its own.
 
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
