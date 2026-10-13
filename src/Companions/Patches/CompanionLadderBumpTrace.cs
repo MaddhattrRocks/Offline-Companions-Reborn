@@ -4,18 +4,16 @@ using UnityEngine;
 namespace Companions;
 
 // 1.5.3: ladder trace (user: "We need to look at the ladders more closely. It was still wonky."). Records every OnAutoJump
-// call on a companion - who made it (the game's ladder trigger or the mover), whether the game accepted it and, if not, why -
+// call on a companion (the ladder's trigger - the mover no longer bumps), whether the game accepted it and, if not, why -
 // so MHR_Mover's chain trace can print what happened rung by rung. Debug only; nothing here changes behaviour.
 [HarmonyPatch(typeof(Character), "OnAutoJump")]
 internal static class CompanionLadderBumpTrace
 {
 	private static readonly AccessTools.FieldRef<Character, float> s_lastAutoJump = AccessTools.FieldRefAccess<Character, float>("m_lastAutoJumpTime");
 
-	internal static bool FromMover;   // set by MHR_Mover around its own call
-
 	internal class Counts
 	{
-		public int Game, GameOk, Mover, MoverOk;
+		public int Game, GameOk;
 		public string LastRefusal = "";
 	}
 
@@ -57,9 +55,9 @@ internal static class CompanionLadderBumpTrace
 			Counts k;
 			if (!s_counts.TryGetValue(id, out k)) { k = new Counts(); s_counts[id] = k; }
 			bool ok = __state.Length == 0;
-			if (FromMover) { k.Mover++; if (ok) k.MoverOk++; }
-			else { k.Game++; if (ok) k.GameOk++; }
-			if (!ok) k.LastRefusal = (FromMover ? "mine: " : "game: ") + __state;
+			k.Game++;
+			if (ok) k.GameOk++;
+			else k.LastRefusal = __state;
 		}
 		catch { }
 	}

@@ -989,16 +989,15 @@ namespace Companions
                     float d = Vector3.Distance(tc.ClosestPoint(p), p);
                     if (d < nearest) nearest = d;
                     if (!tc.enabled || d > 0.6f) continue;
-                    // 1.5.3: the game only bumps someone walking the ladder's way, and it read his walking direction as nothing
-                    // ("walking-direction match 0.00" in the user's log) - set it to the ladder's way first
-                    Vector3 lf = lg.transform.forward; lf.y = 0f;
-                    if (lf.sqrMagnitude > 0.01f) c.SetMoveDir(lf.normalized);
+                    // 1.5.3: no bump of our own any more (user: "Why does it work perfectly fine for the player ..."). Called from
+                    // the AI rather than the physics step, while he was still touching the floor, the game's walking code capped the
+                    // lift at 3 m/s (Character.UpdateWalking: on the ground, velocity.y = min(y, 3)) - a half-strength bounce that
+                    // didn't clear the ladder's edge - and it took the 0.5 s slot, so the ladder's own full bump was refused as "too
+                    // soon" every time. The ladder's trigger does the bumping, as for a player (CompanionLadderBumpPatch only makes
+                    // sure his walking direction reads right). This only reports what it sees.
                     Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
-                    why = "in the lift zone, bumped (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
-                    if (c.InAttack()) why += " - but it was mid-swing, so no bump";   // the game gives none mid-attack either
-                    CompanionLadderBumpTrace.FromMover = true;
-                    try { c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel); }
-                    finally { CompanionLadderBumpTrace.FromMover = false; }
+                    why = "in the lift zone (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
+                    if (c.InAttack()) why += " - mid-swing, the ladder won't bump him";
                     return true;
                 }
             }
@@ -1270,7 +1269,7 @@ namespace Companions
                 string stage = lifted ? "climbing" : atFoot ? "at the foot" : (!st.LinedUp ? "lining up" : "to the foot");
                 Dbg("[Ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + "] " + stage + " y=" + pos.y.ToString("F2") + " (foot " + st.Foot.y.ToString("F1") + ", top " + st.Top.ToString("F1") + ") off=" + off.ToString("F2")
                     + " ground=" + c.IsOnGround() + " vy=" + (trb != null ? trb.linearVelocity.y.ToString("F1") : "?") + " facing=" + Vector3.Dot(ai.transform.forward, st.Dir).ToString("F2") + " headroom=" + (HeadRoom(pos, 2.2f) ? "yes" : "NO")
-                    + (k == null ? " bumps: none" : " bumps: game " + k.GameOk + "/" + k.Game + ", mine " + k.MoverOk + "/" + k.Mover + (k.LastRefusal.Length > 0 ? " (refused: " + k.LastRefusal + ")" : "")));
+                    + (k == null ? " bumps: none" : " bumps: " + k.GameOk + "/" + k.Game + " accepted" + (k.LastRefusal.Length > 0 ? " (refused: " + k.LastRefusal + ")" : "")));
             }
         }
 
