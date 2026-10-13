@@ -70,6 +70,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> AttackCooldown;
 
+	internal static ConfigEntry<float> MeleeTooClose;
+
+	internal static ConfigEntry<float> MeleeReachMargin;
+
 
 
 
@@ -196,6 +200,20 @@ internal static class ModConfig
 	internal static ConfigEntry<bool> HuntThrowSpear;
 
 	internal static ConfigEntry<float> HuntThrowRange;
+
+	internal static ConfigEntry<float> HuntThrowStandoff;
+
+	internal static ConfigEntry<float> HuntSneakRestStamina;
+
+	internal static ConfigEntry<float> HuntSneakFrom;
+
+	internal static ConfigEntry<float> HuntSwitchCloserBy;
+
+	internal static ConfigEntry<float> HuntSwitchShare;
+
+	internal static ConfigEntry<float> HuntSneakResumeStamina;
+
+	internal static ConfigEntry<float> HuntChaseRunStamina;
 
 	internal static ConfigEntry<bool> HuntBirds;
 
@@ -588,7 +606,7 @@ internal static class ModConfig
 		HuntPrey = Bind(cfg, "Hunting", "Prey", "*", "What the Hunt job goes after: creatures that drop meat (and birds, see Birds). Name:Number with a creature or a meat name gives that meat its own target instead of MeatTarget / FeatherTarget. Tamed animals, bosses and companions are never hunted. The names to use are listed in OfflineCompanionsReborn.Hunting.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit). Names are item/creature names (prefab or in-game name).");
 		HuntMeatTarget = Bind(cfg, "Hunting", "MeatTarget", 100, "Hunt a creature only while one of the meats it drops is under this many (counting the companion's pack and the chests near its home). Leather, hides and other drops are picked up as a bonus. 0 = no limit.", new AcceptableValueRange<int>(0, 10000));
 		HuntRange = Bind(cfg, "Hunting", "Range", 40f, "With Follow off: how far (meters) from where it is hunting (home if it's near home, otherwise where the job was started) a companion looks for prey.", new AcceptableValueRange<float>(10f, 200f));
-		HuntFollowRange = Bind(cfg, "Hunting", "FollowRange", 25f, "With Follow on: prey has to be within this many meters of you. With nothing that close the companion just follows you.", new AcceptableValueRange<float>(5f, 100f));
+		HuntFollowRange = Bind(cfg, "Hunting", "FollowRange", 40f, "With Follow on: prey has to be within this many meters of you. With nothing that close the companion just follows you.", new AcceptableValueRange<float>(5f, 100f));
 		HuntChaseExtra = Bind(cfg, "Hunting", "ChaseExtra", 15f, "How much further than Range / FollowRange a companion chases prey that runs off before letting it go.", new AcceptableValueRange<float>(0f, 100f));
 		HuntBagFull = Bind(cfg, "Hunting", "BagFull", 0.9f, "With Follow off and home set: when the pack is this full (by weight, or out of free slots) the hunter walks home and puts its catch away, then goes back out.", new AcceptableValueRange<float>(0.3f, 1f));
 		HuntBirds = Bind(cfg, "Hunting", "Birds", true, "Also shoot birds (crows, gulls, modded birds) for their feathers: when one lands within range, the hunter sneaks up and shoots it with a bow or crossbow (only if it has one with ammo), then picks up the drops. Birds on the Prey list's exclusions (-Crow, -Seagal) are left alone.");
@@ -596,6 +614,13 @@ internal static class ModConfig
 		HuntSneak = Bind(cfg, "Hunting", "Sneak", true, "Sneak up on skittish game (deer, hares...) that hasn't noticed anyone yet, like a player: crouched and not running, so it doesn't bolt. Crouching companions are quieter and harder to spot, like a sneaking player (light and Sneak skill count).");
 		HuntThrowSpear = Bind(cfg, "Hunting", "ThrowSpear", true, "A hunter holding a spear throws it at skittish game (deer, hares...) from a distance, like a player, then walks over and picks it back up. Only when it has another weapon in its pack to fight on with.");
 		HuntThrowRange = Bind(cfg, "Hunting", "ThrowRange", 12f, "How far (meters) a hunter throws its spear from. Further throws drop short more often.", new AcceptableValueRange<float>(4f, 25f));
+		HuntThrowStandoff = Bind(cfg, "Hunting", "ThrowStandoff", 10f, "With a spear to throw at skittish game, a hunter sneaks only this close (meters), stops and throws, instead of walking right up to stab it. Never more than ThrowRange less 1 m.", new AcceptableValueRange<float>(3f, 25f));
+		HuntSneakFrom = Bind(cfg, "Hunting", "SneakFrom", 20f, "Further than this (meters) from prey that hasn't noticed it, a hunter walks (no running) instead of sneaking, like a player - sneaking all the way costs a lot of stamina. Closer, it crouches and sneaks.", new AcceptableValueRange<float>(5f, 60f));
+		HuntSwitchCloserBy = Bind(cfg, "Hunting", "SwitchCloserBy", 5f, "Before its first strike, a hunter switches to another animal that is at least this many meters closer than its prey (and see SwitchShare). 0 = never switches.", new AcceptableValueRange<float>(0f, 50f));
+		HuntSwitchShare = Bind(cfg, "Hunting", "SwitchShare", 0.6f, "...and that is at most this share of the distance to its prey (0.6 = 60%).", new AcceptableValueRange<float>(0.1f, 1f));
+		HuntSneakRestStamina = Bind(cfg, "Hunting", "SneakRestStamina", 0.3f, "Sneaking costs stamina, like for a player (standing still doesn't). When a hunter sneaking up on prey drops below this share of its stamina, it stops where it is, stays crouched and gets its breath back. 0 = never stops.", new AcceptableValueRange<float>(0f, 0.9f));
+		HuntSneakResumeStamina = Bind(cfg, "Hunting", "SneakResumeStamina", 0.6f, "A hunter resting while sneaking carries on once its stamina is back above this share.", new AcceptableValueRange<float>(0.1f, 1f));
+		HuntChaseRunStamina = Bind(cfg, "Hunting", "ChaseRunStamina", 0.3f, "Chasing prey that has bolted, a hunter only runs while its stamina is above this share; below it, it jogs and lets its stamina come back, like a player. 0 = always runs.", new AcceptableValueRange<float>(0f, 1f));
 		// [Fishing]
 		FishScanRadius = Bind(cfg, "Fishing", "ScanRadius", 30f, "How far (meters) from where the Fish job was started the companion looks for fish to catch. It stays around there and fishes the water nearby.", new AcceptableValueRange<float>(5f, 100f));
 		FishList = Bind(cfg, "Fishing", "Fish", "*", "Which fish to catch. Name:Number gives that fish its own target instead of FishTarget. The fish names are listed in OfflineCompanionsReborn.Fishing.txt in the config folder (written at startup). List format (same for every list): * = everything, Name = this one, -Name = never this one, Name:Number = this one with its own amount (0 = no limit).");
@@ -695,6 +720,8 @@ internal static class ModConfig
 		RepairUseDistance = Bind(cfg, "Advanced", "GearRepairUseDistance", 2.5f, "Gear repair: how close (meters) a companion has to be to the station to repair.", new AcceptableValueRange<float>(1f, 5f));
 		UpkeepScanInterval = Bind(cfg, "Advanced", "RestockScanInterval", 5f, "Repair and Restock: seconds between looks for something to repair, refuel or sort.", new AcceptableValueRange<float>(1f, 60f));
 		AttackCooldown = Bind(cfg, "Advanced", "AttackCooldown", 0.225f, "Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.", new AcceptableValueRange<float>(0.1f, 2f));
+		MeleeTooClose = Bind(cfg, "Advanced", "MeleeTooClose", 0.3f, "Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.", new AcceptableValueRange<float>(0f, 1.5f));
+		MeleeReachMargin = Bind(cfg, "Advanced", "MeleeReachMargin", 0.2f, "Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.", new AcceptableValueRange<float>(0f, 1f));
 		FoodRegenInterval = Bind(cfg, "Advanced", "FoodRegenInterval", 10f, "Food: seconds between health regeneration ticks from food (a player's is 10).", new AcceptableValueRange<float>(1f, 60f));
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));

@@ -196,6 +196,11 @@ public class CompanionStamina : MonoBehaviour
 			if ((flag2 || flag || flag3) && Stamina > 0f)
 			{
 				float num5 = (flag ? SwimDrainRate : (flag3 ? SneakDrainRate : RunDrainRate));
+				// 1.5.4: sneaking costs less with Sneak skill, like the player (Player.OnSneaking: x Lerp(1, 0.25, sqrt(skill)))
+				if (flag3 && !flag && _character != null)
+				{
+					num5 *= Mathf.Lerp(1f, 0.25f, Mathf.Sqrt(Mathf.Clamp01(_character.GetSkillFactor(Skills.SkillType.Sneak))));
+				}
 				Stamina = Mathf.Max(0f, Stamina - num5 * deltaTime);
 				_regenDelayTimer = RegenDelay;
 			}

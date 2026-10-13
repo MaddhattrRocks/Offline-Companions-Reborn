@@ -23,6 +23,8 @@ internal static class MHR_SpearThrow
 		public ItemDrop Drop;
 
 		public float NextTry;
+
+		public float NextWhyLog;
 	}
 
 	private const float MinThrowDistance = 3f;
@@ -74,6 +76,42 @@ internal static class MHR_SpearThrow
 		return true;
 	}
 
+	// 1.5.4: the prey has noticed the hunter (it's alerted or after someone) - no sneaking up on it any more
+	private static bool Noticed(Character c)
+	{
+		BaseAI baseAI = c?.GetBaseAI();
+		if (baseAI != null)
+		{
+			if (!baseAI.IsAlerted())
+			{
+				return baseAI.GetTargetCreature() != null;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	// 1.5.4: a throw needs another weapon to fight on with - or prey that has noticed us and is about to bolt, when the
+	// spear is the only chance (user: "Throw the spear when hunting timid animals when noticed.")
+	private static bool MayThrow(Humanoid hum, ItemDrop.ItemData spear, Character prey)
+	{
+		if (!HasOtherWeapon(hum, spear))
+		{
+			return Noticed(prey);
+		}
+		return true;
+	}
+
+	// a spear is out (thrown, not picked back up) and nothing else to fight with is left in the pack
+	internal static bool UnarmedAfterThrow(CompanionAI ai, Humanoid hum)
+	{
+		if (ai != null && hum != null && s_states.TryGetValue(ai, out var value) && value.Thrown != null)
+		{
+			return !HasOtherWeapon(hum, null);
+		}
+		return false;
+	}
+
 	// something else to fight with once the spear is gone (not a tool, pickaxe, fishing rod or broken item)
 	private static bool HasOtherWeapon(Humanoid hum, ItemDrop.ItemData spear)
 	{
@@ -97,6 +135,42 @@ internal static class MHR_SpearThrow
 		return false;
 	}
 
+	// 1.5.4: a throw is on for this prey (spear in hand, skittish game, another weapon in the pack, no spear out), whatever
+	// the distance - the hunter then stops at ThrowStandoff instead of walking up to stab it
+	internal static bool ReadyToThrow(CompanionAI ai, Humanoid hum, Character prey)
+	{
+		if (ai == null || hum == null || prey == null || !(ModConfig.HuntThrowSpear?.Value ?? true) || !Skittish(prey))
+		{
+			return false;
+		}
+		if (s_states.TryGetValue(ai, out var value) && value.Thrown != null)
+		{
+			return false;
+		}
+		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
+		if (IsThrowable(currentWeapon))
+		{
+			return MayThrow(hum, currentWeapon, prey);
+		}
+		return false;
+	}
+
+	// how close to stop for a throw
+	internal static float Standoff()
+	{
+		float range = ModConfig.HuntThrowRange?.Value ?? 12f;
+		return Mathf.Clamp(ModConfig.HuntThrowStandoff?.Value ?? 10f, MinThrowDistance + 0.5f, Mathf.Max(MinThrowDistance + 0.5f, range - 1f));
+	}
+
+	private static void Why(State st, string text)
+	{
+		if (Time.time >= st.NextWhyLog)
+		{
+			st.NextWhyLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogDebug("[Hunt] Not throwing yet: " + text);
+		}
+	}
+
 	// hunting: holding a throwable spear, the prey is skittish game within throwing range, another weapon in the pack,
 	// no spear already out
 	internal static bool WantsThrow(CompanionAI ai, Humanoid hum, Character prey, float dist)
@@ -115,11 +189,19 @@ internal static class MHR_SpearThrow
 			return false;
 		}
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
-		if (IsThrowable(currentWeapon) && Skittish(prey))
+		if (!IsThrowable(currentWeapon) || !Skittish(prey) || !MayThrow(hum, currentWeapon, prey))
 		{
-			return HasOtherWeapon(hum, currentWeapon);
+			return false;
 		}
-		return false;
+		// 1.5.4: the game refuses an attack it can't pay for - wait for the stamina rather than walking in to stab
+		float cost = currentWeapon.m_shared.m_secondaryAttack.m_attackStamina;
+		if (cost > 0f && !hum.HaveStamina(cost + 0.1f))
+		{
+			CompanionStamina stam = hum.GetComponent<CompanionStamina>();
+			Why(state, $"not enough stamina for a throw ({(stam != null ? stam.Stamina : 0f):F0}, needs {cost:F0})");
+			return false;
+		}
+		return true;
 	}
 
 	// hunting skittish game with no bow: hold a throwable spear (when there's another weapon to fall back on and no spear
@@ -135,7 +217,7 @@ internal static class MHR_SpearThrow
 			return false;
 		}
 		ItemDrop.ItemData currentWeapon = hum.GetCurrentWeapon();
-		if (IsThrowable(currentWeapon) && HasOtherWeapon(hum, currentWeapon))
+		if (IsThrowable(currentWeapon) && MayThrow(hum, currentWeapon, prey))
 		{
 			return true;
 		}
@@ -147,7 +229,7 @@ internal static class MHR_SpearThrow
 		ItemDrop.ItemData itemData = null;
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
-			if (IsThrowable(allItem) && (!allItem.m_shared.m_useDurability || allItem.m_durability > 0f) && HasOtherWeapon(hum, allItem) && (itemData == null || allItem.GetDamage().GetTotalDamage() > itemData.GetDamage().GetTotalDamage()))
+			if (IsThrowable(allItem) && (!allItem.m_shared.m_useDurability || allItem.m_durability > 0f) && MayThrow(hum, allItem, prey) && (itemData == null || allItem.GetDamage().GetTotalDamage() > itemData.GetDamage().GetTotalDamage()))
 			{
 				itemData = allItem;
 			}
@@ -177,6 +259,7 @@ internal static class MHR_SpearThrow
 			state.Drop = null;
 			s_inFlight[currentWeapon] = state;
 			CompanionsPlugin.Log.LogInfo("[Hunt] Threw its " + Loc(state.Name) + " at " + Loc(prey.m_name) + $" ({Vector3.Distance(ai.transform.position, prey.transform.position):F0} m)");
+			ai.GetComponent<CompanionCombatAI>()?.NoteSwing(prey, "Throw", $"{Vector3.Distance(ai.transform.position, prey.transform.position):F1} m, {prey.transform.position.y - ai.transform.position.y:+0.0;-0.0} m up, prey moving {prey.GetVelocity().magnitude:F1} m/s", 4f);
 		}
 	}
 

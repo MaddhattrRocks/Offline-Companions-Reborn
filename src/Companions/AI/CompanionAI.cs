@@ -1067,6 +1067,13 @@ public class CompanionAI : BaseAI
 		{
 			CompanionsPlugin.Log.LogWarning("[Direct] DirectEngage -> no CompanionCombatAI component; direct-order attack cannot use normal weapon/shield/flee logic");
 		}
+		// 1.5.4: an order to attack harmless game (a deer) is a hunt: sneak up, throw a spear... It used to be a plain
+		// fight, and the fight code drops a passive animal that isn't after anyone ("isn't a threat - leaving it"), so the
+		// order was ignored (user: "did not want to sneak up on deer even when I tried to command it")
+		else if (MHR_Threat.IsPassive(target))
+		{
+			combatAI.EngagePrey(target);
+		}
 		else
 		{
 			combatAI.Engage(target);

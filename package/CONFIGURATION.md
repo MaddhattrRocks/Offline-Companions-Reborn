@@ -443,7 +443,7 @@ Hunt a creature only while one of the meats it drops is under this many (countin
 **Range** — Default: 40 · Range: 10 – 200  
 With Follow off: how far (meters) from where it is hunting (home if it's near home, otherwise where the job was started) a companion looks for prey.
 
-**FollowRange** — Default: 25 · Range: 5 – 100  
+**FollowRange** — Default: 40 · Range: 5 – 100  
 With Follow on: prey has to be within this many meters of you. With nothing that close the companion just follows you.
 
 **ChaseExtra** — Default: 15 · Range: 0 – 100  
@@ -466,6 +466,27 @@ A hunter holding a spear throws it at skittish game (deer, hares...) from a dist
 
 **ThrowRange** — Default: 12 · Range: 4 – 25  
 How far (meters) a hunter throws its spear from. Further throws drop short more often.
+
+**ThrowStandoff** — Default: 10 · Range: 3 – 25  
+With a spear to throw at skittish game, a hunter sneaks only this close (meters), stops and throws, instead of walking right up to stab it. Never more than ThrowRange less 1 m.
+
+**SneakFrom** — Default: 20 · Range: 5 – 60  
+Further than this (meters) from prey that hasn't noticed it, a hunter walks (no running) instead of sneaking, like a player - sneaking all the way costs a lot of stamina. Closer, it crouches and sneaks.
+
+**SwitchCloserBy** — Default: 5 · Range: 0 – 50  
+Before its first strike, a hunter switches to another animal that is at least this many meters closer than its prey (and see SwitchShare). 0 = never switches.
+
+**SwitchShare** — Default: 0.6 · Range: 0.1 – 1  
+...and that is at most this share of the distance to its prey (0.6 = 60%).
+
+**SneakRestStamina** — Default: 0.3 · Range: 0 – 0.9  
+Sneaking costs stamina, like for a player (standing still doesn't). When a hunter sneaking up on prey drops below this share of its stamina, it stops where it is, stays crouched and gets its breath back. 0 = never stops.
+
+**SneakResumeStamina** — Default: 0.6 · Range: 0.1 – 1  
+A hunter resting while sneaking carries on once its stamina is back above this share.
+
+**ChaseRunStamina** — Default: 0.3 · Range: 0 – 1  
+Chasing prey that has bolted, a hunter only runs while its stamina is above this share; below it, it jogs and lets its stamina come back, like a player. 0 = always runs.
 
 ## Fishing
 
@@ -791,6 +812,12 @@ Repair and Restock: seconds between looks for something to repair, refuel or sor
 
 **AttackCooldown** — Default: 0.225 · Range: 0.1 – 2  
 Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.
+
+**MeleeTooClose** — Default: 0.3 · Range: 0 – 1.5  
+Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.
+
+**MeleeReachMargin** — Default: 0.2 · Range: 0 – 1  
+Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.
 
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).

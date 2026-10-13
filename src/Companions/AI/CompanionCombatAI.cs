@@ -119,6 +119,13 @@ public class CompanionCombatAI : MonoBehaviour
 	private void UpdateStalk()
 	{
 		bool stalk = HuntMode && (ModConfig.HuntSneak?.Value ?? true) && !_character.IsSwimming() && Unaware(_targetCreature);
+		// 1.5.4: walk up to SneakFrom, then crouch (user log: sneaking from 30 m out took three breathers per deer)
+		bool far = false;
+		if (stalk && Vector3.Distance(base.transform.position, _targetCreature.transform.position) > (ModConfig.HuntSneakFrom?.Value ?? 20f) + (_stalking ? 2f : 0f))
+		{
+			stalk = false;
+			far = true;
+		}
 		if (stalk == _stalking)
 		{
 			return;
@@ -132,7 +139,7 @@ public class CompanionCombatAI : MonoBehaviour
 		if (Time.time >= _nextStalkLog)
 		{
 			_nextStalkLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
+			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : far ? "Too far off to sneak yet - walking towards " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
 		}
 	}
 
@@ -150,6 +157,74 @@ public class CompanionCombatAI : MonoBehaviour
 	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
 	private float _nextHuntMoveLog;
 	private float _nextFleeLog;
+	private float _nextCloseLog;
+
+	// 1.5.4: attack log - each swing or throw, then whether it hit (CompanionHitLog) or not within a moment
+	private float _swingAt = -1f;
+	private float _swingWindow;
+	private Character _swingTarget;
+	private string _swingKind;
+	private string _swingName;
+
+	// the miss check runs every frame, so a swing gets its result even when the fight ends right after it
+	private void Update()
+	{
+		if (_swingAt >= 0f)
+		{
+			CheckMiss(force: false);
+		}
+	}
+
+	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
+	private bool _attackedTarget;
+
+	internal bool HasAttackedTarget => _attackedTarget;
+
+	internal void NoteSwing(Character target, string kind, string detail, float window)
+	{
+		_attackedTarget = true;
+		CheckMiss(force: true);
+		_swingAt = Time.time;
+		_swingWindow = window;
+		_swingTarget = target;
+		_swingKind = kind;
+		_swingName = target != null ? target.m_name : "?";
+		CompanionsPlugin.Log.LogDebug("[Attack] " + kind + " at " + (target != null ? target.m_name : "?") + ": " + detail);
+	}
+
+	internal void NoteHit(Character target, HitData hit)
+	{
+		if (_swingAt < 0f)
+		{
+			CompanionsPlugin.Log.LogDebug($"[Attack] hit {target.m_name} for {hit.GetTotalDamage():F1}");
+			return;
+		}
+		CompanionsPlugin.Log.LogDebug($"[Attack] {_swingKind} hit {target.m_name}{(target != _swingTarget ? " (not the one aimed at)" : "")} for {hit.GetTotalDamage():F1} after {Time.time - _swingAt:F2} s");
+		if (target == _swingTarget)
+		{
+			_swingAt = -1f;
+		}
+	}
+
+	private void CheckMiss(bool force)
+	{
+		if (_swingAt < 0f || (!force && Time.time - _swingAt < _swingWindow))
+		{
+			return;
+		}
+		string where;
+		if (_swingTarget != null)
+		{
+			Vector3 d = _swingTarget.transform.position - base.transform.position;
+			where = $" (now {new Vector2(d.x, d.z).magnitude:F1} m away, {d.y:+0.0;-0.0} m up, {(_swingTarget.IsDead() ? "dead - something else killed it" : $"{_swingTarget.GetHealth():F0} hp")})";
+		}
+		else
+		{
+			where = " (it's gone - killed by something else or out of range)";
+		}
+		CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + _swingName + where);
+		_swingAt = -1f;
+	}
 
 	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
 	// for now, the game's own movement still closes in (a fight can't just stand still)
@@ -163,11 +238,61 @@ public class CompanionCombatAI : MonoBehaviour
 		return there;
 	}
 
+	// 1.5.4: stamina while hunting, like a player (user: "the NPC should be conserving stamina when sneaking and try to
+	// avoid jumping. They can also pause to recover stamina." Log: sneaking, a jump and a running chase left him at 13/104
+	// when he reached the deer). Sneaking drains stamina, standing crouched doesn't.
+	private CompanionStamina _stam;
+
+	private bool _sneakRest;
+
+	private float StaminaShare()
+	{
+		if (_stam == null)
+		{
+			_stam = GetComponent<CompanionStamina>();
+		}
+		return (_stam != null && _stam.MaxStamina > 0f) ? _stam.Stamina / _stam.MaxStamina : 1f;
+	}
+
 	private bool HuntMove(float dt, Vector3 point, float dist, bool run)
 	{
 		if (!HuntMode || _targetCreature == null)
 		{
 			return false;
+		}
+		float share = StaminaShare();
+		if (_stalking)
+		{
+			float restBelow = ModConfig.HuntSneakRestStamina?.Value ?? 0.3f;
+			float resumeAt = Mathf.Max(restBelow, ModConfig.HuntSneakResumeStamina?.Value ?? 0.6f);
+			if (!_sneakRest && share < restBelow)
+			{
+				_sneakRest = true;
+				CompanionsPlugin.Log.LogDebug($"[Hunt] Out of breath sneaking up on {_targetCreature.m_name} - resting crouched ({share:P0} stamina)");
+			}
+			else if (_sneakRest && share >= resumeAt)
+			{
+				_sneakRest = false;
+				CompanionsPlugin.Log.LogDebug($"[Hunt] Got its breath back ({share:P0}) - sneaking on");
+			}
+			if (_sneakRest)
+			{
+				_ai.StopMoving();
+				_ai.LookAtPoint(_targetCreature.GetCenterPoint());
+				return true;
+			}
+		}
+		else
+		{
+			_sneakRest = false;
+		}
+		// a bolting deer outruns anyone: run only while there's stamina to spare, else jog and let it come back
+		bool tired = run && share < (ModConfig.HuntChaseRunStamina?.Value ?? 0.3f);
+		// still out of sneaking range of prey that hasn't noticed: walk up quietly, no running
+		if (!_stalking && (ModConfig.HuntSneak?.Value ?? true) && Unaware(_targetCreature))
+		{
+			run = false;
+			tired = false;
 		}
 		Vector3 me = base.transform.position;
 		Vector3 goal = point;
@@ -186,7 +311,7 @@ public class CompanionCombatAI : MonoBehaviour
 				return true;
 			}
 		}
-		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run, "Hunt", run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
+		MHR_Mover.Go(_ai, dt, goal, Mathf.Max(dist, 1f), run && !tired, "Hunt", tired ? MHR_Mover.SpeedJog : run ? MHR_Mover.SpeedAuto : MHR_Mover.SpeedWalk);
 		if (MHR_Mover.RouteSwim(_ai) > MHR_Mover.JobSwim())
 		{
 			LeavePrey("I'd have to swim");
@@ -332,6 +457,7 @@ public class CompanionCombatAI : MonoBehaviour
 				_unableToAttackTargetTimer = 0f;
 				_parryAttackCount = 0;
 				_engaged = true;
+				_attackedTarget = false;
 				Character after = target.GetBaseAI()?.GetTargetCreature();
 				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
 				_ai.SetAlerted(alert: true);
@@ -341,6 +467,7 @@ public class CompanionCombatAI : MonoBehaviour
 
 	internal bool UpdateCombat(float dt)
 	{
+		CheckMiss(force: false);
 		if (WaterSafety.ShouldAvoidChase(_humanoid, _targetCreature))
 		{
 			return false;
@@ -367,6 +494,15 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		_ai.m_targetCreature = _targetCreature;
 		_ai.m_targetStatic = _targetStatic;
+		// 1.5.4: threw its only weapon at the prey: let it go and fetch the spear first, like a player (MHR_SpearThrow.Drive
+		// walks to where it landed once out of combat)
+		if (HuntMode && MHR_SpearThrow.UnarmedAfterThrow(_ai, _humanoid))
+		{
+			CompanionsPlugin.Log.LogDebug("[Hunt] Threw its only weapon at " + _targetCreature?.m_name + " - going to pick the spear up first");
+			StopStalk();
+			Disengage();
+			return false;
+		}
 		UpdateStalk();
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();
@@ -454,6 +590,11 @@ public class CompanionCombatAI : MonoBehaviour
 					// Now it sneaks right up and strikes like a melee fighter.
 					bool flag7 = flag6;
 					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
+					// 1.5.4: not right at the edge of the reach (user: "using 1.8 and forcing the NPC to ensure it is under 2.0")
+					if (!flag7)
+					{
+						num5 = Mathf.Max(0.8f, num5 - (ModConfig.MeleeReachMargin?.Value ?? 0.2f));
+					}
 					bool flag8 = num3 < num5;
 					// 1.5.3: a sword only reaches someone about on our level - a skeleton a floor up (user log: 2.8 m away, 2 m up)
 					// had him swinging at the ladder between them instead of climbing on. Out of reach: keep moving.
@@ -463,6 +604,12 @@ public class CompanionCombatAI : MonoBehaviour
 					// half way up the last ladder and fought from it)
 					if (!flag7 && reachDy > 0.5f && MHR_Mover.OnLadderChain(_ai)) flag8 = false;
 					float dist = (flag7 ? 20f : 0f);
+					// 1.5.4: a spear to throw at skittish game: sneak to throwing distance, stop and throw, rather than walking
+					// right up to it and stabbing (bug report: stabbed the deer up close, threw only once it had run off)
+					if (!flag7 && HuntMode && MHR_SpearThrow.ReadyToThrow(_ai, _humanoid, _targetCreature))
+					{
+						dist = MHR_SpearThrow.Standoff();
+					}
 					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
 					{
@@ -506,10 +653,47 @@ public class CompanionCombatAI : MonoBehaviour
 					}
 					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
 					{
-						_ai.LookAtPoint(_targetCreature.GetTopPoint());
-						if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, itemData.m_shared.m_aiAttackMaxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
+						// 1.5.4: melee aims like a player (user: the first stab at a boar missed - no skill gain, and it only noticed
+						// him after; he was a metre below it on a slope). The game sweeps a melee attack out from the hand along the
+						// body's facing, tilted only a few degrees towards where it looks, and skips anything behind the start:
+						// look at the middle of the target, not its top (over a low animal's back); step back when standing on top of
+						// it; and a narrow attack (a stab) waits until it faces the target squarely.
+						Vector3 aimAt = _targetCreature.GetCenterPoint();
+						_ai.LookAtPoint(aimAt);
+						float tooClose = ModConfig.MeleeTooClose?.Value ?? 0.3f;
+						if (!flag7 && tooClose > 0f && num3 < tooClose && !_character.InAttack())
 						{
-							_parryAttackCount--;
+							Vector3 away = base.transform.position - _targetCreature.transform.position;
+							away.y = 0f;
+							if (away.sqrMagnitude < 0.01f) away = -base.transform.forward;
+							_ai.MoveTowards(away.normalized, run: false);
+							_ai.LookAtPoint(aimAt);
+							if (Time.time >= _nextCloseLog)
+							{
+								_nextCloseLog = Time.time + 5f;
+								CompanionsPlugin.Log.LogDebug($"[Combat] Too close to swing at {_targetCreature.m_name} ({num3:F1} m) - stepping back");
+							}
+						}
+						else
+						{
+							float maxAngle = itemData.m_shared.m_aiAttackMaxAngle;
+							Attack melee = itemData.m_shared.m_attack;
+							if (!flag7 && melee != null && melee.m_attackAngle < 40f)
+							{
+								maxAngle = Mathf.Min(maxAngle, Mathf.Max(8f, melee.m_attackAngle * 0.5f + 5f));
+							}
+							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
+							{
+								Vector3 to = _targetCreature.transform.position - base.transform.position;
+								Vector3 flat = new Vector3(to.x, 0f, to.z);
+								Vector3 fwd = base.transform.forward; fwd.y = 0f;
+								NoteSwing(_targetCreature, flag7 ? "Shot" : "Swing", $"{itemData.m_shared.m_name}, {num3:F1} m from its edge, {to.y:+0.0;-0.0} m up, facing {Vector3.Angle(fwd, flat):F0} deg off (limit {maxAngle:F0}), reach {num5:F1} m, " +
+									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide ({melee.m_attackType}), tilt up to {melee.m_maxYAngle:F0} deg, weapon range {melee.m_attackRange:F2} m, AI range {itemData.m_shared.m_aiAttackRange:F2} m, hit width {melee.m_attackRayWidth:F2} m (+{melee.m_attackRayWidthCharExtra:F2} vs creatures), hit height {melee.m_attackHeight:F2} m" : "no attack data") + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
+								if (_parryAttackCount > 0)
+								{
+									_parryAttackCount--;
+								}
+							}
 						}
 					}
 				}
@@ -772,9 +956,15 @@ public class CompanionCombatAI : MonoBehaviour
 		if (_ai.IsAlerted() || _targetCreature != null)
 		{
 			_timeSinceAttacking += dt;
-			float num2 = 60f;
+			// 1.5.4: a stalk with a few breathers takes longer than a minute without an attack (user log: dropped the deer it
+			// was sneaking up on, "Lost Deer", skipped it for a minute and went for one further off) - hunting gets 3 minutes
+			float num2 = HuntMode ? 180f : 60f;
 			if (_timeSinceSensedTarget > 30f || _timeSinceAttacking > num2)
 			{
+				if (_targetCreature != null)
+				{
+					CompanionsPlugin.Log.LogDebug("[Combat] Giving up on " + _targetCreature.m_name + (_timeSinceSensedTarget > 30f ? " - lost sight and sound of it for 30 s" : $" - no attack in {num2:F0} s"));
+				}
 				_ai.SetAlerted(alert: false);
 				_targetCreature = null;
 				_targetStatic = null;
