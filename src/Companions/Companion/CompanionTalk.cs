@@ -451,7 +451,8 @@ public class CompanionTalk : MonoBehaviour
 			SayAmbient(s.Repair, "need:repair", NeedRepeat);
 			return;
 		}
-		if (_rest != null && _rest.NeedsBed() && EnvMan.IsNight())
+		// no bed of its own: only worth saying at home, where a bed could be built for it
+		if (_rest != null && _rest.NeedsBed() && EnvMan.IsNight() && AtHome())
 		{
 			SayAmbient(s.NoBed, "need:bed", NeedRepeat);
 			return;

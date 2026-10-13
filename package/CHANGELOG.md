@@ -8,7 +8,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Speech: separate lines for chopping, mining stone and mining ore (a woodcutter no longer talks about ore), plus lines for Repair and Restock, and lines that depend on the biome, night, rain and cold.
 - Speech: replies to your orders come straight away; problems (a missing or broken tool, no bait, too heavy) are never lost to another line and aren't repeated for 5 minutes; small talk waits until it has been quiet for a while.
 - Speech: a problem a companion runs into while you're out of earshot shows in the top left corner with its name (Speech > FarAwayMessages).
-- Speech: hungry, worn-gear, no-bed and heavy-pack remarks come at most every 10 minutes, and "no bed" only at night. "By your word!" only when you give an order, not when the game changes a job by itself.
+- Speech: hungry, worn-gear, no-bed and heavy-pack remarks come at most every 10 minutes, and "no bed" only at night at home, and not at all when it has a bed back home (out in the wild at night it kept saying all the beds were taken). "By your word!" only when you give an order, not when the game changes a job by itself.
 - speech.json has a new layout with optional tags per line ([home], [night], [rain], [blackforest]...). An old speech.json is kept as speech.v1.json and replaced by the new lines; pools missing from your file are filled in from the defaults.
 
 ## 1.5.4

@@ -1106,9 +1106,16 @@ public class CompanionRest : MonoBehaviour
 		return true;
 	}
 
+	// 1.5.41: not when it has a bed back home that just isn't loaded out here (user: out wandering at night it kept
+	// saying "all the beds are taken" - constantly)
 	public bool NeedsBed()
 	{
-		return _needsBed;
+		if (!_needsBed)
+		{
+			return false;
+		}
+		ZDO zdo = _nview?.GetZDO();
+		return zdo == null || !zdo.GetBool(CompanionSetup.HasHomeBedHash);
 	}
 
 	private void FinalizeSleep()
