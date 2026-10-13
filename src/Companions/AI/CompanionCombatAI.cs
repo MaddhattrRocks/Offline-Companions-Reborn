@@ -157,6 +157,16 @@ public class CompanionCombatAI : MonoBehaviour
 	private float _swingWindow;
 	private Character _swingTarget;
 	private string _swingKind;
+	private string _swingName;
+
+	// the miss check runs every frame, so a swing gets its result even when the fight ends right after it
+	private void Update()
+	{
+		if (_swingAt >= 0f)
+		{
+			CheckMiss(force: false);
+		}
+	}
 
 	internal void NoteSwing(Character target, string kind, string detail, float window)
 	{
@@ -165,6 +175,7 @@ public class CompanionCombatAI : MonoBehaviour
 		_swingWindow = window;
 		_swingTarget = target;
 		_swingKind = kind;
+		_swingName = target != null ? target.m_name : "?";
 		CompanionsPlugin.Log.LogDebug("[Attack] " + kind + " at " + (target != null ? target.m_name : "?") + ": " + detail);
 	}
 
@@ -188,13 +199,17 @@ public class CompanionCombatAI : MonoBehaviour
 		{
 			return;
 		}
-		string where = "";
+		string where;
 		if (_swingTarget != null)
 		{
 			Vector3 d = _swingTarget.transform.position - base.transform.position;
-			where = $" (now {new Vector2(d.x, d.z).magnitude:F1} m away, {d.y:+0.0;-0.0} m up, {(_swingTarget.IsDead() ? "dead" : $"{_swingTarget.GetHealth():F0} hp")})";
+			where = $" (now {new Vector2(d.x, d.z).magnitude:F1} m away, {d.y:+0.0;-0.0} m up, {(_swingTarget.IsDead() ? "dead - something else killed it" : $"{_swingTarget.GetHealth():F0} hp")})";
 		}
-		CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + (_swingTarget != null ? _swingTarget.m_name : "?") + where);
+		else
+		{
+			where = " (it's gone - killed by something else or out of range)";
+		}
+		CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + _swingName + where);
 		_swingAt = -1f;
 	}
 
