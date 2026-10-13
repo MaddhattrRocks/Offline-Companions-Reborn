@@ -149,6 +149,7 @@ public class CompanionCombatAI : MonoBehaviour
 	// water (1.4.101 test: followed a deer into the moat with the game's own movement, couldn't climb the wall and ended
 	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
 	private float _nextHuntMoveLog;
+	private float _nextFleeLog;
 
 	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
 	// for now, the game's own movement still closes in (a fight can't just stand still)
@@ -374,13 +375,15 @@ public class CompanionCombatAI : MonoBehaviour
 			Player localPlayer = Player.m_localPlayer;
 			if (localPlayer != null)
 			{
-				CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\"");
+				// 1.5.3: once every 5 s, not every tick (user log: ~70 lines in a few seconds while cornered)
+				bool fleeLog = Time.time >= _nextFleeLog;
+				if (fleeLog) { _nextFleeLog = Time.time + 5f; CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\""); }
 				TryEquipShield();
 				if (_ai.FleeFrom(dt, _targetCreature.transform.position))
 				{
 					return true;
 				}
-				CompanionsPlugin.Log.LogInfo("[Flee] could not create distance (blocked/cornered) -> defending itself this tick, will keep trying to flee");
+				if (fleeLog) CompanionsPlugin.Log.LogInfo("[Flee] could not create distance (blocked/cornered) -> defending itself, will keep trying to flee");
 			}
 		}
 		_logTimer += dt;
@@ -452,6 +455,13 @@ public class CompanionCombatAI : MonoBehaviour
 					bool flag7 = flag6;
 					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
 					bool flag8 = num3 < num5;
+					// 1.5.3: a sword only reaches someone about on our level - a skeleton a floor up (user log: 2.8 m away, 2 m up)
+					// had him swinging at the ladder between them instead of climbing on. Out of reach: keep moving.
+					float reachDy = _targetCreature.transform.position.y - base.transform.position.y;
+					if (!flag7 && (reachDy > 1.4f || reachDy < -1.8f)) flag8 = false;
+					// on the way up a chain of ladders to it: finish the climb onto its floor first, like a player (user log: stopped
+					// half way up the last ladder and fought from it)
+					if (!flag7 && reachDy > 0.5f && MHR_Mover.OnLadderChain(_ai)) flag8 = false;
 					float dist = (flag7 ? 20f : 0f);
 					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())

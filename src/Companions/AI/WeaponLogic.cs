@@ -481,7 +481,7 @@ internal static class WeaponLogic
 		if (_statusLogs < 30)
 		{
 			_statusLogs++;
-			CompanionsPlugin.Log?.LogInfo(s);
+			CompanionsPlugin.Log?.LogDebug(s);
 		}
 	}
 
@@ -490,7 +490,7 @@ internal static class WeaponLogic
 		if (_entryLogs < 200)
 		{
 			_entryLogs++;
-			CompanionsPlugin.Log?.LogInfo(s);
+			CompanionsPlugin.Log?.LogDebug(s);
 		}
 	}
 

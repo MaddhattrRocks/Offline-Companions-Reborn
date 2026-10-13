@@ -304,9 +304,14 @@ namespace Companions
                 if (now < s.NoPathUntil) return false;
                 // only when the planner can't do it (a full route - stairs, a ramp - is better than retracing)
                 if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
+                if (MHR_Mover.OnLadderChain(ai)) return false;   // 1.5.3: already climbing a planned chain of ladders
                 // the last place the player was on our level (within a short walk): from there their steps lead to them
                 int best = -1; float bd = 0f;
+                // 1.5.3: right beside the player's path already: step onto it there (user log: the last spot on its level
+                // was 2.4 m away across a shaft opening; walking there by route stopped at the edge, twice)
                 for (int i = st.Count - 2; i >= 0; i--)
+                    if (Mathf.Abs(st[i].y - me.y) <= 0.5f && Flat(me, st[i]) <= 1.5f) { best = i; bd = Flat(me, st[i]); break; }
+                for (int i = best >= 0 ? -1 : st.Count - 2; i >= 0; i--)
                 {
                     if (Mathf.Abs(st[i].y - me.y) > 0.5f) continue;     // standing on our floor, not passing it on a ladder
                     float d = Flat(me, st[i]);
@@ -363,9 +368,15 @@ namespace Companions
             c.SetWalk(false);
             ai.MoveTowards(dir, false);
             // the next step is up and walking at it hasn't lifted us: jump, as the player would
-            if (next.y > me.y + 0.6f && c.IsOnGround() && now >= s.PathJumpAt && now - s.PathProgressAt > 0.5f)
+            // 1.5.3: after a second, and never up onto something higher than the path itself (user log: jumped up onto the
+            // tower's wall top at 46.9 beside the path - "fell 12.2 m and took 51 fall damage")
+            if (next.y > me.y + 0.6f && c.IsOnGround() && now >= s.PathJumpAt && now - s.PathProgressAt > 1.0f)
             {
-                c.Jump(false); s.PathJumpAt = now + 1.0f;
+                RaycastHit land;
+                Vector3 ahead = me + dir * 0.6f;
+                bool wallTop = Physics.Raycast(new Vector3(ahead.x, me.y + 2.5f, ahead.z), Vector3.down, out land, 3f, GroundMask()) && land.point.y > next.y + 0.5f;
+                if (!wallTop) c.Jump(false);
+                s.PathJumpAt = now + 1.0f;
             }
             if (now >= s.NextPathLog) { s.NextPathLog = now + 3f; Dbg(c.m_name + " on your path: step " + s.PathIdx + "/" + (st.Count - 1) + " at " + next.ToString("F1") + ", me " + me.ToString("F1")); }
             return true;
