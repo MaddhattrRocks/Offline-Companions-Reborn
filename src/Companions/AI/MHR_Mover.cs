@@ -1092,7 +1092,9 @@ namespace Companions
             bool pastTop = s.ChainFootBest <= 0.6f && pos.y > st.Top - 1.2f
                 && (Vector3.Dot(fromFoot, st.Dir) > st.Run + 0.3f || LedgeAhead(pos, st.Dir, 0.6f, out edgeDrop));
             if (pastTop && !c.IsOnGround()) { Halt(ai, c, s); return; }
-            if (c.IsOnGround() && (pos.y >= st.Top - 0.3f || pastTop || (pos.y >= st.Top - 0.8f && now - s.ChainProgressAt > 0.5f)))
+            // (a pause in rising counts only past 1.2 s - the ladder's bumps come every 0.5 s; user log: switched at 36.7, short
+            // of the 37.4 landing, and stood there)
+            if (c.IsOnGround() && (pos.y >= st.Top - 0.3f || pastTop || (pos.y >= st.Top - 0.8f && now - s.ChainProgressAt > 1.2f)))
             {
                 s.ChainIdx++;
                 ChainStepReset(s, pos, now);
@@ -1204,7 +1206,8 @@ namespace Companions
             {
                 if (s.ChainPushAt <= 0f) s.ChainPushAt = now;
                 string why;
-                LadderBump(c, st.Ledges, pos, out why);
+                // the ladder he's actually on - still the last rungs of the previous one right after switching
+                if (!LadderBump(c, st.Ledges, pos, out why) && s.ChainIdx > 0) LadderBump(c, s.Chain[s.ChainIdx - 1].Ledges, pos);
                 // one line per ladder after a second at it: what the bump saw (user test: the bump didn't lift him)
                 if (!st.BumpLogged && now - s.ChainPushAt > 1.0f) { st.BumpLogged = true; Dbg("[Move|" + tag + "] ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " bump: " + why + (lifted ? ", lifted" : ", not lifted yet")); }
                 // stuck: a hop, like a player would (user: "Its ok to have the NPC jump if they are stuck") - after 1.5 s
