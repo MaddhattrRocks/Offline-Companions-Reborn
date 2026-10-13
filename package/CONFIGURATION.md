@@ -752,7 +752,7 @@ How often companions talk and how long their words stay on screen.
 **Enabled** — Default: On  
 Companions say things at all (replies to your orders, what they're doing, problems, chatter). Off = silent.
 
-**Chatter** — Default: `Normal` · Range: "Off" – "Rare", "Normal", "Often"  
+**Chatter** — Default: `Normal` · Options: `Off`, `Rare`, `Normal`, `Often`  
 How often a companion makes small talk that isn't about anything in particular: Off, Rare (every 4-8 minutes), Normal (every 1.5-3 minutes) or Often (every 30-60 seconds). Replies to your orders and problems it runs into are always said.
 
 **FarAwayMessages** — Default: On  
