@@ -1006,6 +1006,18 @@ namespace Companions
             return false;
         }
 
+        // nothing but ladder within `height` above a spot
+        static bool HeadRoom(Vector3 spot, float height)
+        {
+            foreach (RaycastHit h in Physics.RaycastAll(spot + Vector3.up * 0.3f, Vector3.up, height - 0.3f, Mask(), QueryTriggerInteraction.Ignore))
+            {
+                Piece hp; GameObject hr = LadderRoot(h.collider, out hp);
+                if (hr != null && IsLadder(hr, hp, h.collider)) continue;
+                return false;
+            }
+            return true;
+        }
+
         static bool LiftZoneEdge(AutoJumpLedge[] ledges, Vector3 foot, Vector3 dir, out Vector3 zone)
         {
             zone = foot;
@@ -1020,10 +1032,19 @@ namespace Companions
                     Vector3 cp = tc.ClosestPoint(p);
                     float d = Vector3.Distance(cp, p);
                     if (d >= best || d > 3f) continue;
-                    Vector3 spot = new Vector3(cp.x, foot.y, cp.z) - dir * 0.2f;
-                    RaycastHit g;
-                    if (!Physics.SphereCast(spot + Vector3.up * 1.0f, 0.25f, Vector3.down, out g, 2.0f, Mask()) || Mathf.Abs(g.point.y - foot.y) > 0.6f) continue;
-                    spot.y = g.point.y; best = d; zone = spot; found = true;
+                    // 1.5.3: from just short of the lift zone, forward along the ladder to the first spot with floor (or a rung)
+                    // under it and head room over it (user trace: on every landing ladder the bump shot him up at 6 m/s and he was
+                    // back on the same spot 0.3 s later - his head hit the floor above, which overhangs the ladder's foot)
+                    for (float step = -0.2f; step <= 1.21f; step += 0.2f)
+                    {
+                        Vector3 spot = new Vector3(cp.x, foot.y, cp.z) + dir * step;
+                        RaycastHit g;
+                        if (!Physics.SphereCast(spot + Vector3.up * 1.0f, 0.25f, Vector3.down, out g, 2.0f, Mask()) || Mathf.Abs(g.point.y - foot.y) > 0.6f) continue;
+                        spot.y = g.point.y;
+                        if (!HeadRoom(spot, 2.2f)) continue;
+                        best = d; zone = spot; found = true;
+                        break;
+                    }
                 }
             }
             return found;
@@ -1244,7 +1265,7 @@ namespace Companions
                 CompanionLadderBumpTrace.Counts k = CompanionLadderBumpTrace.Take(c);
                 string stage = lifted ? "climbing" : atFoot ? "at the foot" : (!st.LinedUp ? "lining up" : "to the foot");
                 Dbg("[Ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + "] " + stage + " y=" + pos.y.ToString("F2") + " (foot " + st.Foot.y.ToString("F1") + ", top " + st.Top.ToString("F1") + ") off=" + off.ToString("F2")
-                    + " ground=" + c.IsOnGround() + " vy=" + (trb != null ? trb.linearVelocity.y.ToString("F1") : "?") + " facing=" + Vector3.Dot(ai.transform.forward, st.Dir).ToString("F2")
+                    + " ground=" + c.IsOnGround() + " vy=" + (trb != null ? trb.linearVelocity.y.ToString("F1") : "?") + " facing=" + Vector3.Dot(ai.transform.forward, st.Dir).ToString("F2") + " headroom=" + (HeadRoom(pos, 2.2f) ? "yes" : "NO")
                     + (k == null ? " bumps: none" : " bumps: game " + k.GameOk + "/" + k.Game + ", mine " + k.MoverOk + "/" + k.Mover + (k.LastRefusal.Length > 0 ? " (refused: " + k.LastRefusal + ")" : "")));
             }
         }
