@@ -6,6 +6,8 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > Please go check out ProfMags' other work too: [Thunderstore profile](https://thunderstore.io/c/valheim/p/ProfMags/) · [Patreon](https://www.patreon.com/c/ProfMags)
 
+> **GitHub:** [MaddhattrRocks/Offline-Companions-Reborn](https://github.com/MaddhattrRocks/Offline-Companions-Reborn) — source code, the full guide and settings reference, and bug reports.
+
 > **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
 ## Recent Highlights (v1.5.3)
