@@ -749,11 +749,14 @@ At most every this many seconds it says why it's idle (and chats while socializi
 
 How often companions talk and how long their words stay on screen.
 
-**MinInterval** — Default: 15 · Range: 5 – 120  
-Shortest time (seconds) between a companion's chatter when nothing is happening.
+**Enabled** — Default: On  
+Companions say things at all (replies to your orders, what they're doing, problems, chatter). Off = silent.
 
-**MaxInterval** — Default: 30 · Range: 10 – 300  
-Longest time (seconds) between a companion's chatter when nothing is happening.
+**Chatter** — Default: `Normal` · Range: "Off" – "Rare", "Normal", "Often"  
+How often a companion makes small talk that isn't about anything in particular: Off, Rare (every 4-8 minutes), Normal (every 1.5-3 minutes) or Often (every 30-60 seconds). Replies to your orders and problems it runs into are always said.
+
+**FarAwayMessages** — Default: On  
+When a companion runs into a problem (needs a tool, can't get somewhere...) while you're out of earshot (further than CullDistance), it shows as a message in the top left corner with its name.
 
 **Duration** — Default: 5 · Range: 1 – 15  
 Seconds a line of speech stays on screen.

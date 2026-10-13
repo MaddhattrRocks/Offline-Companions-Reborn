@@ -2,6 +2,15 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.41 (test build for 1.5.5)
+- Speech: companions talk far less. Small talk comes every 1.5-3 minutes instead of every 15-30 seconds, and Speech > Chatter sets how often (Off, Rare, Normal, Often). Speech > Enabled turns all speech off.
+- Speech: small talk now fits what a companion is really doing and where it is: job lines only while it's working that job, fight lines only in a fight, home lines only at home, follow lines only while following, and nothing while it sleeps, sits, swims or sails.
+- Speech: separate lines for chopping, mining stone and mining ore (a woodcutter no longer talks about ore), plus lines for Repair and Restock, and lines that depend on the biome, night, rain and cold.
+- Speech: replies to your orders come straight away; problems (a missing or broken tool, no bait, too heavy) are never lost to another line and aren't repeated for 5 minutes; small talk waits until it has been quiet for a while.
+- Speech: a problem a companion runs into while you're out of earshot shows in the top left corner with its name (Speech > FarAwayMessages).
+- Speech: hungry, worn-gear, no-bed and heavy-pack remarks come at most every 10 minutes, and "no bed" only at night. "By your word!" only when you give an order, not when the game changes a job by itself.
+- speech.json has a new layout with optional tags per line ([home], [night], [rain], [blackforest]...). An old speech.json is kept as speech.v1.json and replaced by the new lines; pools missing from your file are filled in from the defaults.
+
 ## 1.5.4
 - Hunting: with a spear to throw at a deer (and another weapon in its pack), a companion sneaks only to throwing distance, stops and throws, instead of walking right up and stabbing it. New setting Hunting > ThrowStandoff (10 m; it throws from anywhere within ThrowRange, 12 m).
 - Hunting: a companion with a spear as its only weapon throws it too once a deer (or other timid game) has noticed it, then lets the animal go and fetches the spear before hunting on.

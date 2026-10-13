@@ -1248,7 +1248,7 @@ public class FishController : MonoBehaviour
 		if (Time.time - _lastSpeechTime >= 60f)
 		{
 			_lastSpeechTime = Time.time;
-			_talk?.Say(ModLocalization.Loc(key));
+			_talk?.SayProblem("fish:" + key, ModLocalization.Loc(key));
 		}
 	}
 

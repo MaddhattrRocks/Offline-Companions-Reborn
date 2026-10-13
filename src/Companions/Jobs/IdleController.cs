@@ -528,7 +528,11 @@ public class IdleController : MonoBehaviour
 			_nextChat = Time.time + Mathf.Max(60f, every * 0.5f);
 			if (Random.value < 0.6f)
 			{
-				_talk?.Say(ModLocalization.Loc("hc_idle_chat_" + Random.Range(1, 7)));
+				// 1.5.41: chat that fits (no "fine day" at night), from speech.json
+				if (_talk != null)
+				{
+					_talk.Speak(_talk.Pick(SpeechConfig.Instance.Chat), CompanionTalk.Priority.Ambient, null);
+				}
 			}
 		}
 	}

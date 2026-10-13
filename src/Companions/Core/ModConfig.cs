@@ -458,9 +458,11 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> RestDirectedTimeout;
 
-	internal static ConfigEntry<float> SpeechMinInterval;
+	internal static ConfigEntry<bool> SpeechEnabled;
 
-	internal static ConfigEntry<float> SpeechMaxInterval;
+	internal static ConfigEntry<string> SpeechChatter;
+
+	internal static ConfigEntry<bool> SpeechFarMessages;
 
 	internal static ConfigEntry<float> SpeechCullDistance;
 
@@ -699,8 +701,10 @@ internal static class ModConfig
 		IdleSocialize = Bind(cfg, "Idle", "Socialize", true, "While idle, go over to you or another companion nearby and chat now and then.");
 		IdleSpeechInterval = Bind(cfg, "Idle", "SpeechInterval", 300f, "At most every this many seconds it says why it's idle (and chats while socializing about half as often). 0 = never.", new AcceptableValueRange<float>(0f, 3600f));
 		// [Speech]
-		SpeechMinInterval = Bind(cfg, "Speech", "MinInterval", 15f, "Shortest time (seconds) between a companion's chatter when nothing is happening.", new AcceptableValueRange<float>(5f, 120f));
-		SpeechMaxInterval = Bind(cfg, "Speech", "MaxInterval", 30f, "Longest time (seconds) between a companion's chatter when nothing is happening.", new AcceptableValueRange<float>(10f, 300f));
+		// 1.5.41: speech overhaul - far less chatter by default (user: "The NPC is way to chatty for my likes currently")
+		SpeechEnabled = Bind(cfg, "Speech", "Enabled", true, "Companions say things at all (replies to your orders, what they're doing, problems, chatter). Off = silent.");
+		SpeechChatter = Bind(cfg, "Speech", "Chatter", "Normal", "How often a companion makes small talk that isn't about anything in particular: Off, Rare (every 4-8 minutes), Normal (every 1.5-3 minutes) or Often (every 30-60 seconds). Replies to your orders and problems it runs into are always said.", new AcceptableValueList<string>("Off", "Rare", "Normal", "Often"));
+		SpeechFarMessages = Bind(cfg, "Speech", "FarAwayMessages", true, "When a companion runs into a problem (needs a tool, can't get somewhere...) while you're out of earshot (further than CullDistance), it shows as a message in the top left corner with its name.");
 		SpeechDuration = Bind(cfg, "Speech", "Duration", 5f, "Seconds a line of speech stays on screen.", new AcceptableValueRange<float>(1f, 15f));
 		SpeechSayCooldown = Bind(cfg, "Speech", "SayCooldown", 3f, "Least time (seconds) between two lines from any companion, so they don't all talk at once.", new AcceptableValueRange<float>(1f, 30f));
 		SpeechCullDistance = Bind(cfg, "Speech", "CullDistance", 20f, "Speech from companions further away than this (meters) isn't shown.", new AcceptableValueRange<float>(5f, 60f));

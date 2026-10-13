@@ -1817,7 +1817,8 @@ public class CompanionInteract : MonoBehaviour
 	{
 		if (!(talk == null) && pool != null && pool.Length != 0)
 		{
-			talk.Say(pool[UnityEngine.Random.Range(0, pool.Length)]);
+			// 1.5.41: a reply to an order is said straight away
+			talk.SayOrder(pool[UnityEngine.Random.Range(0, pool.Length)]);
 		}
 	}
 

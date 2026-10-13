@@ -450,7 +450,7 @@ namespace Companions
                 {
                     p.NextHeavySpeak = now + 60f;
                     CompanionTalk t = h.GetComponent<CompanionTalk>();
-                    if (t != null) t.Say(ModLocalization.Loc("hc_speech_overweight"), false);
+                    if (t != null) t.SayProblem("overweight", ModLocalization.Loc("hc_speech_overweight"));
                 }
             }
             catch (Exception e) { Warn("HandleOverweight: " + e.Message); }

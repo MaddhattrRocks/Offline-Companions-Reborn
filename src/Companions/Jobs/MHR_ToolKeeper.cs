@@ -514,7 +514,7 @@ namespace Companions
         {
             string key = kind == K_AXE ? "hc_speech_broke_axe" : kind == K_PICK ? "hc_speech_broke_pickaxe" : "hc_speech_broke_tool";
             CompanionTalk t = cs.GetComponent<CompanionTalk>();
-            if (t != null) t.Say(ModLocalization.Loc(key), false);
+            if (t != null) t.SayProblem("broke:" + kind, ModLocalization.Loc(key));
         }
 
         // ---- 1.4.70: emptying bags ----
@@ -691,7 +691,7 @@ namespace Companions
                 default: return;   // the job's own lines already cover rod, bait, bow, cultivator and hammer
             }
             CompanionTalk t = cs.GetComponent<CompanionTalk>();
-            if (t != null) t.Say(ModLocalization.Loc(key), false);
+            if (t != null) t.SayProblem("tool:" + kind, ModLocalization.Loc(key));
         }
 
         // ---- item matching ----

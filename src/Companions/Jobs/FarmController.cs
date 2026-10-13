@@ -860,7 +860,7 @@ public class FarmController : MonoBehaviour
 				Log("No cultivator in inventory — harvest-only mode");
 				if (_talk != null)
 				{
-					_talk.Say(ModLocalization.Loc("hc_speech_farm_no_cultivator"));
+					_talk.SayProblem("tool:cultivator", ModLocalization.Loc("hc_speech_farm_no_cultivator"));
 				}
 			}
 			return false;
