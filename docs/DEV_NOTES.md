@@ -27,6 +27,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 
 ## NEXT BUILD
 ### Standing rules (user, 2026-10-04)
+- (user, 2026-10-13) When the user suggests a fix, check it against the game's actual code and mechanics (decompiled source) before building something else - and don't build around a game mechanic without reading how the game itself does it for the player. Lesson: the ladder bump - the user suggested "just set Gunter's walking direction" early on; I built my own bump instead, which the game's walking code capped and which blocked the real one. The user's suggestion was the fix.
 - (user, 2026-10-13) Check the WHOLE LogOutput.log every time, not just the movement lines - the user runs few mods, so it's short. Include what the player is doing (positions as follow goals, commands, menus, Follow toggles) for ideas on how the NPC should behave.
 - (user, 2026-10-13) Stamina: running out is fine, but the NPC tracks it like a player everywhere and tries not to - no sprinting or hopping where a player would walk (ladders), rest on a landing rather than run dry.
 - **Only this mod in the repo** (user, 2026-10-08): notes, logs, changelog, commit messages and PRs cover Offline Companions Reborn and its companions only. Anything else the user brings up (other mods, other tools, their setup) is a tangent: help in the chat, never write it to the repo.
