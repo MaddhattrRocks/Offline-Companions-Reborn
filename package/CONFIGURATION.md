@@ -133,6 +133,9 @@ Seconds you stand still before companions regroup around you (see Regroup).
 **SitIndoors** — Default: On  
 When you stop indoors, companions sit down near you: on a free chair or bench if there is one, otherwise on the floor. Near home they empty their bags first.
 
+**SitStayRange** — Default: 10 · Range: 2 – 30  
+Indoors, a companion that sat down stays seated while you move about within this many meters of it, and gets up to follow once you go further (or step outside).
+
 **TeleportDistance** — Default: 50 · Range: 20 – 200  
 A following companion that falls this many meters behind appears next to you: right away beyond 1.5x this distance, otherwise once it can't see you and isn't getting any closer.
 

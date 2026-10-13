@@ -10,6 +10,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Speech: a problem a companion runs into while you're out of earshot shows in the top left corner with its name (Speech > FarAwayMessages).
 - Speech: hungry, worn-gear, no-bed and heavy-pack remarks come at most every 10 minutes, and "no bed" only at night at home, and not at all when it has a bed back home (out in the wild at night it kept saying all the beds were taken). "By your word!" only when you give an order, not when the game changes a job by itself.
 - Fixed: following you around indoors, a companion stuttered and kept heading out of the door and back in - it aimed a few meters ahead of its spot, which indoors was outside the walls. Indoors it now keeps to its spot next to you.
+- Following indoors: a companion that sat down stays seated while you move about within 10 m of it (Follow > SitStayRange; it used to get up as soon as you took a few steps), and gets up once you go further or step outside.
+- Speech: "Crops are ready!" and "Planting" are said at most every 2 minutes, not before every crop.
 - speech.json has a new layout with optional tags per line ([home], [night], [rain], [blackforest]...). An old speech.json is kept as speech.v1.json and replaced by the new lines; pools missing from your file are filled in from the defaults.
 
 ## 1.5.4

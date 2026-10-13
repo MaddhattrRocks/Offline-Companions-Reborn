@@ -247,6 +247,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> FollowSitIndoors;
 
+	internal static ConfigEntry<float> FollowSitStayRange;
+
 	internal static ConfigEntry<int> PlantGroupSize;
 
 	internal static ConfigEntry<float> FarmNextCropRange;
@@ -514,6 +516,7 @@ internal static class ModConfig
 		FollowRegroup = Bind(cfg, "Follow", "Regroup", defaultValue: true, "When you stand still for RegroupTime seconds, companions come back and wait close to you. Off = they stay wherever they stopped.");
 		FollowRegroupTime = Bind(cfg, "Follow", "RegroupTime", 45f, "Seconds you stand still before companions regroup around you (see Regroup).", new AcceptableValueRange<float>(5f, 600f));
 		FollowSitIndoors = Bind(cfg, "Follow", "SitIndoors", defaultValue: true, "When you stop indoors, companions sit down near you: on a free chair or bench if there is one, otherwise on the floor. Near home they empty their bags first.");
+		FollowSitStayRange = Bind(cfg, "Follow", "SitStayRange", 10f, "Indoors, a companion that sat down stays seated while you move about within this many meters of it, and gets up to follow once you go further (or step outside).", new AcceptableValueRange<float>(2f, 30f));
 		FollowTeleportDistance = Bind(cfg, "Follow", "TeleportDistance", 50f, "A following companion that falls this many meters behind appears next to you: right away beyond 1.5x this distance, otherwise once it can't see you and isn't getting any closer.", new AcceptableValueRange<float>(20f, 200f));
 		FollowStuckTeleport = Bind(cfg, "Follow", "StuckTeleport", defaultValue: false, "When following you, a companion that has been stuck for 15 seconds somewhere it can't see you appears next to you. Off = it keeps trying to find its own way.");
 		FormationOffset = Bind(cfg, "Follow", "FormationSpacing", 3f, "Space (meters) between companions walking side by side in formation (when they follow something other than you).", new AcceptableValueRange<float>(1f, 10f));

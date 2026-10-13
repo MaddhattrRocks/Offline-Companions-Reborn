@@ -74,6 +74,9 @@ public class CompanionTalk : MonoBehaviour
 	// how long a problem it has mentioned stays unsaid, unless it changes
 	private const float ProblemRepeat = 300f;
 
+	// the same "what I'm doing" line (e.g. "Crops are ready!" before each crop)
+	private const float EventRepeat = 120f;
+
 	// small talk about a need (hungry, worn gear, no bed, heavy pack)
 	private const float NeedRepeat = 600f;
 
@@ -127,6 +130,10 @@ public class CompanionTalk : MonoBehaviour
 			if (prio == Priority.Problem)
 			{
 				_topicUntil[topic] = now + ProblemRepeat;
+			}
+			else if (prio == Priority.Event)
+			{
+				_topicUntil[topic] = now + EventRepeat;
 			}
 		}
 		if (TryShow(text, prio))

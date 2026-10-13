@@ -841,7 +841,7 @@ public class FarmController : MonoBehaviour
 			_phase = FarmPhase.MovingToPickable;
 			if (_talk != null)
 			{
-				_talk.Say(ModLocalization.Loc("hc_speech_farm_harvesting"));
+				_talk.Speak(ModLocalization.Loc("hc_speech_farm_harvesting"), CompanionTalk.Priority.Event, "farm:harvest");
 			}
 			Log("[Harvest] Found ripe crop \"" + pickable.name + "\" at " + $"{pickable.transform.position:F1} dist={Vector3.Distance(base.transform.position, pickable.transform.position):F1}m");
 			return true;
@@ -924,7 +924,7 @@ public class FarmController : MonoBehaviour
 					_phase = FarmPhase.MovingToPlantSpot;
 					if (_talk != null)
 					{
-						_talk.Say(ModLocalization.Loc("hc_speech_farm_planting"));
+						_talk.Speak(ModLocalization.Loc("hc_speech_farm_planting"), CompanionTalk.Priority.Event, "farm:plant");
 					}
 					Log($"[Zone] Planting \"{seedPlantInfo.Value.SeedPrefabName}\" at {result:F1} in zone[{num4}] {zone.Center:F0}");
 					return true;

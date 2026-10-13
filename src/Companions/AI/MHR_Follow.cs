@@ -761,7 +761,14 @@ namespace Companions
                     T t;
                     bool indoors = s_t.TryGetValue(s.TargetId, out t) && t.Indoors;
                     float moved = Flat(f.transform.position, s.SitPlayerPos);
-                    if (moved > 2.5f || (!indoors && moved > 1f)) why = "player moved";
+                    // 1.5.41: indoors it stays seated while the player potters about nearby (user: "If the NPC sits down or
+                    // something it can stay there for a bit while I am running around indoors ... like 10m")
+                    if (indoors)
+                    {
+                        float stay = ModConfig.FollowSitStayRange != null ? ModConfig.FollowSitStayRange.Value : 10f;
+                        if (Vector3.Distance(f.transform.position, ai.transform.position) > stay) why = "player moved off";
+                    }
+                    else if (moved > 1f) why = "player moved";
                 }
                 if (why != null) StandUp(ai, s, keepAnim, why);
                 else if (s.SitChair) Pin(ai, s);
