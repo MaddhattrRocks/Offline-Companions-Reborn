@@ -70,6 +70,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> AttackCooldown;
 
+	internal static ConfigEntry<float> MeleeTooClose;
+
 
 
 
@@ -707,6 +709,7 @@ internal static class ModConfig
 		RepairUseDistance = Bind(cfg, "Advanced", "GearRepairUseDistance", 2.5f, "Gear repair: how close (meters) a companion has to be to the station to repair.", new AcceptableValueRange<float>(1f, 5f));
 		UpkeepScanInterval = Bind(cfg, "Advanced", "RestockScanInterval", 5f, "Repair and Restock: seconds between looks for something to repair, refuel or sort.", new AcceptableValueRange<float>(1f, 60f));
 		AttackCooldown = Bind(cfg, "Advanced", "AttackCooldown", 0.225f, "Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.", new AcceptableValueRange<float>(0.1f, 2f));
+		MeleeTooClose = Bind(cfg, "Advanced", "MeleeTooClose", 0.3f, "Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.", new AcceptableValueRange<float>(0f, 1.5f));
 		FoodRegenInterval = Bind(cfg, "Advanced", "FoodRegenInterval", 10f, "Food: seconds between health regeneration ticks from food (a player's is 10).", new AcceptableValueRange<float>(1f, 60f));
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));

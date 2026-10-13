@@ -804,6 +804,9 @@ Repair and Restock: seconds between looks for something to repair, refuel or sor
 **AttackCooldown** — Default: 0.225 · Range: 0.1 – 2  
 Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.
 
+**MeleeTooClose** — Default: 0.3 · Range: 0 – 1.5  
+Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.
+
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
 

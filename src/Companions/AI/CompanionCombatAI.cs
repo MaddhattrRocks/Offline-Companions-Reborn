@@ -150,6 +150,7 @@ public class CompanionCombatAI : MonoBehaviour
 	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
 	private float _nextHuntMoveLog;
 	private float _nextFleeLog;
+	private float _nextCloseLog;
 
 	// 1.4.104: every chase goes through MHR_Mover (routes, climbing out, water); if it has given up on the way there
 	// for now, the game's own movement still closes in (a fight can't just stand still)
@@ -556,10 +557,39 @@ public class CompanionCombatAI : MonoBehaviour
 					}
 					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
 					{
-						_ai.LookAtPoint(_targetCreature.GetTopPoint());
-						if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, itemData.m_shared.m_aiAttackMaxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
+						// 1.5.4: melee aims like a player (user: the first stab at a boar missed - no skill gain, and it only noticed
+						// him after; he was a metre below it on a slope). The game sweeps a melee attack out from the hand along the
+						// body's facing, tilted only a few degrees towards where it looks, and skips anything behind the start:
+						// look at the middle of the target, not its top (over a low animal's back); step back when standing on top of
+						// it; and a narrow attack (a stab) waits until it faces the target squarely.
+						Vector3 aimAt = _targetCreature.GetCenterPoint();
+						_ai.LookAtPoint(aimAt);
+						float tooClose = ModConfig.MeleeTooClose?.Value ?? 0.3f;
+						if (!flag7 && tooClose > 0f && num3 < tooClose && !_character.InAttack())
 						{
-							_parryAttackCount--;
+							Vector3 away = base.transform.position - _targetCreature.transform.position;
+							away.y = 0f;
+							if (away.sqrMagnitude < 0.01f) away = -base.transform.forward;
+							_ai.MoveTowards(away.normalized, run: false);
+							_ai.LookAtPoint(aimAt);
+							if (Time.time >= _nextCloseLog)
+							{
+								_nextCloseLog = Time.time + 5f;
+								CompanionsPlugin.Log.LogDebug($"[Combat] Too close to swing at {_targetCreature.m_name} ({num3:F1} m) - stepping back");
+							}
+						}
+						else
+						{
+							float maxAngle = itemData.m_shared.m_aiAttackMaxAngle;
+							Attack melee = itemData.m_shared.m_attack;
+							if (!flag7 && melee != null && melee.m_attackAngle < 40f)
+							{
+								maxAngle = Mathf.Min(maxAngle, Mathf.Max(8f, melee.m_attackAngle * 0.5f + 5f));
+							}
+							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature) && _parryAttackCount > 0)
+							{
+								_parryAttackCount--;
+							}
 						}
 					}
 				}
