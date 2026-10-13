@@ -36,7 +36,7 @@ namespace Companions
             public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace;
             // 1.5.3: a whole chain of ladders planned at once and climbed in one go
             public List<LadderStep> Chain, PendingChain; public bool OnChain, ChainDown, PendingDown; public int ChainIdx, ChainJumps;
-            public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainRestUntil, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -974,7 +974,7 @@ namespace Companions
         static void ChainStepReset(S s, Vector3 pos, float now)
         {
             s.ChainProgressAt = now; s.ChainBestY = pos.y; s.ChainJumps = 0; s.ChainJumpAt = 0f; s.ChainPushAt = 0f;
-            s.ChainFootBest = float.MaxValue; s.ChainFootAt = now; s.ChainViaUntil = 0f;
+            s.ChainFootBest = float.MaxValue; s.ChainFootAt = now; s.ChainViaUntil = 0f; s.ChainRestUntil = 0f;
         }
 
         static void EndChain(S s, float now)
@@ -1052,6 +1052,19 @@ namespace Companions
             bool reached = s.ChainFootBest <= 0.6f || now - s.ChainFootAt > 1.0f;
             bool lifted = reached && pos.y > st.Foot.y + 0.4f;
             Vector3 dir = st.Dir;
+            // 1.5.3 (user: "The NPC should be keeping track of [stamina] ... and try to not run out"): low on a landing -
+            // stand and get some back before the next ladder, like a player; never part way up one
+            float maxSt = MaxStamina(ai);
+            if (!lifted && maxSt > 0f && c.IsOnGround())
+            {
+                float st0 = Stamina(ai);
+                if (now >= s.ChainRestUntil && st0 < maxSt * 0.15f) { s.ChainRestUntil = now + 8f; Dbg("[Move|" + tag + "] getting my breath back on the landing (" + (st0 / maxSt * 100f).ToString("F0") + "% stamina)"); }
+                if (now < s.ChainRestUntil)
+                {
+                    if (st0 >= maxSt * 0.4f) s.ChainRestUntil = 0f;
+                    else { Halt(ai, c, s); s.ChainProgressAt = now; s.ChainFootAt = now; return; }
+                }
+            }
             if (!lifted)
             {
                 bool blocked = now - s.ChainFootAt > 1.0f;
@@ -1086,7 +1099,8 @@ namespace Companions
             bool atFoot = !lifted && (off <= 0.45f || now - s.ChainFootAt > 1.0f);
             if ((atFoot || lifted) && s.ChainPushAt <= 0f) s.ChainPushAt = now;
             float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
-            if ((atFoot || lifted) && s.ChainPushAt > 0f && c.IsOnGround() && now >= s.ChainJumpAt && since > (lifted ? 1.5f : 1.0f))
+            bool lowStamina = maxSt > 0f && Stamina(ai) < maxSt * 0.25f;   // a hop costs stamina: not when it's short
+            if ((atFoot || lifted) && s.ChainPushAt > 0f && !lowStamina && c.IsOnGround() && now >= s.ChainJumpAt && since > (lifted ? 1.5f : 1.0f))
             {
                 if (++s.ChainJumps > 6)
                 {

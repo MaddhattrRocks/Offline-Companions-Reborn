@@ -27,6 +27,8 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 
 ## NEXT BUILD
 ### Standing rules (user, 2026-10-04)
+- (user, 2026-10-13) Check the WHOLE LogOutput.log every time, not just the movement lines - the user runs few mods, so it's short. Include what the player is doing (positions as follow goals, commands, menus, Follow toggles) for ideas on how the NPC should behave.
+- (user, 2026-10-13) Stamina: running out is fine, but the NPC tracks it like a player everywhere and tries not to - no sprinting or hopping where a player would walk (ladders), rest on a landing rather than run dry.
 - **Only this mod in the repo** (user, 2026-10-08): notes, logs, changelog, commit messages and PRs cover Offline Companions Reborn and its companions only. Anything else the user brings up (other mods, other tools, their setup) is a tangent: help in the chat, never write it to the repo.
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
@@ -55,6 +57,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
   - Jumping: chain hop-on at the foot was immediate; now walk in first - hop after 1 s at the foot without a lift, 1.5 s part way up (ChainPushAt).
   - Command down chains worked ("going down a chain of 4 ladders ... down the ladders").
 - User: "There is no reason to have the NPC sprint up the ladder. Save the stamina ... Walk into the ladder and push directly forward to go up the ladder. As this is a zigzag turn 90 degrees to move in front of the next ladder. Rinse and repeat" + "He stopped as the NPC was attack the skeleton. Since the NPC was not at the right level it was hitting just the ladder ... Please be sure to check the entire log." Full log (0ea26966): stamina 0-11% through the whole climb (HaveStamina/UseStamina FAILED), then at 43.4 with the skeleton at 45.4 ([Balanced] dist 2.8) six sword swings (7.8 stamina each, durability drain) into the ladder until the user commanded him down. Fixes: CompanionCombatAI melee in-range (flag8) also needs the target's feet within +1.4 / -1.8 m of ours (ranged unchanged) - otherwise it keeps chasing (the ladder chain); RunChain and single-ladder Climb steer at walking pace (pit climbs still run). [Balanced] status line (30/session) Info -> Debug. Rest of the log: Return/Follow fixed above; Repair scans, Interact/AIGate/Radial normal (user toggled Follow on and off, then a Direct move); command down chain fine.
+- Ladder chains and stamina: on a landing (not lifted, on the ground) below 15% stamina he stands until 40% (8 s at most) - Dbg "getting my breath back on the landing"; helper hops skipped below 25%. Never stops part way up a ladder.
 - [Balanced] weapon-choice entry log (WeaponLogic.EntryLog, 200 per session) moved from Info to Debug - 136 lines in this log.
 
 ### 1.5.2 - melee hunting (user, 2026-10-12: a player's video of a spear hunter; "If they have no ranged weapon they should try to sneak up and attack whatever they are hunting.")
