@@ -1570,7 +1570,11 @@ public class CompanionAI : BaseAI
 				StopMoving();
 				return true;
 			}
-			IdleMovement(dt);
+			// 1.5.3 (user: "The NPC keeps running off when there is nothing to do"): the game's own idle wander walks back
+			// towards the NPC's spawn point (where it was created or last brought back) once it's more than 20 m off - after a
+			// move order it ran 30 m back to where it had been resurrected. Stand where it is; IdleController takes over after
+			// [Idle] StartAfter and looks around from here.
+			StopMoving();
 		}
 		return true;
 	}
@@ -2049,7 +2053,7 @@ public class CompanionAI : BaseAI
 	{
 		if (target == null)
 		{
-			IdleMovement(dt);
+			StopMoving();   // 1.5.3: not the game's wander back to the spawn point
 			return;
 		}
 		bool flag = !m_character.IsSwimming() && _companionStamina != null && _companionStamina.MaxStamina > 0f && _companionStamina.Stamina / _companionStamina.MaxStamina < 0.5f;
