@@ -1241,7 +1241,11 @@ namespace Companions
                 bool lowStamina = maxSt > 0f && Stamina(ai) < maxSt * 0.2f;
                 float hopDrop;
                 bool edgeNear = LedgeAhead(pos, dir, 0.8f, out hopDrop) || LedgeAhead(pos, dir, 1.6f, out hopDrop);
-                if (since > 2.5f && !lowStamina && !edgeNear && c.IsOnGround() && now >= s.ChainJumpAt)
+                // 1.5.3: at the foot, one or two bumps that don't get him onto it (pressed against the ladder's bottom, the bump's
+                // ~0.9 m lift doesn't clear it - user: "bashing into the ladder then bouncing a bit then going up the ladder. Like
+                // the logic took a few seconds") -> hop after 0.8 s; part way up, give the bumps 2.5 s
+                float hopAfter = lifted ? 2.5f : 0.8f;
+                if (since > hopAfter && !lowStamina && !edgeNear && c.IsOnGround() && now >= s.ChainJumpAt)
                 {
                     if (++s.ChainJumps > 6)
                     {
