@@ -1125,13 +1125,15 @@ namespace Companions
                 EndChain(s, now);
                 return;
             }
-            if (pos.y > s.ChainBestY + 0.3f) { s.ChainBestY = pos.y; s.ChainProgressAt = now; s.ChainJumps = 0; }
+            // 1.5.3: a bump moves him up a rung or so (~0.25 m) - that is progress (0.3 m counted only hops, so every ladder
+            // after the first looked "stuck" and got a hop)
+            if (pos.y > s.ChainBestY + 0.1f) { s.ChainBestY = pos.y; s.ChainProgressAt = now; s.ChainJumps = 0; }
             float off = Flat(pos, st.Foot);
             if (pos.y < st.Foot.y + 1.0f && off < s.ChainFootBest - 0.15f) { s.ChainFootBest = off; s.ChainFootAt = now; s.ChainProgressAt = Mathf.Max(s.ChainProgressAt, now - 2f); }
             // on this ladder only once its foot has been reached (or got as close as it gets) - still bouncing at the top of
             // the last one is not "on" this one
             bool reached = s.ChainFootBest <= 0.6f || (now - s.ChainFootAt > 1.0f && off < 1.2f);
-            bool lifted = reached && pos.y > st.Foot.y + 0.4f;
+            bool lifted = reached && pos.y > st.Foot.y + 0.25f;
             Vector3 dir = st.Dir;
             // 1.5.3 (user: "The NPC should be keeping track of [stamina] ... and try to not run out"): low on a landing -
             // stand and get some back before the next ladder, like a player; never part way up one
@@ -1210,13 +1212,13 @@ namespace Companions
                 if (!LadderBump(c, st.Ledges, pos, out why) && s.ChainIdx > 0) LadderBump(c, s.Chain[s.ChainIdx - 1].Ledges, pos);
                 // one line per ladder after a second at it: what the bump saw (user test: the bump didn't lift him)
                 if (!st.BumpLogged && now - s.ChainPushAt > 1.0f) { st.BumpLogged = true; Dbg("[Move|" + tag + "] ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " bump: " + why + (lifted ? ", lifted" : ", not lifted yet")); }
-                // stuck: a hop, like a player would (user: "Its ok to have the NPC jump if they are stuck") - after 1.5 s
+                // stuck: a hop, like a player would (user: "Its ok to have the NPC jump if they are stuck") - after 2.5 s
                 // without rising, not when short of stamina
                 float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
                 bool lowStamina = maxSt > 0f && Stamina(ai) < maxSt * 0.2f;
                 float hopDrop;
                 bool edgeNear = LedgeAhead(pos, dir, 0.8f, out hopDrop) || LedgeAhead(pos, dir, 1.6f, out hopDrop);
-                if (since > 1.5f && !lowStamina && !edgeNear && c.IsOnGround() && now >= s.ChainJumpAt)
+                if (since > 2.5f && !lowStamina && !edgeNear && c.IsOnGround() && now >= s.ChainJumpAt)
                 {
                     if (++s.ChainJumps > 6)
                     {

@@ -459,6 +459,9 @@ public class CompanionCombatAI : MonoBehaviour
 					// had him swinging at the ladder between them instead of climbing on. Out of reach: keep moving.
 					float reachDy = _targetCreature.transform.position.y - base.transform.position.y;
 					if (!flag7 && (reachDy > 1.4f || reachDy < -1.8f)) flag8 = false;
+					// on the way up a chain of ladders to it: finish the climb onto its floor first, like a player (user log: stopped
+					// half way up the last ladder and fought from it)
+					if (!flag7 && reachDy > 0.5f && MHR_Mover.OnLadderChain(_ai)) flag8 = false;
 					float dist = (flag7 ? 20f : 0f);
 					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
 					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())

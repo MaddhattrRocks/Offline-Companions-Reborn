@@ -10,7 +10,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: going up a tower of ladders, a companion could walk or hop off the open side of a landing (a 9 m fall). The usual edge check now applies on ladder landings, and it never hops towards an edge.
 - Quieter log: a cornered, fleeing companion logs once every few seconds instead of every moment.
 - Ladders: companions walk up ladders instead of running, and when low on stamina they get their breath back on a landing before the next ladder (never part way up).
-- Fixed: a companion with a melee weapon swung at an enemy a floor above it (hitting the ladder in between) instead of climbing up to it. Melee range now counts height.
+- Fixed: a companion with a melee weapon swung at an enemy a floor above it (hitting the ladder in between) instead of climbing up to it. Melee range now counts height, and on its way up a ladder it finishes the climb before it fights.
 - Fixed: at the top of a ladder a companion could carry on walking the ladder's way and out through an opening in a tower wall (a 10 m fall). It now stops at the ladder's top end or the edge of the landing and turns for the next ladder.
 - Fixed: after falling off a chain of ladders a companion couldn't find the first ladder again ("no ladder found" right beside it).
 - Fixed: following your path up a tower, a companion could jump up onto a wall top beside the path and fall off the other side.
