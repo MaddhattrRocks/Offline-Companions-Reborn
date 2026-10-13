@@ -995,6 +995,7 @@ namespace Companions
                     if (lf.sqrMagnitude > 0.01f) c.SetMoveDir(lf.normalized);
                     Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
                     why = "in the lift zone, bumped (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
+                    if (c.InAttack()) why += " - but it was mid-swing, so no bump";   // the game gives none mid-attack either
                     c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel);
                     return true;
                 }
