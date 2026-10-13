@@ -36,7 +36,7 @@ namespace Companions
             public bool ClimbLadder, ClimbAuto, LadderPending; public Vector3 ClimbDir, ClimbBase; public float ClimbStartY, ClimbStartAt, ClimbBottomY, NextEdgeLog, ClimbViaUntil, ClimbFootBest, ClimbFootAt, ClimbFaceAt; public Vector3 ClimbFace;
             // 1.5.3: a whole chain of ladders planned at once and climbed in one go
             public List<LadderStep> Chain, PendingChain; public bool OnChain, ChainDown, PendingDown; public int ChainIdx, ChainJumps;
-            public AutoJumpLedge[] ClimbLedges; public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainRestUntil, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
+            public AutoJumpLedge[] ClimbLedges; public float ChainProgressAt, ChainBestY, ChainJumpAt, ChainPushAt, ChainRestUntil, NextChainTrace, ChainFootBest, ChainFootAt, ChainViaUntil; public Vector3 ChainVia; public Vector3 ClimbVia; public int ClimbJumps; public int ClimbLadderId; public float NextLadderClimbSearch, NextLadderLog; public readonly HashSet<int> LadderClimbsTried = new HashSet<int>(); public readonly Dictionary<int, Vector2> LadderUses = new Dictionary<int, Vector2>();
             public Ladder UseLadder; public float LadderUntil, NextLadderSearch; public readonly HashSet<Ladder> LaddersUsed = new HashSet<Ladder>();
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
@@ -996,7 +996,9 @@ namespace Companions
                     Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
                     why = "in the lift zone, bumped (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
                     if (c.InAttack()) why += " - but it was mid-swing, so no bump";   // the game gives none mid-attack either
-                    c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel);
+                    CompanionLadderBumpTrace.FromMover = true;
+                    try { c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel); }
+                    finally { CompanionLadderBumpTrace.FromMover = false; }
                     return true;
                 }
             }
@@ -1233,6 +1235,17 @@ namespace Companions
                     s.ChainJumpAt = now + 1.0f;
                     Dbg("[Move|" + tag + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
                 }
+            }
+            // 1.5.3: ladder trace, ~3 a second while on a chain (user: "We need to look at the ladders more closely")
+            if (now >= s.NextChainTrace)
+            {
+                s.NextChainTrace = now + 0.3f;
+                Rigidbody trb = ai.GetComponent<Rigidbody>();
+                CompanionLadderBumpTrace.Counts k = CompanionLadderBumpTrace.Take(c);
+                string stage = lifted ? "climbing" : atFoot ? "at the foot" : (!st.LinedUp ? "lining up" : "to the foot");
+                Dbg("[Ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + "] " + stage + " y=" + pos.y.ToString("F2") + " (foot " + st.Foot.y.ToString("F1") + ", top " + st.Top.ToString("F1") + ") off=" + off.ToString("F2")
+                    + " ground=" + c.IsOnGround() + " vy=" + (trb != null ? trb.linearVelocity.y.ToString("F1") : "?") + " facing=" + Vector3.Dot(ai.transform.forward, st.Dir).ToString("F2")
+                    + (k == null ? " bumps: none" : " bumps: game " + k.GameOk + "/" + k.Game + ", mine " + k.MoverOk + "/" + k.Mover + (k.LastRefusal.Length > 0 ? " (refused: " + k.LastRefusal + ")" : "")));
             }
         }
 
