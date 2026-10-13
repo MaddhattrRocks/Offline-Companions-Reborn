@@ -919,7 +919,12 @@ namespace Companions
             float depth = Mathf.Abs(dir.x) * b.extents.x + Mathf.Abs(dir.z) * b.extents.z;
             Vector3 c0 = new Vector3(b.center.x, foot.y, b.center.z) + dir * depth;
             float run = Vector3.Dot(new Vector3(c0.x - foot.x, 0f, c0.z - foot.z), dir);
-            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Run = Mathf.Max(run, 0.5f), Id = id, Ledges = root != null ? root.GetComponentsInChildren<AutoJumpLedge>(true) : null };
+            AutoJumpLedge[] ledges = root != null ? root.GetComponentsInChildren<AutoJumpLedge>(true) : null;
+            // 1.5.3: stand where the lift zone starts (user log: "nearest lift zone 1.24m / 2.03m away" from the old foot
+            // spot) - just short of the trigger's nearest point, on the floor
+            Vector3 zone;
+            if (LiftZoneEdge(ledges, foot, dir, out zone)) { run -= Vector3.Dot(new Vector3(zone.x - foot.x, 0f, zone.z - foot.z), dir); foot = zone; }
+            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Run = Mathf.Max(run, 0.5f), Id = id, Ledges = ledges };
         }
 
         // the next ladder up from a ladder's top: its foot on the landing (within 1 m of the top's height, 3.5 m of it) and
@@ -984,6 +989,10 @@ namespace Companions
                     float d = Vector3.Distance(tc.ClosestPoint(p), p);
                     if (d < nearest) nearest = d;
                     if (!tc.enabled || d > 0.6f) continue;
+                    // 1.5.3: the game only bumps someone walking the ladder's way, and it read his walking direction as nothing
+                    // ("walking-direction match 0.00" in the user's log) - set it to the ladder's way first
+                    Vector3 lf = lg.transform.forward; lf.y = 0f;
+                    if (lf.sqrMagnitude > 0.01f) c.SetMoveDir(lf.normalized);
                     Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
                     why = "in the lift zone, bumped (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
                     c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel);
@@ -992,6 +1001,29 @@ namespace Companions
             }
             why = triggers == 0 ? "no lift trigger found under " + ledges.Length + " ledge(s)" : "nearest lift zone " + nearest.ToString("F2") + "m away";
             return false;
+        }
+
+        static bool LiftZoneEdge(AutoJumpLedge[] ledges, Vector3 foot, Vector3 dir, out Vector3 zone)
+        {
+            zone = foot;
+            if (ledges == null) return false;
+            Vector3 p = foot + Vector3.up * 0.5f; float best = float.MaxValue; bool found = false;
+            foreach (AutoJumpLedge lg in ledges)
+            {
+                if (lg == null) continue;
+                foreach (Collider tc in lg.GetComponentsInChildren<Collider>(true))
+                {
+                    if (tc == null || !tc.isTrigger) continue;
+                    Vector3 cp = tc.ClosestPoint(p);
+                    float d = Vector3.Distance(cp, p);
+                    if (d >= best || d > 3f) continue;
+                    Vector3 spot = new Vector3(cp.x, foot.y, cp.z) - dir * 0.2f;
+                    RaycastHit g;
+                    if (!Physics.SphereCast(spot + Vector3.up * 1.0f, 0.25f, Vector3.down, out g, 2.0f, Mask()) || Mathf.Abs(g.point.y - foot.y) > 0.6f) continue;
+                    spot.y = g.point.y; best = d; zone = spot; found = true;
+                }
+            }
+            return found;
         }
 
         static void StartChain(S s, List<LadderStep> chain, int idx, Vector3 pos, float now, string tag, bool down = false)
@@ -1095,7 +1127,7 @@ namespace Companions
             if (pos.y < st.Foot.y + 1.0f && off < s.ChainFootBest - 0.15f) { s.ChainFootBest = off; s.ChainFootAt = now; s.ChainProgressAt = Mathf.Max(s.ChainProgressAt, now - 2f); }
             // on this ladder only once its foot has been reached (or got as close as it gets) - still bouncing at the top of
             // the last one is not "on" this one
-            bool reached = s.ChainFootBest <= 0.6f || now - s.ChainFootAt > 1.0f;
+            bool reached = s.ChainFootBest <= 0.6f || (now - s.ChainFootAt > 1.0f && off < 1.2f);
             bool lifted = reached && pos.y > st.Foot.y + 0.4f;
             Vector3 dir = st.Dir;
             // 1.5.3 (user: "The NPC should be keeping track of [stamina] ... and try to not run out"): low on a landing -
@@ -1113,7 +1145,7 @@ namespace Companions
             }
             if (!lifted)
             {
-                bool blocked = now - s.ChainFootAt > 1.0f;
+                bool blocked = now - s.ChainFootAt > 1.0f && off < 1.2f;
                 if (off > 0.45f && !blocked)
                 {
                     // 1.5.3 (like doorways - user: "Did the door fix not get implemented in this new planning?"): line up square
@@ -1127,6 +1159,11 @@ namespace Companions
                         RaycastHit lg;
                         bool square = toFoot.sqrMagnitude < 0.01f || Vector3.Dot(toFoot.normalized, st.Dir) > 0.8f;
                         bool lineFloor = Physics.SphereCast(lineUp + Vector3.up * 1.0f, 0.25f, Vector3.down, out lg, 2.0f, Mask()) && Mathf.Abs(lg.point.y - st.Foot.y) < 0.6f;
+                        if (lineFloor)
+                        {
+                            Piece lp; GameObject lr = LadderRoot(lg.collider, out lp);
+                            if (lr != null && IsLadder(lr, lp, lg.collider)) lineFloor = false;   // that's the ladder below, not floor
+                        }
                         if (square || !lineFloor || Flat(pos, lineUp) < 0.4f) st.LinedUp = true;
                         else target = lineUp;
                     }
@@ -1161,7 +1198,7 @@ namespace Companions
             // walking pace on ladders (user: "There is no reason to have the NPC sprint up the ladder. Save the stamina.")
             Steer(ai, c, s, dir, false, false);
             // at the foot or on it: walk into it and let the ladder bump us up - no jumping
-            bool atFoot = !lifted && (off <= 0.45f || now - s.ChainFootAt > 1.0f);
+            bool atFoot = !lifted && (off <= 0.45f || (now - s.ChainFootAt > 1.0f && off < 1.2f));
             if (atFoot || lifted)
             {
                 if (s.ChainPushAt <= 0f) s.ChainPushAt = now;
@@ -1173,7 +1210,9 @@ namespace Companions
                 // without rising, not when short of stamina
                 float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
                 bool lowStamina = maxSt > 0f && Stamina(ai) < maxSt * 0.2f;
-                if (since > 1.5f && !lowStamina && c.IsOnGround() && now >= s.ChainJumpAt)
+                float hopDrop;
+                bool edgeNear = LedgeAhead(pos, dir, 0.8f, out hopDrop) || LedgeAhead(pos, dir, 1.6f, out hopDrop);
+                if (since > 1.5f && !lowStamina && !edgeNear && c.IsOnGround() && now >= s.ChainJumpAt)
                 {
                     if (++s.ChainJumps > 6)
                     {
@@ -1431,6 +1470,8 @@ namespace Companions
             }
             s.ClimbDir = into.normalized;
             s.ClimbLedges = best.GetComponentsInChildren<AutoJumpLedge>(true);
+            Vector3 zoneFoot;
+            if (s.ClimbAuto && LiftZoneEdge(s.ClimbLedges, s.ClimbBase, s.ClimbDir, out zoneFoot)) s.ClimbBase = zoneFoot;   // 1.5.3: where the lift starts
             s.ClimbLadderId = bestId; s.ClimbBottomY = bestB.min.y;
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             // 1.5.2: get to the foot of it by the normal route first (user: "running into a wall" walking straight at it)

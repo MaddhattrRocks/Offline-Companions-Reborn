@@ -7,7 +7,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed: after loading in, a companion with Follow off followed you anyway (the return-to-you step on load switched follow on and never switched it back properly). It now leaves companions with Follow off alone.
 - Ladders: a companion walks into a ladder and lets it lift it, like a player, and only hops when that doesn't work; it finishes each ladder on the landing before turning for the next one (it used to turn early and walk off the side).
 - Ladders: a companion lines up square in front of each ladder first (like a doorway), walks straight into it and gets the same bump up that you do; when it's stuck there it hops, like a player would.
-- Fixed: going up a tower of ladders, a companion could walk off the open side of a landing (a 9 m fall). The usual edge check now applies on ladder landings too.
+- Fixed: going up a tower of ladders, a companion could walk or hop off the open side of a landing (a 9 m fall). The usual edge check now applies on ladder landings, and it never hops towards an edge.
 - Quieter log: a cornered, fleeing companion logs once every few seconds instead of every moment.
 - Ladders: companions walk up ladders instead of running, and when low on stamina they get their breath back on a landing before the next ladder (never part way up).
 - Fixed: a companion with a melee weapon swung at an enemy a floor above it (hitting the ladder in between) instead of climbing up to it. Melee range now counts height.
