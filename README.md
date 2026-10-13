@@ -4,6 +4,8 @@ Source for the Valheim mod **Offline Companions Reborn** (BepInEx), a Valheim 1.
 [ProfMags' Offline Companions](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/).
 The player-facing description is in [`package/README.md`](package/README.md).
 
+**Download:** [Thunderstore](https://thunderstore.io/c/valheim/p/Maddhattr/Offline_Companions_Reborn/) · [Hexium](https://valheim.hexium.gg/mods/Maddhattr/Offline_Companions_Reborn) · [Nexus Mods](https://www.nexusmods.com/valheim/mods/4047)
+
 ## Layout
 
 | Path | What it is |
