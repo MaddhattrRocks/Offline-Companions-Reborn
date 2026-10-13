@@ -819,9 +819,6 @@ Combat: closer than this (meters, from the edge of the target) a companion steps
 **MeleeReachMargin** — Default: 0.2 · Range: 0 – 1  
 Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.
 
-**SneakStabReach** — Default: 1.5 · Range: 0.5 – 3  
-Combat: against something that hasn't noticed it (a sneak attack), a companion strikes from no further than this (meters, from the edge of the target), so the one free hit doesn't fall short. A weapon with a shorter reach still uses its own.
-
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
 
