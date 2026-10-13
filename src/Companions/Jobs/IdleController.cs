@@ -224,9 +224,11 @@ public class IdleController : MonoBehaviour
 
 	private void Begin()
 	{
-		// near the job: where the job left it; with no job, home when it's near home
+		// near the job: where the job left it; with no job, where it is - home only when it's actually at home.
+		// 1.5.3 (user: "The NPC keeps running off when there is nothing to do"): "near home" was HomeTripRange (60 m), so
+		// after being sent somewhere 30 m from home it ran back there to idle. Within 15 m of home only.
 		_center = base.transform.position;
-		if (Mode() == 0 && _setup != null && _setup.HasHomePosition() && MHR_ToolKeeper.NearHome(_setup))
+		if (Mode() == 0 && _setup != null && _setup.HasHomePosition() && Vector3.Distance(_setup.GetHomePosition(), base.transform.position) <= 15f)
 		{
 			_center = _setup.GetHomePosition();
 		}
