@@ -909,13 +909,17 @@ namespace Companions
         // staircase. Climbing them one at a time - find, walk to, climb, stop, look around, find the next - paused on every
         // landing and gave a wrong choice (a wall top, a step off the edge) a chance at each one. Instead: plan the chain
         // once, climb it without stopping, and remember chains that worked so a fall or the next visit reuses them.
-        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top; public int Id; }
+        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top, Run; public int Id; }
         class KnownChain { public List<LadderStep> Steps; public float Until; }
         static readonly List<KnownChain> s_knownChains = new List<KnownChain>();
 
         static LadderStep MakeStep(Bounds b, Vector3 foot, Vector3 dir, int id)
         {
-            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Id = id };
+            // how far along its direction the ladder's top end is from the foot spot
+            float depth = Mathf.Abs(dir.x) * b.extents.x + Mathf.Abs(dir.z) * b.extents.z;
+            Vector3 c0 = new Vector3(b.center.x, foot.y, b.center.z) + dir * depth;
+            float run = Vector3.Dot(new Vector3(c0.x - foot.x, 0f, c0.z - foot.z), dir);
+            return new LadderStep { Foot = foot, Dir = dir, Bottom = b.min.y, Top = b.max.y, Run = Mathf.Max(run, 0.5f), Id = id };
         }
 
         // the next ladder up from a ladder's top: its foot on the landing (within 1 m of the top's height, 3.5 m of it) and
@@ -979,6 +983,7 @@ namespace Companions
 
         static void EndChain(S s, float now)
         {
+            s.LadderClimbsTried.Clear();   // 1.5.3: after a fall the same ladders are the way back up ("no ladder found" beside them)
             s.OnChain = false; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
             s.ProgressTime = now; s.AnchorTime = now; s.NextLadderClimbSearch = 0f; s.NextLadderSearch = 0f;
         }
@@ -1013,7 +1018,14 @@ namespace Companions
             // up this one: straight on to the next foot - no stopping on the landing. Only once standing at its top, though:
             // turning for the next foot 0.6 m short, still on the slope, walked him off its side ("fell off the ladders -
             // back on at ladder 1/5" again and again); against a wall at the top, also when it stops lifting for 0.5 s
-            if (c.IsOnGround() && (pos.y >= st.Top - 0.3f || (pos.y >= st.Top - 0.8f && now - s.ChainProgressAt > 0.5f)))
+            // 1.5.3: and never walk on past its top end, or off the edge of the landing there (user log: twice he carried on
+            // in the ladder's direction, out through an opening in the tower wall - "fell 9.7 m and took 36 fall damage")
+            Vector3 fromFoot = pos - st.Foot; fromFoot.y = 0f;
+            float edgeDrop;
+            bool pastTop = s.ChainFootBest <= 0.6f && pos.y > st.Top - 1.2f
+                && (Vector3.Dot(fromFoot, st.Dir) > st.Run + 0.3f || LedgeAhead(pos, st.Dir, 0.6f, out edgeDrop));
+            if (pastTop && !c.IsOnGround()) { Halt(ai, c, s); return; }
+            if (c.IsOnGround() && (pos.y >= st.Top - 0.3f || pastTop || (pos.y >= st.Top - 0.8f && now - s.ChainProgressAt > 0.5f)))
             {
                 s.ChainIdx++;
                 ChainStepReset(s, pos, now);
