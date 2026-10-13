@@ -197,7 +197,10 @@ namespace Companions
                 {
                     // aim well ahead of the spot so it keeps walking with the player instead of arriving, stopping and
                     // starting again (1.4.78: the 1.4.77 lead was short enough to "arrive" mid-walk - stutter)
-                    Vector3 lead = s.Trail ? goal : goal + t.Travel * Mathf.Max(1.5f, Mathf.Min(t.Speed, 8f));
+                    Vector3 lead = s.Trail ? goal : goal + t.Travel * (t.Indoors ? 1.0f : Mathf.Max(1.5f, Mathf.Min(t.Speed, 8f)));
+                    // 1.5.41: never aim through a wall (user: indoors it "stuttered" - the point 8 m ahead was outside the
+                    // house, so every few steps it planned a 30 m route out through the door and back in for a spot 3 m away)
+                    if (!s.Trail && !Los(goal, lead)) lead = goal;
                     int pace = Pace(player, dSpot, distP, maxD);
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
