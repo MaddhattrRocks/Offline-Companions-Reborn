@@ -909,7 +909,7 @@ namespace Companions
         // staircase. Climbing them one at a time - find, walk to, climb, stop, look around, find the next - paused on every
         // landing and gave a wrong choice (a wall top, a step off the edge) a chance at each one. Instead: plan the chain
         // once, climb it without stopping, and remember chains that worked so a fall or the next visit reuses them.
-        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top, Run; public int Id; public AutoJumpLedge[] Ledges; public bool LinedUp; }
+        internal class LadderStep { public Vector3 Foot, Dir, TopSpot; public float Bottom, Top, Run; public int Id; public AutoJumpLedge[] Ledges; public bool LinedUp, BumpLogged; }
         class KnownChain { public List<LadderStep> Steps; public float Until; }
         static readonly List<KnownChain> s_knownChains = new List<KnownChain>();
 
@@ -966,28 +966,38 @@ namespace Companions
         // to react to players only), so it hopped instead ("trying to jump up the ladder rather than just go up them and let
         // the game bump them"). Inside the ledge's trigger and walking its way: the same Character.OnAutoJump call the game
         // makes for a player (it checks the ground, the direction and its own 0.5 s spacing).
-        static bool LadderBump(Character c, AutoJumpLedge[] ledges, Vector3 pos)
+        static bool LadderBump(Character c, AutoJumpLedge[] ledges, Vector3 pos) { string why; return LadderBump(c, ledges, pos, out why); }
+        static readonly System.Reflection.FieldInfo s_moveDirF = HarmonyLib.AccessTools.Field(typeof(Character), "m_moveDir");
+        static bool LadderBump(Character c, AutoJumpLedge[] ledges, Vector3 pos, out string why)
         {
+            why = "no lift trigger on this ladder";
             if (ledges == null || c == null) return false;
             Vector3 p = pos + Vector3.up * 0.5f;
+            float nearest = float.MaxValue; int triggers = 0;
             foreach (AutoJumpLedge lg in ledges)
             {
                 if (lg == null) continue;
-                foreach (Collider tc in lg.GetComponents<Collider>())
+                foreach (Collider tc in lg.GetComponentsInChildren<Collider>(true))
                 {
-                    if (tc == null || !tc.isTrigger || !tc.enabled) continue;
-                    if (Vector3.Distance(tc.ClosestPoint(p), p) > 0.5f) continue;
+                    if (tc == null || !tc.isTrigger) continue;
+                    triggers++;
+                    float d = Vector3.Distance(tc.ClosestPoint(p), p);
+                    if (d < nearest) nearest = d;
+                    if (!tc.enabled || d > 0.6f) continue;
+                    Vector3 md = s_moveDirF != null ? (Vector3)s_moveDirF.GetValue(c) : Vector3.zero;
+                    why = "in the lift zone, bumped (onGround=" + c.IsOnGround() + ", walking-direction match " + Vector3.Dot(md, lg.transform.forward).ToString("F2") + ", up " + lg.m_upVel.ToString("F1") + " fwd " + lg.m_forwardVel.ToString("F1") + ")";
                     c.OnAutoJump(lg.transform.forward, lg.m_upVel, lg.m_forwardVel);
                     return true;
                 }
             }
+            why = triggers == 0 ? "no lift trigger found under " + ledges.Length + " ledge(s)" : "nearest lift zone " + nearest.ToString("F2") + "m away";
             return false;
         }
 
         static void StartChain(S s, List<LadderStep> chain, int idx, Vector3 pos, float now, string tag, bool down = false)
         {
             s.Chain = chain; s.ChainIdx = idx; s.OnChain = true; s.ChainDown = down;
-            foreach (LadderStep cs in chain) cs.LinedUp = false;
+            foreach (LadderStep cs in chain) { cs.LinedUp = false; cs.BumpLogged = false; }
             s.DescendLadder = false; s.DescendUntil = 0f;
             s.ClimbLadder = false; s.ClimbUntil = 0f; s.LadderPending = false; s.HasDetour = false; s.StepUntil = 0f;
             ChainStepReset(s, pos, now);
@@ -1155,13 +1165,28 @@ namespace Companions
             if (atFoot || lifted)
             {
                 if (s.ChainPushAt <= 0f) s.ChainPushAt = now;
-                LadderBump(c, st.Ledges, pos);
-                // 4 s at the foot without being lifted at all: this ladder isn't working for us
-                if (!lifted && now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt) > 4f)
+                string why;
+                LadderBump(c, st.Ledges, pos, out why);
+                // one line per ladder after a second at it: what the bump saw (user test: the bump didn't lift him)
+                if (!st.BumpLogged && now - s.ChainPushAt > 1.0f) { st.BumpLogged = true; Dbg("[Move|" + tag + "] ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " bump: " + why + (lifted ? ", lifted" : ", not lifted yet")); }
+                // stuck: a hop, like a player would (user: "Its ok to have the NPC jump if they are stuck") - after 1.5 s
+                // without rising, not when short of stamina
+                float since = now - Mathf.Max(s.ChainPushAt, s.ChainProgressAt);
+                bool lowStamina = maxSt > 0f && Stamina(ai) < maxSt * 0.2f;
+                if (since > 1.5f && !lowStamina && c.IsOnGround() && now >= s.ChainJumpAt)
                 {
-                    MarkBadLadder(st.Id, now, 120f);
-                    if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get onto ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
-                    EndChain(s, now);
+                    if (++s.ChainJumps > 6)
+                    {
+                        MarkBadLadder(st.Id, now, 120f);
+                        if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
+                        EndChain(s, now);
+                        return;
+                    }
+                    c.Jump(false);
+                    Rigidbody rb = ai.GetComponent<Rigidbody>();
+                    if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 2.5f; bv.z = dir.z * 2.5f; rb.linearVelocity = bv; }
+                    s.ChainJumpAt = now + 1.0f;
+                    Dbg("[Move|" + tag + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
                 }
             }
         }
