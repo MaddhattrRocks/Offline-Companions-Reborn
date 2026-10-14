@@ -1565,6 +1565,8 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(CompanionTombstoneResurrect.RespawnFollowPausedHash, _nview?.GetZDO()?.GetBool(CompanionTombstoneResurrect.FollowPausedByJobHash) ?? false);
 			// 1.5.1: which copy of the companion this is - a tombstone of an older copy (the companion was recovered since) won't respawn it
 			zDO.Set(MHR_Roster.RespawnGenHash, _nview?.GetZDO()?.GetInt(MHR_Roster.GenHash) ?? 0);
+			// 1.5.42: and its farm zones
+			zDO.Set(CompanionTombstoneResurrect.RespawnFarmZonesHash, _nview?.GetZDO()?.GetString(FarmZoneSerializer.FarmZonesHash) ?? "");
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
 			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");

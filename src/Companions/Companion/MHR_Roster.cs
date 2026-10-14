@@ -62,6 +62,9 @@ internal static class MHR_Roster
 		public Vector3 LastPos;
 		public double LastSeen;
 		public bool Dead;
+
+		// 1.5.42: added at the end of the saved entry (older entries just don't have it)
+		public string FarmZones;
 	}
 
 	private static readonly List<Entry> s_entries = new List<Entry>();
@@ -182,6 +185,7 @@ internal static class MHR_Roster
 		zPackage.Write(e.LastPos);
 		zPackage.Write(e.LastSeen);
 		zPackage.Write(e.Dead);
+		zPackage.Write(e.FarmZones ?? "");
 		return zPackage.GetBase64();
 	}
 
@@ -220,13 +224,26 @@ internal static class MHR_Roster
 				Inventory = zPackage.ReadString(),
 				LastPos = zPackage.ReadVector3(),
 				LastSeen = zPackage.ReadDouble(),
-				Dead = zPackage.ReadBool()
+				Dead = zPackage.ReadBool(),
+				FarmZones = ReadOptionalString(zPackage)
 			};
 		}
 		catch (Exception ex)
 		{
 			CompanionsPlugin.Log.LogWarning("[Roster] Skipped an unreadable roster entry: " + ex.Message);
 			return null;
+		}
+	}
+
+	private static string ReadOptionalString(ZPackage p)
+	{
+		try
+		{
+			return (p.GetPos() < p.Size()) ? p.ReadString() : "";
+		}
+		catch
+		{
+			return "";
 		}
 	}
 
@@ -421,6 +438,7 @@ internal static class MHR_Roster
 		entry.CombatStance = zdo.GetInt(CompanionSetup.CombatStanceHash);
 		entry.HasBed = zdo.GetBool(CompanionSetup.HasHomeBedHash);
 		entry.BedPos = zdo.GetVec3(CompanionSetup.HomeBedPosHash, Vector3.zero);
+		entry.FarmZones = zdo.GetString(FarmZoneSerializer.FarmZonesHash);
 		Inventory inventory = c.GetComponent<Humanoid>()?.GetInventory();
 		if (inventory != null)
 		{
@@ -743,6 +761,10 @@ internal static class MHR_Roster
 		}
 		zDO.Set(CompanionSetup.HasHomeBedHash, e.HasBed);
 		zDO.Set(CompanionSetup.HomeBedPosHash, e.BedPos);
+		if (!string.IsNullOrEmpty(e.FarmZones))
+		{
+			zDO.Set(FarmZoneSerializer.FarmZonesHash, e.FarmZones);
+		}
 		zDO.Persistent = true;
 		if (!string.IsNullOrEmpty(e.Inventory))
 		{

@@ -49,6 +49,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 
 	internal static readonly int RespawnInventoryHash = "HC_Respawn_Inventory".GetStableHashCode();
 
+	// 1.5.42: its farm zones survive death (user: "Did the farm zones disappear? I had some set at one point.")
+	internal static readonly int RespawnFarmZonesHash = "HC_Respawn_FarmZones".GetStableHashCode();
+
 	private const float ResurrectDuration = 7f;
 
 	private const float InteractRange = 3f;
@@ -371,6 +374,11 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		if (!string.IsNullOrEmpty(value6))
 		{
 			zDO2.Set(CompanionSkills.SkillsHash, value6);
+		}
+		string zones = tombZdo.GetString(RespawnFarmZonesHash);
+		if (!string.IsNullOrEmpty(zones))
+		{
+			zDO2.Set(FarmZoneSerializer.FarmZonesHash, zones);
 		}
 		zDO2.Persistent = true;
 		zDO2.Set(MHR_Roster.GenHash, mhrGen);
