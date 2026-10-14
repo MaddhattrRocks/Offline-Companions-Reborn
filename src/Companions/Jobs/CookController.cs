@@ -326,28 +326,12 @@ public partial class CookController : MonoBehaviour
 		_scanTimer = ScanInterval;
 		CookCatalog.Ensure();
 		Scan();
-		_shortItem = null;
-		_noStation = null;
+		_whys.Clear();
+		_foodWanted = false;
 		Task task = PickTask();
 		if (task == null)
 		{
-			// say what's missing when an ingredient held it up, with the reserve from the config
-			if (_shortItem != null && !_shortMade)
-			{
-				CompanionStatus.Why(this, "hc_why_cook_reserve", false, _shortNeed, _shortItem, _shortHave, Reserve);
-			}
-			else if (_shortItem != null)
-			{
-				CompanionStatus.Why(this, "hc_why_cook_short", false, _shortNeed, _shortItem, _shortHave);
-			}
-			else if (_noStation != null)
-			{
-				CompanionStatus.Why(this, "hc_why_cook_no_station", false, _noStation);
-			}
-			else
-			{
-				CompanionStatus.Why(this, "hc_why_cook_nothing");
-			}
+			ShowWhy();
 			if (!_allDoneNotified)
 			{
 				_allDoneNotified = true;
@@ -510,6 +494,7 @@ public partial class CookController : MonoBehaviour
 			{
 				continue;
 			}
+			_foodWanted = true;
 			// a prep-table item needs a cooking station in range that finishes it
 			if (final != output && FindCooker(output, needFree: false) == null)
 			{
@@ -550,6 +535,10 @@ public partial class CookController : MonoBehaviour
 				}
 				int room = CookCatalog.Target(to, FoodTarget) - Count(to);
 				int have = Usable(from);
+				if (room > 0)
+				{
+					_foodWanted = true;
+				}
 				int n = Mathf.Min(Mathf.Min(CountSlots(cooker, -1), Batch), Mathf.Min(room, have));
 				if (n <= 0)
 				{
@@ -638,10 +627,10 @@ public partial class CookController : MonoBehaviour
 			if (station == null)
 			{
 				BrewWhy(mead, "no usable " + Loc(recipe.m_craftingStation?.m_name) + " in range (needs the right level, a fire and a roof)");
-				_noStation = Loc(recipe.m_craftingStation?.m_name);
+				AddWhy(true, "hc_why_cook_no_station", Loc(recipe.m_craftingStation?.m_name));
 				continue;
 			}
-			string shortOf = ShortIngredient(recipe);
+			string shortOf = ShortIngredient(recipe, mead);
 			if (shortOf != null)
 			{
 				BrewWhy(mead, shortOf);
@@ -653,19 +642,74 @@ public partial class CookController : MonoBehaviour
 		return null;
 	}
 
-	// 1.5.42: the last ingredient that held cooking up, for the "why" (user: "will the NPC say something like 'I need more
-	// than 20 ingredients' reading whatever the set number is from the config?")
-	private string _shortItem;
-
-	private int _shortNeed, _shortHave;
-
-	private bool _shortMade;
-
-	private string _noStation;
-
-	// the first ingredient that would go below the reserve, as a sentence for the log
-	private string ShortIngredient(Recipe recipe)
+	// 1.5.42: why it isn't cooking or brewing, for the status and the idle "why". User (log 4b94cbba): "It just reports the
+	// need for honey and nothing else. I took all the ingredients so there really is nothing to cook... It should rotate
+	// between missing details every so often." Every reason found in a scan is kept; one is shown per scan (10 s), in turn.
+	// Mead reasons show as "Mead", food ones as "Cook".
+	private class Why
 	{
+		public bool Mead;
+
+		public string Key;
+
+		public object[] Args;
+	}
+
+	private readonly List<Why> _whys = new List<Why>();
+
+	private int _whyTurn;
+
+	// some food is under its target (FoodTask): nothing cooked means the ingredients are missing, not that it's stocked up
+	private bool _foodWanted;
+
+	private const int MaxWhys = 8;
+
+	private void AddWhy(bool mead, string key, params object[] args)
+	{
+		if (_whys.Count >= MaxWhys)
+		{
+			return;
+		}
+		foreach (Why w in _whys)
+		{
+			if (w.Key == key && w.Mead == mead && string.Join("|", w.Args) == string.Join("|", args))
+			{
+				return;
+			}
+		}
+		_whys.Add(new Why { Mead = mead, Key = key, Args = args });
+	}
+
+	private void ShowWhy()
+	{
+		// food last: the mead shortfalls are the specific ones
+		bool mead = ModConfig.CookMakeMead == null || ModConfig.CookMakeMead.Value;
+		AddFoodWhy();
+		if (_whys.Count == 0)
+		{
+			CompanionStatus.Why(this, "hc_why_cook_nothing");
+			return;
+		}
+		Why w = _whys[_whyTurn++ % _whys.Count];
+		CompanionStatus.WhyAs(this, ModLocalization.Loc(w.Mead && mead ? "hc_status_job_mead" : "hc_status_job_cook"), w.Key, false, w.Args);
+	}
+
+	private void AddFoodWhy()
+	{
+		if (_whys.Count >= MaxWhys)
+		{
+			_whys.RemoveAt(_whys.Count - 1);
+		}
+		_whys.Add(new Why { Mead = false, Key = _foodWanted ? "hc_why_cook_no_food" : "hc_why_cook_stocked", Args = new object[0] });
+	}
+
+	// every ingredient that would go below the reserve: a reason each ("Honey 0/30 for Frost resistance mead" - the 30 is
+	// the recipe's 10 plus the 20 kept back, [Cooking] IngredientReserve); the first as a sentence for the log
+	private string ShortIngredient(Recipe recipe, string mead)
+	{
+		string first = null;
+		string finished = CookCatalog.MeadOf(mead);
+		string what = Name(finished ?? mead);
 		foreach (Piece.Requirement req in recipe.m_resources)
 		{
 			if (req?.m_resItem == null || req.GetAmount(1) <= 0)
@@ -675,14 +719,16 @@ public partial class CookController : MonoBehaviour
 			string item = req.m_resItem.gameObject.name;
 			if (Usable(item) < req.GetAmount(1))
 			{
-				_shortItem = Name(item);
-				_shortNeed = req.GetAmount(1);
-				_shortHave = Count(item);
-				_shortMade = CookCatalog.IsMade(item);
-				return CookCatalog.IsMade(item) ? $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach" : $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach and {Reserve} are kept back";
+				bool made = CookCatalog.IsMade(item);
+				int need = req.GetAmount(1) + (made ? 0 : Reserve);
+				AddWhy(true, "hc_why_mead_short", Name(item), Count(item), need, what);
+				if (first == null)
+				{
+					first = made ? $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach" : $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach and {Reserve} are kept back";
+				}
 			}
 		}
-		return null;
+		return first;
 	}
 
 	private Task FillTask()

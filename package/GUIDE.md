@@ -252,6 +252,9 @@ Each kind can be switched off in the settings. It only uses recipes you know.
 - With no wood in the chests, it can take down a wood pile.
 - It collects honey from beehives for its recipes.
 
+**Why it isn't cooking**
+Its status line (and now and then what it says) gives one reason at a time and moves on to the next every few seconds: each ingredient a mead is short of, then whether there's food to cook. For example "Mead - Honey 0/30 for Frost resistance mead." means there's no Honey and it wants 30: the 10 the recipe takes plus the 20 it leaves for you. "Cook - No food ingredients in reach." means nothing it could cook is in the chests; "Cook - Food is stocked up." means every food is at its target.
+
 ### Repair and Restock
 
 The job for a companion you leave to look after a base. Start it near home and it works around home. Start it anywhere else (an outpost, say) and it works within 30 m of where you started it.

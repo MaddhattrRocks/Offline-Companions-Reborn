@@ -548,7 +548,7 @@ public class IdleController : MonoBehaviour
 			return;
 		}
 		// 1.5.42: the real reason its job has stopped, when the job recorded one (CompanionStatus); else the job's general line
-		string line = CompanionStatus.Reason(this);
+		string line = CompanionStatus.SpokenReason(this);
 		if (string.IsNullOrEmpty(line))
 		{
 			string key = "hc_idle_why_" + Mode();

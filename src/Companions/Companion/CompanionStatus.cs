@@ -15,6 +15,8 @@ internal static class CompanionStatus
 
 		public string Key;
 
+		public string Label;
+
 		public float At;
 	}
 
@@ -25,6 +27,12 @@ internal static class CompanionStatus
 
 	// record why it isn't doing its job (key = a localization key, args for {0}...); speak = also say it (a problem)
 	internal static void Why(Component c, string key, bool speak = false, params object[] args)
+	{
+		WhyAs(c, null, key, speak, args);
+	}
+
+	// label = what the status shows in place of the job's name (1.5.42: "Mead" for the Cook job's mead reasons)
+	internal static void WhyAs(Component c, string label, string key, bool speak, params object[] args)
 	{
 		if (c == null || string.IsNullOrEmpty(key))
 		{
@@ -39,6 +47,7 @@ internal static class CompanionStatus
 		}
 		e.Text = text;
 		e.Key = key;
+		e.Label = label;
 		e.At = Time.time;
 		if (speak)
 		{
@@ -63,6 +72,23 @@ internal static class CompanionStatus
 			return null;
 		}
 		return e.Text;
+	}
+
+	// the reason as said out loud: with its label in front when it has one ("Mead: Honey 0/30 for Frost resistance mead.")
+	internal static string SpokenReason(Component c, float within = Fresh)
+	{
+		string text = Reason(c, within);
+		if (text == null)
+		{
+			return null;
+		}
+		string label = s_why[c.gameObject.GetInstanceID()].Label;
+		return string.IsNullOrEmpty(label) ? text : (label + ": " + text);
+	}
+
+	private static string Label(Component c)
+	{
+		return (c != null && s_why.TryGetValue(c.gameObject.GetInstanceID(), out var e) && Time.time - e.At <= Fresh) ? e.Label : null;
 	}
 
 	// the hover status line: what it's doing right now, and why not when its job is stuck
@@ -113,6 +139,7 @@ internal static class CompanionStatus
 		string why = Reason(cs);
 		if (mode != CompanionSetup.ModeFollow && mode != CompanionSetup.ModeStay && job != null)
 		{
+			job = Label(cs) ?? job;
 			if (idle != null && idle.IsActive)
 			{
 				return job + " - " + (why ?? L("hc_status_nothing"));
