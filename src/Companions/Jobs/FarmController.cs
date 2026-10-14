@@ -375,7 +375,9 @@ public class FarmController : MonoBehaviour
 		}
 		else if (_whyNoZones)
 		{
-			CompanionStatus.Why(this, "hc_why_farm_no_zones", speak: true);
+			// 1.5.42: harvesting doesn't need zones - only planting does, so it's information, not a problem to announce
+			// (user: "Farming kept saying no zones")
+			CompanionStatus.Why(this, "hc_why_farm_no_zones");
 		}
 		else
 		{
@@ -387,7 +389,7 @@ public class FarmController : MonoBehaviour
 			Log("Nothing to farm — idle (30s backoff)");
 			if (_talk != null)
 			{
-				_talk.Say(ModLocalization.Loc("hc_speech_farm_done"));
+				_talk.Speak(ModLocalization.Loc("hc_speech_farm_done"), CompanionTalk.Priority.Event, "farm:done", 600f);
 			}
 			RestoreFollow();
 		}

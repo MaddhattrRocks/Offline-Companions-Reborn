@@ -845,6 +845,12 @@ public class HarvestController : MonoBehaviour
 			gameObject = loose;
 			pickLoose = true;
 		}
+		// 1.5.42: it has something to pick up or work after all (e.g. loose items while foraging): the "nothing to gather"
+		// reason no longer holds (user: forage was listed as "nothing to gather" while it was gathering)
+		if (gameObject != null)
+		{
+			CompanionStatus.Clear(this);
+		}
 		if (gameObject == null)
 		{
 			LogInfo("Scan found 0 valid targets — staying idle");

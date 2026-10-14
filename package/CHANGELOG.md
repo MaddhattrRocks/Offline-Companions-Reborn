@@ -7,6 +7,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Speech: when a companion has nothing to do it now says the real reason (we have enough meat, the chests are full, no farm zones, nothing to smelt...) instead of one line per job.
 - Speech: new lines for things it used to give up on silently: it can't find a way to you or can't get up there, the chests near home are full, it needs a tool for the job (any tool now, not only axes and pickaxes), no station at home can fix its gear, it lost its spear, the animal got away, it won't hunt in the Passive stance, it fetches its spear first.
 - Cooking: when it can't brew it says what's missing, using your settings - e.g. "I need 10 Honey, but there are only 15 and I keep 20 back for you" (Cooking > IngredientReserve) or that the cauldron needs a fire and a roof.
+- Farming without farm zones: it no longer keeps announcing "no farm zones" (harvesting works without them); the status says nothing is ripe yet and that it only plants in zones. "All done farming" at most every 10 minutes.
 - Orders: when no companion takes your order because Command is off for it on the wheel or it's too far away, a message top left says so.
 - Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
 

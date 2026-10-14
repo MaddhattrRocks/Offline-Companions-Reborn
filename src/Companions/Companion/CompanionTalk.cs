@@ -116,6 +116,12 @@ public class CompanionTalk : MonoBehaviour
 
 	public void Speak(string text, Priority prio, string topic)
 	{
+		Speak(text, prio, topic, -1f);
+	}
+
+	// repeat: seconds before the same topic may be said again (-1 = the default for the priority)
+	public void Speak(string text, Priority prio, string topic, float repeat)
+	{
 		if (string.IsNullOrEmpty(text) || !Enabled || Chat.instance == null)
 		{
 			return;
@@ -127,7 +133,11 @@ public class CompanionTalk : MonoBehaviour
 			{
 				return;
 			}
-			if (prio == Priority.Problem)
+			if (repeat >= 0f)
+			{
+				_topicUntil[topic] = now + repeat;
+			}
+			else if (prio == Priority.Problem)
 			{
 				_topicUntil[topic] = now + ProblemRepeat;
 			}
