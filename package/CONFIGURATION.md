@@ -68,6 +68,9 @@ Show the companion status panel under the minimap.
 **ShowOverheadBars** — Default: On  
 Show health and stamina bars above each companion's head.
 
+**ShowStatus** — Default: On  
+When you look at a companion, show what it is doing under its name - and why not, when its job is stuck (e.g. "Hunt - No game around.").
+
 **MaxCarryWeight** — Default: 300 · Range: 50 – 2000  
 How much weight a companion can carry (a player carries 300). Gathering and hunting companions head home to unload before this.
 
@@ -760,6 +763,9 @@ How often a companion makes small talk that isn't about anything in particular: 
 
 **FarAwayMessages** — Default: On  
 When a companion runs into a problem (needs a tool, can't get somewhere...) while you're out of earshot (further than CullDistance), it shows as a message in the top left corner with its name.
+
+**AnnounceDeath** — Default: On  
+When one of your companions dies, say so in the middle of the screen with where it happened (biome, how far from you), wherever you are.
 
 **Duration** — Default: 5 · Range: 1 – 15  
 Seconds a line of speech stays on screen.

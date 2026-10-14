@@ -2,6 +2,13 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.42 (test build for 1.5.5)
+- Status: look at a companion and a line under its name says what it's doing - and when its job is stuck, why (e.g. "Hunt - No game around.", "Farm - I need seeds to plant.", "Fetching an axe", "Following you"). General > ShowStatus turns it off.
+- Speech: when a companion has nothing to do it now says the real reason (we have enough meat, the chests are full, no farm zones, nothing to smelt...) instead of one line per job.
+- Speech: new lines for things it used to give up on silently: it can't find a way to you or can't get up there, the chests near home are full, it needs a tool for the job (any tool now, not only axes and pickaxes), no station at home can fix its gear, it lost its spear, the animal got away, it won't hunt in the Passive stance, it fetches its spear first.
+- Orders: when no companion takes your order because Command is off for it on the wheel or it's too far away, a message top left says so.
+- Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
+
 ## 1.5.41 (test build for 1.5.5)
 - Speech: companions talk far less. Small talk comes every 1.5-3 minutes instead of every 15-30 seconds, and Speech > Chatter sets how often (Off, Rare, Normal, Often). Speech > Enabled turns all speech off.
 - Speech: small talk now fits what a companion is really doing and where it is: job lines only while it's working that job, fight lines only in a fight, home lines only at home, follow lines only while following, and nothing while it sleeps, sits, swims or sails.

@@ -468,6 +468,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> SpeechFarMessages;
 
+	internal static ConfigEntry<bool> SpeechAnnounceDeath;
+
 	internal static ConfigEntry<float> SpeechCullDistance;
 
 	internal static ConfigEntry<float> SpeechDuration;
@@ -711,6 +713,7 @@ internal static class ModConfig
 		SpeechEnabled = Bind(cfg, "Speech", "Enabled", true, "Companions say things at all (replies to your orders, what they're doing, problems, chatter). Off = silent.");
 		SpeechChatter = Bind(cfg, "Speech", "Chatter", "Normal", "How often a companion makes small talk that isn't about anything in particular: Off, Rare (every 4-8 minutes), Normal (every 1.5-3 minutes) or Often (every 30-60 seconds). Replies to your orders and problems it runs into are always said.", new AcceptableValueList<string>("Off", "Rare", "Normal", "Often"));
 		SpeechFarMessages = Bind(cfg, "Speech", "FarAwayMessages", true, "When a companion runs into a problem (needs a tool, can't get somewhere...) while you're out of earshot (further than CullDistance), it shows as a message in the top left corner with its name.");
+		SpeechAnnounceDeath = Bind(cfg, "Speech", "AnnounceDeath", true, "When one of your companions dies, say so in the middle of the screen with where it happened (biome, how far from you), wherever you are.");
 		SpeechDuration = Bind(cfg, "Speech", "Duration", 5f, "Seconds a line of speech stays on screen.", new AcceptableValueRange<float>(1f, 15f));
 		SpeechSayCooldown = Bind(cfg, "Speech", "SayCooldown", 3f, "Least time (seconds) between two lines from any companion, so they don't all talk at once.", new AcceptableValueRange<float>(1f, 30f));
 		SpeechCullDistance = Bind(cfg, "Speech", "CullDistance", 20f, "Speech from companions further away than this (meters) isn't shown.", new AcceptableValueRange<float>(5f, 60f));

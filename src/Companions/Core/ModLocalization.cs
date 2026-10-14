@@ -201,6 +201,7 @@ public static class ModLocalization
 			{ "hc_cmd_refused_off", "{0} didn't take the order: Command is switched off for it on the command wheel." },
 			{ "hc_cmd_refused_far", "{0} is {1} m away - hold the command key {2} s to call everyone." },
 			{ "hc_why_spear_lost", "I lost my {0}." },
+			{ "hc_msg_companion_died", "{0} has died ({1}, {2} m from you)" },
 			{ "hc_why_hunt_none", "No game around." },
 			{ "hc_why_hunt_enough", "We have enough meat." },
 			{ "hc_why_hunt_reach", "The game around here is out of reach." },

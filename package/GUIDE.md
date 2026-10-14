@@ -50,6 +50,8 @@ Most numbers below are the defaults and can be changed in the settings (see `CON
 
 Drag items in and out like a chest. Anything you give it counts as its own: it keeps it and doesn't put it away in a chest.
 
+**Status:** looking at a companion shows what it's doing under its name, and why not when its job is stuck (General > ShowStatus). When it has nothing to do it also tells you the reason now and then, and if one of your companions dies a message says where.
+
 **What it says:** a companion answers your orders, tells you when something stops it (a missing tool, no bait, too heavy) and now and then makes small talk that fits what it's doing and where it is. Out of earshot, its problems show in the top left corner. Speech > Chatter sets how often it makes small talk (Off, Rare, Normal, Often), and Speech > Enabled turns speech off. The lines are in `speech.json` in the mod's folder: edit them, and put tags in front of a line to say when it fits, e.g. `[home,night] Good to be home.` Tags: home, away, night, day, rain, dry, cold, indoors, outdoors and the biome names (meadows, blackforest, swamp, mountain, plains, mistlands, ashlands, deepnorth, ocean); `!` in front means "not".
 
 ## The command wheel
