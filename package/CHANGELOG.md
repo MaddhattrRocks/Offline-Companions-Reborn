@@ -12,6 +12,9 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Farming: ground you've tilled with a cultivator counts as an "Any" zone - the farmer plants the crops on the PlantAny list there, only on the tilled ground and never inside a zone you set (Farming > PlantTilledGround, on by default; off = only your zones).
 - Orders: when no companion takes your order because Command is off for it on the wheel or it's too far away, a message top left says so.
 - Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
+- Fixed: shooting at a bird, a companion often hit the hillside - it now aims at the bird itself and only shoots when the bow has a clear line to it.
+- Fixed: a farmer planted under the eaves and against walls, where crops never grow - it now skips spots with a roof or overhang above or a wall or other solid thing too close, as the game does.
+- Status: Farm now says what it's doing (harvesting, fetching seeds, planting Carrot Seeds, storing the harvest).
 
 ## 1.5.41 (test build for 1.5.5)
 - Speech: companions talk far less. Small talk comes every 1.5-3 minutes instead of every 15-30 seconds, and Speech > Chatter sets how often (Off, Rare, Normal, Often). Speech > Enabled turns all speech off.

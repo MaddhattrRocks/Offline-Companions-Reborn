@@ -126,6 +126,8 @@ public class FarmController : MonoBehaviour
 
 	private int _spaceMask;
 
+	private int _roofMask;
+
 	private int _itemMask;
 
 	private int _pickableMask;
@@ -141,6 +143,35 @@ public class FarmController : MonoBehaviour
 	internal FarmPhase Phase => _phase;
 
 	public bool IsActive => _phase != FarmPhase.Idle;
+
+	// 1.5.42: what it's doing right now, for the hover status ("Farm - planting Carrot Seeds")
+	internal string DoingText()
+	{
+		switch (_phase)
+		{
+		case FarmPhase.MovingToPickable:
+		case FarmPhase.Harvesting:
+			return ModLocalization.Loc("hc_status_farm_harvesting");
+		case FarmPhase.CollectingDrops:
+			return ModLocalization.Loc("hc_status_farm_pickup");
+		case FarmPhase.MovingToSeedChest:
+		case FarmPhase.TakingSeeds:
+			return ModLocalization.Loc("hc_status_farm_seeds");
+		case FarmPhase.MovingToPlantSpot:
+		case FarmPhase.Planting:
+		{
+			string seed = _plantInfo.SeedPrefabName;
+			string name = ObjectDB.instance?.GetItemPrefab(seed ?? "")?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name;
+			name = string.IsNullOrEmpty(name) ? seed : (Localization.instance?.Localize(name) ?? name);
+			return ModLocalization.LocFmt("hc_status_farm_planting", name ?? "");
+		}
+		case FarmPhase.MovingToOutputChest:
+		case FarmPhase.StoringOutput:
+			return ModLocalization.Loc("hc_status_farm_storing");
+		default:
+			return null;
+		}
+	}
 
 	private static float ScanRadius => ModConfig.FarmScanRadius.Value;
 
@@ -184,6 +215,7 @@ public class FarmController : MonoBehaviour
 		_smelt = GetComponent<SmeltController>();
 		_repair = GetComponent<RepairController>();
 		_spaceMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+		_roofMask = LayerMask.GetMask("Default", "static_solid", "piece");
 		_itemMask = LayerMask.GetMask("item");
 		_pickableMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
 	}
@@ -1484,6 +1516,7 @@ public class FarmController : MonoBehaviour
 		int num7 = 0;
 		int num8 = 0;
 		int num9 = 0;
+		int numRoof = 0;
 		for (float num10 = num2; num10 <= num3; num10 += num)
 		{
 			for (float num11 = num2; num11 <= num3; num11 += num)
@@ -1532,6 +1565,11 @@ public class FarmController : MonoBehaviour
 					num7++;
 					continue;
 				}
+				if (NoSunOrRoom(vector, info.GrowRadius))
+				{
+					numRoof++;
+					continue;
+				}
 				if (_ai != null && _ai.IsPositionBlacklisted(vector))
 				{
 					num7++;
@@ -1559,7 +1597,7 @@ public class FarmController : MonoBehaviour
 		{
 			_plantOrders.Remove(ZoneKey(zone));   // zone done: pick the starting edge afresh next time
 		}
-		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
+		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} roofOrWall={numRoof} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
 		return flag;
 	}
 
@@ -1924,6 +1962,27 @@ public class FarmController : MonoBehaviour
 		}
 	}
 
+	// 1.5.42: the game won't grow a crop with a roof or overhang above it (Plant.HaveRoof) or with anything solid that isn't
+	// a plant inside its grow radius (Plant.HaveGrowSpace) - a seed planted under the eaves or against a wall just sits
+	// there. A player sees the red "no sun"/"no space" marker; the companion checks the same before picking the spot.
+	private bool NoSunOrRoom(Vector3 p, float growRadius)
+	{
+		if (Physics.Raycast(p + Vector3.up * 0.1f, Vector3.up, 100f, _roofMask))
+		{
+			return true;
+		}
+		int n = Physics.OverlapSphereNonAlloc(p, growRadius, _spacingBuffer, _spaceMask);
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = _spacingBuffer[i];
+			if (col != null && col.GetComponentInParent<Plant>() == null && col.GetComponentInParent<Pickable>() == null)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private bool FindPlantPosition(SeedPlantInfo info, out Vector3 result)
 	{
 		result = Vector3.zero;
@@ -1973,7 +2032,7 @@ public class FarmController : MonoBehaviour
 						break;
 					}
 				}
-				if (flag)
+				if (flag || NoSunOrRoom(vector, info.GrowRadius))
 				{
 					continue;
 				}

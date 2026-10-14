@@ -512,7 +512,9 @@ public class HuntController : MonoBehaviour
 		Vector3 me = base.transform.position;
 		Vector3 aim = _birdPos + Vector3.up * 0.25f;
 		float dist = Vector3.Distance(me, _birdPos);
-		if (dist > BirdShotRange || !MHR_Mover.CanSee(me + Vector3.up * 1.6f, aim))
+		// 1.5.42: a clear line from the bow (hand height) to the bird - CanSee adds 1.6 m to both ends, so the old check
+		// (me + 1.6) looked from 3.2 m up and passed over the hill the arrow then hit
+		if (dist > BirdShotRange || !MHR_Mover.CanSee(me - Vector3.up * 0.2f, aim - Vector3.up * 1.6f))
 		{
 			// get within a shot quickly (birds only stay down a few seconds); never swim for one (1.4.101 test: dived into
 			// the moat after a gull)
@@ -532,6 +534,7 @@ public class HuntController : MonoBehaviour
 			return;
 		}
 		_nextShot = Time.time + 1.5f;
+		CompanionProjectileAimPatch.AimAt(_humanoid, aim);
 		Attack attack = _humanoid.GetCurrentWeapon()?.m_shared?.m_attack;
 		bool draw = attack != null && attack.m_bowDraw;
 		if (draw)

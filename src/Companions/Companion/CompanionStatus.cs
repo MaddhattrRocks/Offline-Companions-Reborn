@@ -121,7 +121,8 @@ internal static class CompanionStatus
 			{
 				return job + " - " + (why ?? L("hc_status_following_look"));
 			}
-			return job;
+			string doing = Doing(cs, mode);
+			return (doing != null) ? (job + " - " + doing) : job;
 		}
 		if (cs.GetFollow() && ai != null && ai.GetFollowTarget() != null)
 		{
@@ -132,6 +133,17 @@ internal static class CompanionStatus
 			return L("hc_status_idle");
 		}
 		return (mode == CompanionSetup.ModeStay) ? L("hc_status_staying") : L("hc_status_waiting");
+	}
+
+	// what the job is doing right now, where the job can say (1.5.42: Farm)
+	private static string Doing(CompanionSetup cs, int mode)
+	{
+		if (mode == CompanionSetup.ModeFarm)
+		{
+			FarmController farm = cs.GetComponent<FarmController>();
+			return (farm != null && farm.IsActive) ? farm.DoingText() : null;
+		}
+		return null;
 	}
 
 	private static bool JobBusy(CompanionSetup cs, int mode)
