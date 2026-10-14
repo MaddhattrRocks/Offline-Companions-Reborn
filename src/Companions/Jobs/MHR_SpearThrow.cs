@@ -311,6 +311,7 @@ internal static class MHR_SpearThrow
 		if (Time.time - value.ThrownAt > GiveUpSeconds)
 		{
 			CompanionsPlugin.Log.LogInfo("[Hunt] Gave up on getting its " + Loc(value.Name) + " back (took too long)");
+			ai.GetComponent<CompanionTalk>()?.SayProblem("spear:lost", ModLocalization.LocFmt("hc_why_spear_lost", Loc(value.Name)));
 			Clear(value);
 			return false;
 		}
@@ -319,6 +320,7 @@ internal static class MHR_SpearThrow
 			if (Time.time - value.ThrownAt > LandWaitSeconds)
 			{
 				CompanionsPlugin.Log.LogInfo("[Hunt] Lost its " + Loc(value.Name) + " - it never landed anywhere it could find (water?)");
+				ai.GetComponent<CompanionTalk>()?.SayProblem("spear:lost", ModLocalization.LocFmt("hc_why_spear_lost", Loc(value.Name)));
 				Clear(value);
 			}
 			return false;

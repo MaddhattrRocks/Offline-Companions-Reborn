@@ -710,6 +710,12 @@ namespace Companions
                     s.GaveUp = true; s.GaveUpAt = now;
                     Halt(ai, c, s);
                     if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
+                    // 1.5.42: say so when it's about you or your order (following, a move order, a fight, a hunt); for a job
+                    // it's only the reason in its status (user, speech review: "I can't get up there")
+                    {
+                        bool forPlayer = tag == FollowTag || tag == "Command" || tag == "Combat" || tag == "Hunt";
+                        CompanionStatus.Why(ai, s.Goal.y - pos.y > 2f ? "hc_why_cant_reach_up" : "hc_why_no_way", speak: forPlayer);
+                    }
                     Rescue(ai, c, s, pos, now, tag);
                     return;
             }

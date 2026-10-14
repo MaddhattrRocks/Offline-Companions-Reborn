@@ -1756,6 +1756,8 @@ public class CompanionInteract : MonoBehaviour
 			}
 			string name = s.GetComponent<Character>()?.m_name ?? "?";
 			string why;
+			// 1.5.42: tell the player too (top left), for their own companions
+			string shown = null;
 			if (!IsOwned(s, localId))
 			{
 				why = "not yours";
@@ -1763,16 +1765,23 @@ public class CompanionInteract : MonoBehaviour
 			else if (!s.GetIsCommandable())
 			{
 				why = "Command is switched off for it on the wheel";
+				shown = ModLocalization.LocFmt("hc_cmd_refused_off", name);
 			}
 			else if (localPlayer != null && ModConfig.RecallRange != null && ModConfig.RecallRange.Value > 0f)
 			{
-				why = $"it's {Vector3.Distance(s.transform.position, localPlayer.transform.position):F0} m away (RecallRange is {ModConfig.RecallRange.Value:F0} m - hold the command key {ModConfig.SuperRecallHoldTime?.Value ?? 2f:F0}s to call everyone)";
+				float d = Vector3.Distance(s.transform.position, localPlayer.transform.position);
+				why = $"it's {d:F0} m away (RecallRange is {ModConfig.RecallRange.Value:F0} m - hold the command key {ModConfig.SuperRecallHoldTime?.Value ?? 2f:F0}s to call everyone)";
+				shown = ModLocalization.LocFmt("hc_cmd_refused_far", name, d.ToString("F0"), (ModConfig.SuperRecallHoldTime?.Value ?? 2f).ToString("F0"));
 			}
 			else
 			{
 				why = "unknown";
 			}
 			CompanionsPlugin.Log.LogInfo("[Direct] \"" + name + "\" didn't take the command: " + why);
+			if (shown != null && (ModConfig.SpeechFarMessages?.Value ?? true) && MessageHud.instance != null)
+			{
+				MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft, shown);
+			}
 		}
 	}
 

@@ -163,6 +163,8 @@ namespace Companions
                     if (now2.Contains(k) || !st.Refused.Add(k)) continue;
                     string kn = KindName(k); kn = kn.StartsWith("an ") ? kn.Substring(3) : kn.StartsWith("a ") ? kn.Substring(2) : kn;
                     Log("You took its " + kn + " - it won't fetch another for this job");
+                    // 1.5.42: and say so
+                    cs.GetComponent<CompanionTalk>()?.Speak(ModLocalization.LocFmt("hc_why_tool_taken", kn), CompanionTalk.Priority.Event, "taken:" + k);
                     if (st.Phase == 1 && st.Kind == k) EndTrip(cs, st, ai, mode);
                 }
                 st.PanelHad = null;
@@ -614,6 +616,7 @@ namespace Companions
                 return true;
             }
             Log("No chest near home has room for what I'm carrying - keeping " + items.Count + " stack(s)");
+            CompanionStatus.Why(cs, "hc_why_chests_full", speak: true);
             st.UnloadPending = false; st.UnloadActive = false;
             return false;
         }
@@ -708,7 +711,15 @@ namespace Companions
                 case K_AXE: key = "hc_speech_need_axe"; break;
                 case K_PICK: key = "hc_speech_need_pickaxe"; break;
                 case K_ARROW: key = "hc_speech_need_arrows"; break;
-                default: return;   // the job's own lines already cover rod, bait, bow, cultivator and hammer
+                // 1.5.42: every other tool too (bow, rod, bait, cultivator, hammer, food) - the comment that "the job's own
+                // lines cover them" was only true for some
+                default:
+                    {
+                        string line = ModLocalization.LocFmt("hc_why_need_tool", KindName(kind));
+                        CompanionStatus.Why(cs, "hc_why_need_tool", false, KindName(kind));
+                        cs.GetComponent<CompanionTalk>()?.SayProblem("tool:" + kind, line);
+                        return;
+                    }
             }
             CompanionTalk t = cs.GetComponent<CompanionTalk>();
             if (t != null) t.SayProblem("tool:" + kind, ModLocalization.Loc(key));
