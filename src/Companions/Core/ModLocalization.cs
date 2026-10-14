@@ -215,7 +215,7 @@ public static class ModLocalization
 			{ "hc_why_cant_reach_up", "I can't get up there." },
 			{ "hc_why_chests_full", "The chests near home are full." },
 			{ "hc_why_chest_unreachable", "I can't get to that chest." },
-			{ "hc_why_farm_no_zones", "Nothing ripe yet - and I only plant in farm zones, there are none." },
+			{ "hc_why_farm_no_zones", "Nothing ripe yet - and there's no farm zone or tilled ground to plant in." },
 			{ "hc_why_farm_waiting", "Waiting for the crops to grow." },
 			{ "hc_why_farm_no_chest", "No chest has room for the harvest." },
 			{ "hc_why_smelt_no_chests", "There are no chests near the smelters." },

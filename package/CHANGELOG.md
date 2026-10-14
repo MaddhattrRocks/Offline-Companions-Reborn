@@ -9,6 +9,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Cooking: when it can't brew it says what's missing, using your settings - e.g. "I need 10 Honey, but there are only 15 and I keep 20 back for you" (Cooking > IngredientReserve) or that the cauldron needs a fire and a roof.
 - Farming without farm zones: it no longer keeps announcing "no farm zones" (harvesting works without them); the status says nothing is ripe yet and that it only plants in zones. "All done farming" at most every 10 minutes.
 - Fixed: a companion's farm zones were lost when it died and came back (or was recovered through the roster or Odin's Shrine). They now come back with it.
+- Farming: ground you've tilled with a cultivator counts as an "Any" zone - the farmer plants the crops on the PlantAny list there, only on the tilled ground and never inside a zone you set (Farming > PlantTilledGround, on by default; off = only your zones).
 - Orders: when no companion takes your order because Command is off for it on the wheel or it's too far away, a message top left says so.
 - Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
 

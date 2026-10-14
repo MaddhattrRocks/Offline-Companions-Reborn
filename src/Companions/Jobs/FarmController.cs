@@ -321,6 +321,117 @@ public class FarmController : MonoBehaviour
 	{
 		ZDO zdo = _nview?.GetZDO();
 		_farmZones = FarmZoneSerializer.Load(zdo);
+		// 1.5.42: tilled ground counts as an Any zone (user: "update farming to use tilled ground as an 'any' zone? Maybe
+		// with an option to turn it off so the NPC will only use set zones")
+		if (ModConfig.FarmPlantTilled == null || ModConfig.FarmPlantTilled.Value)
+		{
+			if (_tilled == null || Time.time >= _nextTilledScan)
+			{
+				_nextTilledScan = Time.time + 30f;
+				_tilled = FindTilledPatches(_farmZones);
+			}
+			_farmZones.AddRange(_tilled);
+		}
+	}
+
+	private List<FarmZone> _tilled;
+
+	private float _nextTilledScan;
+
+	// patches of tilled ground around the farm (home, or where it is), outside the player's zones, as square zones
+	private List<FarmZone> FindTilledPatches(List<FarmZone> real)
+	{
+		List<FarmZone> list = new List<FarmZone>();
+		Vector3 me = base.transform.position;
+		Vector3 c = (_setup != null && _setup.HasHomePosition() && Vector3.Distance(_setup.GetHomePosition(), me) <= ScanRadius) ? _setup.GetHomePosition() : me;
+		const float step = 2f;
+		int n = Mathf.CeilToInt(ScanRadius / step);
+		int size = n * 2 + 1;
+		bool[,] grid = new bool[size, size];
+		int cells = 0;
+		for (int i = 0; i < size; i++)
+		{
+			for (int j = 0; j < size; j++)
+			{
+				float dx = (i - n) * step, dz = (j - n) * step;
+				if (dx * dx + dz * dz > ScanRadius * ScanRadius)
+				{
+					continue;
+				}
+				Vector3 p = new Vector3(c.x + dx, c.y, c.z + dz);
+				if (!ZoneSystem.instance.GetGroundHeight(p, out var h))
+				{
+					continue;
+				}
+				p.y = h;
+				if (!MHR_SafeCultivated(p) || InRealZone(real, p))
+				{
+					continue;
+				}
+				grid[i, j] = true;
+				cells++;
+			}
+		}
+		if (cells == 0)
+		{
+			return list;
+		}
+		// join neighbouring tilled cells into patches
+		bool[,] seen = new bool[size, size];
+		Stack<Vector2Int> stack = new Stack<Vector2Int>();
+		for (int i = 0; i < size; i++)
+		{
+			for (int j = 0; j < size; j++)
+			{
+				if (!grid[i, j] || seen[i, j])
+				{
+					continue;
+				}
+				int minI = i, maxI = i, minJ = j, maxJ = j;
+				seen[i, j] = true;
+				stack.Push(new Vector2Int(i, j));
+				while (stack.Count > 0)
+				{
+					Vector2Int q = stack.Pop();
+					minI = Mathf.Min(minI, q.x); maxI = Mathf.Max(maxI, q.x); minJ = Mathf.Min(minJ, q.y); maxJ = Mathf.Max(maxJ, q.y);
+					for (int k = 0; k < 4; k++)
+					{
+						int a = q.x + ((k == 0) ? 1 : (k == 1) ? -1 : 0);
+						int b = q.y + ((k == 2) ? 1 : (k == 3) ? -1 : 0);
+						if (a >= 0 && b >= 0 && a < size && b < size && grid[a, b] && !seen[a, b])
+						{
+							seen[a, b] = true;
+							stack.Push(new Vector2Int(a, b));
+						}
+					}
+				}
+				Vector3 center = new Vector3(c.x + ((minI + maxI) * 0.5f - n) * step, c.y, c.z + ((minJ + maxJ) * 0.5f - n) * step);
+				if (ZoneSystem.instance.GetGroundHeight(center, out var cy))
+				{
+					center.y = cy;
+				}
+				float half = Mathf.Max(maxI - minI, maxJ - minJ) * step * 0.5f + step * 0.75f;
+				list.Add(new FarmZone { Center = center, HalfSize = half, CropSeed = "", Rotation = 0f, Tilled = true });
+			}
+		}
+		Log($"[Plant] Tilled ground: {cells} cell(s) in {list.Count} patch(es) around {c:F0}");
+		return list;
+	}
+
+	private static bool InRealZone(List<FarmZone> zones, Vector3 p)
+	{
+		if (zones == null)
+		{
+			return false;
+		}
+		foreach (FarmZone z in zones)
+		{
+			if (z.IsValid && !z.Tilled && z.Contains(p))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void UpdateIdle(float dt)
@@ -1394,9 +1505,15 @@ public class FarmController : MonoBehaviour
 						continue;
 					}
 				}
-				if (info.NeedsCultivated && !MHR_SafeCultivated(vector))
+				// a tilled patch: only the tilled ground in it, never inside a zone the player set
+				if ((info.NeedsCultivated || zone.Tilled) && !MHR_SafeCultivated(vector))
 				{
 					num6++;
+					continue;
+				}
+				if (zone.Tilled && InRealZone(_farmZones, vector))
+				{
+					num7++;
 					continue;
 				}
 				int num12 = Physics.OverlapSphereNonAlloc(vector, info.GrowRadius * 0.5f, _spacingBuffer, _spaceMask);

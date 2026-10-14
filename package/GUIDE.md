@@ -185,7 +185,7 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 
 ### Farm
 
-The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby.
+The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby. Ground you've **tilled** with a cultivator outside your zones also counts as an "Any" zone: it plants the crops on the PlantAny list there, on the tilled ground only (Farming > PlantTilledGround turns this off, so it only uses your zones).
 
 **How to mark a farm zone**
 
