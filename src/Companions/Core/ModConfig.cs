@@ -63,6 +63,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> ShowOverheadBars;
 
+	internal static ConfigEntry<bool> ShowStatus;
+
 	internal static ConfigEntry<int> ShieldMultiAttackerCount;
 
 
@@ -495,6 +497,7 @@ internal static class ModConfig
 		ProtectCompanions = Bind(cfg, "General", "ProtectCompanions", defaultValue: true, "Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.");
 		ShowMinimapHudPanel = Bind(cfg, "General", "ShowMinimapPanel", defaultValue: true, "Show the companion status panel under the minimap.");
 		ShowOverheadBars = Bind(cfg, "General", "ShowOverheadBars", defaultValue: true, "Show health and stamina bars above each companion's head.");
+		ShowStatus = Bind(cfg, "General", "ShowStatus", defaultValue: true, "When you look at a companion, show what it is doing under its name - and why not, when its job is stuck (e.g. \"Hunt - No game around.\").");
 		MaxCarryWeight = Bind(cfg, "General", "MaxCarryWeight", 300f, "How much weight a companion can carry (a player carries 300). Gathering and hunting companions head home to unload before this.", new AcceptableValueRange<float>(50f, 2000f));
 		BaseHealth = Bind(cfg, "General", "BaseHealth", 25f, "A companion's health before food (a player has 25).", new AcceptableValueRange<float>(1f, 500f));
 		BaseStamina = Bind(cfg, "General", "BaseStamina", 50f, "A companion's stamina before food (a player has 50).", new AcceptableValueRange<float>(1f, 500f));

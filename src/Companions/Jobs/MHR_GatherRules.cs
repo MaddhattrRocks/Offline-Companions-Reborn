@@ -181,6 +181,9 @@ namespace Companions
             Per p = P(h);
             p.LimitRejects = 0; p.OtherRejects = 0;
             GameObject r = h.ScanForTarget(mode);
+            // 1.5.42: why there's nothing to do (hover status, idle "why")
+            if (r == null) CompanionStatus.Why(h, p.LimitRejects > 0 && mode >= 1 && mode <= 3 ? (mode == 1 ? "hc_speech_plenty_wood" : mode == 2 ? "hc_speech_plenty_stone" : "hc_speech_plenty_ore") : "hc_why_gather_none");
+            else CompanionStatus.Clear(h);
             if (r == null && p.LimitRejects > 0 && mode >= 1 && mode <= 3 && Time.time >= p.NextPlenty)
             {
                 p.NextPlenty = Time.time + 120f;

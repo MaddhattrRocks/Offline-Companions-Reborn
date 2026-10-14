@@ -358,6 +358,7 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			_idleSaid = true;
 			Log("Nothing to repair, restock or sort right now");
+			CompanionStatus.Why(this, "hc_speech_upkeep_nothing");
 			Say("hc_speech_upkeep_nothing");
 		}
 		else if (Time.time >= _nextNothingLog)

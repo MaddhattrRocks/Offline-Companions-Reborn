@@ -251,11 +251,14 @@ public class HuntController : MonoBehaviour
 				_nextFullLog = Time.time + 120f;
 				Log(follow ? "Pack is full - keeping the catch until we're home" : "Pack is full and home is too far - not hunting until it's emptied");
 			}
+			// 1.5.42: say why it isn't hunting
+			CompanionStatus.Why(this, follow ? "hc_why_pack_full" : "hc_why_pack_full_far", speak: true);
 			return;
 		}
 		// 1.5.4: its only weapon (a spear) is lying where it was thrown - fetch it before going after anything else
 		if (MHR_SpearThrow.UnarmedAfterThrow(_ai, _humanoid))
 		{
+			CompanionStatus.Why(this, "hc_why_hunt_spear", speak: true);
 			return;
 		}
 		Character prey = FindPrey(follow, out string why);
@@ -270,6 +273,7 @@ public class HuntController : MonoBehaviour
 				_nextNothingLog = Time.time + 60f;
 				LogDebug("Nothing to hunt" + (why != null ? " (" + why + ")" : ""));
 			}
+			CompanionStatus.Why(this, (why != null && why.StartsWith("enough")) ? "hc_why_hunt_enough" : (why != null && why.StartsWith("only")) ? "hc_why_hunt_reach" : "hc_why_hunt_none");
 			if (!follow && _state == HuntState.Idle && Vector3.Distance(base.transform.position, _anchor) > 10f)
 			{
 				LogDebug("Heading back to the hunting spot");
@@ -286,6 +290,7 @@ public class HuntController : MonoBehaviour
 				_nextNothingLog = Time.time + 60f;
 				Log("Can't hunt with the Passive stance");
 			}
+			CompanionStatus.Why(this, "hc_why_hunt_passive", speak: true);
 			return;
 		}
 		_prey = prey;
@@ -293,6 +298,7 @@ public class HuntController : MonoBehaviour
 		_lastPreyPos = prey.transform.position;
 		_wasChasing = true;
 		_state = HuntState.Hunting;
+		CompanionStatus.Clear(this);
 		MHR_Mover.Release(_ai);
 		Log("Going after " + Loc(prey.m_name) + " (" + Vector3.Distance(base.transform.position, prey.transform.position).ToString("F0") + " m away)" + NeedText(PrefabName(prey)));
 	}
@@ -361,6 +367,7 @@ public class HuntController : MonoBehaviour
 		if (Vector3.Distance(prey.transform.position, Center(follow)) > leash)
 		{
 			Log(Loc(_preyName) + " got away");
+			GetComponent<CompanionTalk>()?.Speak(ModLocalization.Loc("hc_why_hunt_got_away"), CompanionTalk.Priority.Event, "hunt:away");
 			Skip(prey, 60f);
 			_combatAI.Disengage();
 			Done();

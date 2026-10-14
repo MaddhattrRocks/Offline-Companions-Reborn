@@ -341,6 +341,7 @@ public class SmeltController : MonoBehaviour
 		if (_nearbyChests.Count == 0)
 		{
 			Log("No chests found nearby");
+			CompanionStatus.Why(this, "hc_why_smelt_no_chests", speak: true);
 			_phase = SmeltPhase.Idle;
 			_scanTimer = 10f;
 			return;
@@ -450,6 +451,7 @@ public class SmeltController : MonoBehaviour
 			{
 				_wasMonitoring = true;
 				Log("All smelters stocked — monitoring");
+				CompanionStatus.Why(this, "hc_speech_smelt_monitoring");
 				if (_talk != null)
 				{
 					_talk.Say(ModLocalization.Loc("hc_speech_smelt_monitoring"));
@@ -461,6 +463,7 @@ public class SmeltController : MonoBehaviour
 		{
 			_allDoneNotified = true;
 			Log("All smelters idle and fully stocked — done");
+			CompanionStatus.Why(this, "hc_why_smelt_nothing");
 			if (_talk != null)
 			{
 				_talk.Say(ModLocalization.Loc("hc_speech_smelt_done"));

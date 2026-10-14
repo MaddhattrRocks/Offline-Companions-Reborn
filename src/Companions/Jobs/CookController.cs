@@ -329,6 +329,7 @@ public partial class CookController : MonoBehaviour
 		Task task = PickTask();
 		if (task == null)
 		{
+			CompanionStatus.Why(this, "hc_why_cook_nothing");
 			if (!_allDoneNotified)
 			{
 				_allDoneNotified = true;

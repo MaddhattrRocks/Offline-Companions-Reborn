@@ -79,6 +79,9 @@ public class FarmController : MonoBehaviour
 
 	private bool _allDoneNotified;
 
+	// 1.5.42: what the last scan ran into, for the "why" (hover status, idle line, problems)
+	private bool _whyNoZones, _whyNoSeeds, _whyNoChest;
+
 	private bool _shouldRun;
 
 	private bool _preferHarvest = true;
@@ -343,20 +346,40 @@ public class FarmController : MonoBehaviour
 		Log("Scanning — mode=" + (_preferHarvest ? "HARVEST" : "PLANT") + " " + $"rotTimer={_rotationTimer:F0}s cropNames={s_cropOutputNames?.Count ?? 0} " + $"seedMap={s_seedToPlant?.Count ?? 0} pos={base.transform.position:F1}");
 		// 1.4.82: pick everything that's ripe first and only carry it to a chest when nothing ripe is left
 		// or the pack is nearly full (1.4.81 log: he went to a chest after every few crops).
+		_whyNoZones = _whyNoSeeds = _whyNoChest = false;
 		if (PackNearlyFull() && TryScanStore())
 		{
+			CompanionStatus.Clear(this);
 			return;
 		}
 		if (_preferHarvest)
 		{
 			if (TryScanHarvest() || TryScanStore() || TryScanPlant())
 			{
+				CompanionStatus.Clear(this);
 				return;
 			}
 		}
 		else if (TryScanStore() || TryScanPlant() || TryScanHarvest())
 		{
+			CompanionStatus.Clear(this);
 			return;
+		}
+		if (_whyNoChest)
+		{
+			CompanionStatus.Why(this, "hc_why_farm_no_chest", speak: true);
+		}
+		else if (_whyNoSeeds)
+		{
+			CompanionStatus.Why(this, "hc_speech_farm_no_seeds", speak: true);
+		}
+		else if (_whyNoZones)
+		{
+			CompanionStatus.Why(this, "hc_why_farm_no_zones", speak: true);
+		}
+		else
+		{
+			CompanionStatus.Why(this, "hc_why_farm_waiting");
 		}
 		if (!_allDoneNotified)
 		{
@@ -821,6 +844,7 @@ public class FarmController : MonoBehaviour
 				return true;
 			}
 			Log("[Store] Have crop output but no chest with space found");
+			_whyNoChest = true;
 		}
 		else
 		{
@@ -868,6 +892,7 @@ public class FarmController : MonoBehaviour
 		if (_farmZones == null || _farmZones.Count == 0)
 		{
 			Log("[Plant] No farm zones defined — skipping planting");
+			_whyNoZones = true;
 			return false;
 		}
 		Log($"[Plant] TryScanPlant: {_farmZones.Count} zones, pos={base.transform.position:F1}");
@@ -973,6 +998,7 @@ public class FarmController : MonoBehaviour
 				else
 				{
 					Log($"[Plant] Zone[{num4}] no seeds in chests either");
+					_whyNoSeeds = true;
 				}
 				continue;
 			}

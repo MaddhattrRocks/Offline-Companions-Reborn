@@ -547,11 +547,16 @@ public class IdleController : MonoBehaviour
 		{
 			return;
 		}
-		string key = "hc_idle_why_" + Mode();
-		string line = ModLocalization.Loc(key);
-		if (string.IsNullOrEmpty(line) || line == key)
+		// 1.5.42: the real reason its job has stopped, when the job recorded one (CompanionStatus); else the job's general line
+		string line = CompanionStatus.Reason(this);
+		if (string.IsNullOrEmpty(line))
 		{
-			return;
+			string key = "hc_idle_why_" + Mode();
+			line = ModLocalization.Loc(key);
+			if (string.IsNullOrEmpty(line) || line == key || line.StartsWith("["))
+			{
+				return;
+			}
 		}
 		_lastWhy = Time.time;
 		_talk.Say(line);

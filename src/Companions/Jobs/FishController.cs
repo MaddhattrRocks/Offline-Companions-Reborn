@@ -263,6 +263,7 @@ public class FishController : MonoBehaviour
 		if (!PickTarget(out string why))
 		{
 			WhyLog("Nothing to fish (" + why + ")");
+			CompanionStatus.Why(this, "hc_idle_why_9");
 			if (why.StartsWith("no bait"))
 			{
 				Say("hc_speech_fish_need_bait");
@@ -274,6 +275,7 @@ public class FishController : MonoBehaviour
 			return;
 		}
 		_castTries = 0;
+		CompanionStatus.Clear(this);
 		MHR_Mover.Release(_ai);
 		Enter(FishState.Moving);
 		Log("Going to fish for " + _fishName + " from " + MHR_Mover.Fmt(_stand) + " with " + CookController.Name(_bait) + NeedText(_fishName));
@@ -1245,6 +1247,7 @@ public class FishController : MonoBehaviour
 
 	private void Say(string key)
 	{
+		CompanionStatus.Why(this, key);
 		if (Time.time - _lastSpeechTime >= 60f)
 		{
 			_lastSpeechTime = Time.time;

@@ -32,6 +32,25 @@ namespace Companions
         }
         static readonly Dictionary<int, State> s_state = new Dictionary<int, State>();
 
+        // 1.5.42: the hover status line for a trip in progress (or waiting to get home for a tool), else null
+        internal static string TripText(Component c)
+        {
+            if (c == null) return null;
+            CompanionSetup cs = c.GetComponent<CompanionSetup>();
+            State st;
+            if (cs == null || !s_state.TryGetValue(cs.GetInstanceID(), out st)) return null;
+            string kn = KindName(st.Kind);
+            switch (st.Phase)
+            {
+                case 1: return ModLocalization.LocFmt("hc_status_fetching", kn);
+                case 2: return ModLocalization.LocFmt("hc_status_putting_back", kn);
+                case 3: return ModLocalization.Loc("hc_status_unloading");
+                case 4: return ModLocalization.Loc("hc_status_repairing_gear");
+            }
+            if (st.WaitHome) return ModLocalization.LocFmt("hc_status_needs_home", KindName(st.WaitKind));
+            return null;
+        }
+
         public static bool IsBusy(Component c)
         {
             if (c == null) return false;
@@ -121,6 +140,7 @@ namespace Companions
             {
                 st.UnloadPending = true; st.UnloadTrips = 0;
                 st.Refused.Clear();
+                CompanionStatus.Clear(cs);   // 1.5.42: the old job's "why" no longer applies
                 LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
                 // 1.5.4: a fetch the new job has no use for is called off (user log: Hunt turned off, and he still walked
                 // 50 m back to a chest for a bow, again after every recall)

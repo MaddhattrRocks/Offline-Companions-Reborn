@@ -1929,6 +1929,15 @@ public class CompanionInteract : MonoBehaviour
 	internal string GetHoverText()
 	{
 		string companionName = GetCompanionName();
+		// 1.5.42: what it's doing (and why not) under its name
+		if (ModConfig.ShowStatus == null || ModConfig.ShowStatus.Value)
+		{
+			string status = CompanionStatus.Describe(GetComponent<CompanionSetup>());
+			if (!string.IsNullOrEmpty(status))
+			{
+				companionName = companionName + "\n<color=#c8c8c8>" + status + "</color>";
+			}
+		}
 		string text = ModLocalization.Loc("hc_hover_inventory");
 		string text2 = ModLocalization.Loc("hc_hover_commands");
 		string text3 = ((!ZInput.IsGamepadActive()) ? ZInput.instance.GetBoundKeyString("Use") : ZInput.instance.GetBoundKeyString("JoyUse"));
