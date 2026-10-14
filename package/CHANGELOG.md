@@ -14,6 +14,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
 - Fixed: shooting at a bird, a companion often hit the hillside - it now aims at the bird itself and only shoots when the bow has a clear line to it.
 - Fixed: a farmer planted under the eaves and against walls, where crops never grow - it now skips spots with a roof or overhang above or a wall or other solid thing too close, as the game does.
+- Fixed: a farmer kept trying to reach a bit of tilled ground it couldn't walk to (e.g. just outside the wall) - it now only picks planting spots it has a way to, and leaves a spot it couldn't get to alone for 10 minutes (Farming > UnreachableSpotMemory).
 - Status: Farm now says what it's doing (harvesting, fetching seeds, planting Carrot Seeds, storing the harvest).
 
 ## 1.5.41 (test build for 1.5.5)

@@ -523,6 +523,9 @@ How far (meters) around itself a farming companion looks for crops to pick, farm
 **PlantTilledGround** — Default: On  
 Ground you've tilled with a cultivator (outside your farm zones) counts as an Any zone: a farming companion plants whatever seeds it has on it, on the tilled ground only. Off = it only plants in the farm zones you set.
 
+**UnreachableSpotMemory** — Default: 600 · Range: 30 – 3600  
+How long (seconds) a farmer leaves a planting spot alone after finding it can't walk there (e.g. tilled ground on the other side of a wall). It tries it again after this.
+
 **PlantSpacing** — Default: 0.75 · Range: 0.25 – 3  
 The least space (meters) between plants. A plant that needs more room to grow gets that instead.
 

@@ -2651,6 +2651,23 @@ namespace Companions
             return best < float.MaxValue;
         }
 
+        // 1.5.42: can he walk from pos to within near of goal: a full route that really ends there (the route's end is
+        // snapped to the nearest walkable ground, which can be on the other side of a wall), or one CanGetTo finds
+        static readonly List<Vector3> s_reachPath = new List<Vector3>();
+        public static bool Reachable(Vector3 pos, Vector3 goal, float near)
+        {
+            try
+            {
+                if (GetPath(pos, goal, s_reachPath, Pathfinding.AgentType.Humanoid, true))
+                {
+                    Vector3 end = s_reachPath[s_reachPath.Count - 1];
+                    if (Vector3.Distance(end, goal) <= near) return true;
+                }
+                return CanGetTo(pos, goal);
+            }
+            catch { return false; }
+        }
+
         // 1.4.84: can he get from pos to goal: a route, a route plus a hop, through closed doors, or straight hopping
         public static bool CanGetTo(Vector3 pos, Vector3 goal)
         {

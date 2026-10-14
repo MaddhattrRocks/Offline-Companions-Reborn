@@ -348,6 +348,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> FarmPlantTilled;
 
+	internal static ConfigEntry<float> FarmUnreachableForget;
+
 	internal static ConfigEntry<float> FarmScanInterval;
 
 	internal static ConfigEntry<float> FarmPlantSpacing;
@@ -642,6 +644,7 @@ internal static class ModConfig
 		// [Farming]
 		FarmScanRadius = Bind(cfg, "Farming", "Range", 30f, "How far (meters) around itself a farming companion looks for crops to pick, farm zones to plant and chests.", new AcceptableValueRange<float>(5f, 100f));
 		FarmPlantTilled = Bind(cfg, "Farming", "PlantTilledGround", true, "Ground you've tilled with a cultivator (outside your farm zones) counts as an Any zone: a farming companion plants whatever seeds it has on it, on the tilled ground only. Off = it only plants in the farm zones you set.");
+		FarmUnreachableForget = Bind(cfg, "Farming", "UnreachableSpotMemory", 600f, "How long (seconds) a farmer leaves a planting spot alone after finding it can't walk there (e.g. tilled ground on the other side of a wall). It tries it again after this.", new AcceptableValueRange<float>(30f, 3600f));
 		FarmPlantSpacing = Bind(cfg, "Farming", "PlantSpacing", 0.75f, "The least space (meters) between plants. A plant that needs more room to grow gets that instead.", new AcceptableValueRange<float>(0.25f, 3f));
 		SeedReserve = Bind(cfg, "Farming", "SeedMinimum", 20, "The fewest of each plantable item (carrot, turnip, onion seeds, barley, flax and so on) the farmer keeps, counting its pack and chests near its home. It never plants seeds if that would take them below this. Barley, flax and other crops that grow from themselves are still planted, and the farmer keeps this many in its pack instead of storing them.", new AcceptableValueRange<int>(0, 1000));
 		SeedTarget = Bind(cfg, "Farming", "SeedTarget", 100, "While a seed is under this number, the farmer grows seed plants (planting carrots, turnips, onions...) alongside its regular crops to build the stock back up. Below SeedMinimum it grows only seed plants for that crop. At or above this number it grows only crops.", new AcceptableValueRange<int>(0, 5000));

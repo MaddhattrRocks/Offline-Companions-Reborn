@@ -1505,7 +1505,6 @@ public class FarmController : MonoBehaviour
 		float halfSize = zone.HalfSize;
 		float num2 = Mathf.Ceil((0f - halfSize) / num) * num;
 		float num3 = Mathf.Floor(halfSize / num) * num;
-		float num4 = float.MaxValue;
 		bool flag = false;
 		// 1.4.84: plant in rows like a player, starting at the far edge of the zone and working back toward where he came
 		// in, back and forth along each row, so he always stands on ground that's still empty. Nearest-first had him
@@ -1517,6 +1516,8 @@ public class FarmController : MonoBehaviour
 		int num8 = 0;
 		int num9 = 0;
 		int numRoof = 0;
+		int numFar = 0;
+		_plantCandidates.Clear();
 		for (float num10 = num2; num10 <= num3; num10 += num)
 		{
 			for (float num11 = num2; num11 <= num3; num11 += num)
@@ -1570,6 +1571,11 @@ public class FarmController : MonoBehaviour
 					numRoof++;
 					continue;
 				}
+				if (KnownUnreachable(vector))
+				{
+					numFar++;
+					continue;
+				}
 				if (_ai != null && _ai.IsPositionBlacklisted(vector))
 				{
 					num7++;
@@ -1585,19 +1591,32 @@ public class FarmController : MonoBehaviour
 				float colKey = order.AlongZ ? num10 : num11;
 				int row = Mathf.RoundToInt((rowKey + halfSize) / num);
 				float num13 = row * 10000f + ((row % 2 == 0) ? colKey : (0f - colKey));
-				if (num13 < num4)
-				{
-					num4 = num13;
-					result = vector;
-					flag = true;
-				}
+				_plantCandidates.Add(new KeyValuePair<float, Vector3>(num13, vector));
 			}
+		}
+		// 1.5.42: only a spot it can walk to. User test (log 7209b50a): a little tilled spot just outside the wall was part
+		// of the patch; the route there only got as far as the wall (partial), it gave up, and 30 s later picked the cell
+		// next to it - again and again. Check the best few in planting order; the ones it can't get to are remembered.
+		_plantCandidates.Sort((a, b) => a.Key.CompareTo(b.Key));
+		int checks = 0;
+		for (int c = 0; c < _plantCandidates.Count && checks < MaxReachChecks; c++)
+		{
+			Vector3 spot = _plantCandidates[c].Value;
+			checks++;
+			if (MHR_Mover.Reachable(base.transform.position, spot, UseDistance))
+			{
+				result = spot;
+				flag = true;
+				break;
+			}
+			MarkUnreachable(spot);
+			numFar++;
 		}
 		if (!flag)
 		{
 			_plantOrders.Remove(ZoneKey(zone));   // zone done: pick the starting edge afresh next time
 		}
-		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} roofOrWall={numRoof} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
+		Log($"FindPlantPositionInZone: cells={num5} noHeight={num9} noBiome={num8} " + $"noCultivated={num6} blocked={num7} roofOrWall={numRoof} cantReach={numFar} found={flag} " + $"seed=\"{info.SeedPrefabName}\" needsCultivated={info.NeedsCultivated} zone={zone.Center:F1}");
 		return flag;
 	}
 
@@ -1785,6 +1804,10 @@ public class FarmController : MonoBehaviour
 			if (currentTargetPosition != Vector3.zero && _ai != null)
 			{
 				_ai.BlacklistPosition(currentTargetPosition);
+				if (_phase == FarmPhase.MovingToPlantSpot)
+				{
+					MarkUnreachable(currentTargetPosition);
+				}
 				Log($"Blacklisted stuck target \"{targetName}\" at {currentTargetPosition:F1}");
 			}
 			Abort("stuck moving to " + targetName);
@@ -1962,6 +1985,42 @@ public class FarmController : MonoBehaviour
 		}
 	}
 
+	private readonly List<KeyValuePair<float, Vector3>> _plantCandidates = new List<KeyValuePair<float, Vector3>>();
+
+	// plant spots it couldn't walk to (1 m cells), and when
+	private readonly Dictionary<Vector3Int, float> _unreachable = new Dictionary<Vector3Int, float>();
+
+	// route checks per search - each is a navmesh query
+	private const int MaxReachChecks = 8;
+
+	private static Vector3Int ReachKey(Vector3 p)
+	{
+		return new Vector3Int(Mathf.RoundToInt(p.x), Mathf.RoundToInt(p.y), Mathf.RoundToInt(p.z));
+	}
+
+	internal void MarkUnreachable(Vector3 p)
+	{
+		if (_unreachable.Count > 2000)
+		{
+			_unreachable.Clear();
+		}
+		_unreachable[ReachKey(p)] = Time.time;
+	}
+
+	private bool KnownUnreachable(Vector3 p)
+	{
+		if (!_unreachable.TryGetValue(ReachKey(p), out var at))
+		{
+			return false;
+		}
+		if (Time.time - at < ModConfig.FarmUnreachableForget.Value)
+		{
+			return true;
+		}
+		_unreachable.Remove(ReachKey(p));
+		return false;
+	}
+
 	// 1.5.42: the game won't grow a crop with a roof or overhang above it (Plant.HaveRoof) or with anything solid that isn't
 	// a plant inside its grow radius (Plant.HaveGrowSpace) - a seed planted under the eaves or against a wall just sits
 	// there. A player sees the red "no sun"/"no space" marker; the companion checks the same before picking the spot.
@@ -2032,7 +2091,7 @@ public class FarmController : MonoBehaviour
 						break;
 					}
 				}
-				if (flag || NoSunOrRoom(vector, info.GrowRadius))
+				if (flag || NoSunOrRoom(vector, info.GrowRadius) || KnownUnreachable(vector))
 				{
 					continue;
 				}
