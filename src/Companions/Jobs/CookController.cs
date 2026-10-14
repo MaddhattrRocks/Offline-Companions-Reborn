@@ -326,10 +326,28 @@ public partial class CookController : MonoBehaviour
 		_scanTimer = ScanInterval;
 		CookCatalog.Ensure();
 		Scan();
+		_shortItem = null;
+		_noStation = null;
 		Task task = PickTask();
 		if (task == null)
 		{
-			CompanionStatus.Why(this, "hc_why_cook_nothing");
+			// say what's missing when an ingredient held it up, with the reserve from the config
+			if (_shortItem != null && !_shortMade)
+			{
+				CompanionStatus.Why(this, "hc_why_cook_reserve", false, _shortNeed, _shortItem, _shortHave, Reserve);
+			}
+			else if (_shortItem != null)
+			{
+				CompanionStatus.Why(this, "hc_why_cook_short", false, _shortNeed, _shortItem, _shortHave);
+			}
+			else if (_noStation != null)
+			{
+				CompanionStatus.Why(this, "hc_why_cook_no_station", false, _noStation);
+			}
+			else
+			{
+				CompanionStatus.Why(this, "hc_why_cook_nothing");
+			}
 			if (!_allDoneNotified)
 			{
 				_allDoneNotified = true;
@@ -620,6 +638,7 @@ public partial class CookController : MonoBehaviour
 			if (station == null)
 			{
 				BrewWhy(mead, "no usable " + Loc(recipe.m_craftingStation?.m_name) + " in range (needs the right level, a fire and a roof)");
+				_noStation = Loc(recipe.m_craftingStation?.m_name);
 				continue;
 			}
 			string shortOf = ShortIngredient(recipe);
@@ -634,6 +653,16 @@ public partial class CookController : MonoBehaviour
 		return null;
 	}
 
+	// 1.5.42: the last ingredient that held cooking up, for the "why" (user: "will the NPC say something like 'I need more
+	// than 20 ingredients' reading whatever the set number is from the config?")
+	private string _shortItem;
+
+	private int _shortNeed, _shortHave;
+
+	private bool _shortMade;
+
+	private string _noStation;
+
 	// the first ingredient that would go below the reserve, as a sentence for the log
 	private string ShortIngredient(Recipe recipe)
 	{
@@ -646,6 +675,10 @@ public partial class CookController : MonoBehaviour
 			string item = req.m_resItem.gameObject.name;
 			if (Usable(item) < req.GetAmount(1))
 			{
+				_shortItem = Name(item);
+				_shortNeed = req.GetAmount(1);
+				_shortHave = Count(item);
+				_shortMade = CookCatalog.IsMade(item);
 				return CookCatalog.IsMade(item) ? $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach" : $"needs {req.GetAmount(1)} {Name(item)}, {Count(item)} in reach and {Reserve} are kept back";
 			}
 		}
