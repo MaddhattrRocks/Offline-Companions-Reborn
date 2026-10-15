@@ -78,8 +78,6 @@ public class CompanionCombatAI : MonoBehaviour
 
 	private float _enemySwingTimer;
 
-	private const float ParryDelay = 0.2f;
-
 	private int _parryAttackCount;
 
 	private float _parryGraceTimer;
@@ -807,6 +805,7 @@ public class CompanionCombatAI : MonoBehaviour
 	private void ClearBlock()
 	{
 		_enemySwingTimer = 0f;
+		_blockAgainst = null;
 		if (ReflectionHelper.GetBlocking(_character))
 		{
 			ReflectionHelper.TrySetBlocking(_character, value: false);
@@ -975,6 +974,66 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 	}
 
+	// 1.5.51: the swing it's blocking, and whether this block is timed as a parry. The game parries when the block went up
+	// less than 0.25 s before the hit (Humanoid.BlockAttack); the old code reset that timer every frame of every enemy
+	// swing, so every block was a parry. Now one roll per swing, better with Blocking skill, like a player who gets the
+	// timing right some of the time.
+	private Character _blockAgainst;
+
+	private bool _blockParry;
+
+	private bool _blockRaised;
+
+	private float ParryChance()
+	{
+		float lo = ModConfig.ParryChance?.Value ?? 0.3f;
+		float hi = Mathf.Max(lo, ModConfig.ParryChanceMax?.Value ?? 0.7f);
+		return Mathf.Lerp(lo, hi, Mathf.Clamp01(_character.GetSkillFactor(Skills.SkillType.Blocking)));
+	}
+
+	// an enemy mid-swing whose attack can reach us: it's after this companion, or it's facing us from within its weapon's
+	// reach (a swing at the player next to us). Swings at someone else further off aren't blocked (they used to be,
+	// anything within 8 m, turning it away from its own fight).
+	private Character SwingAtUs()
+	{
+		Character best = null;
+		float bestD = float.MaxValue;
+		Vector3 me = base.transform.position;
+		foreach (Character c in Character.GetAllCharacters())
+		{
+			if (c == null || c.GetHealth() <= 0f || !c.InAttack() || !BaseAI.IsEnemy(_character, c))
+			{
+				continue;
+			}
+			float d = Vector3.Distance(me, c.transform.position);
+			if (d > 8f || d >= bestD)
+			{
+				continue;
+			}
+			ItemDrop.ItemData w = (c as Humanoid)?.GetCurrentWeapon();
+			float reach = (w != null && w.m_shared != null) ? w.m_shared.m_aiAttackRange : 2f;
+			// lunges and sweeps carry about a metre and a half past the AI's attack range
+			if (d - c.GetRadius() - _character.GetRadius() > reach + 1.5f)
+			{
+				continue;
+			}
+			if (c.GetBaseAI()?.GetTargetCreature() != _character)
+			{
+				Vector3 to = me - c.transform.position;
+				to.y = 0f;
+				Vector3 fwd = c.transform.forward;
+				fwd.y = 0f;
+				if (Vector3.Angle(fwd, to) > 60f)
+				{
+					continue;
+				}
+			}
+			best = c;
+			bestD = d;
+		}
+		return best;
+	}
+
 	private void UpdateBlocking(float dt)
 	{
 		if (_targetCreature == null || _character.InAttack() || _character.IsStaggering() || _parryAttackCount > 0)
@@ -982,31 +1041,38 @@ public class CompanionCombatAI : MonoBehaviour
 			ClearBlock();
 			return;
 		}
-		bool flag = false;
-		foreach (Character allCharacter in Character.GetAllCharacters())
+		Character swinger = SwingAtUs();
+		if (swinger != null)
 		{
-			if (!(allCharacter == null) && !(allCharacter.GetHealth() <= 0f) && BaseAI.IsEnemy(_character, allCharacter))
+			_ai.LookAtPoint(swinger.GetTopPoint());
+			if (swinger != _blockAgainst)
 			{
-				float num = Vector3.Distance(base.transform.position, allCharacter.transform.position);
-				if (num < 8f && allCharacter.InAttack())
-				{
-					flag = true;
-					_ai.LookAtPoint(allCharacter.GetTopPoint());
-					break;
-				}
+				_blockAgainst = swinger;
+				_enemySwingTimer = 0f;
+				_blockRaised = false;
+				_blockParry = Random.value < ParryChance();
 			}
-		}
-		if (flag)
-		{
 			_enemySwingTimer += dt;
-			if (_enemySwingTimer >= 0.2f)
+			if (_enemySwingTimer >= (ModConfig.BlockReactionTime?.Value ?? 0.2f))
 			{
 				ReflectionHelper.TrySetBlocking(_character, value: true);
-				ReflectionHelper.TrySetBlockTimer(_humanoid, 0f);
+				if (!_blockRaised)
+				{
+					_blockRaised = true;
+					// not a parry: the shield counts as up for a while already (past the game's 0.25 s window)
+					ReflectionHelper.TrySetBlockTimer(_humanoid, _blockParry ? 0f : 0.3f);
+					CompanionsPlugin.Log.LogDebug("[Block] Raising its guard against " + swinger.m_name + (_blockParry ? " - timed for a parry" : " - a plain block"));
+				}
+				else if (_blockParry)
+				{
+					ReflectionHelper.TrySetBlockTimer(_humanoid, 0f);
+				}
 				_blockHoldTimer = 0.2f;
 			}
 			return;
 		}
+		// the swing is over: the next one is a new roll
+		_blockAgainst = null;
 		if (_blockHoldTimer > 0f)
 		{
 			_blockHoldTimer -= dt;

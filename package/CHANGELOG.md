@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.6
+- Combat: companions no longer parry every block - each enemy swing is a parry or a plain block by chance, better with Blocking skill (Combat > ParryChance, ParryChanceMax).
+- Combat: companions only block swings that can reach them, not every enemy swinging within 8 m.
+
 ## 1.5.5
 Speech overhaul: companions talk less, and what they say and show tells you what they're doing and why not.
 - Status: look at a companion and a line under its name says what it's doing ("Wood - chopping Beech", "Repair and Restock - fuelling the Hearth", "Mead - filling a fermenter") and, when its job is stuck, why (General > ShowStatus).

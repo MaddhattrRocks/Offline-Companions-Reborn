@@ -67,6 +67,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<int> ShieldMultiAttackerCount;
 
+	internal static ConfigEntry<float> ParryChance;
+
+	internal static ConfigEntry<float> ParryChanceMax;
+
+	internal static ConfigEntry<float> BlockReactionTime;
+
 
 
 
@@ -573,6 +579,8 @@ internal static class ModConfig
 		FleeHealthPct = Bind(cfg, "Combat", "FleeHealthPct", 0.15f, "Below this share of its health (0.15 = 15%) a companion runs away from the enemy.", new AcceptableValueRange<float>(0.05f, 0.6f));
 		WeaponSwitchMargin = Bind(cfg, "Combat", "WeaponSwitchMargin", 0.1f, "A different weapon has to be this much better against the current enemy (0.1 = 10%) before a companion switches to it, so it doesn't swap back and forth.", new AcceptableValueRange<float>(0f, 0.5f));
 		ShieldMultiAttackerCount = Bind(cfg, "Combat", "ShieldMultiAttackerCount", 3, "When this many enemies attack a companion at once, it switches to its shield with the best block.", new AcceptableValueRange<int>(1, 10));
+		ParryChance = Bind(cfg, "Combat", "ParryChance", 0.3f, "Chance (0.3 = 30%) that a companion with no Blocking skill times a block as a parry (more damage stopped, less stamina, and many attackers are staggered). It rises with Blocking skill up to ParryChanceMax. Shields without a parry bonus never parry.", new AcceptableValueRange<float>(0f, 1f));
+		ParryChanceMax = Bind(cfg, "Combat", "ParryChanceMax", 0.7f, "Chance (0.7 = 70%) that a companion times a block as a parry at Blocking skill 100.", new AcceptableValueRange<float>(0f, 1f));
 		BowSwitchDistance = Bind(cfg, "Combat", "BowSwitchDistance", 15f, "A companion with a bow or crossbow switches to it when its target is further away than this (meters).", new AcceptableValueRange<float>(5f, 60f));
 		MeleeSwitchDistance = Bind(cfg, "Combat", "MeleeSwitchDistance", 12f, "It switches back to its melee weapon when the target comes closer than this (meters).", new AcceptableValueRange<float>(3f, 40f));
 		UseTorchOpener = Bind(cfg, "Combat", "UseTorchOpener", defaultValue: true, "Against enemies that are weak to fire, open with a torch to set them alight, then switch back to the best weapon.");
@@ -765,6 +773,7 @@ internal static class ModConfig
 		AttackCooldown = Bind(cfg, "Advanced", "AttackCooldown", 0.225f, "Combat: least time (seconds) between a companion's attacks, on top of each weapon's own attack timing.", new AcceptableValueRange<float>(0.1f, 2f));
 		MeleeTooClose = Bind(cfg, "Advanced", "MeleeTooClose", 0.3f, "Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.", new AcceptableValueRange<float>(0f, 1.5f));
 		MeleeReachMargin = Bind(cfg, "Advanced", "MeleeReachMargin", 0.2f, "Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.", new AcceptableValueRange<float>(0f, 1f));
+		BlockReactionTime = Bind(cfg, "Advanced", "BlockReactionTime", 0.2f, "Combat: seconds between an enemy starting a swing at a companion and the companion raising its guard.", new AcceptableValueRange<float>(0f, 1f));
 		FoodRegenInterval = Bind(cfg, "Advanced", "FoodRegenInterval", 10f, "Food: seconds between health regeneration ticks from food (a player's is 10).", new AcceptableValueRange<float>(1f, 60f));
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));

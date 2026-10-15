@@ -234,6 +234,12 @@ A different weapon has to be this much better against the current enemy (0.1 = 1
 **ShieldMultiAttackerCount** — Default: 3 · Range: 1 – 10  
 When this many enemies attack a companion at once, it switches to its shield with the best block.
 
+**ParryChance** — Default: 0.3 · Range: 0 – 1  
+Chance (0.3 = 30%) that a companion with no Blocking skill times a block as a parry (more damage stopped, less stamina, and many attackers are staggered). It rises with Blocking skill up to ParryChanceMax. Shields without a parry bonus never parry.
+
+**ParryChanceMax** — Default: 0.7 · Range: 0 – 1  
+Chance (0.7 = 70%) that a companion times a block as a parry at Blocking skill 100.
+
 **BowSwitchDistance** — Default: 15 · Range: 5 – 60  
 A companion with a bow or crossbow switches to it when its target is further away than this (meters).
 
@@ -860,6 +866,9 @@ Combat: closer than this (meters, from the edge of the target) a companion steps
 
 **MeleeReachMargin** — Default: 0.2 · Range: 0 – 1  
 Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.
+
+**BlockReactionTime** — Default: 0.2 · Range: 0 – 1  
+Combat: seconds between an enemy starting a swing at a companion and the companion raising its guard.
 
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
