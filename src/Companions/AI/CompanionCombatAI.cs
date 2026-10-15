@@ -441,7 +441,8 @@ public class CompanionCombatAI : MonoBehaviour
 		if (!(target == null) && !(target.GetHealth() <= 0f))
 		{
 			_stance = _setup?.GetCombatStance() ?? 0;
-			if (_stance != 1)
+			// 1.5.44: Passive after a revive (RecoverFirst) still fights back when attacked with a weapon in hand
+			if (_stance != 1 || MHR_Recover.MayDefend(this, target))
 			{
 				_targetCreature = target;
 				_targetStatic = null;
@@ -481,7 +482,7 @@ public class CompanionCombatAI : MonoBehaviour
 			return false;
 		}
 		_stance = _setup?.GetCombatStance() ?? 0;
-		if (_stance == 1)
+		if (_stance == 1 && !MHR_Recover.MayDefend(this, _targetCreature))
 		{
 			Disengage();
 			return false;

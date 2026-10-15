@@ -49,6 +49,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 
 	internal static readonly int RespawnInventoryHash = "HC_Respawn_Inventory".GetStableHashCode();
 
+	// 1.5.42: its farm zones survive death (user: "Did the farm zones disappear? I had some set at one point.")
+	internal static readonly int RespawnFarmZonesHash = "HC_Respawn_FarmZones".GetStableHashCode();
+
 	private const float ResurrectDuration = 7f;
 
 	private const float InteractRange = 3f;
@@ -310,9 +313,11 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			return;
 		}
 		Vector3 vector;
+		// 1.5.46: [Death] RespawnAtPlayer - always next to you (user: "We should add one to force spawn at the player")
+		bool atPlayer = isAutoRespawn && ModConfig.AutoRespawnAtPlayer.Value && Player.m_localPlayer != null;
 		if (isAutoRespawn)
 		{
-			if (!tombZdo.GetBool(RespawnHasBedHash))
+			if (atPlayer || !tombZdo.GetBool(RespawnHasBedHash))
 			{
 				goto IL_01ab;
 			}
@@ -363,6 +368,8 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		zDO2.Set(CompanionSetup.IsCommandableHash, flag3 ? 1 : 0);
 		zDO2.Set(CompanionSetup.FormationSlotHash, value5);
 		zDO2.Set(CompanionSetup.CombatStanceHash, value7);
+		// 1.5.44 (issue #17): [Death] RespawnStance - back in Passive, or gear first (RecoverFirst), or as it was (Keep)
+		MHR_Recover.OnRevived(zDO2, value7, value3);
 		if (flag4)
 		{
 			zDO2.Set(CompanionSetup.HomePosHash, vec);
@@ -371,6 +378,11 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		if (!string.IsNullOrEmpty(value6))
 		{
 			zDO2.Set(CompanionSkills.SkillsHash, value6);
+		}
+		string zones = tombZdo.GetString(RespawnFarmZonesHash);
+		if (!string.IsNullOrEmpty(zones))
+		{
+			zDO2.Set(FarmZoneSerializer.FarmZonesHash, zones);
 		}
 		zDO2.Persistent = true;
 		zDO2.Set(MHR_Roster.GenHash, mhrGen);
@@ -489,7 +501,30 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		{
 			MHR_RemoveGravePinNear(tombZdo.GetPosition());
 		}
-		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, text2 + " has been resurrected!");
+		// 1.5.44 (issue #16): a companion that came back by itself says where - at its bed far away it isn't loaded, so
+		// there's no map pin and the command key can't reach it
+		string backMsg;
+		if (!isAutoRespawn)
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_resurrected", text2);
+		}
+		else if (atPlayer)
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_back_here", text2);
+		}
+		else if (tombZdo.GetBool(RespawnHasBedHash))
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_back_bed", text2, MHR_Roster.WhereText(vector));
+		}
+		else if (ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || Player.m_localPlayer == null)
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_back_spawn", text2, MHR_Roster.WhereText(vector));
+		}
+		else
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_back_here", text2);
+		}
+		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, backMsg);
 		CompanionsPlugin.Log.LogInfo($"[Resurrect] \"{text2}\" resurrected at {vector:F1}");
 		tombZdo.SetOwner(ZDOMan.GetSessionID());
 		if (flag5)
@@ -527,7 +562,7 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		}
 		return;
 		IL_01ab:
-		vector = ((ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null)) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
+		vector = ((!atPlayer && (ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null))) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
 		goto IL_0211;
 	}
 

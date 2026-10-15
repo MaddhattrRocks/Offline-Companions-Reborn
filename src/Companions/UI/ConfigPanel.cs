@@ -312,6 +312,8 @@ public class ConfigPanel : MonoBehaviour
 
 	public void Hide()
 	{
+		// closed with a key button still waiting (close button): stop waiting, or F8 would never open it again
+		KeyBindListener.Capturing = false;
 		_visible = false;
 		_selectedRowIndex = -1;
 		if (_root != null)
@@ -338,6 +340,10 @@ public class ConfigPanel : MonoBehaviour
 
 	private void Update()
 	{
+		if (KeyBindListener.Capturing || KeyBindListener.CaptureEndFrame == Time.frameCount)
+		{
+			return;
+		}
 		if (Input.GetKeyDown(ModConfig.ConfigPanelKey.Value))
 		{
 			if (_visible)
@@ -1124,17 +1130,16 @@ public class ConfigPanel : MonoBehaviour
 		gameObject4.GetComponent<TMP_Text>().alignment = TextAlignmentOptions.Center;
 		TMP_Text btnTMP = gameObject4.GetComponent<TMP_Text>();
 		bool listening = false;
-		gameObject3.GetComponent<Button>().onClick.AddListener(delegate
-		{
-			listening = true;
-			btnTMP.text = "Press a key...";
-			btnTMP.color = LabelText;
-		});
 		KeyBindListener keyBindListener = gameObject3.AddComponent<KeyBindListener>();
 		keyBindListener.Init(typed, btnTMP, () => listening, delegate(bool v)
 		{
 			listening = v;
+			if (v)
+			{
+				btnTMP.color = LabelText;
+			}
 		});
+		gameObject3.GetComponent<Button>().onClick.AddListener(keyBindListener.Begin);
 		CreateDefaultButton(gameObject.transform, entry, delegate
 		{
 			typed.Value = (KeyCode)entry.DefaultValue;

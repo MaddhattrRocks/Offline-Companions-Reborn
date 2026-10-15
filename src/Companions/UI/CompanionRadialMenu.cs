@@ -1486,9 +1486,9 @@ public class CompanionRadialMenu : MonoBehaviour
 				DoDespawn();
 				return;
 			}
-			if (_companionTalk != null && ActionSpeech.Length != 0)
+			if (_companionTalk != null)
 			{
-				_companionTalk.Say(ActionSpeech[UnityEngine.Random.Range(0, ActionSpeech.Length)]);
+				_companionTalk.SayOrder(_companionTalk.Pick(ActionSpeech));
 			}
 		}
 		else if (_hoveredIndex >= 0 && _hoveredIndex < _segments.Count)
@@ -1536,9 +1536,9 @@ public class CompanionRadialMenu : MonoBehaviour
 				FarmZonePlacer.Enter(_companion);
 				return;
 			}
-			if (_companionTalk != null && ActionSpeech.Length != 0)
+			if (_companionTalk != null)
 			{
-				_companionTalk.Say(ActionSpeech[UnityEngine.Random.Range(0, ActionSpeech.Length)]);
+				_companionTalk.SayOrder(_companionTalk.Pick(ActionSpeech));
 			}
 		}
 	}
@@ -1894,7 +1894,7 @@ public class CompanionRadialMenu : MonoBehaviour
 			CompanionsPlugin.Log.LogInfo("[Radial] Repair: no hammer in inventory");
 			if (_companionTalk != null)
 			{
-				_companionTalk.Say(ModLocalization.Loc("hc_speech_repair_no_hammer"));
+				_companionTalk.SayProblem("tool:hammer", ModLocalization.Loc("hc_speech_repair_no_hammer"));
 			}
 			return;
 		}
@@ -1938,12 +1938,12 @@ public class CompanionRadialMenu : MonoBehaviour
 			}
 			if (_companionTalk != null)
 			{
-				_companionTalk.Say(ModLocalization.Loc("hc_speech_repair_done"));
+				_companionTalk.SayOrder(ModLocalization.Loc("hc_speech_repair_done"));
 			}
 		}
 		else if (_companionTalk != null)
 		{
-			_companionTalk.Say(ModLocalization.Loc("hc_speech_repair_nothing"));
+			_companionTalk.SayOrder(ModLocalization.Loc("hc_speech_repair_nothing"));
 		}
 	}
 

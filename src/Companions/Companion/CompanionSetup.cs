@@ -594,6 +594,25 @@ public class CompanionSetup : MonoBehaviour
 				prefabName = gameObject.name;
 			}
 			CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} — prefab={prefabName}");
+			// 1.5.42: tell its player, wherever they are (user: "an announcement, if an NPC dies or is lost or something far away")
+			try
+			{
+				if ((ModConfig.SpeechAnnounceDeath?.Value ?? true) && MHR_Owner.IsMine(this) && MessageHud.instance != null)
+				{
+					string biome = "";
+					if (WorldGenerator.instance != null)
+					{
+						Heightmap.Biome b = WorldGenerator.instance.GetBiome(vector);
+						biome = Localization.instance?.Localize("$biome_" + b.ToString().ToLowerInvariant()) ?? b.ToString();
+					}
+					float dist = (Player.m_localPlayer != null) ? Vector3.Distance(Player.m_localPlayer.transform.position, vector) : 0f;
+					MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_companion_died", text, biome, dist.ToString("F0")));
+				}
+			}
+			catch (Exception ex)
+			{
+				CompanionsPlugin.Log.LogWarning("[Setup] Death announcement failed: " + ex.Message);
+			}
 			string skillsSerialized = "";
 			CompanionSkills component = GetComponent<CompanionSkills>();
 			if (component != null)
@@ -1546,6 +1565,8 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(CompanionTombstoneResurrect.RespawnFollowPausedHash, _nview?.GetZDO()?.GetBool(CompanionTombstoneResurrect.FollowPausedByJobHash) ?? false);
 			// 1.5.1: which copy of the companion this is - a tombstone of an older copy (the companion was recovered since) won't respawn it
 			zDO.Set(MHR_Roster.RespawnGenHash, _nview?.GetZDO()?.GetInt(MHR_Roster.GenHash) ?? 0);
+			// 1.5.42: and its farm zones
+			zDO.Set(CompanionTombstoneResurrect.RespawnFarmZonesHash, _nview?.GetZDO()?.GetString(FarmZoneSerializer.FarmZonesHash) ?? "");
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
 			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");
@@ -1771,6 +1792,8 @@ public class CompanionSetup : MonoBehaviour
 
 	internal void SetCombatStance(int stance)
 	{
+		// 1.5.44: you chose a stance - a revived companion's gear-first recovery is over
+		MHR_Recover.Cancel(this);
 		_nview?.GetZDO()?.Set(CombatStanceHash, stance);
 	}
 

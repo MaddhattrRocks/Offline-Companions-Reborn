@@ -50,6 +50,10 @@ Most numbers below are the defaults and can be changed in the settings (see `CON
 
 Drag items in and out like a chest. Anything you give it counts as its own: it keeps it and doesn't put it away in a chest.
 
+**Status:** looking at a companion shows what it's doing under its name ("Wood - chopping Beech", "Repair and Restock - fuelling the Hearth"), and why not when its job is stuck (General > ShowStatus). When several things hold a job up, the status goes through them in turn, with the numbers from your settings ("Wood 512/500 - at the limit.", "No wood for the Charcoal kiln."). When it has nothing to do it also tells you the reason now and then. If one of your companions dies a message says where.
+
+**What it says:** a companion answers your orders, tells you when something stops it (a missing tool, no bait, too heavy) and now and then makes small talk that fits what it's doing and where it is. Out of earshot, its problems show in the top left corner. Speech > Chatter sets how often it makes small talk (Off, Rare, Normal, Often), and Speech > Enabled turns speech off. The lines are in `speech.json` in the mod's folder: edit them, and put tags in front of a line to say when it fits, e.g. `[home,night] Good to be home.` Tags: home, away, night, day, rain, dry, cold, indoors, outdoors and the biome names (meadows, blackforest, swamp, mountain, plains, mistlands, ashlands, deepnorth, ocean); `!` in front means "not".
+
 ## The command wheel
 
 **Hold** the interact key (`E`) while looking at a companion to open its **command wheel**. Move the mouse (or stick) to a slice and click.
@@ -118,7 +122,7 @@ Home matters because companions:
 
 - A following companion picks its own spot near you: beside, behind, sometimes ahead. It moves when you get more than 10 m away (4 m indoors).
 - **Stand still for 45 seconds** and your companions come back and wait close to you.
-- **Stop indoors** and they sit down near you: on a free chair or bench, otherwise the floor. Near home, they empty their bags first.
+- **Stop indoors** and they sit down near you: on a free chair or bench, otherwise the floor. Near home, they empty their bags first. Once seated they stay put while you move about within 10 m (Follow > SitStayRange), and get up when you go further or step outside.
 - If a companion falls far behind (50 m) and can't see you, it catches up by appearing next to you.
 - They go through portals with you.
 
@@ -181,7 +185,7 @@ They need an axe for Wood and a pickaxe for Stone and Ore. A missing tool is fet
 
 ### Farm
 
-The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby.
+The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby. Ground you've **tilled** with a cultivator outside your zones also counts as an "Any" zone: it plants the crops on the PlantAny list there, on the tilled ground only (Farming > PlantTilledGround turns this off, so it only uses your zones).
 
 **How to mark a farm zone**
 
@@ -247,6 +251,9 @@ Each kind can be switched off in the settings. It only uses recipes you know.
 - It keeps the fires under its cooking stations and the oven at about half full, and tops them up when they run low.
 - With no wood in the chests, it can take down a wood pile.
 - It collects honey from beehives for its recipes.
+
+**Why it isn't cooking**
+Its status line (and now and then what it says) gives one reason at a time and moves on to the next every few seconds: each ingredient a mead is short of, then whether there's food to cook. For example "Mead - Honey 0/30 for Frost resistance mead." means there's no Honey and it wants 30: the 10 the recipe takes plus the 20 it leaves for you. "Cook - No food ingredients in reach." means nothing it could cook is in the chests; "Cook - Food is stocked up." means every food is at its target.
 
 ### Repair and Restock
 
@@ -317,6 +324,8 @@ A companion can carry 300 weight, the same as a player.
 | **Ranged** | Prefers a bow or crossbow and keeps its distance |
 | **Melee** | Sticks to melee weapons |
 
+**Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
+
 **When they fight**
 - They attack a creature once it has noticed you or them. With the `EngageOnNotice` setting off, they wait until it's actually coming for you.
 - They leave alone animals that never attack, like deer. Hunt goes after game on purpose.
@@ -364,8 +373,9 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 - **Tombstone:** a companion that dies leaves a tombstone, marked on your map until it's emptied.
 - **What it loses:** this follows your world's death penalty setting, like a player. You can change this (keep everything, keep equipped gear, or drop everything).
-- **Coming back:** after 5 minutes it comes back by itself at its bed, or next to you if it has no bed. The timer keeps counting while you're away or offline.
+- **Coming back:** after 5 minutes it comes back by itself at its bed, or next to you if it has no bed (Death > RespawnAtPlayer: always next to you; RespawnAtWorldSpawn: at the stones when it has no bed). The timer keeps counting while you're away or offline. A message says where it came back ("Saber is back - at its bed (Meadows, 850 m from you)"); a companion that far away isn't on your map and can't hear the command key until you go there.
 - **Its things:** once it's back near its tombstone it walks over and collects its own things. You can also point the command key at the tombstone.
+- **Gear first (Death > RespawnStance):** by default (RecoverFirst) a companion comes back Passive with Pickup off, so it doesn't run straight back into the fight that killed it. It goes for its tombstone when that's safe - with a few enemies busy fighting you it slips in, with more (Death > RecoverMaxMobs) or one coming for it, it waits by you. If something attacks it once it has a weapon in hand it fights back. With its gear back on it eats, says "Got my gear back.", and goes back to the stance it had. Setting a stance yourself ends it at once. Passive: it stays Passive until you change it. Keep: it comes back in the stance it died with.
 - **Skills:** it loses 25% of its skill progress, a bit like a player.
 
 ### Recovering a lost companion
@@ -376,7 +386,7 @@ Your game keeps a roster of your companions in each world, saving each one's gea
 
 **From the config** (no shrine needed):
 
-- **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive**, **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
+- **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive** (with where it is), **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
 - **Bring one back:** turn on **General > RecoverLostCompanion**. The first Lost companion appears next to you with its gear and settings from the last roster save. Both settings turn themselves back off.
 
 What the statuses mean:
