@@ -474,6 +474,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> SpeechAnnounceDeath;
 
+	internal static ConfigEntry<bool> SpeechAnnounceLost;
+
+	internal static ConfigEntry<float> SpeechLostCheckInterval;
+
 	internal static ConfigEntry<float> SpeechCullDistance;
 
 	internal static ConfigEntry<float> SpeechDuration;
@@ -720,6 +724,8 @@ internal static class ModConfig
 		SpeechChatter = Bind(cfg, "Speech", "Chatter", "Normal", "How often a companion makes small talk that isn't about anything in particular: Off, Rare (every 4-8 minutes), Normal (every 1.5-3 minutes) or Often (every 30-60 seconds). Replies to your orders and problems it runs into are always said.", new AcceptableValueList<string>("Off", "Rare", "Normal", "Often"));
 		SpeechFarMessages = Bind(cfg, "Speech", "FarAwayMessages", true, "When a companion runs into a problem (needs a tool, can't get somewhere...) while you're out of earshot (further than CullDistance), it shows as a message in the top left corner with its name.");
 		SpeechAnnounceDeath = Bind(cfg, "Speech", "AnnounceDeath", true, "When one of your companions dies, say so in the middle of the screen with where it happened (biome, how far from you), wherever you are.");
+		SpeechAnnounceLost = Bind(cfg, "Speech", "AnnounceLost", true, "When one of your companions is lost (nothing of it is left in the world - no companion and no tombstone that brings it back), say so in the middle of the screen, once per session, with how to get it back. Single player and the host only.");
+		SpeechLostCheckInterval = Bind(cfg, "Speech", "LostCheckInterval", 600f, "How often (seconds) to look for lost companions. The first look is a minute after the world loads. Each look goes through every object in the world.", new AcceptableValueRange<float>(60f, 3600f));
 		SpeechDuration = Bind(cfg, "Speech", "Duration", 5f, "Seconds a line of speech stays on screen.", new AcceptableValueRange<float>(1f, 15f));
 		SpeechSayCooldown = Bind(cfg, "Speech", "SayCooldown", 3f, "Least time (seconds) between two lines from any companion, so they don't all talk at once.", new AcceptableValueRange<float>(1f, 30f));
 		SpeechCullDistance = Bind(cfg, "Speech", "CullDistance", 20f, "Speech from companions further away than this (meters) isn't shown.", new AcceptableValueRange<float>(5f, 60f));

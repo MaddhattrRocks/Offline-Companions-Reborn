@@ -22,6 +22,32 @@ internal static class CompanionStatus
 
 	private static readonly Dictionary<int, Entry> s_why = new Dictionary<int, Entry>();
 
+	// 1.5.43 (phase 3): what the job is doing right now ("chopping a Beech", "fuelling the Hearth"), set by the jobs as
+	// they start each step
+	private static readonly Dictionary<int, Entry> s_doing = new Dictionary<int, Entry>();
+
+	private static readonly Dictionary<int, int> s_turn = new Dictionary<int, int>();
+
+	// a reason for the rotation: the status shows one per call, in turn (WhyRotate)
+	internal class Item
+	{
+		public string Label;
+
+		public string Key;
+
+		public object[] Args;
+
+		public Item(string label, string key, params object[] args)
+		{
+			Label = label;
+			Key = key;
+			Args = args ?? new object[0];
+		}
+	}
+
+	// how long a "doing" stays on the status without being renewed
+	internal const float DoingFresh = 90f;
+
 	// how long a reason counts as "the current one"
 	internal const float Fresh = 180f;
 
@@ -49,10 +75,66 @@ internal static class CompanionStatus
 		e.Key = key;
 		e.Label = label;
 		e.At = Time.time;
+		// it isn't doing anything now
+		s_doing.Remove(id);
 		if (speak)
 		{
 			c.GetComponent<CompanionTalk>()?.SayProblem(key, text);
 		}
+	}
+
+	// 1.5.43: several reasons at once (user: "It should rotate between missing details every so often") - each call shows
+	// the next one; the jobs call it once per scan, so they take turns every few seconds
+	internal static void WhyRotate(Component c, List<Item> items)
+	{
+		if (c == null || items == null || items.Count == 0)
+		{
+			return;
+		}
+		int id = c.gameObject.GetInstanceID();
+		s_turn.TryGetValue(id, out var turn);
+		s_turn[id] = turn + 1;
+		Item it = items[turn % items.Count];
+		WhyAs(c, it.Label, it.Key, false, it.Args);
+	}
+
+	// what it's doing now (key = a localization key); label in place of the job's name, e.g. "Mead"
+	internal static void Doing(Component c, string key, params object[] args)
+	{
+		DoingAs(c, null, key, args);
+	}
+
+	internal static void DoingAs(Component c, string label, string key, params object[] args)
+	{
+		if (c == null || string.IsNullOrEmpty(key))
+		{
+			return;
+		}
+		int id = c.gameObject.GetInstanceID();
+		if (!s_doing.TryGetValue(id, out var e))
+		{
+			e = new Entry();
+			s_doing[id] = e;
+		}
+		e.Text = (args != null && args.Length != 0) ? ModLocalization.LocFmt(key, args) : ModLocalization.Loc(key);
+		e.Key = key;
+		e.Label = label;
+		e.At = Time.time;
+		// it's working: the old reason no longer holds
+		s_why.Remove(id);
+	}
+
+	internal static void DoingClear(Component c)
+	{
+		if (c != null)
+		{
+			s_doing.Remove(c.gameObject.GetInstanceID());
+		}
+	}
+
+	private static Entry DoingEntry(Component c)
+	{
+		return (c != null && s_doing.TryGetValue(c.gameObject.GetInstanceID(), out var e) && Time.time - e.At <= DoingFresh) ? e : null;
 	}
 
 	// it's working again: the reason no longer holds
@@ -148,7 +230,15 @@ internal static class CompanionStatus
 			{
 				return job + " - " + (why ?? L("hc_status_following_look"));
 			}
-			string doing = Doing(cs, mode);
+			string doing = FarmDoing(cs, mode);
+			if (doing == null)
+			{
+				Entry d = DoingEntry(cs);
+				if (d != null)
+				{
+					return (d.Label ?? job) + " - " + d.Text;
+				}
+			}
 			return (doing != null) ? (job + " - " + doing) : job;
 		}
 		if (cs.GetFollow() && ai != null && ai.GetFollowTarget() != null)
@@ -163,7 +253,7 @@ internal static class CompanionStatus
 	}
 
 	// what the job is doing right now, where the job can say (1.5.42: Farm)
-	private static string Doing(CompanionSetup cs, int mode)
+	private static string FarmDoing(CompanionSetup cs, int mode)
 	{
 		if (mode == CompanionSetup.ModeFarm)
 		{

@@ -13,7 +13,8 @@ namespace Companions;
 [Serializable]
 public class SpeechConfig
 {
-	// 2 = the 1.5.41 layout. An older file is kept as speech.v1.json and replaced by the new defaults.
+	// 2 = the 1.5.41 layout, 3 = 1.5.43 (travelling lines tagged [away], more lines). An older file is kept as
+	// speech.v<its version>.json and replaced by the new defaults.
 	public int Version;
 
 	public string[] Action;
@@ -58,7 +59,7 @@ public class SpeechConfig
 	// idle chat when it goes over to you or another companion
 	public string[] Chat;
 
-	public const int CurrentVersion = 2;
+	public const int CurrentVersion = 3;
 
 	private static SpeechConfig _instance;
 
@@ -140,7 +141,7 @@ public class SpeechConfig
 			{
 				// 1.5.41: the old file's pools mixed lines for different situations (a woodcutter talking about ore, home
 				// lines out in the wild). Keep it next to the new one for anyone who edited it, and start from the new set.
-				string backup = Path.Combine(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + ".v1.json");
+				string backup = Path.Combine(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + ".v" + Mathf.Max(1, loaded.Version) + ".json");
 				try
 				{
 					File.Copy(path, backup, overwrite: true);
@@ -230,7 +231,9 @@ public class SpeechConfig
 		// while following you
 		s.Follow = new string[]
 		{
-			"Lead on, I am your shield.", "Where the path takes us, I follow.", "Right behind you.", "I've got your back.", "What lies ahead, I wonder?", "Which way now?",
+			// 1.5.43: travelling lines only away from home (1.5.42 test: "What lies ahead, I wonder?" while sitting on the throne)
+			"[away] Lead on, I am your shield.", "[away] Where the path takes us, I follow.", "Right behind you.", "I've got your back.", "[away] What lies ahead, I wonder?",
+			"[away] Which way now?", "[away] Keep your eyes open.", "[away] Good country for an ambush.", "[home] Anything need doing around here?", "[home] Just say the word.",
 			"[day,!rain] A fine day to wander the wilds.", "[night] Keep close, the night hides much.", "[rain] Wet boots again.", "[cold] My beard is freezing.",
 			"[blackforest] Watch for greydwarfs in these woods.", "[swamp] This bog stinks of death.", "[mountain] Mind the drop.", "[plains] Watch for the fuling camps.",
 			"[mistlands] I can barely see my own hand.", "[ashlands] Even the air burns here.", "[deepnorth] Cold enough to freeze a troll.", "[ocean] Nothing but water and sky."
@@ -248,7 +251,11 @@ public class SpeechConfig
 		};
 		s.Overweight = new string[] { "My back is breaking under all this!", "I can barely move with all this weight!", "My pack is fit to burst!", "I need to put some of this down." };
 		// while actually working the smelters
-		s.Smelt = new string[] { "Feeding the furnace.", "Good ore makes good metal.", "Keeping the fires stoked.", "Another bar for the hoard.", "The bellows sing their song." };
+		s.Smelt = new string[]
+		{
+			"Feeding the furnace.", "Good ore makes good metal.", "Keeping the fires stoked.", "Another bar for the hoard.", "The bellows sing their song.", "Hot work, this.",
+			"[cold] At least the furnace is warm."
+		};
 		// nothing to do; [home] lines only at home
 		s.Idle = new string[]
 		{
@@ -258,15 +265,27 @@ public class SpeechConfig
 			"[day,!rain,!indoors] Just enjoying the view.", "[indoors] Cosy in here."
 		};
 		// while actually hunting
-		s.Hunt = new string[] { "Stay quiet...", "The hunt is on!", "Fresh meat for the pot.", "Tracking prey through the brush.", "Easy now... nice and steady..." };
+		s.Hunt = new string[]
+		{
+			"Stay quiet...", "The hunt is on!", "Fresh meat for the pot.", "Tracking prey through the brush.", "Easy now... nice and steady...", "Downwind, always downwind.",
+			"[night] Hard to track in the dark.", "[rain] The rain hides our steps."
+		};
 		// while actually farming
 		s.Farm = new string[] { "Working the fields.", "Seeds in the ground, hope in the heart.", "Farm work is honest work.", "Another row done.", "[rain] Good weather for the crops." };
 		// while actually fishing
-		s.Fish = new string[] { "Casting my line...", "Patience is a fisherman's greatest virtue.", "Come on, take the bait...", "Fishing is peaceful work.", "Nothing yet... but I'll wait." };
+		s.Fish = new string[]
+		{
+			"Casting my line...", "Patience is a fisherman's greatest virtue.", "Come on, take the bait...", "Fishing is peaceful work.", "Nothing yet... but I'll wait.",
+			"[rain] Fish bite better in the rain.", "[night] Quiet water tonight.", "[ocean] Something big is down there."
+		};
 		// while actually cooking or brewing
 		s.Cook = new string[] { "A good meal lifts any warrior's spirits.", "Stirring the pot...", "A pinch of this, a dash of that.", "Food for the weary!", "Mmm, smells good." };
 		// while actually doing Repair and Restock
-		s.Upkeep = new string[] { "Keeping the place in shape.", "A sound roof and a warm fire.", "Everything in its place.", "A home needs looking after." };
+		s.Upkeep = new string[]
+		{
+			"Keeping the place in shape.", "A sound roof and a warm fire.", "Everything in its place.", "A home needs looking after.", "Who left this here?",
+			"[rain] Let's hope the roof holds.", "[night] Keep the fires burning."
+		};
 		// it has no bed (only said at night)
 		s.NoBed = new string[] { "I've got no bed to call my own.", "Wish I had a bed around here.", "I'll sleep on the ground again, I suppose.", "A place to rest my head would be nice." };
 		// idle chat next to you or another companion

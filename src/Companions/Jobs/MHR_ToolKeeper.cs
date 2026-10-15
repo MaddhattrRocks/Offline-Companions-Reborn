@@ -305,6 +305,9 @@ namespace Companions
             PickSpot(cs, st, chest, now); st.NeedMove = true; st.WasFighting = false;
             ai.SetFollowTarget(null);
             MHR_Mover.Release(ai);
+            // 1.5.43 (phase 3): action lines - say where it's off to (once per kind of trip every few minutes)
+            if (phase == 1 || phase == 2)
+                cs.GetComponent<CompanionTalk>()?.Speak(ModLocalization.LocFmt(phase == 1 ? "hc_act_fetch_tool" : "hc_act_return_tool", KindName(kind)), CompanionTalk.Priority.Event, "act:tool" + phase + ":" + kind);
             Log((phase == 3 ? "Going to put away \"" + prefab + "\" and anything that stacks with it" : (phase == 1 ? "Going to fetch " : "Going to put back ") + KindName(kind) + " (\"" + prefab + "\")") + " at a chest " +
                 Vector3.Distance(cs.transform.position, chest.transform.position).ToString("F0") + "m away");
         }

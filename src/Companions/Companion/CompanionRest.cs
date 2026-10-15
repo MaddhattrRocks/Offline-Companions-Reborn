@@ -716,6 +716,8 @@ public class CompanionRest : MonoBehaviour
 		if (MHR_BedInRange())
 		{
 			CompanionsPlugin.Log.LogInfo(flag ? "[Rest] Going to bed: you went to bed" : "[Rest] Going to bed: it's night and the bed is in range");
+			// 1.5.43 (phase 3): action line
+			GetComponent<CompanionTalk>()?.Speak(ModLocalization.Loc("hc_act_bed"), CompanionTalk.Priority.Event, "act:bed");
 			CompanionsPlugin.Log.LogDebug($"[Rest] Auto-sleep — night detected, bed=\"{claimedBed.name}\" at {claimedBed.transform.position:F1}");
 			BeginSleep(claimedBed, isAuto: true);
 		}

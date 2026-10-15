@@ -850,6 +850,8 @@ public class HarvestController : MonoBehaviour
 		if (gameObject != null)
 		{
 			CompanionStatus.Clear(this);
+			// 1.5.43: and the status says what (phase 3)
+			CompanionStatus.Doing(this, pickLoose ? "hc_doing_pick" : (mode == 5) ? "hc_doing_forage" : (mode == 1) ? "hc_doing_chop" : "hc_doing_mine", MHR_Items.NiceName(gameObject));
 		}
 		if (gameObject == null)
 		{
@@ -2405,6 +2407,9 @@ public class HarvestController : MonoBehaviour
 		return (_humanoid?.GetInventory())?.GetTotalWeight() ?? 0f;
 	}
 
+	// 1.5.43: how many targets the last scan skipped because they need a better tool (for the status)
+	internal int LastTierSkips;
+
 	internal GameObject ScanForTarget(int mode)
 	{
 		if (mode == 5)
@@ -2419,6 +2424,7 @@ public class HarvestController : MonoBehaviour
 		}
 		LogInfo($"Physics scan: {num} colliders in {ScanRadius}m radius" + (flag ? " ** BUFFER FULL — may miss targets! **" : ""));
 		int bestToolTier = GetBestToolTier(mode);
+		LastTierSkips = 0;
 		_seenIds.Clear();
 		GameObject gameObject = null;
 		float num2 = float.MaxValue;
@@ -2515,6 +2521,7 @@ public class HarvestController : MonoBehaviour
 		{
 			Log($"  Skipped {num8} targets requiring higher tool tier (best tier={bestToolTier})");
 		}
+		LastTierSkips = num8;
 		string text = mode switch
 		{
 			3 => "Ore", 

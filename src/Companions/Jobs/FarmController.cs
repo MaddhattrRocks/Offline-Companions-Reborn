@@ -84,6 +84,25 @@ public class FarmController : MonoBehaviour
 
 	private bool _shouldRun;
 
+	// 1.5.43: why it isn't planting, gathered during a scan
+	private readonly List<CompanionStatus.Item> _farmWhy = new List<CompanionStatus.Item>();
+
+	private void FarmWhy(string key, params object[] args)
+	{
+		string sig = key + "|" + string.Join("|", args);
+		foreach (CompanionStatus.Item it in _farmWhy)
+		{
+			if (it.Key + "|" + string.Join("|", it.Args) == sig)
+			{
+				return;
+			}
+		}
+		if (_farmWhy.Count < 8)
+		{
+			_farmWhy.Add(new CompanionStatus.Item(null, key, args));
+		}
+	}
+
 	private bool _preferHarvest = true;
 
 	private float _rotationTimer;
@@ -490,6 +509,7 @@ public class FarmController : MonoBehaviour
 		// 1.4.82: pick everything that's ripe first and only carry it to a chest when nothing ripe is left
 		// or the pack is nearly full (1.4.81 log: he went to a chest after every few crops).
 		_whyNoZones = _whyNoSeeds = _whyNoChest = false;
+		_farmWhy.Clear();
 		if (PackNearlyFull() && TryScanStore())
 		{
 			CompanionStatus.Clear(this);
@@ -512,19 +532,25 @@ public class FarmController : MonoBehaviour
 		{
 			CompanionStatus.Why(this, "hc_why_farm_no_chest", speak: true);
 		}
-		else if (_whyNoSeeds)
-		{
-			CompanionStatus.Why(this, "hc_speech_farm_no_seeds", speak: true);
-		}
-		else if (_whyNoZones)
-		{
-			// 1.5.42: harvesting doesn't need zones - only planting does, so it's information, not a problem to announce
-			// (user: "Farming kept saying no zones")
-			CompanionStatus.Why(this, "hc_why_farm_no_zones");
-		}
 		else
 		{
-			CompanionStatus.Why(this, "hc_why_farm_waiting");
+			// 1.5.43 (phase 3): the concrete reasons in turn - the seed a zone is missing, zones with every spot planted,
+			// seeds kept back at [Farming] SeedMinimum; no zones (1.5.42: information, not a problem to announce - harvesting
+			// doesn't need zones); else waiting for the crops to grow
+			if (_whyNoSeeds)
+			{
+				_talk?.SayProblem("hc_speech_farm_no_seeds", ModLocalization.Loc("hc_speech_farm_no_seeds"));
+				FarmWhy("hc_speech_farm_no_seeds");
+			}
+			if (_whyNoZones)
+			{
+				FarmWhy("hc_why_farm_no_zones");
+			}
+			if (_farmWhy.Count == 0)
+			{
+				FarmWhy("hc_why_farm_waiting");
+			}
+			CompanionStatus.WhyRotate(this, _farmWhy);
 		}
 		if (!_allDoneNotified)
 		{
@@ -1075,6 +1101,7 @@ public class FarmController : MonoBehaviour
 			if (string.IsNullOrEmpty(cropSeed))
 			{
 				Log($"[Plant] Zone[{num4}] nothing to plant here right now");
+				FarmWhy("hc_why_farm_seed_min", (ModConfig.SeedReserve?.Value ?? 20).ToString());
 				continue;
 			}
 			flag = false;
@@ -1100,6 +1127,7 @@ public class FarmController : MonoBehaviour
 					return true;
 				}
 				Log($"[Plant] Zone[{num4}] no valid plant position (zone full or uncultivated)");
+				FarmWhy("hc_why_farm_zone_full");
 			}
 			else
 			{
@@ -1177,10 +1205,12 @@ public class FarmController : MonoBehaviour
 					return true;
 				}
 				Log($"[Plant] Zone[{num4}] chest seeds found but no plant position in zone");
+				FarmWhy("hc_why_farm_zone_full");
 			}
 			else
 			{
 				Log($"[Plant] Zone[{num4}] no \"{cropSeed}\" in chests either");
+				FarmWhy("hc_why_farm_no_seed", CookController.Name(cropSeed));
 			}
 		}
 		Log("[Plant] All zones checked — no planting possible");

@@ -9,7 +9,9 @@ namespace Companions
     {
         class Per
         {
-            public int LimitRejects, OtherRejects;
+            public int LimitRejects, OtherRejects, NearBaseRejects;
+            // 1.5.43: the items at their limit in the last scan: name -> (stock, limit)
+            public readonly Dictionary<string, KeyValuePair<int, int>> AtLimit = new Dictionary<string, KeyValuePair<int, int>>();
             public float NextPlenty;
             public bool PackFull;
             public float DodgeUntil; public Vector3 DodgePoint;
@@ -179,11 +181,21 @@ namespace Companions
                 if (sh != null && sh.GetInventory() != null && CountIn(sh.GetInventory(), "Stone") >= 50 && StartPile(h)) return null;
             }
             Per p = P(h);
-            p.LimitRejects = 0; p.OtherRejects = 0;
+            p.LimitRejects = 0; p.OtherRejects = 0; p.NearBaseRejects = 0; p.AtLimit.Clear();
             GameObject r = h.ScanForTarget(mode);
-            // 1.5.42: why there's nothing to do (hover status, idle "why")
-            if (r == null) CompanionStatus.Why(h, p.LimitRejects > 0 && mode >= 1 && mode <= 3 ? (mode == 1 ? "hc_speech_plenty_wood" : mode == 2 ? "hc_speech_plenty_stone" : "hc_speech_plenty_ore") : "hc_why_gather_none");
-            else CompanionStatus.Clear(h);
+            // 1.5.42: why there's nothing to do (hover status, idle "why"). 1.5.43 (phase 3): the concrete reasons with the
+            // numbers from the settings, in turn - each item at its limit ("Wood 512/500 - at the limit."), targets that need
+            // a better tool, trees left alone near your buildings
+            if (r == null)
+            {
+                List<CompanionStatus.Item> why = new List<CompanionStatus.Item>();
+                foreach (KeyValuePair<string, KeyValuePair<int, int>> kv in p.AtLimit)
+                    why.Add(new CompanionStatus.Item(null, "hc_why_gather_limit", ItemLocal(kv.Key) ?? kv.Key, kv.Value.Key, kv.Value.Value));
+                if (h.LastTierSkips > 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_tier", h.LastTierSkips));
+                if (p.NearBaseRejects > 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_near_base", p.NearBaseRejects, (ModConfig.BaseProtectRadius != null ? ModConfig.BaseProtectRadius.Value : 10f).ToString("F0")));
+                if (why.Count == 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_none"));
+                CompanionStatus.WhyRotate(h, why);
+            }
             if (r == null && p.LimitRejects > 0 && mode >= 1 && mode <= 3 && Time.time >= p.NextPlenty)
             {
                 p.NextPlenty = Time.time + 120f;
@@ -210,7 +222,7 @@ namespace Companions
                             string s = part.Trim();
                             if (s.Length > 0 && go.name.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) { p.OtherRejects++; return false; }
                         }
-                    if (NearBuildings(go)) { p.OtherRejects++; return false; }
+                    if (NearBuildings(go)) { p.OtherRejects++; p.NearBaseRejects++; return false; }
                 }
                 MHR_List list = Parse(mode);
                 if (list == null) return true;
@@ -222,7 +234,9 @@ namespace Companions
                     if (!list.Allows(drops[i], ItemLocal(drops[i]))) continue;
                     int limit = list.AmountFor(drops[i], DefaultLimit(mode));
                     listed = true;
-                    if (limit <= 0 || Stock(h, drops[i]) < limit) return true;
+                    int stock = Stock(h, drops[i]);
+                    if (limit <= 0 || stock < limit) return true;
+                    if (p.AtLimit.Count < 8) p.AtLimit[drops[i]] = new KeyValuePair<int, int>(stock, limit);
                 }
                 if (listed) p.LimitRejects++; else p.OtherRejects++;
                 return false;

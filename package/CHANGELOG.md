@@ -2,6 +2,20 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.43 (test build for 1.5.5)
+- Status: every job now says what it's doing - "Wood - chopping Beech", "Smelt - loading the Smelter with Copper ore", "Repair and Restock - fuelling the Hearth" / "sorting Resin", "Cook - making Muckshake", "Mead - filling a fermenter...", "Hunt - hunting Boar", "Fish - fishing for Perch".
+- Status: when a job is stuck it goes through the concrete reasons in turn, with the numbers from your settings:
+  - Gathering: each item at its limit ("Wood 512/500 - at the limit."), rocks that need a better pickaxe, trees left alone near your buildings.
+  - Hunting: each meat at its target ("Raw meat 104/100 - enough."), or no game within the hunting range.
+  - Fishing: each fish at its target, the bait a fish here takes, no spot to fish from, or no fish within range.
+  - Smelting: no ore for a smelter, no wood for the charcoal kiln, no coal for a furnace, a pile it needs a hammer for.
+  - Farming: the seed a zone is missing, every spot planted, seeds kept back at SeedMinimum, no zones.
+  - Cooking: the ingredient a food is short of ("Ooze 0/22 for Muckshake."), as well as the mead shortfalls.
+  - Repair and Restock: no fuel for the fires, damaged pieces with no station in range.
+- Speech: companions say what they're off to do - "Fetching an axe.", "Putting a cultivator back.", "Off to bed."
+- Speech: travelling lines ("Which way now?", "What lies ahead, I wonder?") only away from home; a few new lines for home, hunting, fishing, smelting and upkeep. speech.json is updated (your old one is kept as speech.v2.json).
+- Lost companions: when nothing of a companion is left in the world, a message in the middle of the screen says so once a session, with how to get it back (Speech > AnnounceLost, LostCheckInterval; single player and host).
+
 ## 1.5.42 (test build for 1.5.5)
 - Status: look at a companion and a line under its name says what it's doing - and when its job is stuck, why (e.g. "Hunt - No game around.", "Farm - I need seeds to plant.", "Fetching an axe", "Following you"). General > ShowStatus turns it off.
 - Speech: when a companion has nothing to do it now says the real reason (we have enough meat, the chests are full, no farm zones, nothing to smelt...) instead of one line per job.

@@ -773,6 +773,12 @@ When a companion runs into a problem (needs a tool, can't get somewhere...) whil
 **AnnounceDeath** — Default: On  
 When one of your companions dies, say so in the middle of the screen with where it happened (biome, how far from you), wherever you are.
 
+**AnnounceLost** — Default: On  
+When one of your companions is lost (nothing of it is left in the world - no companion and no tombstone that brings it back), say so in the middle of the screen, once per session, with how to get it back. Single player and the host only.
+
+**LostCheckInterval** — Default: 600 · Range: 60 – 3600  
+How often (seconds) to look for lost companions. The first look is a minute after the world loads. Each look goes through every object in the world.
+
 **Duration** — Default: 5 · Range: 1 – 15  
 Seconds a line of speech stays on screen.
 
