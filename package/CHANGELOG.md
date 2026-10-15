@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.45 (test build for 1.5.5)
+- Fixed: key settings in the F8 panel couldn't be set - clicking the key button did nothing. A click on it now always starts "Press a key...", the key is picked up even when the game holds on to it, Esc cancels without closing the panel, and the log says what was set.
+
 ## 1.5.44 (test build for 1.5.5)
 - Death (GitHub issue #17): a revived companion no longer runs straight back into the fight that killed it. Death > RespawnStance: RecoverFirst (default) - it comes back Passive with Pickup off, goes for its tombstone when it's safe (waits by you while enemies are after it or more than RecoverMaxMobs are fighting nearby), fights back only when attacked with a weapon in hand, puts its gear on, eats, then goes back to its old stance. Passive - it stays Passive. Keep - as before.
 - Stance keys (issue #17): Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey (unbound by default) - the companion you're looking at, or everyone within RecallRange with Command on.
