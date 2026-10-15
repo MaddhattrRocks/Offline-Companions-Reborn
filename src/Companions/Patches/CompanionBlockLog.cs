@@ -26,6 +26,8 @@ internal static class CompanionBlockLog
 		{
 			return;
 		}
+		// 1.5.52: the swing it was watching has landed - an opening to hit back
+		__instance.GetComponent<CompanionCombatAI>()?.NoteIncoming(attacker);
 		try
 		{
 			ItemDrop.ItemData blocker = s_blocker?.Invoke(__instance, null) as ItemDrop.ItemData;

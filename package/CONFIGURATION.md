@@ -240,6 +240,36 @@ Chance (0.3 = 30%) that a companion with no Blocking skill times a block as a pa
 **ParryChanceMax** — Default: 0.7 · Range: 0 – 1  
 Chance (0.7 = 70%) that a companion times a block as a parry at Blocking skill 100.
 
+**FightLikePlayer** — Default: On  
+With a melee weapon, companions fight like a player: short combos when there's an opening, guarding in between, stepping out of swings, getting clear when several enemies are on them, and backing off to catch their breath when low on stamina. Off: the older way (one swing at a time on the weapon's timer).
+
+**ComboHits** — Default: 3 · Range: 1 – 5  
+Most swings in one combo. A combo is shorter with a two-handed weapon, varies a little each time, and never spends the stamina kept back for blocking.
+
+**ComboPause** — Default: 1 · Range: 0.2 – 5  
+Seconds (roughly - it varies) between combos, guarding or stepping back out of reach.
+
+**StaminaReserve** — Default: 0.3 · Range: 0 – 0.9  
+Share of its stamina (0.3 = 30%) a companion keeps for blocking. Below it, it stops attacking and backs out of reach to get its breath back.
+
+**StaminaResume** — Default: 0.6 · Range: 0 – 1  
+Share of its stamina (0.6 = 60%) it waits for before going back in after backing off.
+
+**BackOffTime** — Default: 8 · Range: 2 – 30  
+Seconds a companion keeps trying to back off from an enemy that stays on it before it fights on with what stamina it has.
+
+**StepAwayChance** — Default: 0.3 · Range: 0 – 1  
+Chance (0.3 = 30%) a companion steps back or aside out of an enemy's swing instead of blocking it, when there's room and it can get out of reach in time. Doubled when it's low on stamina.
+
+**GroupSize** — Default: 2 · Range: 2 – 10  
+With this many enemies on a companion from different sides, it gets clear first - moves until they're all on one side - and only attacks on an opening.
+
+**GroupRange** — Default: 6 · Range: 2 – 20  
+How close (meters) an enemy has to be to count as one of the group on a companion.
+
+**FlankAngle** — Default: 100 · Range: 30 – 180  
+Two enemies more than this many degrees apart, seen from the companion, count as on different sides.
+
 **BowSwitchDistance** — Default: 15 · Range: 5 – 60  
 A companion with a bow or crossbow switches to it when its target is further away than this (meters).
 

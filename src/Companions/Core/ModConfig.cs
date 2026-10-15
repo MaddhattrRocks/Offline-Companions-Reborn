@@ -73,6 +73,26 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> BlockReactionTime;
 
+	internal static ConfigEntry<bool> FightLikePlayer;
+
+	internal static ConfigEntry<int> CombatComboHits;
+
+	internal static ConfigEntry<float> CombatComboPause;
+
+	internal static ConfigEntry<float> CombatStaminaReserve;
+
+	internal static ConfigEntry<float> CombatStaminaResume;
+
+	internal static ConfigEntry<float> CombatRecoverTime;
+
+	internal static ConfigEntry<float> StepAwayChance;
+
+	internal static ConfigEntry<int> CombatGroupSize;
+
+	internal static ConfigEntry<float> CombatGroupRange;
+
+	internal static ConfigEntry<float> CombatFlankAngle;
+
 
 
 
@@ -581,6 +601,16 @@ internal static class ModConfig
 		ShieldMultiAttackerCount = Bind(cfg, "Combat", "ShieldMultiAttackerCount", 3, "When this many enemies attack a companion at once, it switches to its shield with the best block.", new AcceptableValueRange<int>(1, 10));
 		ParryChance = Bind(cfg, "Combat", "ParryChance", 0.3f, "Chance (0.3 = 30%) that a companion with no Blocking skill times a block as a parry (more damage stopped, less stamina, and many attackers are staggered). It rises with Blocking skill up to ParryChanceMax. Shields without a parry bonus never parry.", new AcceptableValueRange<float>(0f, 1f));
 		ParryChanceMax = Bind(cfg, "Combat", "ParryChanceMax", 0.7f, "Chance (0.7 = 70%) that a companion times a block as a parry at Blocking skill 100.", new AcceptableValueRange<float>(0f, 1f));
+		FightLikePlayer = Bind(cfg, "Combat", "FightLikePlayer", true, "With a melee weapon, companions fight like a player: short combos when there's an opening, guarding in between, stepping out of swings, getting clear when several enemies are on them, and backing off to catch their breath when low on stamina. Off: the older way (one swing at a time on the weapon's timer).");
+		CombatComboHits = Bind(cfg, "Combat", "ComboHits", 3, "Most swings in one combo. A combo is shorter with a two-handed weapon, varies a little each time, and never spends the stamina kept back for blocking.", new AcceptableValueRange<int>(1, 5));
+		CombatComboPause = Bind(cfg, "Combat", "ComboPause", 1f, "Seconds (roughly - it varies) between combos, guarding or stepping back out of reach.", new AcceptableValueRange<float>(0.2f, 5f));
+		CombatStaminaReserve = Bind(cfg, "Combat", "StaminaReserve", 0.3f, "Share of its stamina (0.3 = 30%) a companion keeps for blocking. Below it, it stops attacking and backs out of reach to get its breath back.", new AcceptableValueRange<float>(0f, 0.9f));
+		CombatStaminaResume = Bind(cfg, "Combat", "StaminaResume", 0.6f, "Share of its stamina (0.6 = 60%) it waits for before going back in after backing off.", new AcceptableValueRange<float>(0f, 1f));
+		CombatRecoverTime = Bind(cfg, "Combat", "BackOffTime", 8f, "Seconds a companion keeps trying to back off from an enemy that stays on it before it fights on with what stamina it has.", new AcceptableValueRange<float>(2f, 30f));
+		StepAwayChance = Bind(cfg, "Combat", "StepAwayChance", 0.3f, "Chance (0.3 = 30%) a companion steps back or aside out of an enemy's swing instead of blocking it, when there's room and it can get out of reach in time. Doubled when it's low on stamina.", new AcceptableValueRange<float>(0f, 1f));
+		CombatGroupSize = Bind(cfg, "Combat", "GroupSize", 2, "With this many enemies on a companion from different sides, it gets clear first - moves until they're all on one side - and only attacks on an opening.", new AcceptableValueRange<int>(2, 10));
+		CombatGroupRange = Bind(cfg, "Combat", "GroupRange", 6f, "How close (meters) an enemy has to be to count as one of the group on a companion.", new AcceptableValueRange<float>(2f, 20f));
+		CombatFlankAngle = Bind(cfg, "Combat", "FlankAngle", 100f, "Two enemies more than this many degrees apart, seen from the companion, count as on different sides.", new AcceptableValueRange<float>(30f, 180f));
 		BowSwitchDistance = Bind(cfg, "Combat", "BowSwitchDistance", 15f, "A companion with a bow or crossbow switches to it when its target is further away than this (meters).", new AcceptableValueRange<float>(5f, 60f));
 		MeleeSwitchDistance = Bind(cfg, "Combat", "MeleeSwitchDistance", 12f, "It switches back to its melee weapon when the target comes closer than this (meters).", new AcceptableValueRange<float>(3f, 40f));
 		UseTorchOpener = Bind(cfg, "Combat", "UseTorchOpener", defaultValue: true, "Against enemies that are weak to fire, open with a torch to set them alight, then switch back to the best weapon.");

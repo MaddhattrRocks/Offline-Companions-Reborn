@@ -2282,6 +2282,26 @@ namespace Companions
             if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
             return true;
         }
+        // 1.5.52: a short step in a fight (back, aside, out of a group) that's safe all the way: no wall, ground under every
+        // half metre no more than 1 m below or 0.8 m above, no water to wade into, no fire (the crypt fall, the hearth)
+        public static bool SafeStep(Vector3 pos, Vector3 dir, float dist)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f || dist <= 0f) return false;
+            dir.Normalize();
+            if (Physics.Raycast(pos + Vector3.up * 0.5f, dir, dist + 0.3f, Mask())) return false;
+            for (float x = 0.5f; x < dist + 0.49f; x += 0.5f)
+            {
+                Vector3 p = pos + dir * Mathf.Min(x, dist);
+                RaycastHit hit;
+                if (!Physics.SphereCast(p + Vector3.up * 1.5f, 0.2f, Vector3.down, out hit, 2.7f, Mask())) return false;
+                if (hit.point.y < pos.y - 1.0f || hit.point.y > pos.y + 0.8f) return false;
+                if (MHR_Water.DepthAt(hit.point) > 0.4f) return false;
+                if (FireArea(hit.point, 0.5f) != null) return false;
+            }
+            return true;
+        }
+
         static bool Clear(Vector3 pos, Vector3 dir, float dist)
         {
             Vector3 from = pos + Vector3.up * 0.5f;

@@ -2310,6 +2310,7 @@ public class CompanionAI : BaseAI
 	{
 		base.OnDamaged(damage, attacker);
 		Wakeup();
+		_combatAI?.NoteIncoming(attacker);
 		int num = _setup?.GetCombatStance() ?? 0;
 		// 1.5.44: Passive after a revive (RecoverFirst) fights back when hit with a weapon in hand
 		if (num == 1 && !MHR_Recover.MayDefendHit(this, attacker))

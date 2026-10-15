@@ -332,12 +332,17 @@ A companion can carry 300 weight, the same as a player.
 - Anything that attacks them is always fought back.
 
 **How they fight**
-- **Blocking:** they block with a shield, parry and counter-attack.
-- **Several attackers:** they switch to their best blocking shield (a tower shield, say) when 3 or more enemies attack at once.
+- **Combos:** with a melee weapon they swing in short combos (2-3 hits with a fast weapon, fewer with a two-handed one) when there's an opening, then guard or step back out of reach.
+- **Openings:** they swing when nothing is swinging at them, when their target is staggered, or right after a swing at them has landed on their shield.
+- **Blocking:** they block swings that can reach them. Some blocks are parries, more often as their Blocking skill rises; the rest are plain blocks.
+- **Stepping out:** now and then they step back or aside out of a swing instead of blocking, when there's safe ground to step to.
+- **Stamina:** they keep some stamina back for blocking. Low on stamina, they back out of reach to get their breath back, and only fight on if they can't get clear.
+- **Several attackers:** with enemies on them from different sides, they move until all of them are on one side. With 3 or more on them, they switch to their best blocking shield (a tower shield, say).
+- These are chances, not certainties - they misjudge now and then. `[Combat] FightLikePlayer` off goes back to the older one-swing-at-a-time fighting.
 - **Weapon choice:** they pick the weapon that does the most damage to *this* enemy, using its weaknesses and resistances.
 - **Fire:** they open with a torch against enemies weak to fire, then switch back.
 - **Bows and crossbows:** used only when they carry the matching ammo, at 15 m and beyond. Under 12 m they switch back to melee.
-- **Low health:** below 30% they fight defensively, and below 15% they run.
+- **Low health:** below 30% they fight defensively, and below 15% they run - to you, when the enemy isn't in the way.
 - **Backstabs:** companions don't take backstab damage.
 
 **After the fight**

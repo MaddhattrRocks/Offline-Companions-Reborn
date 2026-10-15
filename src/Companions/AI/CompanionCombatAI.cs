@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace Companions;
 
-public class CompanionCombatAI : MonoBehaviour
+public partial class CompanionCombatAI : MonoBehaviour
 {
 	private const float AlertRange = 9999f;
 
@@ -503,6 +503,7 @@ public class CompanionCombatAI : MonoBehaviour
 			return false;
 		}
 		UpdateStalk();
+		_tacticsOn = TacticsFor(_humanoid.GetCurrentWeapon());
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();
 		if (healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
@@ -514,7 +515,8 @@ public class CompanionCombatAI : MonoBehaviour
 				bool fleeLog = Time.time >= _nextFleeLog;
 				if (fleeLog) { _nextFleeLog = Time.time + 5f; CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\""); }
 				TryEquipShield();
-				if (_ai.FleeFrom(dt, _targetCreature.transform.position))
+				// 1.5.52: to the owner when the enemy isn't in the way, through the mover (edges, water); else away from it
+				if (FleeToOwner(dt) || _ai.FleeFrom(dt, _targetCreature.transform.position))
 				{
 					return true;
 				}
@@ -531,7 +533,7 @@ public class CompanionCombatAI : MonoBehaviour
 		}
 		bool blocking = ReflectionHelper.GetBlocking(_character);
 		bool flag = _stance == 0 || _stance == 3;
-		if (_targetCreature != null && !blocking && _parryAttackCount <= 0 && !HuntMode && !flag)
+		if (_targetCreature != null && !blocking && _parryAttackCount <= 0 && !HuntMode && !flag && !_tacticsOn)
 		{
 			_pauseTimer += dt;
 			if (_pauseTimer > 3f)
@@ -545,12 +547,20 @@ public class CompanionCombatAI : MonoBehaviour
 			}
 		}
 		ItemDrop.ItemData itemData = SelectBestAttack(dt);
+		bool tacticsWere = _tacticsOn;
+		_tacticsOn = TacticsFor(itemData);
+		if (tacticsWere && !_tacticsOn)
+		{
+			ResetTactics();
+		}
 		float num2 = ((itemData != null && itemData.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) ? 0.5f : 0f);
 		bool flag2 = itemData != null && Time.time - itemData.m_lastAttackTime > itemData.m_shared.m_aiAttackInterval + num2;
 		float value = ModConfig.AttackCooldown.Value;
 		bool flag3 = _character.GetTimeSinceLastAttack() >= value;
 		bool flag4 = _parryAttackCount > 0;
-		bool flag5 = itemData != null && !_ai.IsTakingOff() && (flag4 || (flag2 && flag3));
+		// 1.5.52: melee fighting like a player swings in combos on an opening (CompanionCombatTactics), not on the weapon's
+		// AI timer (2 s on player weapons - it never comboed)
+		bool flag5 = itemData != null && !_ai.IsTakingOff() && (_tacticsOn ? ReadyToSwing(itemData) : (flag4 || (flag2 && flag3)));
 		if (!_ai.IsCharging() && (_targetStatic != null || _targetCreature != null) && itemData != null && flag5 && !_character.InAttack() && itemData.m_shared.m_attack != null && !itemData.m_shared.m_attack.IsDone() && !string.IsNullOrEmpty(itemData.m_shared.m_attack.m_chargeAnimationBool))
 		{
 			_ai.ChargeStart(itemData.m_shared.m_attack.m_chargeAnimationBool);
@@ -558,7 +568,7 @@ public class CompanionCombatAI : MonoBehaviour
 		// 1.5.2: ranged = a weapon that shoots. It used to be "AI attack range over 10 m" too, and a spear's AI range is
 		// its throwing distance - so a spear counted as ranged and stabbed at the air from 16 m (user log, bear hunt).
 		bool flag6 = ((itemData == null) ? (_stance == 2) : MHR_IsProjectileWeapon(itemData));
-		if (_targetCreature != null && itemData != null && !flag5 && !_character.InAttack() && !flag6 && !HuntMode && !flag)
+		if (_targetCreature != null && itemData != null && !flag5 && !_character.InAttack() && !flag6 && !HuntMode && !flag && !_tacticsOn)
 		{
 			Vector3 position = _targetCreature.transform.position;
 			_ai.RandomMovementAroundPoint(dt, position, (_ai.m_randomMoveRange > 0f) ? _ai.m_randomMoveRange : 5f, _ai.IsAlerted());
@@ -610,7 +620,12 @@ public class CompanionCombatAI : MonoBehaviour
 						dist = MHR_SpearThrow.Standoff();
 					}
 					bool flag9 = !flag8 || !canSeeTarget || !_ai.IsAlerted() || (!flag7 && itemData.m_shared.m_aiAttackRangeMin < 0f);
-					if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
+					// 1.5.52: stepping out of a swing, backing off to get its breath back, getting clear of a group
+					int tac = (_tacticsOn && !flag7) ? Tactics(dt, itemData) : 0;
+					if (tac != 0)
+					{
+					}
+					else if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
 					{
 						_ai.FleeFrom(dt, _targetCreature.transform.position);
 					}
@@ -650,7 +665,7 @@ public class CompanionCombatAI : MonoBehaviour
 							MHR_SpearThrow.Throw(_ai, _humanoid, _targetCreature);
 						}
 					}
-					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking)
+					else if (flag8 && canSeeTarget && _ai.IsAlerted() && !blocking && tac != 1)
 					{
 						// 1.5.4: melee aims like a player (user: the first stab at a boar missed - no skill gain, and it only noticed
 						// him after; he was a metre below it on a slope). The game sweeps a melee attack out from the hand along the
@@ -665,7 +680,9 @@ public class CompanionCombatAI : MonoBehaviour
 							Vector3 away = base.transform.position - _targetCreature.transform.position;
 							away.y = 0f;
 							if (away.sqrMagnitude < 0.01f) away = -base.transform.forward;
-							_ai.MoveTowards(away.normalized, run: false);
+							// 1.5.52: set the move direction directly - MoveTowards only walks forward, so it never stepped back
+							_character.SetMoveDir(away.normalized);
+							_character.SetRun(run: false);
 							_ai.LookAtPoint(aimAt);
 							if (Time.time >= _nextCloseLog)
 							{
@@ -683,6 +700,10 @@ public class CompanionCombatAI : MonoBehaviour
 							}
 							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
 							{
+								if (_tacticsOn)
+								{
+									NoteTacticSwing(itemData);
+								}
 								Vector3 to = _targetCreature.transform.position - base.transform.position;
 								Vector3 flat = new Vector3(to.x, 0f, to.z);
 								Vector3 fwd = base.transform.forward; fwd.y = 0f;
@@ -799,6 +820,7 @@ public class CompanionCombatAI : MonoBehaviour
 			_parryAttackCount = 0;
 			HuntMode = false;
 			StopStalk();
+			ResetTactics();
 		}
 	}
 
@@ -984,6 +1006,8 @@ public class CompanionCombatAI : MonoBehaviour
 
 	private bool _blockRaised;
 
+	private float _reactionTime = 0.2f;
+
 	private float ParryChance()
 	{
 		float lo = ModConfig.ParryChance?.Value ?? 0.3f;
@@ -1044,17 +1068,42 @@ public class CompanionCombatAI : MonoBehaviour
 		Character swinger = SwingAtUs();
 		if (swinger != null)
 		{
-			_ai.LookAtPoint(swinger.GetTopPoint());
 			if (swinger != _blockAgainst)
 			{
 				_blockAgainst = swinger;
 				_enemySwingTimer = 0f;
 				_blockRaised = false;
+				_evading = false;
+				_swingStartedAt = Time.time;
 				_blockParry = Random.value < ParryChance();
+				// 1.5.52: not the same reaction every time
+				_reactionTime = (ModConfig.BlockReactionTime?.Value ?? 0.2f) * Random.Range(0.75f, 1.5f);
 			}
-			_enemySwingTimer += dt;
-			if (_enemySwingTimer >= (ModConfig.BlockReactionTime?.Value ?? 0.2f))
+			if (_evading)
 			{
+				return;
+			}
+			// 1.5.52: its swing has landed (blocked or hit): lower the guard and hit back while it finishes the swing
+			if (_tacticsOn && swinger == _blockAgainst && _swingLandedAt >= _swingStartedAt && !swinger.IsStaggering())
+			{
+				if (ReflectionHelper.GetBlocking(_character))
+				{
+					ReflectionHelper.TrySetBlocking(_character, value: false);
+				}
+				_blockHoldTimer = 0f;
+				return;
+			}
+			_ai.LookAtPoint(swinger.GetTopPoint());
+			_enemySwingTimer += dt;
+			if (_enemySwingTimer >= _reactionTime)
+			{
+				// 1.5.52: sometimes a step out of reach instead of a block
+				if (!_blockRaised && _tacticsOn && TryEvade(swinger))
+				{
+					_blockRaised = true;
+					_evading = true;
+					return;
+				}
 				ReflectionHelper.TrySetBlocking(_character, value: true);
 				if (!_blockRaised)
 				{
@@ -1087,7 +1136,7 @@ public class CompanionCombatAI : MonoBehaviour
 		if (_parryGraceTimer > 0f)
 		{
 			_parryGraceTimer -= dt;
-			if (_targetCreature != null && _targetCreature.IsStaggering())
+			if (_targetCreature != null && _targetCreature.IsStaggering() && !_tacticsOn)
 			{
 				_parryAttackCount = 2;
 				_parryGraceTimer = 0f;
