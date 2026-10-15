@@ -639,7 +639,7 @@ namespace Companions
                         for (float t = 0.2f; t < len; t += 0.4f)
                         {
                             Vector3 p = prev + dir * t; p.y = Mathf.Lerp(prev.y, next.y, t / len);
-                            EffectArea fire = EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f);
+                            EffectArea fire = FireArea(p, 0.5f);
                             if (fire == null) continue;
                             Vector3 a, b;
                             if (!FireBypass(fire, prev, dir, out a, out b)) return;   // no clear way round: leave the route (the jump-over/escape handle it)
@@ -669,7 +669,7 @@ namespace Companions
                 Vector3 pb = c + side * (k * r) + dir * r * 0.75f;
                 Vector3 ga, gb;
                 if (!GroundAt(pa, from.y, out ga) || !GroundAt(pb, from.y, out gb)) continue;
-                if (InFire(ga) || InFire(gb)) continue;
+                if (NearFire(ga, 0.5f) || NearFire(gb, 0.5f)) continue;
                 if (!CanSee(from, ga) || !CanSee(ga, gb)) continue;
                 float d = Vector3.Distance(from, ga);
                 if (d < best) { best = d; a = ga; b = gb; found = true; }
@@ -1981,7 +1981,7 @@ namespace Companions
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
                 // 1.5.44: not straight through a fire (the hearth)
-                if (InFire(hit.point) && !InFire(to)) { s_hopWhy = "a fire at " + Fmt(hit.point); return false; }
+                if (NearFire(hit.point, 0.4f) && !InFire(to)) { s_hopWhy = "a fire at " + Fmt(hit.point); return false; }
                 // 1.4.99: with the companion known, only water it would have to swim in rules the line out (it wades or jumps the rest)
                 if (c != null ? MHR_Water.WouldSwim(c, hit.point) : MHR_Water.DepthAt(hit.point) > 0.8f) { s_hopWhy = "deep water at " + Fmt(p); return false; }
                 if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) { s_hopWhy = "something in the way at " + Fmt(p); return false; }
@@ -2035,8 +2035,25 @@ namespace Companions
         // 1.5.44: in the flames or within margin of them - for picking a spot to stand (idle spots, follow spots)
         public static bool NearFire(Vector3 p, float margin)
         {
-            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, margin) != null; }
-            catch { return false; }
+            return FireArea(p, margin) != null;
+        }
+
+        // 1.5.45: the fire at a spot, checked at knee, waist and head height. 1.5.44 test (log 31ec683a): the route check
+        // looked 0.3 m above the floor and passed under the hearth's flames; Gunter stepped up onto the hearth stone
+        // (0.8 m higher) into them, and the hearth's own fire damaged the hearth (Aoe m_damageSelf, 10 a time - the game
+        // does the same when a player stands in it).
+        internal static EffectArea FireArea(Vector3 p, float radius)
+        {
+            try
+            {
+                for (float h = 0.3f; h < 2f; h += 0.6f)
+                {
+                    EffectArea a = EffectArea.IsPointInsideArea(p + Vector3.up * h, EffectArea.Type.Burning, radius);
+                    if (a != null) return a;
+                }
+            }
+            catch { }
+            return null;
         }
 
         public static bool InFire(Vector3 p)

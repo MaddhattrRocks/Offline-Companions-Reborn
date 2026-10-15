@@ -116,13 +116,20 @@ internal static class MHR_Recover
 
 	// is it safe to go for the tombstone at tomb? (MonsterAI.UpdateTarget, decompiled: every 2 s a mob takes the closest
 	// enemy it can sense, so a mob stays on the player only while the player is closer to it than the companion is)
-	internal static bool SafeToGo(Character me, Vector3 tomb, out string why)
+	// committed = already on its way. 1.5.44 test: "Got most of the way there then a mob was around. Would have been
+	// better to finish getting the gear then working back to me. It looked like they were closer to the gear than to me."
+	// On the way it only turns back for a mob that's in the way (nearer the tombstone than it is) or about to catch it
+	// before it gets there - and never while the tombstone is nearer than the player.
+	internal static bool SafeToGo(Character me, Vector3 tomb, out string why, GameObject owner = null, bool committed = false)
 	{
 		why = null;
 		float range = ModConfig.RecoverThreatRange?.Value ?? 15f;
 		int maxMobs = ModConfig.RecoverMaxMobs?.Value ?? 3;
 		Vector3 pos = me.transform.position;
 		float toTomb = Vector3.Distance(pos, tomb);
+		float toOwner = (owner != null) ? Vector3.Distance(pos, owner.transform.position) : float.MaxValue;
+		// only counts as on its way once it's nearer the gear than you (at the start it's by your side)
+		committed = committed && toTomb < toOwner;
 		int busy = 0;
 		foreach (Character c in Character.GetAllCharacters())
 		{
@@ -151,13 +158,23 @@ internal static class MHR_Recover
 			}
 			if (target == me)
 			{
-				// after it: keep going only if it gets there well before the mob gets to it
+				// after it: keep going if it gets there well before the mob gets to it
 				if (toTomb + 3f < dMe)
+				{
+					continue;
+				}
+				// on its way and nearer the gear than you: finish getting it, unless the mob stands between it and the gear
+				if (committed && dTomb > toTomb && dMe > 2f)
 				{
 					continue;
 				}
 				why = c.m_name + " is after it";
 				return false;
+			}
+			if (committed && dTomb > 3f)
+			{
+				// busy with someone else and not on top of the tombstone: carry on
+				continue;
 			}
 			busy++;
 			// busy with someone else: don't come closer to it than its target is

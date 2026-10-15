@@ -822,7 +822,7 @@ public class CompanionAI : BaseAI
 				return false;
 			}
 			// 1.5.44 (issue #17): after a revive it only goes while it's safe - else back to the player and wait
-			if (MHR_Recover.IsRecovering(this) && !MHR_Recover.SafeToGo(m_character, _pendingTombstone.transform.position, out _) && RecoverWait(dt))
+			if (MHR_Recover.IsRecovering(this) && !MHR_Recover.SafeToGo(m_character, _pendingTombstone.transform.position, out _, MHR_Owner.Go(this), committed: true) && RecoverWait(dt))
 			{
 				_tombstoneNavTimeout = Mathf.Max(_tombstoneNavTimeout, 10f);   // waiting isn't failing to get there
 				return true;
@@ -909,7 +909,8 @@ public class CompanionAI : BaseAI
 		{
 			return false;
 		}
-		_tombstoneScanTimer = TombstoneScanInterval;
+		// 1.5.45: after a revive, look every second (1.5.44 test: "Took the NPC a while to notice the tombstone")
+		_tombstoneScanTimer = MHR_Recover.IsRecovering(this) ? 1f : TombstoneScanInterval;
 		TombStone[] array = UnityEngine.Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None);
 		foreach (TombStone tombStone in array)
 		{

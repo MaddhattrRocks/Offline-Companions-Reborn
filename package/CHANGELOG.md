@@ -2,6 +2,10 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.46 (test build for 1.5.5)
+- Fixed: companions still stepped up onto the hearth into the flames (the hearth's fire damages the hearth itself while someone stands in it, as it does for a player). Fires are now checked at knee, waist and head height, not just at the floor.
+- Gear first after a revive: it notices its tombstone sooner (looks every second), and once it's on its way and nearer its gear than you, it finishes getting it instead of turning back - unless a mob is between it and the gear or right on it.
+
 ## 1.5.45 (test build for 1.5.5)
 - Fixed: key settings in the F8 panel couldn't be set - clicking the key button did nothing. A click on it now always starts "Press a key...", the key is picked up even when the game holds on to it, Esc cancels without closing the panel, and the log says what was set.
 
