@@ -458,7 +458,7 @@ namespace Companions
             if (!Physics.Raycast(new Vector3(w.x, pp.y + 2.5f, w.z), Vector3.down, out hit, 6f, GroundMask())) return false;
             if (hit.normal.y < 0.6f || Mathf.Abs(hit.point.y - pp.y) > 2.5f) return false;
             if (MHR_Water.DepthAt(hit.point) > 1.0f) return false;
-            if (MHR_Mover.InFire(hit.point)) return false;   // 1.4.88: not in the fire pit
+            if (MHR_Mover.NearFire(hit.point, 1.2f)) return false;   // 1.4.88: not in the fire pit (1.5.44: nor at its edge)
             g = hit.point;
             return true;
         }
@@ -659,7 +659,7 @@ namespace Companions
                     RaycastHit hit;
                     if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 2.5f, GroundMask()) || hit.normal.y <= 0.6f) continue;
                     if (hit.point.y > seat.y + 0.3f) continue;   // on top of something (a hearth, a table), not the floor
-                    if (hit.collider.GetComponentInParent<Fireplace>() != null || MHR_Chests.IsFurniture(hit.collider) || MHR_Mover.InFire(hit.point)) continue;
+                    if (hit.collider.GetComponentInParent<Fireplace>() != null || MHR_Chests.IsFurniture(hit.collider) || MHR_Mover.NearFire(hit.point, 1.2f)) continue;
                     if (Physics.CheckCapsule(hit.point + Vector3.up * 0.6f, hit.point + Vector3.up * 1.6f, 0.3f, GroundMask())) continue;
                     spot = hit.point + Vector3.up * 0.05f;
                     return true;

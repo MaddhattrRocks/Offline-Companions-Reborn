@@ -324,6 +324,8 @@ A companion can carry 300 weight, the same as a player.
 | **Ranged** | Prefers a bow or crossbow and keeps its distance |
 | **Melee** | Sticks to melee weapons |
 
+**Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
+
 **When they fight**
 - They attack a creature once it has noticed you or them. With the `EngageOnNotice` setting off, they wait until it's actually coming for you.
 - They leave alone animals that never attack, like deer. Hunt goes after game on purpose.
@@ -371,8 +373,9 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 - **Tombstone:** a companion that dies leaves a tombstone, marked on your map until it's emptied.
 - **What it loses:** this follows your world's death penalty setting, like a player. You can change this (keep everything, keep equipped gear, or drop everything).
-- **Coming back:** after 5 minutes it comes back by itself at its bed, or next to you if it has no bed. The timer keeps counting while you're away or offline.
+- **Coming back:** after 5 minutes it comes back by itself at its bed, or next to you if it has no bed. The timer keeps counting while you're away or offline. A message says where it came back ("Saber is back - at its bed (Meadows, 850 m from you)"); a companion that far away isn't on your map and can't hear the command key until you go there.
 - **Its things:** once it's back near its tombstone it walks over and collects its own things. You can also point the command key at the tombstone.
+- **Gear first (Death > RespawnStance):** by default (RecoverFirst) a companion comes back Passive with Pickup off, so it doesn't run straight back into the fight that killed it. It goes for its tombstone when that's safe - with a few enemies busy fighting you it slips in, with more (Death > RecoverMaxMobs) or one coming for it, it waits by you. If something attacks it once it has a weapon in hand it fights back. With its gear back on it eats, says "Got my gear back.", and goes back to the stance it had. Setting a stance yourself ends it at once. Passive: it stays Passive until you change it. Keep: it comes back in the stance it died with.
 - **Skills:** it loses 25% of its skill progress, a bit like a player.
 
 ### Recovering a lost companion
@@ -383,7 +386,7 @@ Your game keeps a roster of your companions in each world, saving each one's gea
 
 **From the config** (no shrine needed):
 
-- **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive**, **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
+- **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive** (with where it is), **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.
 - **Bring one back:** turn on **General > RecoverLostCompanion**. The first Lost companion appears next to you with its gear and settings from the last roster save. Both settings turn themselves back off.
 
 What the statuses mean:

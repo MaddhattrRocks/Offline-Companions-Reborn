@@ -21,7 +21,7 @@ namespace Companions
             public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             public bool GaveUp; public float GaveUpAt;
-            public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog;
+            public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
             public Door RouteDoor; public Vector3 RouteDoorSpot;
             public bool WaitStamina, TooTired; public float NeedStamina, WaitStart, NoWaitUntil;
             public float MainBest; public int Passes; public Vector3 Shore; public bool HasShore; public float NextShore;
@@ -615,6 +615,76 @@ namespace Companions
                     }
                 }
             }
+            AvoidFire(s, pos, goal, now);
+        }
+
+        // 1.5.44: the route goes round a hearth's or campfire's collider, but the flames (the Burning area) reach further, so
+        // it walked through the edge of the fire and stood in it (1.5.42/1.5.43 logs: 10 fire damage a tick, the hearth
+        // damaged too). Walk each leg in 0.4 m steps; where one enters a fire, put two corners round it on the side that's
+        // clear (ground, out of the flames, in sight of the corner before). Not when the goal itself is in the fire.
+        static void AvoidFire(S s, Vector3 pos, Vector3 goal, float now)
+        {
+            if (s.Path.Count == 0 || InFire(goal)) return;
+            try
+            {
+                Vector3 prev = pos;
+                for (int i = 0; i < s.Path.Count && i < 40; i++)
+                {
+                    Vector3 next = s.Path[i];
+                    Vector3 leg = next - prev; leg.y = 0f;
+                    float len = leg.magnitude;
+                    if (len > 0.05f)
+                    {
+                        Vector3 dir = leg / len;
+                        for (float t = 0.2f; t < len; t += 0.4f)
+                        {
+                            Vector3 p = prev + dir * t; p.y = Mathf.Lerp(prev.y, next.y, t / len);
+                            EffectArea fire = EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f);
+                            if (fire == null) continue;
+                            Vector3 a, b;
+                            if (!FireBypass(fire, prev, dir, out a, out b)) return;   // no clear way round: leave the route (the jump-over/escape handle it)
+                            s.Path.Insert(i, b); s.Path.Insert(i, a);
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
+                            return;
+                        }
+                    }
+                    prev = next;
+                }
+            }
+            catch { }
+        }
+
+        static bool FireBypass(EffectArea fire, Vector3 from, Vector3 dir, out Vector3 a, out Vector3 b)
+        {
+            a = b = Vector3.zero;
+            Collider col = fire.GetComponent<Collider>();
+            Vector3 c = col != null ? col.bounds.center : fire.transform.position;
+            float r = col != null ? Mathf.Max(col.bounds.extents.x, col.bounds.extents.z) : 2f;
+            r += 0.8f;
+            Vector3 side = new Vector3(-dir.z, 0f, dir.x);
+            float best = float.MaxValue; bool found = false;
+            for (int k = -1; k <= 1; k += 2)
+            {
+                Vector3 pa = c + side * (k * r) - dir * r * 0.75f;
+                Vector3 pb = c + side * (k * r) + dir * r * 0.75f;
+                Vector3 ga, gb;
+                if (!GroundAt(pa, from.y, out ga) || !GroundAt(pb, from.y, out gb)) continue;
+                if (InFire(ga) || InFire(gb)) continue;
+                if (!CanSee(from, ga) || !CanSee(ga, gb)) continue;
+                float d = Vector3.Distance(from, ga);
+                if (d < best) { best = d; a = ga; b = gb; found = true; }
+            }
+            return found;
+        }
+
+        static bool GroundAt(Vector3 p, float nearY, out Vector3 ground)
+        {
+            ground = p;
+            RaycastHit hit;
+            if (!Physics.Raycast(new Vector3(p.x, nearY + 1.5f, p.z), Vector3.down, out hit, 4f, Mask())) return false;
+            if (Mathf.Abs(hit.point.y - nearY) > 1.2f) return false;
+            ground = hit.point;
+            return true;
         }
 
         static float PathLength(Vector3 from, List<Vector3> path)
@@ -1910,6 +1980,8 @@ namespace Companions
                     hops++; gap = 0f;
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
+                // 1.5.44: not straight through a fire (the hearth)
+                if (InFire(hit.point) && !InFire(to)) { s_hopWhy = "a fire at " + Fmt(hit.point); return false; }
                 // 1.4.99: with the companion known, only water it would have to swim in rules the line out (it wades or jumps the rest)
                 if (c != null ? MHR_Water.WouldSwim(c, hit.point) : MHR_Water.DepthAt(hit.point) > 0.8f) { s_hopWhy = "deep water at " + Fmt(p); return false; }
                 if (Physics.Linecast(prev + Vector3.up * 1.4f, hit.point + Vector3.up * 1.4f, Mask())) { s_hopWhy = "something in the way at " + Fmt(p); return false; }
@@ -1960,6 +2032,13 @@ namespace Companions
         // 1.4.90: the flames themselves - EffectArea type Burning (what cooking stations check, what sets you alight).
         // 1.4.88-89 used type Fire, the wide area fire-shy creatures keep away from: it covered the whole kitchen, so
         // almost every spot by a chest counted as "in a fire" and cooking couldn't reach anything (1.4.89 log).
+        // 1.5.44: in the flames or within margin of them - for picking a spot to stand (idle spots, follow spots)
+        public static bool NearFire(Vector3 p, float margin)
+        {
+            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, margin) != null; }
+            catch { return false; }
+        }
+
         public static bool InFire(Vector3 p)
         {
             try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f) != null; }

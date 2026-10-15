@@ -389,7 +389,7 @@ public class IdleController : MonoBehaviour
 					continue;
 				}
 				p = hit.point;
-				if (Mathf.Abs(p.y - me.y) > 3f || MHR_Water.WouldSwim(_character, p) || MHR_Mover.InFire(p) || Vector3.Distance(p, me) < 2f || !MHR_Mover.CanGetTo(me, p))
+				if (Mathf.Abs(p.y - me.y) > 3f || MHR_Water.WouldSwim(_character, p) || MHR_Mover.NearFire(p, 1.2f) || Vector3.Distance(p, me) < 2f || !MHR_Mover.CanGetTo(me, p))
 				{
 					continue;
 				}

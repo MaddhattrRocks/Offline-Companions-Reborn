@@ -117,6 +117,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> TombstoneRecoveryRange;
 
+	internal static ConfigEntry<string> RespawnStance;
+
+	internal static ConfigEntry<float> RecoverThreatRange;
+
+	internal static ConfigEntry<int> RecoverMaxMobs;
+
 	internal static ConfigEntry<bool> SleepAtNight;
 
 	internal static ConfigEntry<bool> SleepWhenPlayerSleeps;
@@ -126,6 +132,14 @@ internal static class ModConfig
 	internal static ConfigEntry<float> RecallRange;
 
 	internal static ConfigEntry<float> SuperRecallHoldTime;
+
+	internal static ConfigEntry<KeyCode> PassiveKey;
+
+	internal static ConfigEntry<KeyCode> BalancedKey;
+
+	internal static ConfigEntry<KeyCode> RangedKey;
+
+	internal static ConfigEntry<KeyCode> MeleeKey;
 
 	internal static ConfigEntry<bool> ProtectCompanions;
 
@@ -519,6 +533,10 @@ internal static class ModConfig
 		FarmZoneModifier = Bind(cfg, "Controls", "FarmZoneModifier", KeyCode.LeftAlt, "Hold this and press FarmZoneKey to open the farm zone editor.");
 		RecallRange = Bind(cfg, "Controls", "RecallRange", 40f, "How close (meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. 0 = no limit.", new AcceptableValueRange<float>(0f, 500f));
 		SuperRecallHoldTime = Bind(cfg, "Controls", "SuperRecallHoldTime", 2f, "Keep holding the command key this many seconds to recall every companion at any distance, including ones with Command switched off.", new AcceptableValueRange<float>(0.5f, 10f));
+		PassiveKey = Bind(cfg, "Controls", "PassiveKey", KeyCode.None, "Sets the Passive stance. Looking at one of your companions: just that one; otherwise every companion within RecallRange that has Command on. None = no key.");
+		BalancedKey = Bind(cfg, "Controls", "BalancedKey", KeyCode.None, "Sets the Balanced stance, like PassiveKey.");
+		RangedKey = Bind(cfg, "Controls", "RangedKey", KeyCode.None, "Sets the Ranged stance, like PassiveKey.");
+		MeleeKey = Bind(cfg, "Controls", "MeleeKey", KeyCode.None, "Sets the Melee stance, like PassiveKey.");
 		// [Follow]
 		FollowMaxDistance = Bind(cfg, "Follow", "MaxDistance", 10f, "How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.", new AcceptableValueRange<float>(4f, 30f));
 		FollowIndoorDistance = Bind(cfg, "Follow", "IndoorDistance", 4f, "The same range while you're indoors (under a roof), so companions stay in the room with you.", new AcceptableValueRange<float>(2f, 10f));
@@ -584,6 +602,9 @@ internal static class ModConfig
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Death", "RespawnAtWorldSpawn", defaultValue: false, "A companion that comes back by itself and has no claimed bed appears at the world spawn stones. Off = next to you.");
 		DeathItemRule = Bind(cfg, "Death", "DeathItemRule", 0, "What a companion loses when it dies. 0 = the world's death penalty setting, same as a player. 1 = keep everything. 2 = keep equipped gear, the rest goes in the tombstone. 3 = everything goes in the tombstone. The owner's setting is used even if another player's game handles the death.", new AcceptableValueRange<int>(0, 3));
 		TombstoneRecoveryRange = Bind(cfg, "Death", "TombstoneRecoveryRange", 50f, "A companion walks over and empties its own leftover tombstone when it's within this many meters of it.", new AcceptableValueRange<float>(5f, 100f));
+		RespawnStance = Bind(cfg, "Death", "RespawnStance", "RecoverFirst", "The stance a companion comes back in after it died. RecoverFirst: Passive, auto-pickup off, it gets its gear back from its tombstone when it's safe (fighting back only if attacked with a weapon in hand), puts it on, eats, then goes back to the stance it died with. Passive: Passive until you change it. Keep: the stance it died with. Setting a stance yourself always wins.", new AcceptableValueList<string>("RecoverFirst", "Passive", "Keep"));
+		RecoverThreatRange = Bind(cfg, "Death", "RecoverThreatRange", 15f, "RecoverFirst: enemies within this many meters of the companion or its tombstone count when it decides whether it's safe to go for its gear.", new AcceptableValueRange<float>(5f, 50f));
+		RecoverMaxMobs = Bind(cfg, "Death", "RecoverMaxMobs", 3, "RecoverFirst: with more enemies than this busy fighting near its tombstone it waits by you instead of going for its gear.", new AcceptableValueRange<int>(0, 20));
 		ShrineBuildable = Bind(cfg, "Death", "ShrineBuildable", defaultValue: true, "Odin's Shrine can be built with the hammer (Misc tab, needs a workbench). Use it to see your companions and bring back a lost one. Takes effect on the next world load; shrines already built keep working.");
 		ShrineRecipe = Bind(cfg, "Death", "ShrineRecipe", "Stone:10,Wood:5,GreydwarfEye:3", "What Odin's Shrine costs to build, as Item:Amount pairs separated by commas (item names as in the game's spawn command). Takes effect on the next world load.");
 		ShrineModel = Bind(cfg, "Death", "ShrineModel", "Tombstone", "What Odin's Shrine looks like: Tombstone (a player's gravestone) or Ward (the ward stone). Takes effect on the next world load, for shrines already built too.");

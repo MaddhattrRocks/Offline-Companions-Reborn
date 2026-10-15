@@ -131,6 +131,7 @@ namespace Companions
             MHR_Crossbow.Tick(hum);
             MHR_Mover.Tick(cs, ai);
             MHR_Follow.Tick(cs, ai);
+            MHR_Recover.Tick(cs);   // 1.5.44: gear first after a revive (issue #17)
 
             // 1.4.70: gear, food and mead the player hands over (through the inventory panel) are the companion's own;
             // anything picked up during work isn't. Everything present at load counts as its own too.
@@ -784,6 +785,14 @@ namespace Companions
             return best;
         }
         static ItemDrop.ItemData BestInInventory(Inventory inv, int kind, ItemDrop.ItemData launcher) { return BestIn(inv, kind, launcher); }
+
+        // 1.5.44: the stamina food it carries for fishing, for the log ("Honey x5"), or null (user: "Did the NPC grab high
+        // stamina food automatically for fishing?")
+        internal static string StaminaFoodText(Inventory inv)
+        {
+            ItemDrop.ItemData f = inv != null ? BestIn(inv, K_FOOD, null) : null;
+            return f == null ? null : (MHR_List.Local(f.m_shared.m_name) ?? f.m_shared.m_name) + " x" + f.m_stack + " (" + f.m_shared.m_foodStamina.ToString("F0") + " stamina)";
+        }
         static ItemDrop.ItemData FindByPrefab(Inventory inv, string prefab)
         {
             if (string.IsNullOrEmpty(prefab)) return null;

@@ -1792,6 +1792,8 @@ public class CompanionSetup : MonoBehaviour
 
 	internal void SetCombatStance(int stance)
 	{
+		// 1.5.44: you chose a stance - a revived companion's gear-first recovery is over
+		MHR_Recover.Cancel(this);
 		_nview?.GetZDO()?.Set(CombatStanceHash, stance);
 	}
 

@@ -162,6 +162,7 @@ public class FishController : MonoBehaviour
 			_hasAnchor = true;
 			_anchor = base.transform.position;
 			Log("Fishing around " + MHR_Mover.Fmt(_anchor) + ", up to " + Radius().ToString("F0") + " m out");
+			_foodLogged = false;
 		}
 		if (CompanionInteractPanel.IsOpenFor(_setup) || CompanionRadialMenu.IsOpenFor(_setup))
 		{
@@ -282,6 +283,12 @@ public class FishController : MonoBehaviour
 			return;
 		}
 		_castTries = 0;
+		if (!_foodLogged)
+		{
+			_foodLogged = true;
+			string food = MHR_ToolKeeper.StaminaFoodText(_humanoid.GetInventory());
+			Log(food != null ? "Stamina food for reeling: " + food : "No stamina food in the pack");
+		}
 		CompanionStatus.Clear(this);
 		CompanionStatus.Doing(this, "hc_doing_fish", FishCatalog.Local(_fish));
 		MHR_Mover.Release(_ai);
@@ -1125,6 +1132,8 @@ public class FishController : MonoBehaviour
 	}
 
 	// ------------------------------------------------------------------ counts and targets
+
+	private bool _foodLogged;
 
 	// 1.5.43: why there's nothing to fish, filled by PickTarget
 	private readonly List<CompanionStatus.Item> _whyItems = new List<CompanionStatus.Item>();

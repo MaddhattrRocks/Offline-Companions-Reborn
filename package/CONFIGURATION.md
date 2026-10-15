@@ -117,6 +117,18 @@ How close (meters) a companion has to be to you to answer a recall (holding the 
 **SuperRecallHoldTime** — Default: 2 · Range: 0.5 – 10  
 Keep holding the command key this many seconds to recall every companion at any distance, including ones with Command switched off.
 
+**PassiveKey** — Default: `None`  
+Sets the Passive stance. Looking at one of your companions: just that one; otherwise every companion within RecallRange that has Command on. None = no key.
+
+**BalancedKey** — Default: `None`  
+Sets the Balanced stance, like PassiveKey.
+
+**RangedKey** — Default: `None`  
+Sets the Ranged stance, like PassiveKey.
+
+**MeleeKey** — Default: `None`  
+Sets the Melee stance, like PassiveKey.
+
 ## Follow
 
 How companions follow you around.
@@ -318,6 +330,15 @@ What a companion loses when it dies. 0 = the world's death penalty setting, same
 
 **TombstoneRecoveryRange** — Default: 50 · Range: 5 – 100  
 A companion walks over and empties its own leftover tombstone when it's within this many meters of it.
+
+**RespawnStance** — Default: `RecoverFirst` · Options: `RecoverFirst`, `Passive`, `Keep`  
+The stance a companion comes back in after it died. RecoverFirst: Passive, auto-pickup off, it gets its gear back from its tombstone when it's safe (fighting back only if attacked with a weapon in hand), puts it on, eats, then goes back to the stance it died with. Passive: Passive until you change it. Keep: the stance it died with. Setting a stance yourself always wins.
+
+**RecoverThreatRange** — Default: 15 · Range: 5 – 50  
+RecoverFirst: enemies within this many meters of the companion or its tombstone count when it decides whether it's safe to go for its gear.
+
+**RecoverMaxMobs** — Default: 3 · Range: 0 – 20  
+RecoverFirst: with more enemies than this busy fighting near its tombstone it waits by you instead of going for its gear.
 
 **ShrineBuildable** — Default: On  
 Odin's Shrine can be built with the hammer (Misc tab, needs a workbench). Use it to see your companions and bring back a lost one. Takes effect on the next world load; shrines already built keep working.

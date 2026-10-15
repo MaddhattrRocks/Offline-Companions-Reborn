@@ -201,6 +201,11 @@ internal static class CompanionStatus
 			string target = Localization.instance?.Localize(combat.TargetCreature.m_name) ?? combat.TargetCreature.m_name;
 			return combat.HuntMode ? ModLocalization.LocFmt("hc_status_hunting", target) : ModLocalization.LocFmt("hc_status_fighting", target);
 		}
+		string recovering = MHR_Recover.StatusText(cs);
+		if (recovering != null)
+		{
+			return recovering;
+		}
 		if (MHR_SpearThrow.UnarmedAfterThrow(ai, cs.GetComponent<Humanoid>()))
 		{
 			return L("hc_status_spear");

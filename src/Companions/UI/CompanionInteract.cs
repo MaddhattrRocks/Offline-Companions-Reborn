@@ -656,6 +656,8 @@ public class CompanionInteract : MonoBehaviour
 			_holdActive = false;
 			return;
 		}
+		// 1.5.44 (issue #17): the stance keys
+		MHR_StanceKeys.Tick(localPlayer);
 		if (CompanionRadialMenu.Instance != null && CompanionRadialMenu.Instance.IsVisible)
 		{
 			_holdActive = false;

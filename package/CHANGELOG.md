@@ -2,6 +2,13 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.44 (test build for 1.5.5)
+- Death (GitHub issue #17): a revived companion no longer runs straight back into the fight that killed it. Death > RespawnStance: RecoverFirst (default) - it comes back Passive with Pickup off, goes for its tombstone when it's safe (waits by you while enemies are after it or more than RecoverMaxMobs are fighting nearby), fights back only when attacked with a weapon in hand, puts its gear on, eats, then goes back to its old stance. Passive - it stays Passive. Keep - as before.
+- Stance keys (issue #17): Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey (unbound by default) - the companion you're looking at, or everyone within RecallRange with Command on.
+- Death (issue #16): a companion that comes back by itself says where - "Saber is back - at its bed (Meadows, 850 m from you)". The roster (ShowCompanionRoster, Odin's Shrine) shows where each living companion is.
+- Fixed: companions walked through the edge of the hearth's flames on their way past it, stood in the fire, and picked idle spots right next to it - routes now go round fires, and idle and follow spots keep clear of them.
+- Logging: damage a building piece takes near a companion is logged (to find what keeps damaging the hearth), and the stamina food it takes fishing.
+
 ## 1.5.43 (test build for 1.5.5)
 - Status: every job now says what it's doing - "Wood - chopping Beech", "Smelt - loading the Smelter with Copper ore", "Repair and Restock - fuelling the Hearth" / "sorting Resin", "Cook - making Muckshake", "Mead - filling a fermenter...", "Hunt - hunting Boar", "Fish - fishing for Perch".
 - Status: when a job is stuck it goes through the concrete reasons in turn, with the numbers from your settings:
