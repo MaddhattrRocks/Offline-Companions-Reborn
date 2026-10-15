@@ -325,6 +325,9 @@ Seconds after death before a companion comes back by itself.
 **RespawnAtWorldSpawn** — Default: Off  
 A companion that comes back by itself and has no claimed bed appears at the world spawn stones. Off = next to you.
 
+**RespawnAtPlayer** — Default: Off  
+A companion that comes back by itself always appears next to you, even when it has a bed (wins over RespawnAtWorldSpawn). Off = at its bed, and without one as RespawnAtWorldSpawn says.
+
 **DeathItemRule** — Default: 0 · Range: 0 – 3  
 What a companion loses when it dies. 0 = the world's death penalty setting, same as a player. 1 = keep everything. 2 = keep equipped gear, the rest goes in the tombstone. 3 = everything goes in the tombstone. The owner's setting is used even if another player's game handles the death.
 

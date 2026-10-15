@@ -313,9 +313,11 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			return;
 		}
 		Vector3 vector;
+		// 1.5.46: [Death] RespawnAtPlayer - always next to you (user: "We should add one to force spawn at the player")
+		bool atPlayer = isAutoRespawn && ModConfig.AutoRespawnAtPlayer.Value && Player.m_localPlayer != null;
 		if (isAutoRespawn)
 		{
-			if (!tombZdo.GetBool(RespawnHasBedHash))
+			if (atPlayer || !tombZdo.GetBool(RespawnHasBedHash))
 			{
 				goto IL_01ab;
 			}
@@ -506,6 +508,10 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		{
 			backMsg = ModLocalization.LocFmt("hc_msg_resurrected", text2);
 		}
+		else if (atPlayer)
+		{
+			backMsg = ModLocalization.LocFmt("hc_msg_back_here", text2);
+		}
 		else if (tombZdo.GetBool(RespawnHasBedHash))
 		{
 			backMsg = ModLocalization.LocFmt("hc_msg_back_bed", text2, MHR_Roster.WhereText(vector));
@@ -556,7 +562,7 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		}
 		return;
 		IL_01ab:
-		vector = ((ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null)) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
+		vector = ((!atPlayer && (ModConfig.AutoRespawnAtWorldSpawnWhenNoBed.Value || !(Player.m_localPlayer != null))) ? CompanionManager.GetWorldSpawnPoint() : CompanionManager.FindSpawnPosition(Player.m_localPlayer.transform.position, 4f));
 		goto IL_0211;
 	}
 

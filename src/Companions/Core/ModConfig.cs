@@ -113,6 +113,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> AutoRespawnAtWorldSpawnWhenNoBed;
 
+	internal static ConfigEntry<bool> AutoRespawnAtPlayer;
+
 	internal static ConfigEntry<int> DeathItemRule;
 
 	internal static ConfigEntry<float> TombstoneRecoveryRange;
@@ -600,6 +602,7 @@ internal static class ModConfig
 		AutoRespawnEnabled = Bind(cfg, "Death", "AutoRespawn", defaultValue: true, "A dead companion comes back by itself after RespawnDelay seconds if nobody brings it back from its tombstone first.");
 		AutoRespawnDelaySeconds = Bind(cfg, "Death", "RespawnDelay", 300f, "Seconds after death before a companion comes back by itself.", new AcceptableValueRange<float>(30f, 3600f));
 		AutoRespawnAtWorldSpawnWhenNoBed = Bind(cfg, "Death", "RespawnAtWorldSpawn", defaultValue: false, "A companion that comes back by itself and has no claimed bed appears at the world spawn stones. Off = next to you.");
+		AutoRespawnAtPlayer = Bind(cfg, "Death", "RespawnAtPlayer", defaultValue: false, "A companion that comes back by itself always appears next to you, even when it has a bed (wins over RespawnAtWorldSpawn). Off = at its bed, and without one as RespawnAtWorldSpawn says.");
 		DeathItemRule = Bind(cfg, "Death", "DeathItemRule", 0, "What a companion loses when it dies. 0 = the world's death penalty setting, same as a player. 1 = keep everything. 2 = keep equipped gear, the rest goes in the tombstone. 3 = everything goes in the tombstone. The owner's setting is used even if another player's game handles the death.", new AcceptableValueRange<int>(0, 3));
 		TombstoneRecoveryRange = Bind(cfg, "Death", "TombstoneRecoveryRange", 50f, "A companion walks over and empties its own leftover tombstone when it's within this many meters of it.", new AcceptableValueRange<float>(5f, 100f));
 		RespawnStance = Bind(cfg, "Death", "RespawnStance", "RecoverFirst", "The stance a companion comes back in after it died. RecoverFirst: Passive, auto-pickup off, it gets its gear back from its tombstone when it's safe (fighting back only if attacked with a weapon in hand), puts it on, eats, then goes back to the stance it died with. Passive: Passive until you change it. Keep: the stance it died with. Setting a stance yourself always wins.", new AcceptableValueList<string>("RecoverFirst", "Passive", "Keep"));

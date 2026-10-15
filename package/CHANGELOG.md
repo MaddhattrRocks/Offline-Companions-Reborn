@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.47 (test build for 1.5.5)
+- Death > RespawnAtPlayer: a companion that comes back by itself always appears next to you, even when it has a bed.
+- Water: in shallow water (the swamp) companions wade instead of hopping in and out; they jump only when the jump lands them on dry land, or to save a swim.
+- Hearth: the step-by-step fire check looks at body height too, and only small fires are jumped - a hearth is stepped round.
+
 ## 1.5.46 (test build for 1.5.5)
 - Fixed: companions still stepped up onto the hearth into the flames (the hearth's fire damages the hearth itself while someone stands in it, as it does for a player). Fires are now checked at knee, waist and head height, not just at the floor.
 - Gear first after a revive: it notices its tombstone sooner (looks every second), and once it's on its way and nearer its gear than you, it finishes getting it instead of turning back - unless a mob is between it and the gear or right on it.

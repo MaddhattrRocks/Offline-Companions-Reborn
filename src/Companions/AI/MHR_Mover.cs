@@ -338,9 +338,14 @@ namespace Companions
 
             // 1.4.88: a fire on the next step (and the goal isn't in it): jump over it like a player when it's small
             // (clear ground 2.5 m on), otherwise go round it
-            if (InFire(pos + dir * 0.8f) && !InFire(goal))
+            // 1.5.46: at body height too (the hearth's flames sit above its stone), and only small fires are jumped -
+            // a hearth is stepped round (1.5.45 test: it still ended up on the hearth at the very end)
+            EffectArea aheadFire = FireArea(pos + dir * 0.8f, 0.3f);
+            if (aheadFire != null && !InFire(goal))
             {
-                if (c.IsOnGround() && now >= s.NextHop && !InFire(pos + dir * 2.5f) && !DropAhead(pos, dir, 2.5f, 1.2f))
+                Collider fc = aheadFire.GetComponent<Collider>();
+                bool small = fc != null && Mathf.Max(fc.bounds.extents.x, fc.bounds.extents.z) < 0.9f;
+                if (small && c.IsOnGround() && now >= s.NextHop && !NearFire(pos + dir * 2.5f, 0.3f) && !DropAhead(pos, dir, 2.5f, 1.2f))
                 {
                     s.NextHop = now + 1.0f;
                     ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -642,7 +647,12 @@ namespace Companions
                             EffectArea fire = FireArea(p, 0.5f);
                             if (fire == null) continue;
                             Vector3 a, b;
-                            if (!FireBypass(fire, prev, dir, out a, out b)) return;   // no clear way round: leave the route (the jump-over/escape handle it)
+                            if (!FireBypass(fire, prev, dir, out a, out b))
+                            {
+                                // no clear way round: leave the route (the per-step fire check steers round it)
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
+                                return;
+                            }
                             s.Path.Insert(i, b); s.Path.Insert(i, a);
                             if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
                             return;
@@ -2076,7 +2086,7 @@ namespace Companions
                 {
                     float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45f;
                     Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
-                    if (!InFire(pos + d * r) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
+                    if (!NearFire(pos + d * r, 0.3f) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
                 }
             return false;
         }
@@ -2353,7 +2363,11 @@ namespace Companions
             // and right back - the moving player changed the route). Wade it or go round instead.
             if (now - s.LastWaterJumpAt < 6f && Vector3.Dot(dir, s.LastWaterJumpDir) < -0.3f) { s.NextWaterPeek = now + 1.0f; return false; }
             float landY = landAt > 0f ? MHR_Water.GroundAt(pos + dir * landAt) : pos.y;
-            if (!s.Quiet && landAt > 0f && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
+            // 1.5.46: only onto real dry land - not a tuft with more water right behind it (1.5.46 test: "The NPC is jumping
+            // a lot in and out of the water in the swamp rather than wading through the water. They should be jumping out
+            // of the water when it gets them to dry land.")
+            bool dryBeyond = landAt > 0f && MHR_Water.DepthAt(pos + dir * landAt) < 0.05f && MHR_Water.DepthAt(pos + dir * (landAt + 1f)) < 0.05f && MHR_Water.DepthAt(pos + dir * (landAt + 2f)) < 0.05f;
+            if (!s.Quiet && landAt > 0f && dryBeyond && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
@@ -2365,7 +2379,8 @@ namespace Companions
             // 1.4.99: close enough is good enough (user: "if it can make it most of the way across the water with a jump
             // into shallow water on the other side its worth the jump. They can always jump again"). Landing somewhere it
             // can stand counts, as long as it keeps some stamina back for the rest of the way.
-            if (!s.Quiet && waterAt <= 1.5f && MHR_Jump.HasSpare(c, 0.25f))
+            // 1.5.46: only to save a swim - shallow water it wades (jumping into it just splashes it back in again)
+            if (!s.Quiet && swim && waterAt <= 1.5f && MHR_Jump.HasSpare(c, 0.25f))
             {
                 float reach = MHR_Jump.Reach(c, dir, 0f);
                 if (reach >= 2f)
