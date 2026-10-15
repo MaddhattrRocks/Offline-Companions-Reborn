@@ -2,65 +2,31 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
-## 1.5.47 (test build for 1.5.5)
-- Death > RespawnAtPlayer: a companion that comes back by itself always appears next to you, even when it has a bed.
+## 1.5.5
+Speech overhaul: companions talk less, and what they say and show tells you what they're doing and why not.
+- Status: look at a companion and a line under its name says what it's doing ("Wood - chopping Beech", "Repair and Restock - fuelling the Hearth", "Mead - filling a fermenter") and, when its job is stuck, why (General > ShowStatus).
+- Status: a stuck job goes through its reasons in turn, with the numbers from your settings - "Wood 512/500 - at the limit.", "Copper deposit needs a better pickaxe.", "Raw meat 104/100 - enough.", "No bait for Pike (Fishing bait).", "No wood for the Charcoal kiln.", "Mead - Honey 0/30 for Frost resistance mead." (the recipe's 10 plus the 20 kept back), "No Turnip seeds to plant.", "No Resin for the fires."
+- Speech: much less small talk - every 1.5-3 minutes instead of 15-30 seconds (Speech > Chatter: Off, Rare, Normal, Often; Speech > Enabled turns all speech off).
+- Speech: small talk fits what it's doing and where it is - job lines only while working that job, fight lines only in a fight, home lines at home, travelling lines away from home, lines for the biome, night, rain and cold, nothing while it sleeps, sits, swims or sails.
+- Speech: it says what it's off to do ("Fetching an axe.", "Putting a cultivator back.", "Off to bed.") and gives the real reason when it has nothing to do.
+- Speech: new lines for things it used to give up on silently - no way to reach you, chests full, a tool it needs (any tool), no station to fix its gear, a lost spear, prey that got away, no hunting in the Passive stance.
+- Speech: replies to your orders come at once; problems aren't lost to small talk and aren't repeated for 5 minutes; hungry, worn-gear, no-bed and heavy-pack remarks at most every 10 minutes, and "no bed" only at night at home.
+- Speech: a problem a companion runs into while you're out of earshot shows top left with its name (Speech > FarAwayMessages).
+- Messages: when one of your companions dies, the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath); when no companion takes your order (Command off, too far) a short message top left says so.
+- speech.json has a new layout with tags per line ([home], [night], [rain], [blackforest]...). Your old file is kept next to it (speech.v1.json / speech.v2.json) and replaced by the new lines.
+- Death (GitHub issue #17): a revived companion gets its gear before fighting again. Death > RespawnStance = RecoverFirst (default): it comes back Passive with Pickup off, goes for its tombstone when it's safe (waiting by you while enemies are after it, but finishing the trip once it's nearer its gear than you), fights back only when attacked with a weapon in hand, puts its gear on, eats, then goes back to its old stance. Passive: stays Passive. Keep: as before.
+- Stance keys (issue #17): Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey (unbound by default) - the companion you're looking at, or everyone in RecallRange with Command on.
+- Death (issue #16): a companion that comes back by itself says where ("Saber is back - at its bed (Meadows, 850 m from you)"), and the roster and Odin's Shrine show where each living companion is. Death > RespawnAtPlayer: it always comes back next to you.
+- Fixed: a companion's farm zones were lost when it died and came back, or was recovered. They now come back with it.
+- Farming: ground you've tilled with a cultivator counts as an "Any" zone - it plants the PlantAny crops there, never inside a zone you set (Farming > PlantTilledGround).
+- Farming: no more planting under eaves or against walls (where crops never grow), and no more trying to reach tilled ground it can't walk to (Farming > UnreachableSpotMemory).
+- Farming without zones no longer keeps announcing "no farm zones"; "All done farming" at most every 10 minutes.
+- Fixed: companions walked through the edge of the hearth's flames and stepped up onto it - which damages the hearth, as it does when a player stands in it. Routes, idle spots and follow spots now keep clear of fires.
 - Water: in shallow water (the swamp) companions wade instead of hopping in and out; they jump only when the jump lands them on dry land, or to save a swim.
-- Hearth: the step-by-step fire check looks at body height too, and only small fires are jumped - a hearth is stepped round.
-
-## 1.5.46 (test build for 1.5.5)
-- Fixed: companions still stepped up onto the hearth into the flames (the hearth's fire damages the hearth itself while someone stands in it, as it does for a player). Fires are now checked at knee, waist and head height, not just at the floor.
-- Gear first after a revive: it notices its tombstone sooner (looks every second), and once it's on its way and nearer its gear than you, it finishes getting it instead of turning back - unless a mob is between it and the gear or right on it.
-
-## 1.5.45 (test build for 1.5.5)
-- Fixed: key settings in the F8 panel couldn't be set - clicking the key button did nothing. A click on it now always starts "Press a key...", the key is picked up even when the game holds on to it, Esc cancels without closing the panel, and the log says what was set.
-
-## 1.5.44 (test build for 1.5.5)
-- Death (GitHub issue #17): a revived companion no longer runs straight back into the fight that killed it. Death > RespawnStance: RecoverFirst (default) - it comes back Passive with Pickup off, goes for its tombstone when it's safe (waits by you while enemies are after it or more than RecoverMaxMobs are fighting nearby), fights back only when attacked with a weapon in hand, puts its gear on, eats, then goes back to its old stance. Passive - it stays Passive. Keep - as before.
-- Stance keys (issue #17): Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey (unbound by default) - the companion you're looking at, or everyone within RecallRange with Command on.
-- Death (issue #16): a companion that comes back by itself says where - "Saber is back - at its bed (Meadows, 850 m from you)". The roster (ShowCompanionRoster, Odin's Shrine) shows where each living companion is.
-- Fixed: companions walked through the edge of the hearth's flames on their way past it, stood in the fire, and picked idle spots right next to it - routes now go round fires, and idle and follow spots keep clear of them.
-- Logging: damage a building piece takes near a companion is logged (to find what keeps damaging the hearth), and the stamina food it takes fishing.
-
-## 1.5.43 (test build for 1.5.5)
-- Status: every job now says what it's doing - "Wood - chopping Beech", "Smelt - loading the Smelter with Copper ore", "Repair and Restock - fuelling the Hearth" / "sorting Resin", "Cook - making Muckshake", "Mead - filling a fermenter...", "Hunt - hunting Boar", "Fish - fishing for Perch".
-- Status: when a job is stuck it goes through the concrete reasons in turn, with the numbers from your settings:
-  - Gathering: each item at its limit ("Wood 512/500 - at the limit."), what needs a better tool ("Copper deposit needs a better pickaxe."), trees left alone near your buildings.
-  - Hunting: each meat at its target ("Raw meat 104/100 - enough."), or no game within the hunting range.
-  - Fishing: each fish at its target, the bait a fish here takes, no spot to fish from, or no fish within range.
-  - Smelting: no ore for a smelter, no wood for the charcoal kiln, no coal for a furnace, a pile it needs a hammer for.
-  - Farming: the seed a zone is missing, every spot planted, seeds kept back at SeedMinimum, no zones.
-  - Cooking: the ingredient a food is short of ("Ooze 0/22 for Muckshake."), as well as the mead shortfalls.
-  - Repair and Restock: no fuel for the fires, damaged pieces with no station in range.
-- Speech: companions say what they're off to do - "Fetching an axe.", "Putting a cultivator back.", "Off to bed."
-- Speech: travelling lines ("Which way now?", "What lies ahead, I wonder?") only away from home; a few new lines for home, hunting, fishing, smelting and upkeep. speech.json is updated (your old one is kept as speech.v2.json).
-
-## 1.5.42 (test build for 1.5.5)
-- Status: look at a companion and a line under its name says what it's doing - and when its job is stuck, why (e.g. "Hunt - No game around.", "Farm - I need seeds to plant.", "Fetching an axe", "Following you"). General > ShowStatus turns it off.
-- Speech: when a companion has nothing to do it now says the real reason (we have enough meat, the chests are full, no farm zones, nothing to smelt...) instead of one line per job.
-- Speech: new lines for things it used to give up on silently: it can't find a way to you or can't get up there, the chests near home are full, it needs a tool for the job (any tool now, not only axes and pickaxes), no station at home can fix its gear, it lost its spear, the animal got away, it won't hunt in the Passive stance, it fetches its spear first.
-- Cooking: when it can't cook or brew, the status goes through every reason in turn, a few seconds each: each ingredient a mead is short of, with your reserve counted in (e.g. "Mead - Honey 0/30 for Frost resistance mead": the recipe's 10 plus the 20 kept back, Cooking > IngredientReserve), a station it can't use, and whether food is stocked up or there's nothing to cook it from. Mead reasons show as "Mead", not "Cook".
-- Shorter messages: the refused-order notices, the farm and cooking reasons.
-- Farming without farm zones: it no longer keeps announcing "no farm zones" (harvesting works without them); the status says nothing is ripe yet and that it only plants in zones. "All done farming" at most every 10 minutes.
-- Fixed: a companion's farm zones were lost when it died and came back (or was recovered through the roster or Odin's Shrine). They now come back with it.
-- Farming: ground you've tilled with a cultivator counts as an "Any" zone - the farmer plants the crops on the PlantAny list there, only on the tilled ground and never inside a zone you set (Farming > PlantTilledGround, on by default; off = only your zones).
-- Orders: when no companion takes your order because Command is off for it on the wheel or it's too far away, a message top left says so.
-- Death: when one of your companions dies, a message in the middle of the screen says so, with the biome and how far away (Speech > AnnounceDeath).
-- Fixed: shooting at a bird, a companion often hit the hillside - it now aims at the bird itself and only shoots when the bow has a clear line to it.
-- Fixed: a farmer planted under the eaves and against walls, where crops never grow - it now skips spots with a roof or overhang above or a wall or other solid thing too close, as the game does.
-- Fixed: a farmer kept trying to reach a bit of tilled ground it couldn't walk to (e.g. just outside the wall) - it now only picks planting spots it has a way to, and leaves a spot it couldn't get to alone for 10 minutes (Farming > UnreachableSpotMemory).
-- Status: Farm now says what it's doing (harvesting, fetching seeds, planting Carrot Seeds, storing the harvest).
-
-## 1.5.41 (test build for 1.5.5)
-- Speech: companions talk far less. Small talk comes every 1.5-3 minutes instead of every 15-30 seconds, and Speech > Chatter sets how often (Off, Rare, Normal, Often). Speech > Enabled turns all speech off.
-- Speech: small talk now fits what a companion is really doing and where it is: job lines only while it's working that job, fight lines only in a fight, home lines only at home, follow lines only while following, and nothing while it sleeps, sits, swims or sails.
-- Speech: separate lines for chopping, mining stone and mining ore (a woodcutter no longer talks about ore), plus lines for Repair and Restock, and lines that depend on the biome, night, rain and cold.
-- Speech: replies to your orders come straight away; problems (a missing or broken tool, no bait, too heavy) are never lost to another line and aren't repeated for 5 minutes; small talk waits until it has been quiet for a while.
-- Speech: a problem a companion runs into while you're out of earshot shows in the top left corner with its name (Speech > FarAwayMessages).
-- Speech: hungry, worn-gear, no-bed and heavy-pack remarks come at most every 10 minutes, and "no bed" only at night at home, and not at all when it has a bed back home (out in the wild at night it kept saying all the beds were taken). "By your word!" only when you give an order, not when the game changes a job by itself.
-- Fixed: following you around indoors, a companion stuttered and kept heading out of the door and back in - it aimed a few meters ahead of its spot, which indoors was outside the walls. Indoors it now keeps to its spot next to you.
-- Following indoors: a companion that sat down stays seated while you move about within 10 m of it (Follow > SitStayRange; it used to get up as soon as you took a few steps), and gets up once you go further or step outside.
-- Speech: "Crops are ready!" and "Planting" are said at most every 2 minutes, not before every crop.
-- speech.json has a new layout with optional tags per line ([home], [night], [rain], [blackforest]...). An old speech.json is kept as speech.v1.json and replaced by the new lines; pools missing from your file are filled in from the defaults.
+- Fixed: shooting at a bird, a companion often hit the hillside - it now aims at the bird and only shoots with a clear line to it.
+- Following indoors: no more stuttering out of the door and back; a companion that sat down stays seated while you move about within 10 m (Follow > SitStayRange).
+- Fishing: the log names the stamina food it takes along.
+- Fixed: key settings in the F8 panel can be set again (a click starts "Press a key...", Esc cancels).
 
 ## 1.5.4
 - Hunting: with a spear to throw at a deer (and another weapon in its pack), a companion sneaks only to throwing distance, stops and throws, instead of walking right up and stabbing it. New setting Hunting > ThrowStandoff (10 m; it throws from anywhere within ThrowRange, 12 m).

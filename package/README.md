@@ -10,7 +10,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
-## Recent Highlights (v1.5.4)
+## Recent Highlights (v1.5.5)
 
 This is a big update. With working jobs! The short version:
 
@@ -25,6 +25,9 @@ This is a big update. With working jobs! The short version:
 - **Ladders and safer movement (1.5.3).** Companions climb ladders like a player, including towers of short ladders and ladders in world ruins, and follow your exact path up a tight tower when they can't find their own way. They stop at the edge of drops that would hurt and take fall damage like a player.
 - **Stays where you left it (1.5.3).** A companion with Follow off no longer follows you after loading in, and with nothing to do it idles where it is instead of wandering back to where it first appeared or to a far-off home.
 - **Better hunting (1.5.4).** Hunters walk up quietly, sneak the last stretch and stop for breath when they need to. With a spear they throw from range and go pick it back up, and they switch to a closer animal before striking.
+- **Tells you what it's doing (1.5.5).** A status line under its name says what it's doing, and when a job is stuck, why - with the numbers from your settings ("Wood 512/500 - at the limit."). Companions talk far less, and what they say fits what they're doing and where they are.
+- **Gear first after death (1.5.5).** A revived companion gets its gear back from its tombstone when it's safe, eats, then goes back to its stance. A message says where it came back, and new keys set the stance of the companion you're looking at.
+- **Farming on tilled ground (1.5.5).** Ground you've tilled counts as a farm zone, and farmers no longer plant under roofs or against walls where crops won't grow.
 - **Cleaned-up settings.** The config file has been reorganised into clear sections with plain-language descriptions. Settings you'd already changed are carried over automatically.
 
 See `CHANGELOG.md` for the version-by-version detail.
