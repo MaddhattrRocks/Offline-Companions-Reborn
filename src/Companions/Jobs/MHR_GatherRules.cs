@@ -191,7 +191,7 @@ namespace Companions
                 List<CompanionStatus.Item> why = new List<CompanionStatus.Item>();
                 foreach (KeyValuePair<string, KeyValuePair<int, int>> kv in p.AtLimit)
                     why.Add(new CompanionStatus.Item(null, "hc_why_gather_limit", ItemLocal(kv.Key) ?? kv.Key, kv.Value.Key, kv.Value.Value));
-                if (h.LastTierSkips > 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_tier", h.LastTierSkips));
+                if (h.LastTierSkips > 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_tier", h.LastTierName ?? "?", ModLocalization.Loc(mode == 1 ? "hc_tool_axe" : "hc_tool_pickaxe")));
                 if (p.NearBaseRejects > 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_near_base", p.NearBaseRejects, (ModConfig.BaseProtectRadius != null ? ModConfig.BaseProtectRadius.Value : 10f).ToString("F0")));
                 if (why.Count == 0) why.Add(new CompanionStatus.Item(null, "hc_why_gather_none"));
                 CompanionStatus.WhyRotate(h, why);

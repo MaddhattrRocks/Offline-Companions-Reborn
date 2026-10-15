@@ -2407,8 +2407,10 @@ public class HarvestController : MonoBehaviour
 		return (_humanoid?.GetInventory())?.GetTotalWeight() ?? 0f;
 	}
 
-	// 1.5.43: how many targets the last scan skipped because they need a better tool (for the status)
+	// 1.5.43: how many targets the last scan skipped because they need a better tool, and the first one's name (status)
 	internal int LastTierSkips;
+
+	internal string LastTierName;
 
 	internal GameObject ScanForTarget(int mode)
 	{
@@ -2425,6 +2427,7 @@ public class HarvestController : MonoBehaviour
 		LogInfo($"Physics scan: {num} colliders in {ScanRadius}m radius" + (flag ? " ** BUFFER FULL — may miss targets! **" : ""));
 		int bestToolTier = GetBestToolTier(mode);
 		LastTierSkips = 0;
+		LastTierName = null;
 		_seenIds.Clear();
 		GameObject gameObject = null;
 		float num2 = float.MaxValue;
@@ -2453,6 +2456,7 @@ public class HarvestController : MonoBehaviour
 			if (minToolTier > bestToolTier)
 			{
 				num8++;
+				LastTierName = LastTierName ?? MHR_Items.NiceName(harvestCandidateWithType);
 				if (num8 <= 3)
 				{
 					LogWarn($"  Tier SKIP \"{harvestCandidateWithType.name}\" — requires tier {minToolTier}, " + $"best tool tier={bestToolTier} (need bronze pickaxe tier≥1 for copper/silver)");

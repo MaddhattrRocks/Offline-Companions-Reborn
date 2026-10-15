@@ -75,11 +75,6 @@ internal static class MHR_Roster
 
 	private static float s_nextSnapshot;
 
-	// 1.5.43 (phase 3): when to look for lost companions next, and the ones already announced this session
-	private static float s_nextLostCheck;
-
-	private static readonly HashSet<string> s_lostSaid = new HashSet<string>();
-
 	private static string s_confirmId;
 
 	private static float s_confirmUntil;
@@ -119,9 +114,6 @@ internal static class MHR_Roster
 		s_entries.Clear();
 		s_confirmId = null;
 		s_nextSnapshot = Time.unscaledTime + LoadSettleSeconds + 2f;
-		// the world has to finish loading first; then look now and then
-		s_nextLostCheck = Time.unscaledTime + 60f;
-		s_lostSaid.Clear();
 		if (localPlayer.m_customData.TryGetValue(text, out var value) && !string.IsNullOrEmpty(value))
 		{
 			string[] array = value.Split(new char[1] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -312,11 +304,6 @@ internal static class MHR_Roster
 		{
 			s_nextSnapshot = Time.unscaledTime + ModConfig.RosterSaveInterval.Value;
 			SnapshotAll();
-		}
-		if (Time.unscaledTime >= s_nextLostCheck)
-		{
-			s_nextLostCheck = Time.unscaledTime + (ModConfig.SpeechLostCheckInterval?.Value ?? 600f);
-			AnnounceLost();
 		}
 		if (ModConfig.ShowCompanionRoster.Value)
 		{
@@ -603,26 +590,6 @@ internal static class MHR_Roster
 			CompanionsPlugin.Log.LogInfo("[Rest] A bed is claimed by a companion that no longer exists (ID " + id + ") - the claim is ignored");
 		}
 		return flag;
-	}
-
-	// 1.5.43 (phase 3): a companion with nothing left of it in the world (no companion, no tombstone that brings it back)
-	// is announced once a session, with how to get it back. Only single player / the host can tell (GetStatuses); it goes
-	// through every object in the world, so it runs a minute after loading and then every [Speech] LostCheckInterval.
-	private static void AnnounceLost()
-	{
-		if (!(ModConfig.SpeechAnnounceLost?.Value ?? true) || ZNet.instance == null || !ZNet.instance.IsServer() || s_entries.Count == 0)
-		{
-			return;
-		}
-		Dictionary<string, Status> statuses = GetStatuses();
-		foreach (Entry e in s_entries)
-		{
-			if (statuses.TryGetValue(e.Id, out var st) && st == Status.Lost && s_lostSaid.Add(e.Id))
-			{
-				CompanionsPlugin.Log.LogInfo("[Roster] " + e.Name + " is lost - nothing of it is left in the world");
-				MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_companion_lost", e.Name));
-			}
-		}
 	}
 
 	internal static string Describe(Entry e, Status s)
