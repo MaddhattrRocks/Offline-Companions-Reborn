@@ -354,14 +354,17 @@ public static class CompanionManager
 			return;
 		}
 		string key = $"HC_StarterCompanion_{ZNet.instance.GetWorldUID()}";
-		StarterFix.ResetIfRequested();
+		bool reset = StarterFix.ResetIfRequested();
 		if (localPlayer.m_customData.ContainsKey(key))
 		{
 			CompanionsPlugin.Log.LogDebug("[CompanionManager] Starter companion already spawned for this world");
 			return;
 		}
 		string text = localPlayer.GetPlayerID().ToString();
-		foreach (CompanionSetup allCompanion in CompanionSetup.AllCompanions)
+		// 1.5.54: the "already has a companion" check is for worlds from before the flag existed - it set the flag again
+		// straight after ResetStarterFlag cleared it (user: "the reset starter flag does not seem to be working"; log
+		// 8e1d1e5d: "cleared the starter-companion flag" then "Found existing companion in scene ... skipping panel")
+		foreach (CompanionSetup allCompanion in reset ? new List<CompanionSetup>() : CompanionSetup.AllCompanions)
 		{
 			ZDO zDO = allCompanion.GetComponent<ZNetView>()?.GetZDO();
 			if (zDO != null && zDO.GetString(CompanionSetup.OwnerHash) == text)
