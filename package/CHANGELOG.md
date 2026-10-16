@@ -5,7 +5,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 ## 1.5.6
 - Combat: companions no longer parry every block - each enemy swing is a parry or a plain block by chance, better with Blocking skill (Combat > ParryChance, ParryChanceMax).
 - Combat: companions only block swings that can reach them, not every enemy swinging within 8 m.
-- Combat: melee companions swing in short combos (the game's combo chain, 2-3 hits) instead of one swing every 2 seconds (Combat > FightLikePlayer, ComboHits, ComboPause).
+- Combat: melee companions swing their weapon's full combo (3 swings, the last for double damage) instead of one swing every 2 seconds, starting each swing as soon as the last allows it, like a player holding attack (Combat > FightLikePlayer, ComboHits, ComboPause).
 - Combat: they attack on an opening - nothing swinging at them, the target staggered, or right after a swing has landed on their shield.
 - Combat: when the enemy is staggered (a parry), they go in with a combo even while catching their breath - always at least one hit if they have the stamina for it.
 - Combat: an enemy 1-2 hits from dead is finished off with all the stamina it takes, when nothing else is close enough to hit them afterwards (Combat > FinishHits).

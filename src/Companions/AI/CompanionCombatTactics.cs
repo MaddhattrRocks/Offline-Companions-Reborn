@@ -615,7 +615,15 @@ public partial class CompanionCombatAI
 
 	private bool ReadyToSwing(ItemDrop.ItemData w)
 	{
-		if (_character.InAttack() || w == null)
+		if (w == null)
+		{
+			return false;
+		}
+		// 1.5.53: mid-combo, the next swing starts as soon as the current one allows it, like a player holding attack
+		// (Player.HaveQueuedChain -> Attack.CanStartChainAttack: the swing animation's Chain event); a non-player had to
+		// wait for the whole swing to end (Humanoid.HaveQueuedChain is false) - CompanionChainPatch
+		// (the usual checks below still apply - an enemy swinging at it or too little stamina ends the combo)
+		if (_character.InAttack() && !(WantsChain && CurrentAttackCanChain()))
 		{
 			return false;
 		}
@@ -682,16 +690,18 @@ public partial class CompanionCombatAI
 
 	private int BurstSize(ItemDrop.ItemData w)
 	{
+		// 1.5.53: the weapon's own combo (Attack.m_attackChainLevels - 3 on the melee weapons; the last swing does
+		// m_lastChainDamageMultiplier x2), capped at ComboHits (user: "basically all melee weapons have a 3 hit combo ...
+		// we probably only need the one setting for combo"). No separate two-handed limit - a heavier weapon's swings cost
+		// more stamina, which shortens its combos on its own. Now and then (1 in 5) one swing short, so it isn't a robot.
 		int max = ModConfig.CombatComboHits?.Value ?? 3;
 		Attack a = w.m_shared.m_attack;
 		int size = (a != null && a.m_attackChainLevels > 1) ? a.m_attackChainLevels : 2;
-		ItemDrop.ItemData.ItemType t = w.m_shared.m_itemType;
-		if (t == ItemDrop.ItemData.ItemType.TwoHandedWeapon || t == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft)
-		{
-			size = Mathf.Min(size, 2);
-		}
 		size = Mathf.Clamp(size, 1, Mathf.Max(1, max));
-		size = Random.Range(Mathf.Max(1, size - 1), size + 1);
+		if (size > 1 && !_finishing && !_punishing && Random.value < 0.2f)
+		{
+			size--;
+		}
 		float cost = AttackCost(w);
 		float floor = _cornered ? 0f : Reserve * StaminaMax() * 0.5f;
 		if (_finishing)
@@ -709,6 +719,22 @@ public partial class CompanionCombatAI
 			TLog($"{size}-hit combo, not {want} - saving stamina to block ({StaminaNow():F0}/{StaminaMax():F0})");
 		}
 		return size;
+	}
+
+	internal bool WantsChain => _tacticsOn && _burstLeft > 0;
+
+	private static readonly System.Reflection.FieldInfo s_curAttackT = HarmonyLib.AccessTools.Field(typeof(Humanoid), "m_currentAttack");
+
+	internal bool CurrentAttackCanChain()
+	{
+		try
+		{
+			return (s_curAttackT?.GetValue(_humanoid) as Attack)?.CanStartChainAttack() ?? false;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	// a swing that started (DoAttack succeeded)

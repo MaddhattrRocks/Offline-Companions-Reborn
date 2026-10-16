@@ -244,7 +244,7 @@ Chance (0.7 = 70%) that a companion times a block as a parry at Blocking skill 1
 With a melee weapon, companions fight like a player: short combos when there's an opening, guarding in between, stepping out of swings, getting clear when several enemies are on them, and backing off to catch their breath when low on stamina. Off: the older way (one swing at a time on the weapon's timer).
 
 **ComboHits** — Default: 3 · Range: 1 – 5  
-Most swings in one combo. A combo is shorter with a two-handed weapon, varies a little each time, and never spends the stamina kept back for blocking.
+Most swings in one combo. Companions follow their weapon's own combo (3 swings on melee weapons, the last doing double damage) up to this many; now and then one short, and shorter when stamina is low.
 
 **ComboPause** — Default: 1 · Range: 0.2 – 5  
 Seconds (roughly - it varies) between combos, guarding or stepping back out of reach.

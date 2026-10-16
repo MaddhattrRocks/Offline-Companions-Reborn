@@ -332,7 +332,7 @@ A companion can carry 300 weight, the same as a player.
 - Anything that attacks them is always fought back.
 
 **How they fight**
-- **Combos:** with a melee weapon they swing in short combos (2-3 hits with a fast weapon, fewer with a two-handed one) when there's an opening, then guard or step back out of reach.
+- **Combos:** with a melee weapon they swing the weapon's combo (3 swings, the last one for double damage) when there's an opening, then guard or step back out of reach. Low on stamina, the combo is shorter.
 - **Openings:** they swing when nothing is swinging at them, when their target is staggered, or right after a swing at them has landed on their shield. A staggered enemy (after a parry, say) always gets at least one hit, even while they're catching their breath.
 - **Blocking:** they block swings that can reach them. Some blocks are parries, more often as their Blocking skill rises; the rest are plain blocks.
 - **Stepping out:** now and then they step back or aside out of a swing instead of blocking, when there's safe ground to step to.
