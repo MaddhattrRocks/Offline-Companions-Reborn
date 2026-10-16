@@ -13,6 +13,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Combat: their reaction to a swing varies a little each time, so they misjudge now and then.
 - Combat: badly hurt, they run to you when the enemy isn't in the way, avoiding drops and water.
 - Combat: stepping back when too close to swing now actually steps back (it used to stand still).
+- Combat: a companion that takes out its tower shield against a group no longer puts it straight away again mid-fight.
 
 ## 1.5.5
 Speech overhaul: companions talk less, and what they say and show tells you what they're doing and why not.

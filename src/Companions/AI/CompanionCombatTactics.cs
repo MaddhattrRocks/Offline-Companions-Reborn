@@ -68,7 +68,7 @@ public partial class CompanionCombatAI
 
 	private static float Reserve => ModConfig.CombatStaminaReserve?.Value ?? 0.3f;
 
-	private static float Resume => Mathf.Max(Reserve, ModConfig.CombatStaminaResume?.Value ?? 0.6f);
+	private static float Resume => Mathf.Max(Reserve, ModConfig.CombatStaminaResume?.Value ?? 0.5f);
 
 	internal static bool FightLikePlayer => ModConfig.FightLikePlayer?.Value ?? true;
 
@@ -88,11 +88,17 @@ public partial class CompanionCombatAI
 	}
 
 	// how far (centre to centre) a creature's swing reaches us
-	private float Danger(Character c)
+	// 1.5.53: the swing's real reach (MHR_MeleeReach: the AI range, but no more than the attack's own range + 0.5), not
+	// the AI range alone - that's where the AI starts a swing, often well short of where it lands, so steps went too far
+	internal static float SwingReach(Character c)
 	{
 		ItemDrop.ItemData w = (c as Humanoid)?.GetCurrentWeapon();
-		float reach = (w != null && w.m_shared != null) ? w.m_shared.m_aiAttackRange : 2f;
-		return reach + c.GetRadius() + _character.GetRadius();
+		return (w != null && w.m_shared != null) ? MHR_MeleeReach(w) : 2f;
+	}
+
+	private float Danger(Character c)
+	{
+		return SwingReach(c) + c.GetRadius() + _character.GetRadius();
 	}
 
 	// enemies on this companion: its target and anything close whose target is this companion
@@ -258,7 +264,13 @@ public partial class CompanionCombatAI
 		{
 			if (!_character.InAttack())
 			{
-				if (!MHR_Mover.SafeStep(base.transform.position, _stepDir, 0.8f))
+				// 1.5.53: stop as soon as it's out of reach (user: "moving back a lot and not re-engaging after" - the
+				// step ran for a set time, at a run, and covered 4-6 m)
+				if (_stepFrom != null && Vector3.Distance(base.transform.position, _stepFrom.transform.position) >= Danger(_stepFrom) + 0.3f)
+				{
+					_stepUntil = 0f;
+				}
+				else if (!MHR_Mover.SafeStep(base.transform.position, _stepDir, 0.8f))
 				{
 					_stepUntil = 0f;
 				}
@@ -382,7 +394,8 @@ public partial class CompanionCombatAI
 		{
 			return;
 		}
-		bool want = StaminaShare() < Resume || _attackers.Count >= (ModConfig.CombatGroupSize?.Value ?? 2) || Random.value < 0.3f;
+		// 1.5.53: not after every combo below StaminaResume (that was most of the fight) - when close to the reserve
+		bool want = StaminaShare() < Reserve + 0.15f || _attackers.Count >= (ModConfig.CombatGroupSize?.Value ?? 2) || Random.value < 0.2f;
 		if (!want)
 		{
 			return;
@@ -406,7 +419,7 @@ public partial class CompanionCombatAI
 		_stepDir = dir;
 		_stepRun = run;
 		_stepFrom = from;
-		_stepUntil = Time.time + Mathf.Max(dist, 0.8f) / (run ? 6f : 4f) + 0.25f;
+		_stepUntil = Time.time + Mathf.Max(dist, 0.8f) / 3f + 0.3f;   // a cap - it stops once out of reach
 		_burstLeft = 0;
 	}
 
@@ -434,7 +447,8 @@ public partial class CompanionCombatAI
 		{
 			return false;
 		}
-		bool run = StaminaShare() > Reserve;
+		// a quick step: a run only when it has further to go than a jog covers in time
+		bool run = need > 1.5f && StaminaShare() > Reserve;
 		StartStep(dir, need, swinger, run);
 		Vector3 away = base.transform.position - swinger.transform.position;
 		away.y = 0f;

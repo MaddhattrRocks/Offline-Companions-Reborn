@@ -252,8 +252,8 @@ Seconds (roughly - it varies) between combos, guarding or stepping back out of r
 **StaminaReserve** — Default: 0.3 · Range: 0 – 0.9  
 Share of its stamina (0.3 = 30%) a companion keeps for blocking. Below it, it stops attacking and backs out of reach to get its breath back.
 
-**StaminaResume** — Default: 0.6 · Range: 0 – 1  
-Share of its stamina (0.6 = 60%) it waits for before going back in after backing off.
+**StaminaResume** — Default: 0.5 · Range: 0 – 1  
+Share of its stamina (0.5 = 50%) it waits for before going back in after backing off.
 
 **BackOffTime** — Default: 8 · Range: 2 – 30  
 Seconds a companion keeps trying to back off from an enemy that stays on it before it fights on with what stamina it has.

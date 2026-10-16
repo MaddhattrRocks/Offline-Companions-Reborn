@@ -1069,7 +1069,9 @@ public class CompanionSetup : MonoBehaviour
 		}
 		bool flag4 = itemData9 != null && IsTwoHandedWeapon(itemData9);
 		bool flag5 = itemData10 != null && IsTwoHandedWeapon(itemData10);
-		if (!flag4 && !flag5 && itemData4 != null)
+		// 1.5.53: not mid-fight - the combat code picks the shield then (ShieldLogic: the tower shield with 3+ enemies);
+		// this put the parry shield straight back (user: "brought out the tower shield for a moment then put it away")
+		if (!flag2 && !flag4 && !flag5 && itemData4 != null)
 		{
 			if (itemData10 != itemData4)
 			{

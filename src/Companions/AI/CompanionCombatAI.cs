@@ -708,7 +708,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 								Vector3 flat = new Vector3(to.x, 0f, to.z);
 								Vector3 fwd = base.transform.forward; fwd.y = 0f;
 								NoteSwing(_targetCreature, flag7 ? "Shot" : "Swing", $"{itemData.m_shared.m_name}, {num3:F1} m from its edge, {to.y:+0.0;-0.0} m up, facing {Vector3.Angle(fwd, flat):F0} deg off (limit {maxAngle:F0}), reach {num5:F1} m, " +
-									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide ({melee.m_attackType}), tilt up to {melee.m_maxYAngle:F0} deg, weapon range {melee.m_attackRange:F2} m, AI range {itemData.m_shared.m_aiAttackRange:F2} m, hit width {melee.m_attackRayWidth:F2} m (+{melee.m_attackRayWidthCharExtra:F2} vs creatures), hit height {melee.m_attackHeight:F2} m" : "no attack data") + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
+									(melee != null ? $"sweep {melee.m_attackAngle:F0} deg wide ({melee.m_attackType}), tilt up to {melee.m_maxYAngle:F0} deg, weapon range {melee.m_attackRange:F2} m, AI range {itemData.m_shared.m_aiAttackRange:F2} m, hit width {melee.m_attackRayWidth:F2} m (+{melee.m_attackRayWidthCharExtra:F2} vs creatures), hit height {melee.m_attackHeight:F2} m" : "no attack data") + ", " + _lastSwingInfo + (_stalking ? ", sneaking" : "") + (_targetCreature.GetBaseAI() != null && !_targetCreature.GetBaseAI().IsAlerted() ? ", it hasn't noticed" : ""), flag7 ? 4f : 1.2f);
 								if (_parryAttackCount > 0)
 								{
 									_parryAttackCount--;
@@ -1034,10 +1034,9 @@ public partial class CompanionCombatAI : MonoBehaviour
 			{
 				continue;
 			}
-			ItemDrop.ItemData w = (c as Humanoid)?.GetCurrentWeapon();
-			float reach = (w != null && w.m_shared != null) ? w.m_shared.m_aiAttackRange : 2f;
-			// lunges and sweeps carry about a metre and a half past the AI's attack range
-			if (d - c.GetRadius() - _character.GetRadius() > reach + 1.5f)
+			float reach = SwingReach(c);
+			// lunges and sweeps carry about a metre past the attack's reach
+			if (d - c.GetRadius() - _character.GetRadius() > reach + 1f)
 			{
 				continue;
 			}
@@ -1216,6 +1215,30 @@ public partial class CompanionCombatAI : MonoBehaviour
 		return _humanoid.GetCurrentWeapon();
 	}
 
+	private string _lastSwingInfo = "";
+
+	private static readonly System.Reflection.FieldInfo s_curAttack = HarmonyLib.AccessTools.Field(typeof(Humanoid), "m_currentAttack");
+
+	private static readonly System.Reflection.FieldInfo s_chainLevel = HarmonyLib.AccessTools.Field(typeof(Attack), "m_currentAttackCainLevel");
+
+	private string ComboInfo(Attack shared)
+	{
+		try
+		{
+			Attack cur = s_curAttack?.GetValue(_humanoid) as Attack;
+			if (cur == null || s_chainLevel == null || shared == null || shared.m_attackChainLevels <= 1)
+			{
+				return "no combo";
+			}
+			int lvl = (int)s_chainLevel.GetValue(cur);
+			return $"combo swing {lvl + 1}/{shared.m_attackChainLevels}" + (lvl == shared.m_attackChainLevels - 1 ? $" (the finisher, x{shared.m_lastChainDamageMultiplier:F1} damage)" : "");
+		}
+		catch
+		{
+			return "?";
+		}
+	}
+
 	private bool DoAttack(Character target)
 	{
 		ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
@@ -1234,7 +1257,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 			flag = true;
 			attack.m_bowDraw = false;
 		}
+		float since = _character.GetTimeSinceLastAttack();
 		bool flag2 = _character.StartAttack(target, charge: false);
+		// 1.5.53: which swing of the weapon's combo this is (user: "It looks like the NPC is doing mostly power attacks?" -
+		// it never uses the secondary attack; the later combo swings are the bigger ones), for the [Attack] line
+		if (flag2)
+		{
+			_lastSwingInfo = ComboInfo(attack) + $", {since:F2} s after the last swing ended";
+		}
 		if (flag && attack != null)
 		{
 			attack.m_bowDraw = true;
