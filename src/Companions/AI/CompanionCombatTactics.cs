@@ -255,7 +255,7 @@ public partial class CompanionCombatAI
 		if (_burstPending && !_character.InAttack())
 		{
 			_burstPending = false;
-			float pause = ModConfig.CombatComboPause?.Value ?? 1f;
+			float pause = ModConfig.CombatComboPause?.Value ?? 0.5f;
 			_burstPauseUntil = Time.time + pause * Random.Range(0.6f, 1.4f);
 			MaybeStepOut();
 		}
@@ -420,13 +420,13 @@ public partial class CompanionCombatAI
 		{
 			return;
 		}
-		Vector3 dir = BestDir(Mathf.Max(need, 0.8f), _targetCreature);
+		Vector3 dir = EvadeDir(_targetCreature, Mathf.Max(need, 0.8f));
 		if (dir == Vector3.zero)
 		{
 			return;
 		}
 		StartStep(dir, need, _targetCreature, run: false);
-		TLog("Stepping back out of " + _targetCreature.m_name + "'s reach after its combo");
+		TLog("Stepping " + StepWord(_targetCreature, dir) + " out of " + _targetCreature.m_name + "'s reach after its combo");
 	}
 
 	private void StartStep(Vector3 dir, float dist, Character from, bool run)
@@ -457,7 +457,7 @@ public partial class CompanionCombatAI
 			return false;   // too deep in its reach to get out in time - block
 		}
 		need = Mathf.Max(need, 0.8f);
-		Vector3 dir = BestDir(need, swinger);
+		Vector3 dir = EvadeDir(swinger, need);
 		if (dir == Vector3.zero)
 		{
 			return false;
@@ -465,11 +465,87 @@ public partial class CompanionCombatAI
 		// a quick step: a run only when it has further to go than a jog covers in time
 		bool run = need > 1.5f && StaminaShare() > Reserve;
 		StartStep(dir, need, swinger, run);
-		Vector3 away = base.transform.position - swinger.transform.position;
+		TLog("Stepping " + StepWord(swinger, dir) + $" out of {swinger.m_name}'s swing ({need:F1} m)");
+		return true;
+	}
+
+	private string StepWord(Character from, Vector3 dir)
+	{
+		Vector3 away = base.transform.position - from.transform.position;
 		away.y = 0f;
 		float ang = Vector3.Angle(away, dir);
-		TLog("Stepping " + (ang < 30f ? "back" : ang < 70f ? "back and aside" : "aside") + $" out of {swinger.m_name}'s swing ({need:F1} m)");
-		return true;
+		return ang < 30f ? "back" : ang < 70f ? "back and aside" : "aside";
+	}
+
+	// 1.5.54: which way to step from a swing - straight back, back and aside, or aside, picked by chance among the safe
+	// ones (user: "The NPC only looks to step backward rather than to a side." - BestDir scores distance from the enemies
+	// only, so it was nearly always straight back). Never towards another enemy close by; the side away from the others
+	// (or towards the owner) is tried first.
+	private Vector3 EvadeDir(Character from, float dist)
+	{
+		Vector3 me = base.transform.position;
+		Vector3 away = me - from.transform.position;
+		away.y = 0f;
+		if (away.sqrMagnitude < 0.01f)
+		{
+			away = -base.transform.forward;
+		}
+		away.Normalize();
+		// which side first: away from the other attackers, else towards the owner, else either
+		float sideBias = 0f;
+		Vector3 right = Vector3.Cross(Vector3.up, away);
+		foreach (Character c in _attackers)
+		{
+			if (c != from)
+			{
+				Vector3 t = c.transform.position - me;
+				t.y = 0f;
+				sideBias -= Vector3.Dot(right, t.normalized);
+			}
+		}
+		Player owner = MHR_Owner.Of(this);
+		if (sideBias == 0f && owner != null)
+		{
+			Vector3 o = owner.transform.position - me;
+			o.y = 0f;
+			sideBias = Vector3.Dot(right, o.normalized);
+		}
+		float first = (sideBias > 0f || (sideBias == 0f && Random.value < 0.5f)) ? 1f : -1f;
+		// back 25%, back and aside 35%, aside 40%
+		float r = Random.value;
+		float[] order = r < 0.25f ? new[] { 0f, 45f, 90f } : r < 0.6f ? new[] { 45f, 90f, 0f } : new[] { 90f, 45f, 0f };
+		foreach (float a in order)
+		{
+			foreach (float sign in a == 0f ? new[] { 1f } : new[] { first, -first })
+			{
+				// the angle is measured from straight away, turning towards the chosen side ("right" = +)
+				Vector3 d = Quaternion.AngleAxis(-sign * a, Vector3.up) * away;
+				if (TowardsOther(d, from) || !MHR_Mover.SafeStep(me, d, dist))
+				{
+					continue;
+				}
+				return d;
+			}
+		}
+		return Vector3.zero;
+	}
+
+	private bool TowardsOther(Vector3 dir, Character except)
+	{
+		foreach (Character c in _attackers)
+		{
+			if (c == except)
+			{
+				continue;
+			}
+			Vector3 t = c.transform.position - base.transform.position;
+			t.y = 0f;
+			if (t.magnitude < 4f && Vector3.Dot(dir, t.normalized) > 0.5f)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// an opening: nothing swinging at it, the target staggered, or the swing at it already landed (it's finishing it)
@@ -662,9 +738,10 @@ public partial class CompanionCombatAI
 		{
 			return false;
 		}
-		if (!Opening())
+		// a combo is started on an opening and then carried through, like a player committing to it (log 4b8d4066: with
+		// 4-5 skeletons around one of them was nearly always swinging, and that ended almost every combo after swing 1)
+		if (_burstLeft <= 0 && !Opening())
 		{
-			EndBurst();
 			return false;
 		}
 		// 1.5.53: a combo is started above the reserve and may dip to half of it (still enough for a block), then it backs

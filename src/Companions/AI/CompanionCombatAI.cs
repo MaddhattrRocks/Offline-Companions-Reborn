@@ -681,7 +681,10 @@ public partial class CompanionCombatAI : MonoBehaviour
 						Vector3 aimAt = _targetCreature.GetCenterPoint();
 						_ai.LookAtPoint(aimAt);
 						float tooClose = ModConfig.MeleeTooClose?.Value ?? 0.3f;
-						if (!flag7 && tooClose > 0f && num3 < tooClose && !_character.InAttack())
+						// 1.5.54: only for a narrow attack (a stab) - a sweep hits from right up close (log 4b8d4066: bronze sword
+						// hits at 0.2 m, while the step back cost it time again and again)
+						Attack meleeAtk = itemData.m_shared.m_attack;
+						if (!flag7 && tooClose > 0f && num3 < tooClose && !_character.InAttack() && (meleeAtk == null || meleeAtk.m_attackAngle < 40f))
 						{
 							Vector3 away = base.transform.position - _targetCreature.transform.position;
 							away.y = 0f;
@@ -703,6 +706,13 @@ public partial class CompanionCombatAI : MonoBehaviour
 							if (!flag7 && melee != null && melee.m_attackAngle < 40f)
 							{
 								maxAngle = Mathf.Min(maxAngle, Mathf.Max(8f, melee.m_attackAngle * 0.5f + 5f));
+							}
+							// 1.5.54: a wide sweep (the sword's 90 deg) doesn't need it lined up to the weapon's 5 deg - waiting for
+							// that missed the moment to carry the combo on whenever the target shifted (log 4b8d4066: combos
+							// stopped after swing 1)
+							else if (!flag7 && _tacticsOn && melee != null)
+							{
+								maxAngle = Mathf.Max(maxAngle, Mathf.Min(30f, melee.m_attackAngle * 0.3f));
 							}
 							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
 							{
@@ -1065,7 +1075,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 
 	private void UpdateBlocking(float dt)
 	{
-		if (_targetCreature == null || _character.InAttack() || _character.IsStaggering() || _parryAttackCount > 0)
+		// 1.5.54: mid-combo it's committed - no raising the guard between swings (that broke the combo off)
+		if (_targetCreature == null || _character.InAttack() || _character.IsStaggering() || _parryAttackCount > 0 || (_tacticsOn && _burstLeft > 0))
 		{
 			ClearBlock();
 			return;

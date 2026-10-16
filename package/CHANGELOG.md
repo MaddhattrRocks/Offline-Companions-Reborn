@@ -11,12 +11,13 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Combat: when the enemy is staggered (a parry), they go in with a combo even while catching their breath - always at least one hit if they have the stamina for it.
 - Combat: an enemy 1-2 hits from dead is finished off with all the stamina it takes, when nothing else is close enough to hit them afterwards (Combat > FinishHits).
 - Combat: catching their breath, they walk up to the next enemy and wait just out of its reach instead of standing still, and don't sprint into a fight short of stamina.
-- Combat: sometimes they step back or aside out of a swing instead of blocking, onto safe ground only (Combat > StepAwayChance).
+- Combat: sometimes they step out of a swing instead of blocking - back, back and to the side, or to the side, away from the other enemies, onto safe ground only (Combat > StepAwayChance).
+- Combat: once started, a combo is carried through instead of breaking off whenever another enemy swings, and a wide swing doesn't wait to be lined up exactly.
 - Combat: they keep stamina back for blocking - a combo may dip into it, then they back out of reach to get their breath back (Combat > StaminaReserve, StaminaResume, BackOffTime).
 - Combat: with enemies on them from different sides, they move until all of them are on one side (Combat > GroupSize, GroupRange, FlankAngle).
 - Combat: their reaction to a swing varies a little each time, so they misjudge now and then.
 - Combat: badly hurt, they run to you when the enemy isn't in the way, avoiding drops and water.
-- Combat: stepping back when too close to swing now actually steps back (it used to stand still).
+- Combat: stepping back when too close to stab now actually steps back (it used to stand still); wide swings don't step back at all, they hit from up close.
 - Combat: a companion that takes out its tower shield against a group no longer puts it straight away again mid-fight.
 
 ## 1.5.5

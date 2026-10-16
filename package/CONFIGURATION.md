@@ -246,7 +246,7 @@ With a melee weapon, companions fight like a player: short combos when there's a
 **ComboHits** — Default: 3 · Range: 1 – 5  
 Most swings in one combo. Companions follow their weapon's own combo (3 swings on melee weapons, the last doing double damage) up to this many; now and then one short, and shorter when stamina is low.
 
-**ComboPause** — Default: 1 · Range: 0.2 – 5  
+**ComboPause** — Default: 0.5 · Range: 0.2 – 5  
 Seconds (roughly - it varies) between combos, guarding or stepping back out of reach.
 
 **StaminaReserve** — Default: 0.3 · Range: 0 – 0.9  
