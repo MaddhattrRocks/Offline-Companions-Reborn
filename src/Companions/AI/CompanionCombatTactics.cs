@@ -289,6 +289,12 @@ public partial class CompanionCombatAI
 		{
 			return 0;
 		}
+		// a staggered target: close in and punish it (ReadyToSwing) rather than back off or reposition
+		if (Punish(weapon))
+		{
+			_stepUntil = 0f;
+			return 0;
+		}
 		// stamina: keep enough to block with; get out of reach to get it back
 		float share = StaminaShare();
 		if (!_recovering && share < Reserve)
@@ -481,14 +487,52 @@ public partial class CompanionCombatAI
 		}
 	}
 
+	// 1.5.53: its target is staggered (a parry, or a hit that staggered it) and there's stamina for a combo that still
+	// leaves a block's worth: go in and punish it, even while catching its breath or between combos (user: "If the NPC
+	// parries is should perform a combo if possible against the enemy.")
+	// At least one hit whenever it has the stamina for that swing (user: "It should at least do a single hit."); the rest of
+	// the combo only above half the reserve (BurstSize, and below for the swings after the first). One combo per stagger.
+	private bool Punish(ItemDrop.ItemData w)
+	{
+		if (_targetCreature == null || w == null || !_targetCreature.IsStaggering())
+		{
+			_punishUsed = false;
+			return false;
+		}
+		if (_burstLeft > 0)
+		{
+			return _punishing && StaminaNow() - AttackCost(w) >= Reserve * StaminaMax() * 0.5f;
+		}
+		return !_punishUsed && StaminaNow() >= AttackCost(w);
+	}
+
+	private bool _punishing;
+
+	// the combo for this stagger has started
+	private bool _punishUsed;
+
 	private bool ReadyToSwing(ItemDrop.ItemData w)
 	{
 		if (_character.InAttack() || w == null)
 		{
 			return false;
 		}
+		if (Punish(w))
+		{
+			if (!_punishing)
+			{
+				_punishing = true;
+				TLog(_targetCreature.m_name + " is staggered - going in with a combo" + (_recovering ? " (catching its breath can wait)" : ""));
+			}
+			return true;
+		}
+		if (_punishing && _burstLeft <= 0)
+		{
+			_punishing = false;
+		}
 		if ((_recovering && !_cornered) || _burstPending)
 		{
+			EndBurst();   // a punish combo cut short by stamina ends here
 			return false;
 		}
 		if (_burstLeft <= 0 && Time.time < _burstPauseUntil)
@@ -552,6 +596,11 @@ public partial class CompanionCombatAI
 	{
 		if (_burstLeft <= 0)
 		{
+			_burstPending = false;
+			if (_punishing)
+			{
+				_punishUsed = true;
+			}
 			_burstLeft = BurstSize(w);
 			if (_burstLeft > 1)
 			{
@@ -604,5 +653,7 @@ public partial class CompanionCombatAI
 		_cornered = false;
 		_repositionSince = -1f;
 		_evading = false;
+		_punishing = false;
+		_punishUsed = false;
 	}
 }
