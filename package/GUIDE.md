@@ -336,7 +336,7 @@ A companion can carry 300 weight, the same as a player.
 - **Openings:** they swing when nothing is swinging at them, when their target is staggered, or right after a swing at them has landed on their shield. A staggered enemy (after a parry, say) always gets at least one hit, even while they're catching their breath.
 - **Blocking:** they block swings that can reach them. Some blocks are parries, more often as their Blocking skill rises; the rest are plain blocks.
 - **Stepping out:** now and then they step back or aside out of a swing instead of blocking, when there's safe ground to step to.
-- **Stamina:** they keep some stamina back for blocking. Low on stamina, they back out of reach to get their breath back, and only fight on if they can't get clear.
+- **Stamina:** they keep some stamina back for blocking. Low on stamina, they back out of reach to get their breath back, walk up to the next enemy while it comes back, and only fight on if they can't get clear. An enemy one or two hits from dead is finished off even if it empties their stamina, as long as nothing else is close enough to hit them.
 - **Several attackers:** with enemies on them from different sides, they move until all of them are on one side. With 3 or more on them, they switch to their best blocking shield (a tower shield, say).
 - These are chances, not certainties - they misjudge now and then. `[Combat] FightLikePlayer` off goes back to the older one-swing-at-a-time fighting.
 - **Weapon choice:** they pick the weapon that does the most damage to *this* enemy, using its weaknesses and resistances.

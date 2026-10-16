@@ -192,6 +192,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 
 	internal void NoteHit(Character target, HitData hit)
 	{
+		NoteOwnHit(target);
 		if (_swingAt < 0f)
 		{
 			CompanionsPlugin.Log.LogDebug($"[Attack] hit {target.m_name} for {hit.GetTotalDamage():F1}");
@@ -228,6 +229,11 @@ public partial class CompanionCombatAI : MonoBehaviour
 	// for now, the game's own movement still closes in (a fight can't just stand still)
 	private bool ChaseMove(float dt, Vector3 point, float dist, bool run)
 	{
+		// 1.5.53: fighting like a player, it doesn't sprint into the next fight short of breath (running costs stamina)
+		if (_tacticsOn && StaminaShare() < Resume + 0.15f)
+		{
+			run = false;
+		}
 		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, "Combat", run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
 		if (!there && MHR_Mover.GaveUp(_ai))
 		{

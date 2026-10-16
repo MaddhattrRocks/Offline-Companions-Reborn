@@ -251,6 +251,7 @@ public partial class CompanionCombatAI
 	private int Tactics(float dt, ItemDrop.ItemData weapon)
 	{
 		GatherAttackers();
+		TrackDamage();
 		if (_burstPending && !_character.InAttack())
 		{
 			_burstPending = false;
@@ -289,8 +290,8 @@ public partial class CompanionCombatAI
 		{
 			return 0;
 		}
-		// a staggered target: close in and punish it (ReadyToSwing) rather than back off or reposition
-		if (Punish(weapon))
+		// a target nearly dead, or staggered: close in and hit it (ReadyToSwing) rather than back off or reposition
+		if ((_finishing && _burstLeft > 0) || FinishOff(weapon) || Punish(weapon))
 		{
 			_stepUntil = 0f;
 			return 0;
@@ -328,6 +329,14 @@ public partial class CompanionCombatAI
 			}
 			if (close == null)
 			{
+				// nothing on it: walk (not run - stamina comes back while walking) up to just outside the target's reach,
+				// ready to go back in once it has its breath back
+				Character t = _targetCreature;
+				if (t != null && Vector3.Distance(base.transform.position, t.transform.position) > Danger(t) + 3f)
+				{
+					MHR_Mover.Go(_ai, dt, t.transform.position, Danger(t) + 2f, allowRun: false, "Combat", MHR_Mover.SpeedJog);
+					return 1;
+				}
 				_ai.StopMoving();
 				if (near != null)
 				{
@@ -487,6 +496,99 @@ public partial class CompanionCombatAI
 		}
 	}
 
+	// 1.5.53: finishing an enemy off (user: "the NPC should push their stamina low if it means killing an enemy that then
+	// gives them some breathing room rather than trying to conserver it ... if the enemy is low health and it takes 1-2
+	// more hits to kill the enemy the NPC should use up their stamina so they can do a larger recharge. Then they can
+	// re-join the fight by walking upto another enemy.") How much a hit takes off is measured: the target's health drop
+	// within a moment of one of its hits (resistances, difficulty and all), halved when the target was staggered (the
+	// game doubles damage to a staggered creature, Character.RPC_Damage).
+	private Character _dmgTarget;
+
+	private float _dmgLastHp;
+
+	private float _perHit;
+
+	private float _lastOwnHitAt = -10f;
+
+	private bool _finishing;
+
+	private int _finishHits;
+
+	internal void NoteOwnHit(Character target)
+	{
+		if (target == _targetCreature)
+		{
+			_lastOwnHitAt = Time.time;
+		}
+	}
+
+	private void TrackDamage()
+	{
+		Character t = _targetCreature;
+		if (t != _dmgTarget)
+		{
+			_dmgTarget = t;
+			_perHit = 0f;
+			_dmgLastHp = t != null ? t.GetHealth() : 0f;
+			return;
+		}
+		if (t == null)
+		{
+			return;
+		}
+		float hp = t.GetHealth();
+		if (hp < _dmgLastHp - 0.1f && Time.time - _lastOwnHitAt < 1f)
+		{
+			float drop = _dmgLastHp - hp;
+			_perHit = t.IsStaggering() ? drop * 0.5f : drop;
+		}
+		_dmgLastHp = hp;
+	}
+
+	private int HitsToKill()
+	{
+		if (_targetCreature == null || _perHit <= 0f)
+		{
+			return 99;
+		}
+		float per = _perHit * 0.9f * (_targetCreature.IsStaggering() ? 2f : 1f);
+		return Mathf.Max(1, Mathf.CeilToInt(_targetCreature.GetHealth() / per));
+	}
+
+	// nothing else close enough to hit it while it's out of stamina afterwards
+	private bool BreathingRoomAfter()
+	{
+		foreach (Character c in _attackers)
+		{
+			if (c != _targetCreature && Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 2f)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private bool FinishOff(ItemDrop.ItemData w)
+	{
+		if (_targetCreature == null || w == null || _targetCreature.GetHealth() <= 0f)
+		{
+			return false;
+		}
+		float cost = AttackCost(w);
+		if (_burstLeft > 0)
+		{
+			return _finishing && StaminaNow() >= cost;
+		}
+		int need = HitsToKill();
+		// started on an opening like any combo (not into a swing), then carried through
+		if (need > (ModConfig.CombatFinishHits?.Value ?? 2) || StaminaNow() < need * cost || !BreathingRoomAfter() || !Opening())
+		{
+			return false;
+		}
+		_finishHits = need;
+		return true;
+	}
+
 	// 1.5.53: its target is staggered (a parry, or a hit that staggered it) and there's stamina for a combo that still
 	// leaves a block's worth: go in and punish it, even while catching its breath or between combos (user: "If the NPC
 	// parries is should perform a combo if possible against the enemy.")
@@ -516,6 +618,19 @@ public partial class CompanionCombatAI
 		if (_character.InAttack() || w == null)
 		{
 			return false;
+		}
+		if (FinishOff(w))
+		{
+			if (!_finishing)
+			{
+				_finishing = true;
+				TLog($"{_targetCreature.m_name} is nearly dead ({_targetCreature.GetHealth():F0} hp, about {_finishHits} hit(s)) - spending its stamina to finish it");
+			}
+			return true;
+		}
+		if (_finishing && _burstLeft <= 0)
+		{
+			_finishing = false;
 		}
 		if (Punish(w))
 		{
@@ -579,6 +694,11 @@ public partial class CompanionCombatAI
 		size = Random.Range(Mathf.Max(1, size - 1), size + 1);
 		float cost = AttackCost(w);
 		float floor = _cornered ? 0f : Reserve * StaminaMax() * 0.5f;
+		if (_finishing)
+		{
+			size = Mathf.Max(size, _finishHits);
+			floor = 0f;
+		}
 		int want = size;
 		while (size > 1 && StaminaNow() - size * cost < floor)
 		{
@@ -655,5 +775,6 @@ public partial class CompanionCombatAI
 		_evading = false;
 		_punishing = false;
 		_punishUsed = false;
+		_finishing = false;
 	}
 }

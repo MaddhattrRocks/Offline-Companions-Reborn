@@ -270,6 +270,9 @@ How close (meters) an enemy has to be to count as one of the group on a companio
 **FlankAngle** — Default: 100 · Range: 30 – 180  
 Two enemies more than this many degrees apart, seen from the companion, count as on different sides.
 
+**FinishHits** — Default: 2 · Range: 0 – 5  
+An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.
+
 **BowSwitchDistance** — Default: 15 · Range: 5 – 60  
 A companion with a bow or crossbow switches to it when its target is further away than this (meters).
 
