@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Fix: with the Combat world modifier raised, companions grew bigger than the player (heads clipping through helmets) and moved faster - they now keep a player's size and speed.
 - Combat: companions no longer parry every block - each enemy swing is a parry or a plain block by chance, better with Blocking skill (Combat > ParryChance, ParryChanceMax).
 - Combat: companions only block swings that can reach them, not every enemy swinging within 8 m.
 - Combat: melee companions swing their weapon's full combo (3 swings, the last for double damage) instead of one swing every 2 seconds, starting each swing as soon as the last allows it, like a player holding attack (Combat > FightLikePlayer, ComboHits, ComboPause).
