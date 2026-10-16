@@ -500,7 +500,10 @@ public partial class CompanionCombatAI
 			EndBurst();
 			return false;
 		}
-		float floor = _cornered ? 0f : Reserve * StaminaMax();
+		// 1.5.53: a combo is started above the reserve and may dip to half of it (still enough for a block), then it backs
+		// off to get its breath back - like a player at 40% stamina still doing a full combo (user: "It had just looked like
+		// the NPC was taking 1 swing near the end"; log: 35/85 stamina, 25 kept back, 8 a swing -> one swing at a time)
+		float floor = _cornered ? 0f : Reserve * StaminaMax() * (_burstLeft > 0 ? 0.5f : 1f);
 		if (StaminaNow() - AttackCost(w) < floor)
 		{
 			EndBurst();
@@ -531,10 +534,15 @@ public partial class CompanionCombatAI
 		size = Mathf.Clamp(size, 1, Mathf.Max(1, max));
 		size = Random.Range(Mathf.Max(1, size - 1), size + 1);
 		float cost = AttackCost(w);
-		float floor = _cornered ? 0f : Reserve * StaminaMax();
+		float floor = _cornered ? 0f : Reserve * StaminaMax() * 0.5f;
+		int want = size;
 		while (size > 1 && StaminaNow() - size * cost < floor)
 		{
 			size--;
+		}
+		if (size < want)
+		{
+			TLog($"{size}-hit combo, not {want} - saving stamina to block ({StaminaNow():F0}/{StaminaMax():F0})");
 		}
 		return size;
 	}

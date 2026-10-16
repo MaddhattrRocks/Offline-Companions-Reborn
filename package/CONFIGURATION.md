@@ -250,7 +250,7 @@ Most swings in one combo. A combo is shorter with a two-handed weapon, varies a 
 Seconds (roughly - it varies) between combos, guarding or stepping back out of reach.
 
 **StaminaReserve** — Default: 0.3 · Range: 0 – 0.9  
-Share of its stamina (0.3 = 30%) a companion keeps for blocking. Below it, it stops attacking and backs out of reach to get its breath back.
+Share of its stamina (0.3 = 30%) a companion keeps for blocking. A combo is only started above it and may dip to half of it; below it, the companion backs out of reach to get its breath back.
 
 **StaminaResume** — Default: 0.5 · Range: 0 – 1  
 Share of its stamina (0.5 = 50%) it waits for before going back in after backing off.
