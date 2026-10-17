@@ -73,6 +73,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> BlockReactionTime;
 
+	internal static ConfigEntry<bool> LogPlayerCombat;
+
 	internal static ConfigEntry<bool> FightLikePlayer;
 
 	internal static ConfigEntry<int> CombatComboHits;
@@ -807,6 +809,7 @@ internal static class ModConfig
 		MeleeTooClose = Bind(cfg, "Advanced", "MeleeTooClose", 0.3f, "Combat: closer than this (meters, from the edge of the target) a companion steps back before swinging a melee weapon - a stab or swing that starts inside the target misses, like a player standing on top of a boar.", new AcceptableValueRange<float>(0f, 1.5f));
 		MeleeReachMargin = Bind(cfg, "Advanced", "MeleeReachMargin", 0.2f, "Combat: a companion swings a melee weapon only once it is at least this much (meters) inside the weapon's reach, not right at the edge of it, where hits are hit-or-miss.", new AcceptableValueRange<float>(0f, 1f));
 		BlockReactionTime = Bind(cfg, "Advanced", "BlockReactionTime", 0.2f, "Combat: seconds between an enemy starting a swing at a companion and the companion raising its guard.", new AcceptableValueRange<float>(0f, 1f));
+		LogPlayerCombat = Bind(cfg, "Advanced", "LogPlayerCombat", true, "Testing: write your own fighting to the log (debug level, lines starting [You]) - swings, guard, blocks and parries, enemy swings at you and how far you were - to help tune how companions fight. Will be removed once combat is tuned.");
 		FoodRegenInterval = Bind(cfg, "Advanced", "FoodRegenInterval", 10f, "Food: seconds between health regeneration ticks from food (a player's is 10).", new AcceptableValueRange<float>(1f, 60f));
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));

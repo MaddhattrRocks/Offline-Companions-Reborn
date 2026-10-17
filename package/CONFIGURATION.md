@@ -903,6 +903,9 @@ Combat: a companion swings a melee weapon only once it is at least this much (me
 **BlockReactionTime** — Default: 0.2 · Range: 0 – 1  
 Combat: seconds between an enemy starting a swing at a companion and the companion raising its guard.
 
+**LogPlayerCombat** — Default: On  
+Testing: write your own fighting to the log (debug level, lines starting [You]) - swings, guard, blocks and parries, enemy swings at you and how far you were - to help tune how companions fight. Will be removed once combat is tuned.
+
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
 

@@ -13,7 +13,7 @@ internal static class CompanionBlockLog
 	private static void Prefix(Humanoid __instance, HitData hit, out float __state)
 	{
 		__state = -1f;
-		if (__instance == null || hit == null || __instance.GetComponent<CompanionCombatAI>() == null)
+		if (__instance == null || hit == null || (__instance.GetComponent<CompanionCombatAI>() == null && __instance != Player.m_localPlayer))
 		{
 			return;
 		}
@@ -33,6 +33,11 @@ internal static class CompanionBlockLog
 			ItemDrop.ItemData blocker = s_blocker?.Invoke(__instance, null) as ItemDrop.ItemData;
 			float timer = ReflectionHelper.GetBlockTimer(__instance);
 			bool parry = blocker != null && blocker.m_shared.m_timedBlockBonus > 1f && timer != -1f && timer < 0.25f;
+			if (__instance == Player.m_localPlayer)
+			{
+				PlayerCombatLog.NoteBlock(__instance, attacker, parry, __state, hit.GetTotalBlockableDamage());
+				return;
+			}
 			CompanionsPlugin.Log.LogDebug($"[Block] {(parry ? "Parried" : "Blocked")} {(attacker != null ? attacker.m_name : "a hit")} with {blocker?.m_shared?.m_name ?? "?"}: {__state:F0} damage, {hit.GetTotalBlockableDamage():F0} got through");
 		}
 		catch
