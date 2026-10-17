@@ -276,6 +276,15 @@ Two enemies more than this many degrees apart, seen from the companion, count as
 **FinishHits** — Default: 2 · Range: 0 – 5  
 An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.
 
+**Spacing** — Default: On  
+One on one, a companion keeps just outside the enemy's reach, goes in for a combo when the enemy can't swing again in time, then steps back out - and steps out of swings at the edge of its reach rather than blocking them.
+
+**SpacingMargin** — Default: 0.4 · Range: 0 – 2  
+How far (meters) outside the enemy's reach a companion waits when spacing.
+
+**SpacingStepChance** — Default: 0.6 · Range: 0 – 1  
+Chance (0.6 = 60%) that a spacing companion steps back out of a swing it's only just inside the reach of, instead of blocking it (the rest are blocks, some of them parries).
+
 **BowSwitchDistance** — Default: 15 · Range: 5 – 60  
 A companion with a bow or crossbow switches to it when its target is further away than this (meters).
 

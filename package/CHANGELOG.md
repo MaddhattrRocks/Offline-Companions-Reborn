@@ -11,6 +11,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Combat: melee companions swing their weapon's full combo (3 swings, the last for double damage) instead of one swing every 2 seconds, starting each swing as soon as the last allows it, like a player holding attack (Combat > FightLikePlayer, ComboHits, ComboPause).
 - Combat: they attack on an opening - nothing swinging at them, the target staggered, or right after a swing has landed on their shield.
 - Combat: when the enemy is staggered (a parry), they go in with a combo even while catching their breath - always at least one hit if they have the stamina for it.
+- Combat: one on one, companions keep just outside the enemy's reach, go in for a combo when it can't swing again in time, then step back out - and step out of swings at the edge of its reach rather than blocking (Combat > Spacing, SpacingMargin, SpacingStepChance).
 - Combat: an enemy 1-2 hits from dead is finished off with all the stamina it takes, when nothing else is close enough to hit them afterwards (Combat > FinishHits).
 - Combat: catching their breath, they walk up to the next enemy and wait just out of its reach instead of standing still, and don't sprint into a fight short of stamina.
 - Combat: sometimes they step out of a swing instead of blocking - back, back and to the side, or to the side, away from the other enemies, onto safe ground only (Combat > StepAwayChance).

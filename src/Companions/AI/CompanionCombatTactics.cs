@@ -268,6 +268,7 @@ public partial class CompanionCombatAI
 	// 0 = carry on as normal (chase, swing when ReadyToSwing), 1 = it moved this tick, 2 = hold here (swing only if ready)
 	private int Tactics(float dt, ItemDrop.ItemData weapon)
 	{
+		_spacingHold = false;
 		GatherAttackers();
 		TrackDamage();
 		if (_burstPending && !_character.InAttack())
@@ -429,8 +430,109 @@ public partial class CompanionCombatAI
 			}
 			_repositionSince = -1f;
 		}
-		return 0;
+		return Spacing(dt, weapon);
 	}
+
+	// 1.5.58: spacing, like the user fights (DEV_NOTES 1.5.57: "stay just out of range and then dip in to attack then back
+	// out. And block when needed to either parry or create an opening"). One enemy on it (the others aren't close enough
+	// to hit): it keeps just outside that enemy's reach; when the enemy can't swing again before it gets there and hits
+	// (MonsterAI: the weapon's m_aiAttackInterval since its last swing, and m_minAttackInterval), it dips in for a combo,
+	// then steps back out (MaybeStepOut). An enemy walking in and swinging is met by UpdateBlocking: parry it, or step
+	// back out of the swing (more likely when it only needs a short step), then dip in while it recovers.
+	private bool _dipping;
+
+	private float _dipUntil;
+
+	internal static bool SpacingOn => ModConfig.CombatSpacing?.Value ?? true;
+
+	// seconds until it can start another swing (0 = it can now)
+	private static float EnemyReadyIn(Character c)
+	{
+		float t = 0f;
+		try
+		{
+			ItemDrop.ItemData w = (c as Humanoid)?.GetCurrentWeapon();
+			if (w != null && w.m_shared != null)
+			{
+				t = w.m_lastAttackTime + w.m_shared.m_aiAttackInterval - Time.time;
+			}
+			if (c.GetBaseAI() is MonsterAI m)
+			{
+				t = Mathf.Max(t, m.m_minAttackInterval - c.GetTimeSinceLastAttack());
+			}
+		}
+		catch
+		{
+		}
+		return Mathf.Max(0f, t);
+	}
+
+	// spacing applies to this fight (ignoring the combo just finished)
+	private bool SpacingTarget()
+	{
+		Character t = _targetCreature;
+		return t != null && _close.Count <= 1 && (_close.Count == 0 || _close[0] == t) && t.GetBaseAI()?.GetTargetCreature() == _character;
+	}
+
+	private bool SpacingFor(Character t)
+	{
+		return SpacingOn && t != null && _burstLeft <= 0 && _close.Count <= 1 && (_close.Count == 0 || _close[0] == t) && t.GetBaseAI()?.GetTargetCreature() == _character;
+	}
+
+	private int Spacing(float dt, ItemDrop.ItemData weapon)
+	{
+		_spacingHold = false;
+		Character t = _targetCreature;
+		if (!SpacingFor(t))
+		{
+			_dipping = false;
+			return 0;
+		}
+		Vector3 me = base.transform.position;
+		float d = Vector3.Distance(me, t.transform.position);
+		float hover = Danger(t) + (ModConfig.CombatSpacingMargin?.Value ?? 0.4f);
+		float ourReach = MHR_MeleeReach(weapon) + t.GetRadius() + _character.GetRadius();
+		// within our own reach and outside its: hit it from here
+		if (d <= ourReach - 0.2f && d > Danger(t))
+		{
+			_dipping = false;
+			return 2;
+		}
+		// time to get into reach (jogging ~4 m/s) and get a swing off (~0.35 s)
+		float closeIn = Mathf.Max(0f, d - (ourReach - 0.3f)) / 4f + 0.35f;
+		float ready = EnemyReadyIn(t);
+		bool open = t.IsStaggering() || (!t.InAttack() && ready > closeIn);
+		if (_dipping && (Time.time > _dipUntil || t.InAttack()))
+		{
+			_dipping = false;
+		}
+		if (!_dipping && open && Time.time >= _burstPauseUntil && StaminaNow() - AttackCost(weapon) >= Reserve * StaminaMax())
+		{
+			_dipping = true;
+			_dipUntil = Time.time + closeIn + 0.6f;
+			TLog($"{t.m_name} can't swing again for {ready:F1} s - going in");
+		}
+		if (_dipping)
+		{
+			return 0;   // the chase closes in, ReadyToSwing starts the combo
+		}
+		// hold just outside its reach, facing it; walk up if further off
+		if (d > hover + 0.5f)
+		{
+			MHR_Mover.Go(_ai, dt, t.transform.position, hover, allowRun: false, "Combat", MHR_Mover.SpeedJog);
+			_ai.LookAtPoint(t.GetCenterPoint());
+			return 1;
+		}
+		TLog($"Keeping just out of {t.m_name}'s reach (its reach {Danger(t):F1} m) - waiting for an opening");
+		_spacingHold = true;
+		_ai.StopMoving();
+		_ai.LookAtPoint(t.GetCenterPoint());
+		return 2;
+	}
+
+	// holding off for an opening: no combo started just because it walked into reach (it's about to swing - parry or step
+	// out of it instead, UpdateBlocking); a stagger or a finishing blow still goes ahead
+	private bool _spacingHold;
 
 	private int Cornered(string why)
 	{
@@ -449,7 +551,8 @@ public partial class CompanionCombatAI
 		}
 		// 1.5.53: not after every combo below StaminaResume (that was most of the fight) - when close to the reserve
 		// 1.5.55: not after every combo in a group (log d973bc65: too much backing off) - when tired, or now and then
-		bool want = StaminaShare() < Reserve + 0.15f || Random.value < 0.15f;
+		// 1.5.58: with spacing, it always backs out after a combo
+		bool want = StaminaShare() < Reserve + 0.15f || Random.value < 0.15f || (SpacingOn && SpacingTarget());
 		if (!want)
 		{
 			return;
@@ -568,6 +671,15 @@ public partial class CompanionCombatAI
 		if (StaminaShare() < Reserve)
 		{
 			chance = Mathf.Min(1f, chance * 2f);   // blocking costs stamina it doesn't have
+		}
+		// 1.5.58: spacing - at the edge of its reach a short step back makes the swing miss, and costs no stamina
+		if (SpacingOn && swinger == _targetCreature && SpacingTarget())
+		{
+			float edge = Danger(swinger) + 0.6f - Vector3.Distance(base.transform.position, swinger.transform.position);
+			if (edge <= 1.2f)
+			{
+				chance = Mathf.Max(chance, ModConfig.CombatSpacingStepChance?.Value ?? 0.6f);
+			}
 		}
 		if (Random.value >= chance)
 		{
@@ -864,6 +976,10 @@ public partial class CompanionCombatAI
 		{
 			_punishing = false;
 		}
+		if (_spacingHold && _burstLeft <= 0)
+		{
+			return false;
+		}
 		if ((_recovering && !_cornered) || _burstPending)
 		{
 			EndBurst();   // a punish combo cut short by stamina ends here
@@ -1020,5 +1136,7 @@ public partial class CompanionCombatAI
 		_punishing = false;
 		_punishUsed = false;
 		_finishing = false;
+		_dipping = false;
+		_spacingHold = false;
 	}
 }

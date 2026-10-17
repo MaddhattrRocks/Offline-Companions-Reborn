@@ -97,6 +97,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<int> CombatFinishHits;
 
+	internal static ConfigEntry<bool> CombatSpacing;
+
+	internal static ConfigEntry<float> CombatSpacingMargin;
+
+	internal static ConfigEntry<float> CombatSpacingStepChance;
+
 
 
 
@@ -619,6 +625,9 @@ internal static class ModConfig
 		CombatGroupRange = Bind(cfg, "Combat", "GroupRange", 6f, "How close (meters) an enemy has to be to count as one of the group on a companion.", new AcceptableValueRange<float>(2f, 20f));
 		CombatFlankAngle = Bind(cfg, "Combat", "FlankAngle", 100f, "Two enemies more than this many degrees apart, seen from the companion, count as on different sides.", new AcceptableValueRange<float>(30f, 180f));
 		CombatFinishHits = Bind(cfg, "Combat", "FinishHits", 2, "An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.", new AcceptableValueRange<int>(0, 5));
+		CombatSpacing = Bind(cfg, "Combat", "Spacing", true, "One on one, a companion keeps just outside the enemy's reach, goes in for a combo when the enemy can't swing again in time, then steps back out - and steps out of swings at the edge of its reach rather than blocking them.");
+		CombatSpacingMargin = Bind(cfg, "Combat", "SpacingMargin", 0.4f, "How far (meters) outside the enemy's reach a companion waits when spacing.", new AcceptableValueRange<float>(0f, 2f));
+		CombatSpacingStepChance = Bind(cfg, "Combat", "SpacingStepChance", 0.6f, "Chance (0.6 = 60%) that a spacing companion steps back out of a swing it's only just inside the reach of, instead of blocking it (the rest are blocks, some of them parries).", new AcceptableValueRange<float>(0f, 1f));
 		BowSwitchDistance = Bind(cfg, "Combat", "BowSwitchDistance", 15f, "A companion with a bow or crossbow switches to it when its target is further away than this (meters).", new AcceptableValueRange<float>(5f, 60f));
 		MeleeSwitchDistance = Bind(cfg, "Combat", "MeleeSwitchDistance", 12f, "It switches back to its melee weapon when the target comes closer than this (meters).", new AcceptableValueRange<float>(3f, 40f));
 		UseTorchOpener = Bind(cfg, "Combat", "UseTorchOpener", defaultValue: true, "Against enemies that are weak to fire, open with a torch to set them alight, then switch back to the best weapon.");
