@@ -25,6 +25,10 @@ internal static class PlayerCombatLog
 
 	private static float s_guardUpAt;
 
+	private static string s_lastCombo;
+
+	private static float s_lastSwingLog = -10f;
+
 	private static readonly FieldInfo s_curAttack = AccessTools.Field(typeof(Humanoid), "m_currentAttack");
 
 	private static readonly FieldInfo s_chainLevel = AccessTools.Field(typeof(Attack), "m_currentAttackCainLevel");
@@ -184,6 +188,14 @@ internal static class PlayerCombatLog
 			catch
 			{
 			}
+			// holding attack, the game calls StartAttack every frame until the swing shows as an attack (Player's queued
+			// attack): log each swing once (log 9232441a: "combo swing 1/3" 3-8 times, 0.02 s apart)
+			if (combo == s_lastCombo && Time.time - s_lastSwingLog < 0.4f)
+			{
+				return;
+			}
+			s_lastCombo = combo;
+			s_lastSwingLog = Time.time;
 			Character n = Nearest(p, 6f, out var g);
 			string w = p.GetCurrentWeapon()?.m_shared?.m_name ?? "?";
 			Log($"{(secondaryAttack ? "Secondary attack" : "Swing")} with {w}{combo}, {__state:F2} s after the last swing ended" + (n != null ? $" - {n.m_name} {g:F1} m away (its reach {CompanionCombatAI.SwingReach(n):F1}){(n.InAttack() ? ", it's mid-swing" : "")}{(n.IsStaggering() ? ", it's staggered" : "")}" : "") + ", " + Stam(p));

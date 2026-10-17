@@ -1549,7 +1549,9 @@ public class CompanionAI : BaseAI
 				}
 				else
 				{
-					AIGateDiag.Report(_setup, "Passive stance");
+					// 1.5.57: not reported to AIGateDiag any more - Passive doesn't pause the AI (it follows and works), and the
+					// gate is cleared at the top of every tick, so it logged "blocked by Passive stance" / "resumed" every tick
+					// (log 9232441a: ~200 lines)
 					if (flag)
 					{
 						m_targetCreature = null;
