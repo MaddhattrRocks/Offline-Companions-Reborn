@@ -42,6 +42,8 @@ public partial class CompanionCombatAI
 
 	private float _recoverSince;
 
+	private float _recoverStepReady;
+
 	private bool _cornered;
 
 	private float _corneredUntil;
@@ -273,7 +275,10 @@ public partial class CompanionCombatAI
 			_burstPending = false;
 			float pause = ModConfig.CombatComboPause?.Value ?? 0.5f;
 			_burstPauseUntil = Time.time + pause * Random.Range(0.6f, 1.4f);
-			MaybeStepOut();
+			if (!MaybeClearOfWalls(weapon))
+			{
+				MaybeStepOut();
+			}
 		}
 		Character near = NearestAttacker(out var nearDist);
 		// a step out of a swing or out of reach under way
@@ -283,7 +288,7 @@ public partial class CompanionCombatAI
 			{
 				// 1.5.53: stop as soon as it's out of reach (user: "moving back a lot and not re-engaging after" - the
 				// step ran for a set time, at a run, and covered 4-6 m)
-				if (_stepFrom != null && Vector3.Distance(base.transform.position, _stepFrom.transform.position) >= Danger(_stepFrom) + 0.3f)
+				if (_stepToReach && _stepFrom != null && Vector3.Distance(base.transform.position, _stepFrom.transform.position) >= Danger(_stepFrom) + 0.3f)
 				{
 					_stepUntil = 0f;
 				}
@@ -334,10 +339,12 @@ public partial class CompanionCombatAI
 		}
 		if (_recovering && !_cornered)
 		{
+			// 1.5.56: a step back to just past the weapon's reach, then guard - not a retreat (user: "It should just be a
+			// step back to get beyond the hit window for the melee weapon.")
 			Character close = null;
 			foreach (Character c in _attackers)
 			{
-				if (Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 1f)
+				if (Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 0.3f)
 				{
 					close = c;
 					break;
@@ -364,17 +371,25 @@ public partial class CompanionCombatAI
 			{
 				return Cornered(close.m_name + " keeps after it");
 			}
-			if (Time.time >= _moveDirUntil)
+			if (Time.time >= _recoverStepReady)
 			{
-				_moveDir = BestDir(1.5f, close);
-				_moveDirUntil = Time.time + 0.3f;
+				float need = Mathf.Max(0.6f, Danger(close) + 0.4f - Vector3.Distance(base.transform.position, close.transform.position));
+				Vector3 back = base.transform.position - close.transform.position;
+				back.y = 0f;
+				Vector3 dir = (back.sqrMagnitude > 0.01f && !TowardsOther(back.normalized, close) && MHR_Mover.SafeStep(base.transform.position, back.normalized, need)) ? back.normalized : EvadeDir(close, need);
+				if (dir == Vector3.zero)
+				{
+					return Cornered("nowhere to step back to");
+				}
+				StartStep(dir, need, close, run: false);
+				_recoverStepReady = Time.time + 1.5f;
+				TLog("Stepping " + StepWord(close, dir) + $" out of {close.m_name}'s reach to get its breath back ({need:F1} m)");
+				return 1;
 			}
-			if (_moveDir == Vector3.zero)
-			{
-				return Cornered("nowhere to back off to");
-			}
-			Move(_moveDir, run: false, close);
-			return 1;
+			// it followed straight back in: guard (blocks still happen in UpdateBlocking) rather than keep retreating
+			_ai.StopMoving();
+			_ai.LookAtPoint(close.GetCenterPoint());
+			return 2;
 		}
 		// several on it from different sides: get them all on one side first
 		int groupSize = ModConfig.CombatGroupSize?.Value ?? 2;
@@ -453,13 +468,96 @@ public partial class CompanionCombatAI
 		TLog("Stepping " + StepWord(_targetCreature, dir) + " out of " + _targetCreature.m_name + "'s reach after its combo");
 	}
 
-	private void StartStep(Vector3 dir, float dist, Character from, bool run)
+	private bool _stepToReach = true;
+
+	private void StartStep(Vector3 dir, float dist, Character from, bool run, bool untilOutOfReach = true)
 	{
 		_stepDir = dir;
 		_stepRun = run;
 		_stepFrom = from;
+		_stepToReach = untilOutOfReach;
 		_stepUntil = Time.time + Mathf.Max(dist, 0.8f) / 3f + 0.3f;   // a cap - it stops once out of reach
 		_burstLeft = 0;
+	}
+
+	// 1.5.56: after a combo, if its swings would catch the player's own building pieces and there's a clear spot next to the
+	// target, it shifts there (user: "Hitting nearby walls is fine. Thats what a player might do. They would try to
+	// maneuver away from the walls to a clear spot if there is one.")
+	private static int s_pieceMask = -1;
+
+	private static readonly Collider[] s_pieceHits = new Collider[32];
+
+	private string _wallName;
+
+	private bool WallInSwing(Vector3 pos, Vector3 toTarget, ItemDrop.ItemData w)
+	{
+		if (s_pieceMask == -1)
+		{
+			s_pieceMask = LayerMask.GetMask("piece", "piece_nonsolid");
+		}
+		toTarget.y = 0f;
+		float reach = MHR_MeleeReach(w) + _character.GetRadius() + 0.3f;
+		Attack a = w?.m_shared?.m_attack;
+		float half = (a != null ? a.m_attackAngle * 0.5f : 45f) + 10f;
+		Vector3 chest = pos + Vector3.up * 1f;
+		int n = Physics.OverlapSphereNonAlloc(chest, reach, s_pieceHits, s_pieceMask);
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = s_pieceHits[i];
+			Piece p = col != null ? col.GetComponentInParent<Piece>() : null;
+			if (p == null || !p.IsPlacedByPlayer())
+			{
+				continue;
+			}
+			Vector3 d = col.ClosestPoint(chest) - chest;
+			d.y = 0f;
+			if (d.magnitude < reach && Vector3.Angle(toTarget, d) < half)
+			{
+				_wallName = p.m_name;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private bool MaybeClearOfWalls(ItemDrop.ItemData w)
+	{
+		Character t = _targetCreature;
+		if (t == null || w == null)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		if (!WallInSwing(me, t.transform.position - me, w))
+		{
+			return false;
+		}
+		string wall = _wallName;
+		// spots around the target at about the same distance, the nearest first
+		Vector3 off = me - t.transform.position;
+		off.y = 0f;
+		float r = Mathf.Max(0.8f, Mathf.Min(off.magnitude, MHR_MeleeReach(w) + t.GetRadius() - 0.2f));
+		if (off.sqrMagnitude < 0.01f)
+		{
+			off = -t.transform.forward;
+		}
+		off.Normalize();
+		foreach (float a in new[] { 30f, -30f, 60f, -60f, 90f, -90f })
+		{
+			Vector3 spot = t.transform.position + Quaternion.AngleAxis(a, Vector3.up) * off * r;
+			spot.y = me.y;
+			Vector3 move = spot - me;
+			move.y = 0f;
+			float dist = move.magnitude;
+			if (dist < 0.4f || TowardsOther(move, t) || !MHR_Mover.SafeStep(me, move, dist) || WallInSwing(spot, t.transform.position - spot, w))
+			{
+				continue;
+			}
+			StartStep(move.normalized, dist, t, run: false, untilOutOfReach: false);
+			TLog("Moving to a clear spot - its swings were catching the " + wall);
+			return true;
+		}
+		return false;
 	}
 
 	// a swing at it it can get out of the way of, rather than block (UpdateBlocking calls this once per swing, at the

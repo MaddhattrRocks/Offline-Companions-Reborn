@@ -14,7 +14,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Combat: catching their breath, they walk up to the next enemy and wait just out of its reach instead of standing still, and don't sprint into a fight short of stamina.
 - Combat: sometimes they step out of a swing instead of blocking - back, back and to the side, or to the side, away from the other enemies, onto safe ground only (Combat > StepAwayChance).
 - Combat: once started, a combo is carried through instead of breaking off whenever another enemy swings, and a wide swing doesn't wait to be lined up exactly.
-- Combat: they keep stamina back for blocking - a combo may dip into it, then they back out of reach to get their breath back (Combat > StaminaReserve, StaminaResume, BackOffTime).
+- Combat: they keep stamina back for blocking - a combo may dip into it, then they take a step back out of the enemy's reach and guard while they get their breath back (Combat > StaminaReserve, StaminaResume, BackOffTime).
+- Combat: when their swings would hit your walls and there's a clear spot by the enemy, they move there between combos.
 - Combat: with enemies close enough to hit them from different sides, they move for a couple of seconds until all of them are on one side, then fight from there (Combat > GroupSize, GroupRange, FlankAngle).
 - Combat: their reaction to a swing varies a little each time, so they misjudge now and then.
 - Combat: badly hurt, they run to you when the enemy isn't in the way, avoiding drops and water.
