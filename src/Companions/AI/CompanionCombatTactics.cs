@@ -479,10 +479,79 @@ public partial class CompanionCombatAI
 		return SpacingOn && t != null && _burstLeft <= 0 && _close.Count <= 1 && (_close.Count == 0 || _close[0] == t) && t.GetBaseAI()?.GetTargetCreature() == _character;
 	}
 
+	// 1.5.59: flanking (user: "If the enemies are not focused on the NPC the NPC should try to get behind them if possible").
+	// The game's backstab bonus only lands on a creature that isn't alerted (Character.RPC_Damage: !IsAlerted, once per
+	// 300 s), so one fighting the player gets none - but its swings go where it faces, at the player, so from behind the
+	// companion hits freely without blocking. While the target is after someone else and nothing else is close enough to
+	// hit it, it works round to the target's back (via the side it's on) at a jog, then attacks; gives up after 4 s and
+	// attacks from where it is for 6 s.
+	private float _flankSince = -1f;
+
+	private float _flankBlockedUntil;
+
+	private bool _flankLogged;
+
+	private int Flank(float dt, ItemDrop.ItemData weapon)
+	{
+		Character t = _targetCreature;
+		Character itsTarget = t?.GetBaseAI()?.GetTargetCreature();
+		if (!(ModConfig.CombatFlank?.Value ?? true) || t == null || itsTarget == null || itsTarget == _character || _burstLeft > 0 || _close.Count > 1 || (_close.Count == 1 && _close[0] != t) || t.IsStaggering() || Time.time < _flankBlockedUntil)
+		{
+			_flankSince = -1f;
+			return 0;
+		}
+		Vector3 me = base.transform.position;
+		Vector3 from = me - t.transform.position;
+		from.y = 0f;
+		Vector3 fwd = t.transform.forward;
+		fwd.y = 0f;
+		float angle = Vector3.Angle(fwd, from);   // 0 = in front of it, 180 = right behind
+		if (angle >= 110f)
+		{
+			if (_flankSince >= 0f)
+			{
+				TLog("Behind " + t.m_name + " - attacking while it's busy with " + itsTarget.m_name);
+			}
+			_flankSince = -1f;
+			return 0;
+		}
+		if (_flankSince < 0f)
+		{
+			_flankSince = Time.time;
+			_flankLogged = false;
+		}
+		if (Time.time - _flankSince > 4f)
+		{
+			_flankSince = -1f;
+			_flankBlockedUntil = Time.time + 6f;
+			TLog("Couldn't get behind " + t.m_name + " - attacking from here");
+			return 0;
+		}
+		if (!_flankLogged)
+		{
+			_flankLogged = true;
+			TLog(t.m_name + " is busy with " + itsTarget.m_name + " - working round behind it");
+		}
+		// round by its side first (the side it's already on), then to its back, at about our swing reach
+		float r = Mathf.Max(1f, MHR_MeleeReach(weapon) + t.GetRadius() + _character.GetRadius() - 0.3f);
+		Vector3 right = Vector3.Cross(Vector3.up, fwd.normalized);
+		float side = Vector3.Dot(from, right) >= 0f ? 1f : -1f;
+		Vector3 goal = angle < 70f ? t.transform.position + right * side * r : t.transform.position - fwd.normalized * r;
+		goal.y = me.y;
+		MHR_Mover.Go(_ai, dt, goal, 0.4f, allowRun: StaminaShare() > Resume, "Combat", MHR_Mover.SpeedJog);
+		return 1;
+	}
+
 	private int Spacing(float dt, ItemDrop.ItemData weapon)
 	{
 		_spacingHold = false;
 		Character t = _targetCreature;
+		int flank = Flank(dt, weapon);
+		if (flank != 0)
+		{
+			_dipping = false;
+			return flank;
+		}
 		if (!SpacingFor(t))
 		{
 			_dipping = false;
@@ -1138,5 +1207,6 @@ public partial class CompanionCombatAI
 		_finishing = false;
 		_dipping = false;
 		_spacingHold = false;
+		_flankSince = -1f;
 	}
 }

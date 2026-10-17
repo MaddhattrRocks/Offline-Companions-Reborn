@@ -279,6 +279,9 @@ An enemy this many hits or fewer from dead (judged from its own hits so far) is 
 **Spacing** — Default: On  
 One on one, a companion keeps just outside the enemy's reach, goes in for a combo when the enemy can't swing again in time, then steps back out - and steps out of swings at the edge of its reach rather than blocking them.
 
+**Flank** — Default: On  
+When an enemy is busy with you (or someone else), a companion works its way round behind it and attacks from there, out of its swings. (The game's backstab bonus only counts on enemies that haven't noticed anyone.)
+
 **SpacingMargin** — Default: 0.4 · Range: 0 – 2  
 How far (meters) outside the enemy's reach a companion waits when spacing.
 
