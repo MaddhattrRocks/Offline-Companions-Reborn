@@ -262,7 +262,7 @@ Seconds a companion keeps trying to back off from an enemy that stays on it befo
 Chance (0.3 = 30%) a companion steps back or aside out of an enemy's swing instead of blocking it, when there's room and it can get out of reach in time. Doubled when it's low on stamina.
 
 **GroupSize** — Default: 2 · Range: 2 – 10  
-With this many enemies on a companion from different sides, it gets clear first - moves until they're all on one side - and only attacks on an opening.
+With this many enemies close enough to hit a companion, from different sides, it gets clear first - moves for a couple of seconds until they're all on one side - then fights from there.
 
 **GroupRange** — Default: 6 · Range: 2 – 20  
 How close (meters) an enemy has to be to count as one of the group on a companion.

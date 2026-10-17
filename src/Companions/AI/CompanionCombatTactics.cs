@@ -142,17 +142,33 @@ public partial class CompanionCombatAI
 	}
 
 	// attackers on different sides (more than FlankAngle apart, seen from here)
+	private readonly List<Character> _close = new List<Character>();
+
+	// 1.5.55: the attackers that can actually reach it - within their reach + 1.5 m (log d973bc65: everything targeting it
+	// within 6 m counted, so with 3-5 skeletons about it was "getting clear" over and over)
+	private void GatherClose()
+	{
+		_close.Clear();
+		foreach (Character c in _attackers)
+		{
+			if (Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 1.5f)
+			{
+				_close.Add(c);
+			}
+		}
+	}
+
 	private bool Flanked()
 	{
 		float limit = ModConfig.CombatFlankAngle?.Value ?? 100f;
 		Vector3 me = base.transform.position;
-		for (int i = 0; i < _attackers.Count; i++)
+		for (int i = 0; i < _close.Count; i++)
 		{
-			Vector3 a = _attackers[i].transform.position - me;
+			Vector3 a = _close[i].transform.position - me;
 			a.y = 0f;
-			for (int j = i + 1; j < _attackers.Count; j++)
+			for (int j = i + 1; j < _close.Count; j++)
 			{
-				Vector3 b = _attackers[j].transform.position - me;
+				Vector3 b = _close[j].transform.position - me;
 				b.y = 0f;
 				if (Vector3.Angle(a, b) > limit)
 				{
@@ -362,17 +378,19 @@ public partial class CompanionCombatAI
 		}
 		// several on it from different sides: get them all on one side first
 		int groupSize = ModConfig.CombatGroupSize?.Value ?? 2;
-		if (_attackers.Count >= groupSize && Flanked() && Time.time >= _repositionBlockedUntil)
+		GatherClose();
+		if (_close.Count >= groupSize && Flanked() && Time.time >= _repositionBlockedUntil)
 		{
 			if (_repositionSince < 0f)
 			{
 				_repositionSince = Time.time;
-				TLog($"{_attackers.Count} on it from different sides - getting clear");
+				TLog($"{_close.Count} on it from different sides - getting clear");
 			}
-			if (Time.time - _repositionSince > 4f)
+			// a couple of seconds at most, then it fights where it stands for a while
+			if (Time.time - _repositionSince > 2.5f)
 			{
 				_repositionSince = -1f;
-				_repositionBlockedUntil = Time.time + 5f;
+				_repositionBlockedUntil = Time.time + 6f;
 				TLog("Couldn't get them on one side - fighting where it stands");
 				return 0;
 			}
@@ -389,6 +407,11 @@ public partial class CompanionCombatAI
 		}
 		else
 		{
+			if (_repositionSince >= 0f)
+			{
+				// got them on one side: fight from here for a while before moving again
+				_repositionBlockedUntil = Time.time + 4f;
+			}
 			_repositionSince = -1f;
 		}
 		return 0;
@@ -410,7 +433,8 @@ public partial class CompanionCombatAI
 			return;
 		}
 		// 1.5.53: not after every combo below StaminaResume (that was most of the fight) - when close to the reserve
-		bool want = StaminaShare() < Reserve + 0.15f || _attackers.Count >= (ModConfig.CombatGroupSize?.Value ?? 2) || Random.value < 0.2f;
+		// 1.5.55: not after every combo in a group (log d973bc65: too much backing off) - when tired, or now and then
+		bool want = StaminaShare() < Reserve + 0.15f || Random.value < 0.15f;
 		if (!want)
 		{
 			return;
@@ -695,6 +719,19 @@ public partial class CompanionCombatAI
 		{
 			return false;
 		}
+		// 1.5.55: the swing it just started hasn't shown up as an attack yet (the animation takes a frame or two) - starting
+		// it again restarted swing 1 and used up the combo (log d973bc65: three "combo swing 1/3" 0.04 s apart)
+		if (_awaitingSwing)
+		{
+			if (_character.InAttack() || Time.time - _swingStartedTime > 0.4f)
+			{
+				_awaitingSwing = false;
+			}
+			else
+			{
+				return false;
+			}
+		}
 		// 1.5.53: mid-combo, the next swing starts as soon as the current one allows it, like a player holding attack
 		// (Player.HaveQueuedChain -> Attack.CanStartChainAttack: the swing animation's Chain event); a non-player had to
 		// wait for the whole swing to end (Humanoid.HaveQueuedChain is false) - CompanionChainPatch
@@ -815,8 +852,14 @@ public partial class CompanionCombatAI
 	}
 
 	// a swing that started (DoAttack succeeded)
+	private bool _awaitingSwing;
+
+	private float _swingStartedTime;
+
 	private void NoteTacticSwing(ItemDrop.ItemData w)
 	{
+		_awaitingSwing = true;
+		_swingStartedTime = Time.time;
 		if (_burstLeft <= 0)
 		{
 			_burstPending = false;
