@@ -21,6 +21,7 @@ namespace Companions
             public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             public bool GaveUp; public float GaveUpAt;
+            public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
             public Door RouteDoor; public Vector3 RouteDoorSpot;
             public bool WaitStamina, TooTired; public float NeedStamina, WaitStart, NoWaitUntil;
@@ -86,6 +87,10 @@ namespace Companions
         // ---------- queries for the callers ----------
         public static bool OwnsMovement(Component c) { S s = Peek(c); return s != null && Time.time - s.LastGo < 0.3f; }
         public static bool GaveUp(CompanionAI ai) { S s = Peek(ai); return s != null && s.GaveUp; }
+        public static bool DoorBlocked(CompanionAI ai) { S s = Peek(ai); return s != null && s.GaveUp && s.DoorBlocked; }
+
+        // 1.5.65: a fight doesn't open doors on its own (user: they go for enemies behind closed doors) - only an order does
+        public const string CombatTag = "Combat";
         // 1.4.79: the current route doesn't reach the goal (Follow switches to the player's path then)
         public static bool RoutePartial(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && s.Partial && !s.HasDetour; }
         // 1.4.81: meters of swimming on the current route
@@ -417,7 +422,7 @@ namespace Companions
             Ladder ladder = s.UseLadder; float ladderUntil = s.LadderUntil;
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-            s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
+            s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.DoorBlocked = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
             s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
@@ -601,7 +606,7 @@ namespace Companions
             // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
             // 1.4.79: not while following - a door 20 m the other way isn't how you keep up with someone (1.4.78 log);
             // MHR_Follow walks the player's own path instead when the route doesn't reach its spot
-            if (s.Partial && s.Tag != FollowTag && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
+            if (s.Partial && s.Tag != FollowTag && s.Tag != CombatTag && s.RouteDoor == null && !s.HasDetour && now >= s.NextDoorSearch)
             {
                 s.NextDoorSearch = now + 4f;
                 // 1.4.78: not the door we just came through - if the route still doesn't reach the goal from the other
@@ -2815,6 +2820,13 @@ namespace Companions
         static void OpenDoor(CompanionAI ai, Character c, Door d, string tag)
         {
             if (d == null || !DoorClosed(d)) return;
+            if (tag == CombatTag)
+            {
+                S st = Get(ai);
+                if (!st.DoorBlocked) Dbg("[Move|" + tag + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");
+                st.DoorBlocked = true; st.GaveUp = true; st.GaveUpAt = Time.time;
+                return;
+            }
             Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
             if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
             Humanoid h = c as Humanoid;

@@ -1075,6 +1075,8 @@ public class CompanionInteract : MonoBehaviour
 				{
 					component.SetFollowTarget(Player.m_localPlayer.gameObject);
 				}
+				// 1.5.65: a recall beats a fight (user report: "it ignores every recall or command when they have anything to fight")
+				item.GetComponent<CompanionCombatAI>()?.HoldForOrder("Recalled");
 				ReturnLogic.Trigger(item, player.gameObject);
 				if (companionTalk == null)
 				{
@@ -1653,6 +1655,8 @@ public class CompanionInteract : MonoBehaviour
 			CompanionAI component2 = setup2.GetComponent<CompanionAI>();
 			if (!(component2 == null))
 			{
+				// 1.5.65: a move order beats a fight ("you can't order them to move aside in order to dodge some gjall")
+				setup2.GetComponent<CompanionCombatAI>()?.HoldForOrder("Ordered to move");
 				component2.SetMoveTarget(point);
 				if (companionTalk == null)
 				{

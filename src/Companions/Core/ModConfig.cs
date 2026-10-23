@@ -376,6 +376,14 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> CombatRangedMeleeRange;
 
+	internal static ConfigEntry<bool> CombatIndoorAggroOnly;
+
+	internal static ConfigEntry<bool> CombatDungeonDefensive;
+
+	internal static ConfigEntry<float> CombatDefendRange;
+
+	internal static ConfigEntry<float> CombatOrderHoldTime;
+
 	internal static ConfigEntry<float> CombatBowFullDrawRange;
 
 	internal static ConfigEntry<float> GatherRestStamina;
@@ -640,6 +648,10 @@ internal static class ModConfig
 		CombatGroupRange = Bind(cfg, "Combat", "GroupRange", 6f, "How close (meters) an enemy has to be to count as one of the group on a companion.", new AcceptableValueRange<float>(2f, 20f));
 		CombatFlankAngle = Bind(cfg, "Combat", "FlankAngle", 100f, "Two enemies more than this many degrees apart, seen from the companion, count as on different sides.", new AcceptableValueRange<float>(30f, 180f));
 		CombatBowMinDraw = Bind(cfg, "Combat", "BowMinDraw", 0.5f, "Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.", new AcceptableValueRange<float>(0.1f, 1f));
+		CombatIndoorAggroOnly = Bind(cfg, "Combat", "IndoorAggroOnly", defaultValue: true, "Indoors - in a dungeon, mine or cave, or under a roof - a companion only fights enemies that are actually coming for you or it (alerted), as if EngageOnNotice were off. Outdoors EngageOnNotice decides.");
+		CombatDungeonDefensive = Bind(cfg, "Combat", "DungeonDefensive", defaultValue: true, "In a dungeon, mine or cave a companion fights defensively: it stays with you and fights what comes within DefendRange of you (and anything hitting it), instead of running off after enemies further down the corridor.");
+		CombatDefendRange = Bind(cfg, "Combat", "DefendRange", 8f, "Fighting defensively (DungeonDefensive): enemies within this many meters of you are fought; further off they're left to come to you.", new AcceptableValueRange<float>(3f, 30f));
+		CombatOrderHoldTime = Bind(cfg, "Combat", "OrderHoldTime", 10f, "After you recall a companion or send it somewhere, it leaves its fight and starts no new one for this many seconds - it still fights back against something hitting it up close. Companions only ever fight enemies they can see (not ones behind walls or closed doors), and only open a door to get at one when you order the attack.", new AcceptableValueRange<float>(0f, 60f));
 		CombatRangedMeleeRange = Bind(cfg, "Combat", "RangedMeleeRange", 4f, "Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.", new AcceptableValueRange<float>(1f, 15f));
 		CombatBowFullDrawRange = Bind(cfg, "Combat", "BowFullDrawRange", 15f, "Bows: from this many meters away a companion always draws fully - a weaker arrow is slower and drops short at range.", new AcceptableValueRange<float>(3f, 50f));
 		CombatFinishHits = Bind(cfg, "Combat", "FinishHits", 2, "An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.", new AcceptableValueRange<int>(0, 5));

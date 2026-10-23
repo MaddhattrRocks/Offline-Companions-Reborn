@@ -276,6 +276,18 @@ Two enemies more than this many degrees apart, seen from the companion, count as
 **BowMinDraw** — Default: 0.5 · Range: 0.1 – 1  
 Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.
 
+**IndoorAggroOnly** — Default: On  
+Indoors - in a dungeon, mine or cave, or under a roof - a companion only fights enemies that are actually coming for you or it (alerted), as if EngageOnNotice were off. Outdoors EngageOnNotice decides.
+
+**DungeonDefensive** — Default: On  
+In a dungeon, mine or cave a companion fights defensively: it stays with you and fights what comes within DefendRange of you (and anything hitting it), instead of running off after enemies further down the corridor.
+
+**DefendRange** — Default: 8 · Range: 3 – 30  
+Fighting defensively (DungeonDefensive): enemies within this many meters of you are fought; further off they're left to come to you.
+
+**OrderHoldTime** — Default: 10 · Range: 0 – 60  
+After you recall a companion or send it somewhere, it leaves its fight and starts no new one for this many seconds - it still fights back against something hitting it up close. Companions only ever fight enemies they can see (not ones behind walls or closed doors), and only open a door to get at one when you order the attack.
+
 **RangedMeleeRange** — Default: 4 · Range: 1 – 15  
 Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.
 

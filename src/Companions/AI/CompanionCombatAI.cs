@@ -237,7 +237,13 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			run = false;
 		}
-		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, "Combat", run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+		// 1.5.65: a fight doesn't open doors; an attack order does ("Order" tag)
+		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, IsOrdered(_targetCreature) ? "Order" : MHR_Mover.CombatTag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+		if (!there && MHR_Mover.DoorBlocked(_ai))
+		{
+			DoorInTheWay();
+			return false;
+		}
 		if (!there && MHR_Mover.GaveUp(_ai))
 		{
 			return _ai.GameMoveTo(dt, point, dist, run);
@@ -866,6 +872,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 			HuntMode = false;
 			StopStalk();
 			ResetTactics();
+			_ordered = null;
+			_noSightSince = -1f;
 		}
 	}
 
@@ -910,11 +918,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			_recallTimer -= dt;
 		}
+		// 1.5.65: lost from sight / out of the defended area -> let it go (CompanionCombatTargets)
+		CheckTargetStillValid();
 		if (_updateTargetTimer <= 0f && !_character.InAttack())
 		{
 			bool flag = Player.IsPlayerInRange(base.transform.position, 50f);
-			_updateTargetTimer = (flag ? 2f : 6f);
-			Character character = _ai.FindNearbyEnemy();
+			_updateTargetTimer = (flag ? 1f : 6f);
+			// 1.5.65: only enemies it can get at, closest first (CompanionCombatTargets.PickTarget); hunting keeps the old way
+			Character character = HuntMode ? _ai.FindNearbyEnemy() : PickTarget();
 			if (character != null && IsPassiveAnimal(character))
 			{
 				character = null;

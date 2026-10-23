@@ -1104,6 +1104,8 @@ public class CompanionAI : BaseAI
 		}
 		else
 		{
+			// 1.5.65: an attack order may open doors to get at it, and isn't dropped for being out of sight
+			combatAI.Order(target);
 			combatAI.Engage(target);
 		}
 	}
@@ -1511,7 +1513,9 @@ public class CompanionAI : BaseAI
 				bool flag = !(_combatAI != null) && false;
 				if (num9 != 1 && !flag)
 				{
-					Character character = FindEnemy();
+					// 1.5.65: only enemies it can get at (sight, no closed door), closest first, the indoor/dungeon rules, and
+					// none while carrying out a recall or move order (CompanionCombatTargets)
+					Character character = _combatAI.PickTarget();
 					if (character != null && IsPassiveAnimal(character))
 					{
 						character = null;
@@ -1535,7 +1539,7 @@ public class CompanionAI : BaseAI
 					}
 					// 1.5.2: not a creature it's ignoring (one it can't reach in deep water, harmless game) - that re-engaged and
 					// dropped it every frame while it stood still (user log: a crocodile in the water, 40 "Engage" lines in a row)
-					else if (m_targetCreature != null && !MHR_Threat.IsPassive(m_targetCreature) && !MHR_Threat.IgnoredInWater(m_targetCreature))
+					else if (m_targetCreature != null && !_combatAI.Holding && !MHR_Threat.IsPassive(m_targetCreature) && !MHR_Threat.IgnoredInWater(m_targetCreature) && _combatAI.CanGetAt(m_targetCreature))
 					{
 						SetAlerted(alert: true);
 						_combatAI.Engage(m_targetCreature);
@@ -2328,7 +2332,12 @@ public class CompanionAI : BaseAI
 			}
 			else if (_combatAI != null && !_combatAI.IsEngaged)
 			{
-				_combatAI.Engage(attacker);
+				// 1.5.65: on its way somewhere you sent it: only fight back what's hitting it up close (a Gjall's shots
+				// shouldn't stop it getting out of the way)
+				if (_combatAI.MayFightBack(attacker))
+				{
+					_combatAI.Engage(attacker);
+				}
 			}
 			else if (m_targetCreature == null)
 			{
