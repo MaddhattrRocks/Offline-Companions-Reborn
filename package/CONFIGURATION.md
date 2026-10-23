@@ -454,6 +454,9 @@ Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's wo
 **FollowRange** — Default: 10 · Range: 5 – 60  
 Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)
 
+**FollowLogRange** — Default: 20 · Range: 5 – 60  
+Wood with Follow on: fallen logs and stumps count up to this many meters from you (further than FollowRange), so it finishes the trees it fells before starting a new one - a log can roll well away from where you stand.
+
 **ForageFollowRange** — Default: 10 · Range: 3 – 60  
 Forage with Follow on: a plant has to be within this many meters of you - the berries you happen to walk past, not everything around. With nothing that close the companion just follows you. (With Follow off see Range.)
 

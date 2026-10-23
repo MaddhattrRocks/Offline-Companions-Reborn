@@ -1093,6 +1093,34 @@ public class CompanionSetup : MonoBehaviour
 		EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
 	}
 
+	// 1.5.60: a job taking a tool out drops any weapon/shield still waiting in the equip queue - after a fight the queue
+	// put the sword back over the freshly equipped axe and the job swapped back, back and forth (log c6074698)
+	internal void MHR_DropQueuedHandItems()
+	{
+		int removed = _equipQueue.RemoveAll((ItemDrop.ItemData it) => it?.m_shared != null && IsHandItem(it));
+		if (removed > 0)
+		{
+			CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: dropped {removed} weapon/shield item(s) - a job holds the hands");
+		}
+	}
+
+	private static bool IsHandItem(ItemDrop.ItemData it)
+	{
+		switch (it.m_shared.m_itemType)
+		{
+		case ItemDrop.ItemData.ItemType.OneHandedWeapon:
+		case ItemDrop.ItemData.ItemType.TwoHandedWeapon:
+		case ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft:
+		case ItemDrop.ItemData.ItemType.Bow:
+		case ItemDrop.ItemData.ItemType.Shield:
+		case ItemDrop.ItemData.ItemType.Torch:
+		case ItemDrop.ItemData.ItemType.Tool:
+			return true;
+		default:
+			return false;
+		}
+	}
+
 	private void EquipBestArmor(ItemDrop.ItemData chest, ItemDrop.ItemData legs, ItemDrop.ItemData helmet, ItemDrop.ItemData shoulder, ItemDrop.ItemData utility, ItemDrop.ItemData trinket)
 	{
 		if (CanWearArmor())
