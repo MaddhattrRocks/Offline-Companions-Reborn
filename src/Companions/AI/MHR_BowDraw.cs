@@ -36,6 +36,10 @@ internal static class MHR_BowDraw
 
 	private static readonly Dictionary<int, State> s_states = new Dictionary<int, State>();
 
+	// 1.5.63: catching its breath - no new draw until stamina is back to [Combat] StaminaResume (log d40905e0: at 0 stamina it
+	// started a draw, dropped it the next frame, started again... dozens of times, never letting stamina come back)
+	private static readonly HashSet<int> s_resting = new HashSet<int>();
+
 	internal static bool NeedsDraw(Humanoid h)
 	{
 		ItemDrop.ItemData w = h?.GetCurrentWeapon();
@@ -59,7 +63,11 @@ internal static class MHR_BowDraw
 		int id = h.GetInstanceID();
 		if (!s_states.TryGetValue(id, out State st))
 		{
-			if (h.InAttack() || h.IsBlocking() || !w.m_shared.m_attack.StartDraw(h, w))
+			if (h.InAttack() || h.IsBlocking() || TooTiredToDraw(h, w, target))
+			{
+				return false;
+			}
+			if (!w.m_shared.m_attack.StartDraw(h, w))
 			{
 				return false;
 			}
@@ -134,7 +142,8 @@ internal static class MHR_BowDraw
 				st.LooseNow = true;
 				return;
 			}
-			CompanionsPlugin.Log.LogDebug("[Bow] Out of stamina - letting go of the string");
+			CompanionsPlugin.Log.LogDebug("[Bow] Out of stamina - letting go of the string, getting its breath back");
+			s_resting.Add(h.GetInstanceID());
 			Cancel(h);
 			return;
 		}
@@ -151,6 +160,41 @@ internal static class MHR_BowDraw
 		{
 			h.UseStamina(drain * dt);
 		}
+	}
+
+	// Like a player: don't start a draw it can't finish. Needs the stamina to reach the draw it would shoot at (half for a
+	// close target, full for a far one); short of that, or below StaminaReserve with a far target, it waits until stamina
+	// is back to StaminaResume.
+	private static bool TooTiredToDraw(Humanoid h, ItemDrop.ItemData w, Character target)
+	{
+		CompanionStamina stam = h.GetComponent<CompanionStamina>();
+		if (stam == null || stam.MaxStamina <= 0f)
+		{
+			return false;
+		}
+		int id = h.GetInstanceID();
+		float share = stam.Stamina / stam.MaxStamina;
+		if (s_resting.Contains(id))
+		{
+			if (share < (ModConfig.CombatStaminaResume?.Value ?? 0.5f))
+			{
+				return true;
+			}
+			s_resting.Remove(id);
+			CompanionsPlugin.Log.LogDebug($"[Bow] Got its breath back ({stam.Stamina:F0}/{stam.MaxStamina:F0}) - drawing again");
+			return false;
+		}
+		bool far = target == null || Vector3.Distance(h.transform.position, target.transform.position) >= (ModConfig.CombatBowFullDrawRange?.Value ?? 15f);
+		Attack a = w.m_shared.m_attack;
+		float full = Mathf.Lerp(a.m_drawDurationMin, a.m_drawDurationMin * 0.2f, h.GetSkillFactor(w.m_shared.m_skillType));
+		float need = w.GetDrawStaminaDrain() * full * (far ? 1f : MinDraw()) + 1f;
+		if (stam.Stamina < need || (far && share < (ModConfig.CombatStaminaReserve?.Value ?? 0.3f)))
+		{
+			s_resting.Add(id);
+			CompanionsPlugin.Log.LogDebug($"[Bow] Too tired to draw ({stam.Stamina:F0}/{stam.MaxStamina:F0} stamina) - waiting for its breath");
+			return true;
+		}
+		return false;
 	}
 
 	private static float MinDraw()
@@ -175,8 +219,11 @@ internal static class MHR_BowDraw
 		Vector3 me = h.GetEyePoint();
 		Vector3 to = target.GetCenterPoint();
 		float dist = Vector3.Distance(me, to);
+		float fullRange = ModConfig.CombatBowFullDrawRange?.Value ?? 15f;
 		CompanionStamina stam = h.GetComponent<CompanionStamina>();
-		if (stam != null && stam.MaxStamina > 0f && stam.Stamina / stam.MaxStamina < (ModConfig.CombatStaminaReserve?.Value ?? 0.3f))
+		// 1.5.63: only close - far off a weak arrow drops short (log d40905e0: 53% at a boar 15 m off, 4 m up, missed); far
+		// off it waits for its breath instead (TooTiredToDraw)
+		if (dist < fullRange && stam != null && stam.MaxStamina > 0f && stam.Stamina / stam.MaxStamina < (ModConfig.CombatStaminaReserve?.Value ?? 0.3f))
 		{
 			st.Why = "low on stamina";
 			return min;
@@ -195,7 +242,7 @@ internal static class MHR_BowDraw
 				return min;
 			}
 		}
-		if (dist >= (ModConfig.CombatBowFullDrawRange?.Value ?? 15f))
+		if (dist >= fullRange)
 		{
 			st.Why = "full draw";
 			return 1f;
