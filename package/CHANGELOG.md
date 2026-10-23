@@ -4,6 +4,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 
 ## 1.5.6
 - Bows: companions draw the bow before each shot like a player - the draw takes as long as yours at their Bows skill and drains stamina while held - instead of firing every arrow instantly at full draw. They stand and shoot rather than running circles round the target, draw while turning to it, draw again as soon as the last arrow is away, and hold the shot (or step closer) when a hill or rock is in the way.
+- Bows: like a player, companions don't always draw fully - a close target, low stamina or an enemy rushing in gets a quicker, weaker partial draw, never under half (Combat > BowMinDraw, BowFullDrawRange); out of stamina mid-draw they still shoot if the draw is far enough.
 - Chopping and mining: companions swing again as soon as the last swing allows, through the weapon's combo like a player holding attack, instead of one swing every 2.5 seconds; they stop to get their breath back when low and carry on when rested (Gathering > RestStamina, ResumeStamina; Advanced > GatheringSwingInterval removed).
 - Chopping: the power chop is only used on stumps and on logs lying too low for a normal swing, not on every swing after the third (Gathering > PowerChopLogBelow).
 - Fix: on the Wood job a companion could get stuck against a tree in a fight - the job kept walking it towards its stump while it fought.

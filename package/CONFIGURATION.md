@@ -273,6 +273,12 @@ How close (meters) an enemy has to be to count as one of the group on a companio
 **FlankAngle** — Default: 100 · Range: 30 – 180  
 Two enemies more than this many degrees apart, seen from the companion, count as on different sides.
 
+**BowMinDraw** — Default: 0.5 · Range: 0.1 – 1  
+Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.
+
+**BowFullDrawRange** — Default: 15 · Range: 3 – 50  
+Bows: from this many meters away a companion always draws fully - a weaker arrow is slower and drops short at range.
+
 **FinishHits** — Default: 2 · Range: 0 – 5  
 An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.
 

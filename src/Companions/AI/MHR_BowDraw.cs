@@ -24,6 +24,14 @@ internal static class MHR_BowDraw
 		public float Started;
 
 		public float Held;
+
+		// a little variation in when it lets go, so it isn't machine-exact (+-10%)
+		public float Jitter = Random.Range(0.9f, 1.1f);
+
+		// ran out of stamina with enough draw to shoot: loose instead of dropping the arrow
+		public bool LooseNow;
+
+		public string Why = "full draw";
 	}
 
 	private static readonly Dictionary<int, State> s_states = new Dictionary<int, State>();
@@ -65,7 +73,8 @@ internal static class MHR_BowDraw
 			LogBowOnce(h, "companion");
 		}
 		st.LastWant = Time.time;
-		if (h.GetAttackDrawPercentage() < 1f)
+		float pct = h.GetAttackDrawPercentage();
+		if (pct < (st.LooseNow ? 0f : ReleaseAt(h, w, target, st)))
 		{
 			return false;
 		}
@@ -79,7 +88,7 @@ internal static class MHR_BowDraw
 			return false;
 		}
 		bool shot = h.StartAttack(target, secondaryAttack: false);
-		CompanionsPlugin.Log.LogDebug($"[Bow] {(shot ? "Loosed" : "Couldn't loose")} after {Time.time - st.Started:F1} s" + (st.Held > 0.05f ? $" (held at full draw {st.Held:F1} s)" : ""));
+		CompanionsPlugin.Log.LogDebug($"[Bow] {(shot ? "Loosed" : "Couldn't loose")} at {pct * 100f:F0}% draw ({(st.LooseNow ? "out of stamina" : st.Why)}) after {Time.time - st.Started:F1} s" + (st.Held > 0.05f ? $", held {st.Held:F1} s" : ""));
 		Cancel(h);
 		return shot;
 	}
@@ -120,6 +129,11 @@ internal static class MHR_BowDraw
 		float drain = w.GetDrawStaminaDrain() * (pct >= 1f ? 0.5f : 1f);
 		if (drain > 0f && !h.HaveStamina())
 		{
+			if (pct >= MinDraw())
+			{
+				st.LooseNow = true;
+				return;
+			}
 			CompanionsPlugin.Log.LogDebug("[Bow] Out of stamina - letting go of the string");
 			Cancel(h);
 			return;
@@ -137,6 +151,68 @@ internal static class MHR_BowDraw
 		{
 			h.UseStamina(drain * dt);
 		}
+	}
+
+	private static float MinDraw()
+	{
+		return Mathf.Clamp01(ModConfig.CombatBowMinDraw?.Value ?? 0.5f);
+	}
+
+	// 1.5.62: how far to draw before letting go, like a player (user: "I dont always do a full draw of the bow. If its closer
+	// or I have less stamina I sometimes use a not full draw."). The draw sets the shot (Attack.ProjectileAttackTriggered):
+	// spread Lerp(undrawn, drawn accuracy, sqrt(draw)), damage and push x draw, speed along the bow's draw curve.
+	// - close (under BowFullDrawRange): just enough draw that the spread still lands on the target
+	// - low on stamina (under [Combat] StaminaReserve) or the target rushing in before a full draw: the minimum
+	// - otherwise a full draw. Never under BowMinDraw.
+	private static float ReleaseAt(Humanoid h, ItemDrop.ItemData w, Character target, State st)
+	{
+		float min = MinDraw();
+		if (target == null)
+		{
+			st.Why = "full draw";
+			return 1f;
+		}
+		Vector3 me = h.GetEyePoint();
+		Vector3 to = target.GetCenterPoint();
+		float dist = Vector3.Distance(me, to);
+		CompanionStamina stam = h.GetComponent<CompanionStamina>();
+		if (stam != null && stam.MaxStamina > 0f && stam.Stamina / stam.MaxStamina < (ModConfig.CombatStaminaReserve?.Value ?? 0.3f))
+		{
+			st.Why = "low on stamina";
+			return min;
+		}
+		Attack a = w.m_shared.m_attack;
+		Vector3 toMe = me - to;
+		toMe.y = 0f;
+		float closing = toMe.sqrMagnitude > 0.01f ? Vector3.Dot(target.GetVelocity(), toMe.normalized) : 0f;
+		if (dist < 8f && closing > 1f)
+		{
+			float full = Mathf.Max(0.1f, Mathf.Lerp(a.m_drawDurationMin, a.m_drawDurationMin * 0.2f, h.GetSkillFactor(w.m_shared.m_skillType)));
+			float left = (1f - h.GetAttackDrawPercentage()) * full;
+			if ((dist - 2f) / closing < left)
+			{
+				st.Why = $"it's rushing in, {dist:F0} m";
+				return min;
+			}
+		}
+		if (dist >= (ModConfig.CombatBowFullDrawRange?.Value ?? 15f))
+		{
+			st.Why = "full draw";
+			return 1f;
+		}
+		ItemDrop.ItemData ammo = h.GetAmmoItem();
+		float accDrawn = a.m_projectileAccuracy + (ammo?.m_shared?.m_attack?.m_projectileAccuracy ?? 0f);
+		float accUndrawn = a.m_projectileAccuracyMin + (ammo?.m_shared?.m_attack?.m_projectileAccuracyMin ?? 0f);
+		float allowed = Mathf.Atan2(Mathf.Max(0.3f, target.GetRadius()), Mathf.Max(0.5f, dist)) * Mathf.Rad2Deg;
+		float need = 1f;
+		if (accUndrawn > accDrawn + 0.01f && allowed > accDrawn)
+		{
+			float s = Mathf.Clamp01((accUndrawn - allowed) / (accUndrawn - accDrawn));
+			need = s * s;
+		}
+		need = Mathf.Clamp(need * st.Jitter, min, 1f);
+		st.Why = need < 0.99f ? $"close, {dist:F0} m" : "full draw";
+		return need;
 	}
 
 	// A straight line from the eyes and from the bow hand to the middle of the target that no terrain, rock or building

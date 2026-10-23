@@ -372,6 +372,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestFollowLogRange;
 
+	internal static ConfigEntry<float> CombatBowMinDraw;
+
+	internal static ConfigEntry<float> CombatBowFullDrawRange;
+
 	internal static ConfigEntry<float> GatherRestStamina;
 
 	internal static ConfigEntry<float> GatherResumeStamina;
@@ -633,6 +637,8 @@ internal static class ModConfig
 		CombatGroupSize = Bind(cfg, "Combat", "GroupSize", 2, "With this many enemies close enough to hit a companion, from different sides, it gets clear first - moves for a couple of seconds until they're all on one side - then fights from there.", new AcceptableValueRange<int>(2, 10));
 		CombatGroupRange = Bind(cfg, "Combat", "GroupRange", 6f, "How close (meters) an enemy has to be to count as one of the group on a companion.", new AcceptableValueRange<float>(2f, 20f));
 		CombatFlankAngle = Bind(cfg, "Combat", "FlankAngle", 100f, "Two enemies more than this many degrees apart, seen from the companion, count as on different sides.", new AcceptableValueRange<float>(30f, 180f));
+		CombatBowMinDraw = Bind(cfg, "Combat", "BowMinDraw", 0.5f, "Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.", new AcceptableValueRange<float>(0.1f, 1f));
+		CombatBowFullDrawRange = Bind(cfg, "Combat", "BowFullDrawRange", 15f, "Bows: from this many meters away a companion always draws fully - a weaker arrow is slower and drops short at range.", new AcceptableValueRange<float>(3f, 50f));
 		CombatFinishHits = Bind(cfg, "Combat", "FinishHits", 2, "An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.", new AcceptableValueRange<int>(0, 5));
 		CombatSpacing = Bind(cfg, "Combat", "Spacing", true, "One on one, a companion keeps just outside the enemy's reach, goes in for a combo when the enemy can't swing again in time, then steps back out - and steps out of swings at the edge of its reach rather than blocking them.");
 		CombatFlank = Bind(cfg, "Combat", "Flank", true, "When an enemy is busy with you (or someone else), a companion works its way round behind it and attacks from there, out of its swings. (The game's backstab bonus only counts on enemies that haven't noticed anyone.)");
