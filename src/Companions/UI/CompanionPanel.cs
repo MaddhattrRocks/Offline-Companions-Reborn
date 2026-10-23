@@ -449,7 +449,7 @@ public class CompanionPanel
 		{
 			Transform parent2 = MakeAnchoredRow(_dvergerGroup.transform, y3, num4);
 			y3 -= num4 + num2;
-			Button item = AddToggleButton(parent2, v.DisplayName, buttonTemplate, new Vector2(0.01f, 0f), new Vector2(0.99f, 1f), delegate
+			Button item = AddToggleButton(parent2, v.LocalName, buttonTemplate, new Vector2(0.01f, 0f), new Vector2(0.99f, 1f), delegate
 			{
 				SetDvergerVariant(v);
 			});
@@ -1076,7 +1076,7 @@ public class CompanionPanel
 		}
 		if (_buyButtonLabel != null)
 		{
-			string text = _selectedTier?.DisplayName ?? "Companion";
+			string text = _selectedTier?.LocalName ?? ModLocalization.Loc("hc_tier_companion");
 			_buyButtonLabel.text = ((bankBalance >= price) ? ModLocalization.LocFmt("hc_ui_btn_buy", text, price.ToString("N0")) : ModLocalization.LocFmt("hc_ui_btn_need", price.ToString("N0")));
 		}
 	}
@@ -1451,7 +1451,7 @@ public class CompanionPanel
 	{
 		if (_buyButtonLabel != null)
 		{
-			_buyButtonLabel.text = ModLocalization.LocFmt("hc_ui_btn_buy", _selectedTier.DisplayName, CompanionTierData.Price.ToString("N0"));
+			_buyButtonLabel.text = ModLocalization.LocFmt("hc_ui_btn_buy", _selectedTier.LocalName, CompanionTierData.Price.ToString("N0"));
 		}
 	}
 

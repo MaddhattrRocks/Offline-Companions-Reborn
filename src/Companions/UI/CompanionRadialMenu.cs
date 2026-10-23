@@ -325,6 +325,7 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		if (!(companion == null))
 		{
+			ModUiLayers.LogSceneLayers("Command wheel");
 			// 1.4.152: its player opens the wheel - their game runs the companion, so what they pick takes effect
 			if (MHR_Owner.IsMine(companion))
 			{
@@ -770,7 +771,7 @@ public class CompanionRadialMenu : MonoBehaviour
 		gameObject.transform.SetParent(base.transform, worldPositionStays: false);
 		_canvas = gameObject.GetComponent<Canvas>();
 		_canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-		_canvas.sortingOrder = 30;
+		_canvas.sortingOrder = ModUiLayers.RadialMenu;
 		CanvasScaler component = gameObject.GetComponent<CanvasScaler>();
 		component.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 		component.referenceResolution = new Vector2(1920f, 1080f);

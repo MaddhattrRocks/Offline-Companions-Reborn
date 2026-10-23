@@ -74,7 +74,7 @@ internal static class ReturnLogic
 
 	private static MethodInfo _sayM;
 
-	private static readonly string[] _greetings = new string[3] { "I've been looking for you!", "There you are!", "Finally found you!" };
+	private static readonly string[] _greetings = new string[3] { "hc_speech_found_1", "hc_speech_found_2", "hc_speech_found_3" };
 
 	private static readonly System.Random _rng = new System.Random();
 
@@ -716,7 +716,7 @@ internal static class ReturnLogic
 							typeof(bool)
 						});
 					}
-					string text = _greetings[_rng.Next(_greetings.Length)];
+					string text = ModLocalization.Loc(_greetings[_rng.Next(_greetings.Length)]);
 					try
 					{
 						if (_sayM != null)
