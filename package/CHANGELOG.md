@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Fix: a companion loading in with the Wood job (or another tool job) on could work with no armour on - it took out its axe before its gear went on, and gear was then held back until the job ended.
 - Fix: a strip across the middle of the F8 settings panel ignored clicks, and the game's hover text showed through the middle of the command wheel - the mod's panels were drawn under the game's HUD. They now sit above the HUD and below the pause menu.
 - Translations: tier names (Companion, Warrior, Mage, Fire Mage, Ice Mage, Support), the "found you" greetings, ON/OFF in the settings panel, "Hold" in the hover text and the tombstone's resurrect text can now be translated.
 - Following you indoors, companions now look for a free chair up to 8 m away before sitting on the floor (Follow > ChairRange).

@@ -416,10 +416,7 @@ public class CompanionSetup : MonoBehaviour
 		{
 			CompanionsPlugin.Log.LogDebug($"[Setup] SyncEquipmentToInventory — SuppressAutoEquip={SuppressAutoEquip}");
 			UnequipMissingEquippedItems();
-			if (!SuppressAutoEquip)
-			{
-				AutoEquipBest();
-			}
+			AutoEquipBest(armorOnly: SuppressAutoEquip);
 		}
 	}
 
@@ -708,14 +705,10 @@ public class CompanionSetup : MonoBehaviour
 			if (_autoEquipCooldown <= 0f && _autoEquipPending)
 			{
 				_autoEquipPending = false;
-				if (_humanoid != null && _nview != null && _nview.IsOwner() && !SuppressAutoEquip)
+				if (_humanoid != null && _nview != null && _nview.IsOwner())
 				{
-					CompanionsPlugin.Log.LogDebug("[Setup] Deferred auto-equip firing now");
-					AutoEquipBest();
-				}
-				else if (SuppressAutoEquip)
-				{
-					CompanionsPlugin.Log.LogDebug("[Setup] Deferred auto-equip skipped — SuppressAutoEquip=true");
+					CompanionsPlugin.Log.LogDebug("[Setup] Deferred auto-equip firing now" + (SuppressAutoEquip ? " (armour only - a job holds the hands)" : ""));
+					AutoEquipBest(armorOnly: SuppressAutoEquip);
 				}
 			}
 		}
@@ -906,7 +899,10 @@ public class CompanionSetup : MonoBehaviour
 		}
 	}
 
-	private void AutoEquipBest()
+	// 1.5.60: armorOnly while a job holds the hands (SuppressAutoEquip - a tool out). It used to skip the whole thing, so
+	// a companion that loaded in with the Wood job on picked up its axe before its gear went on and worked naked
+	// (user report) - the job only owns the hands, armour still goes on.
+	private void AutoEquipBest(bool armorOnly = false)
 	{
 		Inventory inventory = _humanoid.GetInventory();
 		if (inventory == null || TorchOpener.IsActive(_humanoid))
@@ -1043,6 +1039,11 @@ public class CompanionSetup : MonoBehaviour
 		}
 		EquipDiag.OnScan(allItems, itemData);
 		CompanionsPlugin.Log.LogDebug(string.Format("[Setup] AutoEquipBest — 1H=\"{0}\"({1:F0}) ", itemData?.m_shared?.m_name ?? "none", num) + string.Format("2H=\"{0}\"({1:F0}) ", itemData2?.m_shared?.m_name ?? "none", num2) + string.Format("shield=\"{0}\"(block={1:F0}) ", itemData4?.m_shared?.m_name ?? "none", num4) + "helm=\"" + (itemData7?.m_shared?.m_name ?? "none") + "\" chest=\"" + (itemData5?.m_shared?.m_name ?? "none") + "\" legs=\"" + (itemData6?.m_shared?.m_name ?? "none") + "\" trinket=\"" + (itemData8?.m_shared?.m_name ?? "none") + "\"");
+		if (armorOnly)
+		{
+			EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
+			return;
+		}
 		ItemDrop.ItemData itemData9 = GetEquipSlot(_rightItemField);
 		ItemDrop.ItemData itemData10 = GetEquipSlot(_leftItemField);
 		bool flag = itemData2 != null && (itemData == null || num2 >= num);
@@ -1089,15 +1090,20 @@ public class CompanionSetup : MonoBehaviour
 			CompanionsPlugin.Log.LogDebug("[Setup] Unequip left (2H in right): \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
 			_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
 		}
+		EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
+	}
+
+	private void EquipBestArmor(ItemDrop.ItemData chest, ItemDrop.ItemData legs, ItemDrop.ItemData helmet, ItemDrop.ItemData shoulder, ItemDrop.ItemData utility, ItemDrop.ItemData trinket)
+	{
 		if (CanWearArmor())
 		{
-			EquipBestArmorSlot(_chestItemField, itemData5);
-			EquipBestArmorSlot(_legItemField, itemData6);
-			EquipBestArmorSlot(_helmetItemField, itemData7);
-			EquipBestArmorSlot(_shoulderItemField, bestItem);
+			EquipBestArmorSlot(_chestItemField, chest);
+			EquipBestArmorSlot(_legItemField, legs);
+			EquipBestArmorSlot(_helmetItemField, helmet);
+			EquipBestArmorSlot(_shoulderItemField, shoulder);
 		}
-		EquipBestArmorSlot(_utilityItemField, bestItem2);
-		EquipBestArmorSlot(_trinketItemField, itemData8);
+		EquipBestArmorSlot(_utilityItemField, utility);
+		EquipBestArmorSlot(_trinketItemField, trinket);
 	}
 
 	private void UpdateEquipQueue(float dt)
@@ -1362,7 +1368,7 @@ public class CompanionSetup : MonoBehaviour
 		try
 		{
 			UnequipMissingEquippedItems();
-			if (flag && !SuppressAutoEquip)
+			if (flag)
 			{
 				if (_autoEquipCooldown > 0f)
 				{
@@ -1371,8 +1377,8 @@ public class CompanionSetup : MonoBehaviour
 				}
 				else
 				{
-					CompanionsPlugin.Log.LogDebug("[Setup] OnInventoryChanged — auto-equip triggered");
-					AutoEquipBest();
+					CompanionsPlugin.Log.LogDebug("[Setup] OnInventoryChanged — auto-equip triggered" + (SuppressAutoEquip ? " (armour only)" : ""));
+					AutoEquipBest(armorOnly: SuppressAutoEquip);
 					_autoEquipCooldown = 0.5f;
 				}
 			}
