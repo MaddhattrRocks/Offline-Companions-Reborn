@@ -171,7 +171,53 @@ public class HarvestController : MonoBehaviour
 
 	private static float ScanRadius => ModConfig.HarvestScanRadius.Value;
 
-	private static float AttackInterval => ModConfig.HarvestAttackInterval.Value;
+	private bool _chopChain;
+
+	private bool _catchingBreath;
+
+	// HaveQueuedChain postfix: carry the weapon's combo on while working a target
+	internal bool WantsChain => _chopChain && _state == HarvestState.Attacking && (_ai == null || !_ai.IsInCombat);
+
+	private static readonly System.Reflection.FieldInfo s_curAttack = HarmonyLib.AccessTools.Field(typeof(Humanoid), "m_currentAttack");
+
+	internal bool CurrentAttackCanChain()
+	{
+		try
+		{
+			return (s_curAttack?.GetValue(_humanoid) as Attack)?.CanStartChainAttack() ?? false;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	// Stumps: the downward power chop. Logs: only one lying too low for the sideways swing - its top less than
+	// [Gathering] PowerChopLogBelow above the companion's feet.
+	private bool WantsPowerChop(ItemDrop.ItemData tool)
+	{
+		if (GetMode() != 1 || _target == null || tool == null || !tool.HaveSecondaryAttack())
+		{
+			return false;
+		}
+		if (_targetType == "Stump")
+		{
+			return true;
+		}
+		if (_targetType != "TreeLog")
+		{
+			return false;
+		}
+		float top = float.MinValue;
+		foreach (Collider c in _target.GetComponentsInChildren<Collider>())
+		{
+			if (c != null && c.enabled && !c.isTrigger)
+			{
+				top = Mathf.Max(top, c.bounds.max.y);
+			}
+		}
+		return top > float.MinValue && top < base.transform.position.y + (ModConfig.GatherPowerChopLogBelow?.Value ?? 0.3f);
+	}
 
 	private static float DropScanRadius => ModConfig.HarvestDropScanRadius.Value;
 
@@ -1302,29 +1348,53 @@ public class HarvestController : MonoBehaviour
 		bool flag4 = _humanoid != null && _humanoid.InAttack();
 		bool flag5 = _humanoid != null && _humanoid.InDodge();
 		bool flag6 = _character != null && _character.IsStaggering();
-		if (flag4 || flag5 || flag6)
+		// 1.5.61: like a player holding attack - the next swing goes as soon as the current one allows it (the weapon's
+		// combo, its last swing for double damage) instead of one swing every 2.5 s (user: "It seems like it might be a
+		// little slow"). Mid-swing it waits for the chain point (CompanionChainPatch) and checks again next frame.
+		bool chainReady = flag4 && !flag5 && !flag6 && _chopChain && CurrentAttackCanChain();
+		if ((flag4 && !chainReady) || flag5 || flag6)
 		{
-			LogInfo($"Attack blocked: inAttack={flag4} inDodge={flag5} stagger={flag6} " + $"— retry in {0.25f}s");
-			_attackTimer = 0.25f;
+			if (flag5 || flag6)
+			{
+				LogInfo($"Attack blocked: inDodge={flag5} stagger={flag6} — retry in {0.25f}s");
+			}
+			_attackTimer = (flag4 ? 0f : 0.25f);
 			return;
 		}
-		float attackStamina = rightItem.m_shared.m_attack.m_attackStamina;
-		if (_stamina != null && attackStamina > 0f && _stamina.Stamina < attackStamina + 0.1f)
+		// 1.5.61: the power chop only where a player uses it (user: "The only time I use a power chop is when taking out a
+		// stump as it swings down rather than across. Occasionally I will use it if a log is below me and I cannot hit the
+		// log with a regular swing.") - it used to be every swing from the 4th on
+		bool flag8 = WantsPowerChop(rightItem);
+		float attackStamina = (flag8 ? rightItem.m_shared.m_secondaryAttack.m_attackStamina : rightItem.m_shared.m_attack.m_attackStamina);
+		if (_stamina != null && attackStamina > 0f)
 		{
-			_attackTimer = 0.5f;
-			return;
-		}
-		bool flag7 = _swingCount >= 3 && rightItem.HaveSecondaryAttack();
-		bool flag8 = false;
-		if (flag7)
-		{
-			float attackStamina2 = rightItem.m_shared.m_secondaryAttack.m_attackStamina;
-			float num4 = ((_stamina != null) ? _stamina.Stamina : 999f);
-			flag8 = num4 >= attackStamina2 + 1f;
+			// 1.5.61: chops until it's nearly out of breath, then stops and gets it back before chopping on, like a player
+			float max = Mathf.Max(1f, _stamina.MaxStamina);
+			if (_catchingBreath)
+			{
+				if (_stamina.Stamina < (ModConfig.GatherResumeStamina?.Value ?? 0.6f) * max)
+				{
+					_chopChain = false;
+					_attackTimer = 0.5f;
+					return;
+				}
+				_catchingBreath = false;
+				Log($"Got its breath back ({_stamina.Stamina:F0}/{max:F0}) — back to work");
+			}
+			if (_stamina.Stamina < attackStamina + (ModConfig.GatherRestStamina?.Value ?? 0.15f) * max)
+			{
+				_catchingBreath = true;
+				_chopChain = false;
+				_attackTimer = 0.5f;
+				Log($"Catching its breath ({_stamina.Stamina:F0}/{max:F0} stamina) before swinging again");
+				return;
+			}
 		}
 		bool flag9 = _humanoid != null && _humanoid.StartAttack(null, flag8);
 		_totalAttempts++;
-		_attackTimer = (flag9 ? AttackInterval : 0.5f);
+		_chopChain = flag9 && !flag8;
+		// a swing that just started isn't InAttack for a frame - don't start another over it
+		_attackTimer = (flag9 ? 0.4f : 0.5f);
 		if (flag9)
 		{
 			_swingCount++;

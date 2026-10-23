@@ -171,6 +171,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			CheckMiss(force: false);
 		}
+		MHR_BowDraw.Maintain(_humanoid);
 	}
 
 	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
@@ -1268,23 +1269,15 @@ public partial class CompanionCombatAI : MonoBehaviour
 			return false;
 		}
 		Attack attack = currentWeapon.m_shared?.m_attack;
-		bool flag = false;
-		if (attack != null && attack.m_bowDraw)
-		{
-			flag = true;
-			attack.m_bowDraw = false;
-		}
 		float since = _character.GetTimeSinceLastAttack();
-		bool flag2 = _character.StartAttack(target, charge: false);
+		// 1.5.61: a bow is drawn first, like a player holding attack - this is called every frame it's aimed and ready,
+		// the arrow goes when fully drawn (MHR_BowDraw)
+		bool flag2 = MHR_BowDraw.NeedsDraw(_humanoid) ? MHR_BowDraw.Tick(_humanoid, target, Time.deltaTime) : _character.StartAttack(target, charge: false);
 		// 1.5.53: which swing of the weapon's combo this is (user: "It looks like the NPC is doing mostly power attacks?" -
 		// it never uses the secondary attack; the later combo swings are the bigger ones), for the [Attack] line
 		if (flag2)
 		{
 			_lastSwingInfo = ComboInfo(attack) + $", {since:F2} s after the last swing ended";
-		}
-		if (flag && attack != null)
-		{
-			attack.m_bowDraw = true;
 		}
 		if (flag2)
 		{

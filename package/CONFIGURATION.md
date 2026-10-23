@@ -457,6 +457,15 @@ Wood, Stone and Ore with Follow on: a tree or rock has to be within this many me
 **FollowLogRange** — Default: 20 · Range: 5 – 60  
 Wood with Follow on: fallen logs and stumps count up to this many meters from you (further than FollowRange), so it finishes the trees it fells before starting a new one - a log can roll well away from where you stand.
 
+**RestStamina** — Default: 0.15 · Range: 0 – 0.9  
+Chopping and mining: swing after swing (the weapon's combo) until stamina would drop below this share of the maximum, then stop and get its breath back.
+
+**ResumeStamina** — Default: 0.6 · Range: 0.1 – 1  
+Chopping and mining: after stopping for breath, start swinging again once stamina is back to this share of the maximum.
+
+**PowerChopLogBelow** — Default: 0.3 · Range: -1 – 2  
+Wood: the power chop (the axe's downward swing) is used on stumps, and on a log only when its top is less than this many meters above the companion's feet - too low for the sideways swing. Everything else gets normal swings.
+
 **ForageFollowRange** — Default: 10 · Range: 3 – 60  
 Forage with Follow on: a plant has to be within this many meters of you - the berries you happen to walk past, not everything around. With nothing that close the companion just follows you. (With Follow off see Range.)
 
@@ -875,9 +884,6 @@ Gathering: how far (meters) around itself a companion looks for trees, rocks and
 
 **GatheringScanInterval** — Default: 4 · Range: 1 – 30  
 Gathering: seconds between looks for the next tree, rock or plant.
-
-**GatheringSwingInterval** — Default: 2.5 · Range: 0.5 – 5  
-Gathering: seconds between swings at a tree or rock.
 
 **GatheringDropRadius** — Default: 8 · Range: 2 – 20  
 Gathering: how far (meters) around a felled tree or broken rock the drops are picked up.

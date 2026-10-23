@@ -541,19 +541,22 @@ public class HuntController : MonoBehaviour
 		{
 			return;
 		}
-		_nextShot = Time.time + 1.5f;
 		CompanionProjectileAimPatch.AimAt(_humanoid, aim);
-		Attack attack = _humanoid.GetCurrentWeapon()?.m_shared?.m_attack;
-		bool draw = attack != null && attack.m_bowDraw;
-		if (draw)
+		// 1.5.61: drawn like a player (MHR_BowDraw); combat's Update lets go of a draw nobody keeps ticking
+		bool shot;
+		if (MHR_BowDraw.NeedsDraw(_humanoid))
 		{
-			attack.m_bowDraw = false;
+			shot = MHR_BowDraw.Tick(_humanoid, null, Time.deltaTime);
+			if (!shot)
+			{
+				return;
+			}
 		}
-		bool shot = _character.StartAttack(null, false);
-		if (draw)
+		else
 		{
-			attack.m_bowDraw = true;
+			shot = _character.StartAttack(null, false);
 		}
+		_nextShot = Time.time + 1.5f;
 		LogDebug((shot ? "Shooting at the " : "Couldn't shoot at the ") + _birdName + " (" + dist.ToString("F0") + " m, " + (_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "no weapon") + ")");
 	}
 

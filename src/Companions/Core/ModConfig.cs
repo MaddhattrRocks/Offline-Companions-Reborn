@@ -372,6 +372,12 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestFollowLogRange;
 
+	internal static ConfigEntry<float> GatherRestStamina;
+
+	internal static ConfigEntry<float> GatherResumeStamina;
+
+	internal static ConfigEntry<float> GatherPowerChopLogBelow;
+
 	internal static ConfigEntry<float> ForageFollowRange;
 
 	internal static ConfigEntry<float> HarvestRange;
@@ -380,7 +386,6 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> HarvestScanInterval;
 
-	internal static ConfigEntry<float> HarvestAttackInterval;
 
 	internal static ConfigEntry<float> HarvestOverweightThreshold;
 
@@ -687,6 +692,9 @@ internal static class ModConfig
 		HarvestRange = Bind(cfg, "Gathering", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
 		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 10f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
 		HarvestFollowLogRange = Bind(cfg, "Gathering", "FollowLogRange", 20f, "Wood with Follow on: fallen logs and stumps count up to this many meters from you (further than FollowRange), so it finishes the trees it fells before starting a new one - a log can roll well away from where you stand.", new AcceptableValueRange<float>(5f, 60f));
+		GatherRestStamina = Bind(cfg, "Gathering", "RestStamina", 0.15f, "Chopping and mining: swing after swing (the weapon's combo) until stamina would drop below this share of the maximum, then stop and get its breath back.", new AcceptableValueRange<float>(0f, 0.9f));
+		GatherResumeStamina = Bind(cfg, "Gathering", "ResumeStamina", 0.6f, "Chopping and mining: after stopping for breath, start swinging again once stamina is back to this share of the maximum.", new AcceptableValueRange<float>(0.1f, 1f));
+		GatherPowerChopLogBelow = Bind(cfg, "Gathering", "PowerChopLogBelow", 0.3f, "Wood: the power chop (the axe's downward swing) is used on stumps, and on a log only when its top is less than this many meters above the companion's feet - too low for the sideways swing. Everything else gets normal swings.", new AcceptableValueRange<float>(-1f, 2f));
 		ForageFollowRange = Bind(cfg, "Gathering", "ForageFollowRange", 10f, "Forage with Follow on: a plant has to be within this many meters of you - the berries you happen to walk past, not everything around. With nothing that close the companion just follows you. (With Follow off see Range.)", new AcceptableValueRange<float>(3f, 60f));
 		HarvestPickUpLoose = Bind(cfg, "Gathering", "PickUpLoose", true, "Wood and Stone jobs, early in the game only: also pick up what's lying on the ground by hand - branches (Wood job), loose stones and flint (Stone job) - as long as they're on GatherWood / GatherStone and under their amount. Early game = there's no bronze-or-better axe in the companion's pack, your pack or the chests near home, and no forge at home to make one. With no tool for the job (no axe for Wood, no pickaxe for Stone) picking things up is all it does.");
 		WoodLimit = Bind(cfg, "Gathering", "WoodLimit", 500, "How many of each wood material (counting the companion's pack and chests near its home) the Wood job gathers before stopping. 0 = no limit. Per-item numbers in GatherWood override this.", new AcceptableValueRange<int>(0, 100000));
@@ -812,7 +820,6 @@ internal static class ModConfig
 		RosterSaveInterval = Bind(cfg, "Advanced", "RosterSaveInterval", 60f, "Seconds between saves of your companions to the roster (their gear and settings), used to recover a lost companion.", new AcceptableValueRange<float>(10f, 600f));
 		HarvestScanRadius = Bind(cfg, "Advanced", "GatheringSearchRadius", 30f, "Gathering: how far (meters) around itself a companion looks for trees, rocks and plants when it's following you or sent to one with the command key (with Follow off it's [Gathering] Range).", new AcceptableValueRange<float>(5f, 100f));
 		HarvestScanInterval = Bind(cfg, "Advanced", "GatheringScanInterval", 4f, "Gathering: seconds between looks for the next tree, rock or plant.", new AcceptableValueRange<float>(1f, 30f));
-		HarvestAttackInterval = Bind(cfg, "Advanced", "GatheringSwingInterval", 2.5f, "Gathering: seconds between swings at a tree or rock.", new AcceptableValueRange<float>(0.5f, 5f));
 		HarvestDropScanRadius = Bind(cfg, "Advanced", "GatheringDropRadius", 8f, "Gathering: how far (meters) around a felled tree or broken rock the drops are picked up.", new AcceptableValueRange<float>(2f, 20f));
 		HarvestBlacklistDuration = Bind(cfg, "Advanced", "GatheringSkipTime", 60f, "Gathering: seconds a tree, rock or plant it couldn't get to is skipped.", new AcceptableValueRange<float>(5f, 300f));
 		FarmScanInterval = Bind(cfg, "Advanced", "FarmScanInterval", 4f, "Farming: seconds between looks for crops to pick and ground to plant.", new AcceptableValueRange<float>(1f, 30f));
@@ -913,7 +920,6 @@ internal static class ModConfig
 		new string[] { "Smelting", "ScanRadius", "Smelting", "Range" },
 		new string[] { "Harvest", "ScanRadius", "Advanced", "GatheringSearchRadius" },
 		new string[] { "Harvest", "ScanInterval", "Advanced", "GatheringScanInterval" },
-		new string[] { "Harvest", "AttackInterval", "Advanced", "GatheringSwingInterval" },
 		new string[] { "Harvest", "DropScanRadius", "Advanced", "GatheringDropRadius" },
 		new string[] { "Harvest", "BlacklistDuration", "Advanced", "GatheringSkipTime" },
 		new string[] { "Farming", "ScanInterval", "Advanced", "FarmScanInterval" },

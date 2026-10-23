@@ -19,6 +19,13 @@ internal static class CompanionChainPatch
 		if (combat != null && combat.WantsChain)
 		{
 			__result = combat.CurrentAttackCanChain();
+			return;
+		}
+		// 1.5.61: chopping and mining chain the same way
+		HarvestController harvest = __instance.GetComponent<HarvestController>();
+		if (harvest != null && harvest.WantsChain)
+		{
+			__result = harvest.CurrentAttackCanChain();
 		}
 	}
 }
