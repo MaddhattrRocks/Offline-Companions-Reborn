@@ -634,7 +634,9 @@ public partial class CompanionCombatAI : MonoBehaviour
 					if (tac != 0)
 					{
 					}
-					else if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted())
+					// 1.5.64: backing off to bow range costs running stamina - not while catching its breath (it ran from a Neck
+					// until it fell over, log aec6b3cf); then it stands, and the melee fallback takes over when it closes in
+					else if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted() && !MHR_BowDraw.IsResting(_humanoid))
 					{
 						_ai.FleeFrom(dt, _targetCreature.transform.position);
 					}
@@ -1216,7 +1218,22 @@ public partial class CompanionCombatAI : MonoBehaviour
 					string text = _humanoid.GetCurrentWeapon()?.m_shared?.m_name;
 					bool flag = false;
 					ItemDrop.ItemData currentWeapon = _humanoid.GetCurrentWeapon();
-					if (_stance == 2 || HuntMode)
+					// 1.5.64: Ranged stance falls back to melee only when the enemy is in close (user: "I thought they only fall
+					// back to that when being attacked and in melee range?"; log aec6b3cf: out of breath with a Neck at its heels it
+					// kept running away with the bow out and never fought)
+					bool closeIn = _stance == 2 && !HuntMode && RangedWantsMelee(currentWeapon);
+					if (closeIn)
+					{
+						if (currentWeapon == null || MHR_IsProjectileWeapon(currentWeapon))
+						{
+							_ai.HaveFriendsInRange(_ai.m_viewRange, out var hurtFriend0, out var friend0);
+							_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend0, friend0);
+							TryForceMeleeWeapon();
+							flag = true;
+							CompanionsPlugin.Log.LogDebug($"[Ranged] {_targetCreature?.m_name} is in close - melee weapon out ({_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "none"})");
+						}
+					}
+					else if (_stance == 2 || HuntMode)
 					{
 						if (currentWeapon == null || currentWeapon.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Bow)
 						{
@@ -1328,6 +1345,24 @@ public partial class CompanionCombatAI : MonoBehaviour
 	private static bool IsPassiveAnimal(Character c)
 	{
 		return MHR_Threat.IsPassive(c);
+	}
+
+	// Ranged stance: the enemy within [Combat] RangedMeleeRange, or within twice that while it can't draw (catching its
+	// breath); once the melee weapon is out it stays out until the enemy is past twice the range.
+	private bool RangedWantsMelee(ItemDrop.ItemData current)
+	{
+		if (_targetCreature == null)
+		{
+			return false;
+		}
+		float range = ModConfig.CombatRangedMeleeRange?.Value ?? 4f;
+		float d = Vector3.Distance(base.transform.position, _targetCreature.transform.position) - _targetCreature.GetRadius();
+		bool meleeOut = current != null && !MHR_IsProjectileWeapon(current);
+		if (d <= range)
+		{
+			return true;
+		}
+		return d <= range * 2f && (meleeOut || MHR_BowDraw.IsResting(_humanoid));
 	}
 
 	private bool TryForceRangedWeapon()

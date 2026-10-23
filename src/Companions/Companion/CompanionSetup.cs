@@ -1046,6 +1046,30 @@ public class CompanionSetup : MonoBehaviour
 		}
 		ItemDrop.ItemData itemData9 = GetEquipSlot(_rightItemField);
 		ItemDrop.ItemData itemData10 = GetEquipSlot(_leftItemField);
+		// 1.5.64: Ranged stance carries its bow, like a player who means to shoot - not the sword and shield (user: "When in
+		// ranged stance the NPC is still equipping a sword and shield"). Melee only comes out in a fight, close in.
+		if (GetCombatStance() == 2 && !(_combatAI != null && _combatAI.IsEngaged))
+		{
+			ItemDrop.ItemData bow = WeaponLogic.FindReadyBow(_humanoid, null);
+			if (bow != null)
+			{
+				if (itemData10 != bow && itemData9 != bow)
+				{
+					if (itemData9 != null)
+					{
+						_humanoid.UnequipItem(itemData9, triggerEquipEffects: false);
+					}
+					if (itemData10 != null)
+					{
+						_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
+					}
+					QueueEquip(bow);
+					CompanionsPlugin.Log.LogDebug("[Setup] Ranged stance - queued the bow: \"" + (bow.m_shared?.m_name ?? "?") + "\"");
+				}
+				EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
+				return;
+			}
+		}
 		bool flag = itemData2 != null && (itemData == null || num2 >= num);
 		ItemDrop.ItemData itemData11 = (flag ? itemData2 : itemData);
 		CompanionsPlugin.Log.LogDebug($"[Setup] Weapon decision: use2H={flag} " + "desired=\"" + (itemData11?.m_shared?.m_name ?? "none") + "\" current=\"" + (itemData9?.m_shared?.m_name ?? "none") + "\" " + $"needsSwap={itemData11 != null && itemData9 != itemData11}");

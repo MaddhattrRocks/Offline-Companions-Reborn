@@ -276,6 +276,9 @@ Two enemies more than this many degrees apart, seen from the companion, count as
 **BowMinDraw** — Default: 0.5 · Range: 0.1 – 1  
 Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.
 
+**RangedMeleeRange** — Default: 4 · Range: 1 – 15  
+Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.
+
 **BowFullDrawRange** — Default: 15 · Range: 3 – 50  
 Bows: from this many meters away a companion always draws fully - a weaker arrow is slower and drops short at range.
 

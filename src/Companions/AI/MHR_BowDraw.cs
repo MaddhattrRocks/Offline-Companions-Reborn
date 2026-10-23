@@ -46,6 +46,11 @@ internal static class MHR_BowDraw
 		return w?.m_shared?.m_attack != null && w.m_shared.m_attack.m_bowDraw;
 	}
 
+	internal static bool IsResting(Humanoid h)
+	{
+		return h != null && s_resting.Contains(h.GetInstanceID());
+	}
+
 	internal static bool IsDrawing(Humanoid h)
 	{
 		return h != null && s_states.ContainsKey(h.GetInstanceID());

@@ -321,7 +321,7 @@ A companion can carry 300 weight, the same as a player.
 |:---|:---|
 | **Balanced** | Chooses melee or a bow/crossbow depending on distance |
 | **Passive** | Never starts a fight; just follows or works |
-| **Ranged** | Prefers a bow or crossbow and keeps its distance |
+| **Ranged** | Carries its bow and keeps its distance; the melee weapon and shield only come out when an enemy gets close (Combat > RangedMeleeRange) |
 | **Melee** | Sticks to melee weapons |
 
 **Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
