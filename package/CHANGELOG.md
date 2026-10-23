@@ -3,7 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
-- Bows: companions draw the bow before each shot like a player - the draw takes as long as yours at their Bows skill and drains stamina while held - instead of firing every arrow instantly at full draw.
+- Bows: companions draw the bow before each shot like a player - the draw takes as long as yours at their Bows skill and drains stamina while held - instead of firing every arrow instantly at full draw. They stand and shoot rather than running circles round the target, draw while turning to it, draw again as soon as the last arrow is away, and hold the shot (or step closer) when a hill or rock is in the way.
 - Chopping and mining: companions swing again as soon as the last swing allows, through the weapon's combo like a player holding attack, instead of one swing every 2.5 seconds; they stop to get their breath back when low and carry on when rested (Gathering > RestStamina, ResumeStamina; Advanced > GatheringSwingInterval removed).
 - Chopping: the power chop is only used on stumps and on logs lying too low for a normal swing, not on every swing after the third (Gathering > PowerChopLogBelow).
 - Fix: on the Wood job a companion could get stuck against a tree in a fight - the job kept walking it towards its stump while it fought.

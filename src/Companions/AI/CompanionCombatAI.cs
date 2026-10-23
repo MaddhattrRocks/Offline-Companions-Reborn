@@ -154,6 +154,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 	// water (1.4.101 test: followed a deer into the moat with the game's own movement, couldn't climb the wall and ended
 	// up warping to the player). With a bow or crossbow, prey well below (a moat, a pit) is shot from the edge.
 	private float _nextHuntMoveLog;
+
+	private float _nextBlockedShotLog;
 	private float _nextFleeLog;
 	private float _nextCloseLog;
 
@@ -171,7 +173,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			CheckMiss(force: false);
 		}
-		MHR_BowDraw.Maintain(_humanoid);
+		MHR_BowDraw.Maintain(_humanoid, Time.deltaTime);
 	}
 
 	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
@@ -636,6 +638,25 @@ public partial class CompanionCombatAI : MonoBehaviour
 					{
 						_ai.FleeFrom(dt, _targetCreature.transform.position);
 					}
+					// 1.5.62: with a bow, like a player: stand and draw while turning to it, loose, draw again - not running circles
+					// round it at 20 m (the draw only counted on the frames it happened to be lined up: 6-8 s per arrow). Nothing
+					// clear between it and the target (a hill, a rock): walk a few meters closer, still drawing.
+					else if (flag7 && flag8 && canSeeTarget && MHR_BowDraw.NeedsDraw(_humanoid))
+					{
+						if (MHR_BowDraw.ClearShot(_character, _targetCreature))
+						{
+							_ai.StopMoving();
+						}
+						else
+						{
+							if (Time.time >= _nextBlockedShotLog)
+							{
+								_nextBlockedShotLog = Time.time + 5f;
+								CompanionsPlugin.Log.LogDebug($"[Bow] Something is in the way of a shot at {_targetCreature.m_name} ({num3:F1} m) - moving closer");
+							}
+							ChaseMove(dt, _targetCreature.transform.position, Mathf.Max(5f, num3 - 4f), run: false);
+						}
+					}
 					else if (flag7 && flag8 && canSeeTarget && _ai.IsAlerted() && !flag9)
 					{
 						_ai.RandomMovementAroundPoint(dt, _targetCreature.transform.position, 20f, run: true);
@@ -715,7 +736,12 @@ public partial class CompanionCombatAI : MonoBehaviour
 							{
 								maxAngle = Mathf.Max(maxAngle, Mathf.Min(30f, melee.m_attackAngle * 0.3f));
 							}
-							if (flag5 && _ai.IsLookingAtPoint(_lastKnownTargetPos, maxAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
+							// 1.5.62: a bow draws while it turns to the target (DoAttack looses once lined up), and draws again as soon
+							// as the last shot is done - not after the weapon's AI attack interval
+							bool bow = MHR_BowDraw.NeedsDraw(_humanoid);
+							bool ready = bow ? flag3 : flag5;
+							float startAngle = bow ? Mathf.Max(maxAngle, 45f) : maxAngle;
+							if (ready && _ai.IsLookingAtPoint(_lastKnownTargetPos, startAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
 							{
 								if (_tacticsOn)
 								{
@@ -1272,7 +1298,18 @@ public partial class CompanionCombatAI : MonoBehaviour
 		float since = _character.GetTimeSinceLastAttack();
 		// 1.5.61: a bow is drawn first, like a player holding attack - this is called every frame it's aimed and ready,
 		// the arrow goes when fully drawn (MHR_BowDraw)
-		bool flag2 = MHR_BowDraw.NeedsDraw(_humanoid) ? MHR_BowDraw.Tick(_humanoid, target, Time.deltaTime) : _character.StartAttack(target, charge: false);
+		bool flag2;
+		if (MHR_BowDraw.NeedsDraw(_humanoid))
+		{
+			// 1.5.62: loosed only when lined up (the weapon's AI angle) and nothing is in the way
+			float maxAngle = currentWeapon.m_shared.m_aiAttackMaxAngle;
+			bool aimed = target == null || _ai.IsLookingAtPoint(target.GetCenterPoint(), maxAngle, currentWeapon.m_shared.m_aiInvertAngleCheck);
+			flag2 = MHR_BowDraw.Tick(_humanoid, target, aimed, MHR_BowDraw.ClearShot(_character, target));
+		}
+		else
+		{
+			flag2 = _character.StartAttack(target, charge: false);
+		}
 		// 1.5.53: which swing of the weapon's combo this is (user: "It looks like the NPC is doing mostly power attacks?" -
 		// it never uses the secondary attack; the later combo swings are the bigger ones), for the [Attack] line
 		if (flag2)

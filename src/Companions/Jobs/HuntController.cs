@@ -537,16 +537,18 @@ public class HuntController : MonoBehaviour
 		}
 		_ai.StopMoving();
 		_ai.LookAtPoint(aim);
-		if (Time.time < _nextShot || _character.InAttack() || !_ai.IsLookingAtPoint(aim, 3f))
+		bool drawBow = MHR_BowDraw.NeedsDraw(_humanoid);
+		// 1.5.61/62: a bow is drawn while turning to the bird and loosed once lined up (MHR_BowDraw; combat's Update runs the
+		// draw and lets go of one nobody keeps wanting)
+		if (Time.time < _nextShot || (_character.InAttack() && !MHR_BowDraw.IsDrawing(_humanoid)) || !_ai.IsLookingAtPoint(aim, drawBow ? 45f : 3f))
 		{
 			return;
 		}
 		CompanionProjectileAimPatch.AimAt(_humanoid, aim);
-		// 1.5.61: drawn like a player (MHR_BowDraw); combat's Update lets go of a draw nobody keeps ticking
 		bool shot;
-		if (MHR_BowDraw.NeedsDraw(_humanoid))
+		if (drawBow)
 		{
-			shot = MHR_BowDraw.Tick(_humanoid, null, Time.deltaTime);
+			shot = MHR_BowDraw.Tick(_humanoid, null, _ai.IsLookingAtPoint(aim, 3f), clear: true);
 			if (!shot)
 			{
 				return;
