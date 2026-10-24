@@ -576,7 +576,12 @@ internal static class ModConfig
 	internal static void Init(ConfigFile cfg)
 	{
 		// [General]
-		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 2000, "The price of an extra companion, for getting more companions (coming soon).", new AcceptableValueRange<int>(0, 50000));
+		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "Coins it costs to hire another companion at Odin's Shrine (alt-use the shrine), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
+		// 1.5.71: the old default (2000) was never used for anything - move it to the new default
+		if (CompanionPrice.Value == 2000)
+		{
+			CompanionPrice.Value = 1000;
+		}
 		SpawnStarterCompanion = Bind(cfg, "General", "SpawnStarterCompanion", defaultValue: true, "The first time you enter a world with a character, you're offered one companion for free.");
 		ResetStarterFlag = Bind(cfg, "General", "ResetStarterFlag", defaultValue: false, "Set to true to be offered the free starter companion again in the current world (on the next world load). It turns itself back to false.");
 		ShowCompanionRoster = Bind(cfg, "General", "ShowCompanionRoster", defaultValue: false, "Set to true to list your companions in this world and their status: Alive, Dead (its tombstone will bring it back), Lost (nothing left of it - it can be recovered) or Unknown (on a dedicated server, a companion that isn't nearby can't be checked). It turns itself back to false.");

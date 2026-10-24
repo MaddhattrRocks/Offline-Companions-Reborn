@@ -33,6 +33,11 @@ public class StarterCompanionPanel : MonoBehaviour
 		}
 	}
 
+	// 1.5.71: hiring another companion at Odin's Shrine uses this panel too
+	private static bool s_hireNext;
+
+	private bool _hire;
+
 	public static void ShowPanel()
 	{
 		if (!(Instance != null))
@@ -40,6 +45,15 @@ public class StarterCompanionPanel : MonoBehaviour
 			GameObject gameObject = new GameObject("HC_StarterCompanionPanel");
 			Object.DontDestroyOnLoad(gameObject);
 			Instance = gameObject.AddComponent<StarterCompanionPanel>();
+		}
+	}
+
+	public static void ShowHirePanel()
+	{
+		if (!(Instance != null))
+		{
+			s_hireNext = true;
+			ShowPanel();
 		}
 	}
 
@@ -98,9 +112,12 @@ public class StarterCompanionPanel : MonoBehaviour
 		TMP_FontAsset tMP_FontAsset = ResolveFont();
 		GameObject gameObject = ResolveButtonTemplate();
 		CompanionsPlugin.Log.LogDebug("[StarterPanel] Font=" + (tMP_FontAsset?.name ?? "null") + ", ButtonTemplate=" + (gameObject?.name ?? "null"));
+		_hire = s_hireNext;
+		s_hireNext = false;
 		_panel = new CompanionPanel
 		{
-			StarterMode = true
+			StarterMode = true,
+			HireMode = _hire
 		};
 		_panel.OnSpawnConfirmed = OnConfirm;
 		float num = 920f;
@@ -154,6 +171,14 @@ public class StarterCompanionPanel : MonoBehaviour
 
 	private void OnConfirm(CompanionAppearance appearance)
 	{
+		if (_hire)
+		{
+			if (CompanionManager.HireWithCoins(appearance))
+			{
+				Close();
+			}
+			return;
+		}
 		CompanionManager.SpawnStarterWithAppearance(appearance);
 		CompanionsPlugin.Log.LogInfo("[StarterPanel] Companion spawned — closing panel");
 		Close();
@@ -172,7 +197,7 @@ public class StarterCompanionPanel : MonoBehaviour
 		gameObject.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.9f);
 		gameObject.GetComponent<Button>().onClick.AddListener(delegate
 		{
-			CompanionsPlugin.Log.LogInfo("[StarterPanel] Skipped via close button — will re-appear next session");
+			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Hire cancelled" : "[StarterPanel] Skipped via close button — will re-appear next session");
 			Close();
 		});
 		GameObject gameObject2 = new GameObject("X", typeof(RectTransform));

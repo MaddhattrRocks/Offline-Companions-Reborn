@@ -223,6 +223,20 @@ internal static class MHR_Shrine
 		};
 	}
 
+	// 1.5.71: hire another companion - the customising panel, paid in coins from your pack when you confirm
+	internal static void Hire()
+	{
+		int price = CompanionTierData.Price;
+		int have = CompanionManager.CoinsInPack();
+		CompanionsPlugin.Log.LogInfo($"[Shrine] Hire - price {price}, you have {have} coins");
+		if (have < price)
+		{
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0")));
+			return;
+		}
+		StarterCompanionPanel.ShowHirePanel();
+	}
+
 	// Using the shrine: the roster in the game's message window, then a Yes / No for each companion that can be brought
 	// back (Lost first, then Unknown). No moves on to the next one.
 	internal static void Use(CompanionShrine shrine)
@@ -302,7 +316,8 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 
 	public string GetHoverText()
 	{
-		return Localization.instance.Localize(MHR_Shrine.DisplayName + "\n[<color=yellow><b>$KEY_Use</b></color>] Your companions");
+		// 1.5.71: alt-use hires another companion
+		return Localization.instance.Localize(MHR_Shrine.DisplayName + "\n[<color=yellow><b>$KEY_Use</b></color>] Your companions\n[<color=yellow><b>$KEY_AltPlace + $KEY_Use</b></color>] " + ModLocalization.LocFmt("hc_shrine_hire", CompanionTierData.Price.ToString("N0")));
 	}
 
 	public string GetHoverName()
@@ -320,6 +335,11 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 		if (hold || user == null || user != Player.m_localPlayer)
 		{
 			return false;
+		}
+		if (alt)
+		{
+			MHR_Shrine.Hire();
+			return true;
 		}
 		MHR_Shrine.Use(this);
 		return true;

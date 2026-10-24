@@ -93,6 +93,9 @@ public class CompanionPanel
 
 	internal bool StarterMode;
 
+	// 1.5.71: the same one-companion panel, for hiring another at Odin's Shrine (paid in coins)
+	internal bool HireMode;
+
 	internal Action<CompanionAppearance> OnSpawnConfirmed;
 
 	private GameObject _bankDisplayGO;
@@ -480,7 +483,7 @@ public class CompanionPanel
 		textMeshProUGUI.fontSize = 24f;
 		textMeshProUGUI.color = Color.white;
 		textMeshProUGUI.alignment = TextAlignmentOptions.Center;
-		textMeshProUGUI.text = (StarterMode ? ModLocalization.Loc("hc_ui_title_choose") : ModLocalization.Loc("hc_ui_title_companions"));
+		textMeshProUGUI.text = (HireMode ? ModLocalization.Loc("hc_ui_title_hire") : StarterMode ? ModLocalization.Loc("hc_ui_title_choose") : ModLocalization.Loc("hc_ui_title_companions"));
 		textMeshProUGUI.raycastTarget = false;
 		RectTransform component = gameObject.GetComponent<RectTransform>();
 		component.anchorMin = new Vector2(0f, 1f);
@@ -513,7 +516,7 @@ public class CompanionPanel
 		}
 		if (buttonTemplate != null)
 		{
-			string label = (StarterMode ? ModLocalization.Loc("hc_ui_btn_spawn") : ModLocalization.LocFmt("hc_ui_btn_buy", "Companion", CompanionTierData.Price.ToString("N0")));
+			string label = (HireMode ? ModLocalization.LocFmt("hc_ui_btn_hire", CompanionTierData.Price.ToString("N0")) : StarterMode ? ModLocalization.Loc("hc_ui_btn_spawn") : ModLocalization.LocFmt("hc_ui_btn_buy", "Companion", CompanionTierData.Price.ToString("N0")));
 			GameObject gameObject2 = CreateActionButton(buttonTemplate, col, "BuyButton", label);
 			_buyButton = gameObject2.GetComponent<Button>();
 			if (_buyButton != null)
@@ -552,7 +555,7 @@ public class CompanionPanel
 		textMeshProUGUI2.overflowMode = TextOverflowModes.Overflow;
 		textMeshProUGUI2.richText = true;
 		textMeshProUGUI2.raycastTarget = false;
-		textMeshProUGUI2.text = (StarterMode ? ModLocalization.Loc("hc_ui_desc_starter") : ModLocalization.Loc("hc_ui_desc_trader"));
+		textMeshProUGUI2.text = (HireMode ? ModLocalization.LocFmt("hc_ui_desc_hire", CompanionTierData.Price.ToString("N0")) : StarterMode ? ModLocalization.Loc("hc_ui_desc_starter") : ModLocalization.Loc("hc_ui_desc_trader"));
 		RectTransform component5 = gameObject4.GetComponent<RectTransform>();
 		component5.anchorMin = new Vector2(0f, 1f);
 		component5.anchorMax = new Vector2(1f, 1f);

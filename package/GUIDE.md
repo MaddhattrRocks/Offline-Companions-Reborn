@@ -392,6 +392,8 @@ Your game keeps a roster of your companions in each world, saving each one's gea
 
 **Odin's Shrine.** Build one with the hammer (Misc tab, next to a workbench) for 10 stone, 5 wood and 3 greydwarf eyes. It looks like a gravestone (or a ward stone, with Death > ShrineModel). Use it to see your companions in this world and their status. For each one that's Lost or Unknown it asks whether to bring it back; say Yes and it appears next to the shrine, say No to move on to the next one. You can change the cost with Death > ShrineRecipe, or turn the shrine off with Death > ShrineBuildable.
 
+**Hiring another companion.** Alt-use the shrine (hold the alt-place key, Shift by default, and press Use) to hire another companion for 1,000 coins from your pack (General > CompanionPrice). You choose its looks in the same panel as your first companion, and the coins are taken when you confirm.
+
 **From the config** (no shrine needed):
 
 - **See their status:** turn on **General > ShowCompanionRoster** in the config. You'll see each companion as **Alive** (with where it is), **Dead** (its tombstone will bring it back), **Lost** (nothing left of it, so it can be recovered) or **Unknown**.

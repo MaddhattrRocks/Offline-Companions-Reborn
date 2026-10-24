@@ -405,6 +405,38 @@ public static class CompanionManager
 		}
 	}
 
+	// 1.5.71: hire another companion at Odin's Shrine for [General] CompanionPrice coins from your pack (user: "I want to add
+	// a way to purchase another NPC. Can we add that as an option to the shrine?")
+	internal static int CoinsInPack()
+	{
+		return Player.m_localPlayer?.GetInventory()?.CountItems("$item_coins") ?? 0;
+	}
+
+	public static bool HireWithCoins(CompanionAppearance appearance)
+	{
+		Player localPlayer = Player.m_localPlayer;
+		Inventory inv = localPlayer?.GetInventory();
+		if (inv == null)
+		{
+			return false;
+		}
+		int price = CompanionTierData.Price;
+		int have = inv.CountItems("$item_coins");
+		if (have < price)
+		{
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0")));
+			return false;
+		}
+		if (!SpawnCompanion(appearance, CompanionTierData.Companion))
+		{
+			return false;
+		}
+		inv.RemoveItem("$item_coins", price);
+		CompanionsPlugin.Log.LogInfo($"[CompanionManager] Hired a companion for {price} coins ({have - price} left)");
+		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_hired"));
+		return true;
+	}
+
 	public static void SpawnStarterWithAppearance(CompanionAppearance appearance)
 	{
 		Player localPlayer = Player.m_localPlayer;
