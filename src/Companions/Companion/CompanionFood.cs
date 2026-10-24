@@ -431,7 +431,7 @@ public class CompanionFood : MonoBehaviour
 					if (ConsumeIntoSlot(inventory, same, j))
 					{
 						flag = true;
-						CompanionsPlugin.Log.LogDebug($"[Food] Topped up "{same.m_shared.m_name}" in slot {j} with {left:F0} s left companion="{_character?.m_name ?? "?"}"");
+						CompanionsPlugin.Log.LogDebug($"[Food] Topped up \"{same.m_shared.m_name}\" in slot {j} with {left:F0} s left companion=\"" + (_character?.m_name ?? "?") + "\"");
 					}
 				}
 			}
