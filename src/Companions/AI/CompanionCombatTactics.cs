@@ -133,6 +133,11 @@ public partial class CompanionCombatAI
 		dist = float.MaxValue;
 		foreach (Character c in _attackers)
 		{
+			// 1.5.66: a creature killed or unloaded since the list was made (NullReferenceException x968, log b78220a8)
+			if (c == null)
+			{
+				continue;
+			}
 			float d = Vector3.Distance(base.transform.position, c.transform.position);
 			if (d < dist)
 			{
@@ -153,6 +158,10 @@ public partial class CompanionCombatAI
 		_close.Clear();
 		foreach (Character c in _attackers)
 		{
+			if (c == null)
+			{
+				continue;
+			}
 			if (Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 1.5f)
 			{
 				_close.Add(c);
@@ -204,6 +213,10 @@ public partial class CompanionCombatAI
 			float score = 0.5f * Vector3.Dot(d, toOwner);
 			foreach (Character c in _attackers)
 			{
+				if (c == null)
+				{
+					continue;
+				}
 				Vector3 t = c.transform.position - me;
 				t.y = 0f;
 				float w = (c == from) ? 2f : 1f;
@@ -345,6 +358,10 @@ public partial class CompanionCombatAI
 			Character close = null;
 			foreach (Character c in _attackers)
 			{
+				if (c == null)
+				{
+					continue;
+				}
 				if (Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 0.3f)
 				{
 					close = c;
@@ -799,6 +816,10 @@ public partial class CompanionCombatAI
 		Vector3 right = Vector3.Cross(Vector3.up, away);
 		foreach (Character c in _attackers)
 		{
+			if (c == null)
+			{
+				continue;
+			}
 			if (c != from)
 			{
 				Vector3 t = c.transform.position - me;
@@ -837,6 +858,10 @@ public partial class CompanionCombatAI
 	{
 		foreach (Character c in _attackers)
 		{
+			if (c == null)
+			{
+				continue;
+			}
 			if (c == except)
 			{
 				continue;
@@ -939,6 +964,10 @@ public partial class CompanionCombatAI
 	{
 		foreach (Character c in _attackers)
 		{
+			if (c == null)
+			{
+				continue;
+			}
 			if (c != _targetCreature && Vector3.Distance(base.transform.position, c.transform.position) < Danger(c) + 2f)
 			{
 				return false;

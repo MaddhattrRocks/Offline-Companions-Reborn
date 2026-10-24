@@ -337,6 +337,9 @@ A companion drinks a healing mead from its pack when its health drops below this
 **StaminaMeadThreshold** — Default: 0.25 · Range: 0.05 – 0.9  
 It drinks a stamina mead when its stamina drops below this share (0.25 = 25%).
 
+**EatAgainMinutes** — Default: 3 · Range: 0 – 30  
+A companion eats the same food again once it has this many minutes left, like a player topping up before it runs out (the game only allows that once a food is under half its time). It needs that food in its pack; otherwise it eats something else when the slot empties. 0 = wait until it runs out.
+
 **MeadCooldown** — Default: 10 · Range: 1 – 60  
 Seconds after drinking a mead before it drinks another.
 

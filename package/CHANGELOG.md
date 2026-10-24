@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Companions eat the same food again when it has 3 minutes left, like a player topping up, instead of waiting for it to run out (Food > EatAgainMinutes).
+- Fix: after an enemy it had been fighting died or unloaded, a companion could freeze mid-fight - sliding along the ground and no longer fighting - with errors filling the log.
 - Bows: companions draw the bow before each shot like a player - the draw takes as long as yours at their Bows skill and drains stamina while held - instead of firing every arrow instantly at full draw. They stand and shoot rather than running circles round the target, draw while turning to it, draw again as soon as the last arrow is away, and hold the shot (or step closer) when a hill or rock is in the way.
 - Bows: like a player, companions don't always draw fully - a close target, low stamina or an enemy rushing in gets a quicker, weaker partial draw, never under half (Combat > BowMinDraw, BowFullDrawRange); out of stamina mid-draw they still shoot if the draw is far enough.
 - Bows: companions aim for the speed of their draw, so a partial draw's slower, dropping arrow still reaches the target; they don't start a draw they can't finish - short of stamina they wait to get their breath back (Combat > StaminaResume) instead of drawing and dropping the arrow over and over; far targets always get a full draw.

@@ -376,6 +376,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> CombatRangedMeleeRange;
 
+	internal static ConfigEntry<float> FoodEatAgainMinutes;
+
 	internal static ConfigEntry<bool> CombatIndoorAggroOnly;
 
 	internal static ConfigEntry<bool> CombatDungeonDefensive;
@@ -668,6 +670,7 @@ internal static class ModConfig
 		// [Food]
 		HealthMeadThreshold = Bind(cfg, "Food", "HealthMeadThreshold", 0.5f, "A companion drinks a healing mead from its pack when its health drops below this share (0.5 = 50%).", new AcceptableValueRange<float>(0.1f, 0.9f));
 		StaminaMeadThreshold = Bind(cfg, "Food", "StaminaMeadThreshold", 0.25f, "It drinks a stamina mead when its stamina drops below this share (0.25 = 25%).", new AcceptableValueRange<float>(0.05f, 0.9f));
+		FoodEatAgainMinutes = Bind(cfg, "Food", "EatAgainMinutes", 3f, "A companion eats the same food again once it has this many minutes left, like a player topping up before it runs out (the game only allows that once a food is under half its time). It needs that food in its pack; otherwise it eats something else when the slot empties. 0 = wait until it runs out.", new AcceptableValueRange<float>(0f, 30f));
 		MeadCooldown = Bind(cfg, "Food", "MeadCooldown", 10f, "Seconds after drinking a mead before it drinks another.", new AcceptableValueRange<float>(1f, 60f));
 		// [Stamina]
 		StaminaRegenRate = Bind(cfg, "Stamina", "RegenRate", 6f, "Stamina a companion gets back per second when it isn't using any.", new AcceptableValueRange<float>(1f, 30f));
