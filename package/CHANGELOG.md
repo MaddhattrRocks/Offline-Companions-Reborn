@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Bows: the stamina a companion uses holding a draw now goes by its own Bows skill (the game used yours), and it turns faster to keep its aim while drawn, like you swinging the camera round (Combat > BowAimTurnSpeed).
 - Fix: working its way round behind an enemy, a companion could walk off a ledge - it now only goes round over safe ground and otherwise attacks from where it is.
 - Companions eat the same food again when it has 3 minutes left, like a player topping up, instead of waiting for it to run out (Food > EatAgainMinutes).
 - Fix: after an enemy it had been fighting died or unloaded, a companion could freeze mid-fight - sliding along the ground and no longer fighting - with errors filling the log.

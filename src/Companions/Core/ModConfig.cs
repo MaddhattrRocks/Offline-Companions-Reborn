@@ -374,6 +374,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> CombatBowMinDraw;
 
+	internal static ConfigEntry<float> CombatBowAimTurnSpeed;
+
 	internal static ConfigEntry<float> CombatRangedMeleeRange;
 
 	internal static ConfigEntry<float> FoodEatAgainMinutes;
@@ -649,6 +651,7 @@ internal static class ModConfig
 		CombatGroupSize = Bind(cfg, "Combat", "GroupSize", 2, "With this many enemies close enough to hit a companion, from different sides, it gets clear first - moves for a couple of seconds until they're all on one side - then fights from there.", new AcceptableValueRange<int>(2, 10));
 		CombatGroupRange = Bind(cfg, "Combat", "GroupRange", 6f, "How close (meters) an enemy has to be to count as one of the group on a companion.", new AcceptableValueRange<float>(2f, 20f));
 		CombatFlankAngle = Bind(cfg, "Combat", "FlankAngle", 100f, "Two enemies more than this many degrees apart, seen from the companion, count as on different sides.", new AcceptableValueRange<float>(30f, 180f));
+		CombatBowAimTurnSpeed = Bind(cfg, "Combat", "BowAimTurnSpeed", 600f, "Bows: how fast a companion turns to keep its aim on the target while the bow is drawn (degrees per second), like you swinging the camera round. Movement > TurnSpeed is used the rest of the time.", new AcceptableValueRange<float>(100f, 1440f));
 		CombatBowMinDraw = Bind(cfg, "Combat", "BowMinDraw", 0.5f, "Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.", new AcceptableValueRange<float>(0.1f, 1f));
 		CombatIndoorAggroOnly = Bind(cfg, "Combat", "IndoorAggroOnly", defaultValue: true, "Indoors - in a dungeon, mine or cave, or under a roof - a companion only fights enemies that are actually coming for you or it (alerted), as if EngageOnNotice were off. Outdoors EngageOnNotice decides.");
 		CombatDungeonDefensive = Bind(cfg, "Combat", "DungeonDefensive", defaultValue: true, "In a dungeon, mine or cave a companion fights defensively: it stays with you and fights what comes within DefendRange of you (and anything hitting it), instead of running off after enemies further down the corridor.");

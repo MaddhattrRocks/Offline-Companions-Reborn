@@ -273,6 +273,9 @@ How close (meters) an enemy has to be to count as one of the group on a companio
 **FlankAngle** — Default: 100 · Range: 30 – 180  
 Two enemies more than this many degrees apart, seen from the companion, count as on different sides.
 
+**BowAimTurnSpeed** — Default: 600 · Range: 100 – 1440  
+Bows: how fast a companion turns to keep its aim on the target while the bow is drawn (degrees per second), like you swinging the camera round. Movement > TurnSpeed is used the rest of the time.
+
 **BowMinDraw** — Default: 0.5 · Range: 0.1 – 1  
 Bows: the least a companion draws before letting go (0.5 = half drawn). A partial draw is quicker and cheaper but does less damage and spreads more, like yours. It takes a partial draw when the target is close enough that the spread still hits it, when it's low on stamina (below StaminaReserve), or when the target is rushing in; otherwise it draws fully.
 

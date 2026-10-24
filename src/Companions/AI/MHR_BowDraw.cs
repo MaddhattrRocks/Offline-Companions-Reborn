@@ -114,6 +114,7 @@ internal static class MHR_BowDraw
 			return;
 		}
 		s_states.Remove(h.GetInstanceID());
+		h.m_turnSpeed = h.m_runTurnSpeed = ModConfig.TurnSpeed?.Value ?? 300f;
 		ReflectionHelper.TrySetAttackDrawTime(h, 0f);
 		string state = h.GetCurrentWeapon()?.m_shared?.m_attack?.m_drawAnimationState;
 		ZSyncAnimation zanim = h.GetComponent<ZSyncAnimation>();
@@ -139,7 +140,9 @@ internal static class MHR_BowDraw
 			return;
 		}
 		float pct = h.GetAttackDrawPercentage();
-		float drain = w.GetDrawStaminaDrain() * (pct >= 1f ? 0.5f : 1f);
+		float drain = DrawDrain(h, w) * (pct >= 1f ? 0.5f : 1f);
+		// 1.5.68: turns towards the target faster while drawn, like you swinging the camera round
+		h.m_turnSpeed = h.m_runTurnSpeed = Mathf.Max(ModConfig.TurnSpeed?.Value ?? 300f, ModConfig.CombatBowAimTurnSpeed?.Value ?? 600f);
 		if (drain > 0f && !h.HaveStamina())
 		{
 			if (pct >= MinDraw())
@@ -192,7 +195,7 @@ internal static class MHR_BowDraw
 		bool far = target == null || Vector3.Distance(h.transform.position, target.transform.position) >= (ModConfig.CombatBowFullDrawRange?.Value ?? 15f);
 		Attack a = w.m_shared.m_attack;
 		float full = Mathf.Lerp(a.m_drawDurationMin, a.m_drawDurationMin * 0.2f, h.GetSkillFactor(w.m_shared.m_skillType));
-		float need = w.GetDrawStaminaDrain() * full * (far ? 1f : MinDraw()) + 1f;
+		float need = DrawDrain(h, w) * full * (far ? 1f : MinDraw()) + 1f;
 		if (stam.Stamina < need || (far && share < (ModConfig.CombatStaminaReserve?.Value ?? 0.3f)))
 		{
 			s_resting.Add(id);
@@ -200,6 +203,18 @@ internal static class MHR_BowDraw
 			return true;
 		}
 		return false;
+	}
+
+	// 1.5.68: stamina per second while drawing, from the companion's own Bows skill. The game's ItemData.GetDrawStaminaDrain
+	// reads Player.m_localPlayer's skill (it only expects the local player to draw), so the companion paid your rate.
+	private static float DrawDrain(Humanoid h, ItemDrop.ItemData w)
+	{
+		float drain = w.m_shared.m_attack.m_drawStaminaDrain;
+		if (drain <= 0f)
+		{
+			return 0f;
+		}
+		return drain - drain * 0.33f * h.GetSkillFactor(w.m_shared.m_skillType);
 	}
 
 	private static float MinDraw()
