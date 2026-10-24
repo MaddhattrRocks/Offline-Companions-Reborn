@@ -2374,11 +2374,16 @@ namespace Companions
             // 1.4.96: shallow water too (user: a player jumps a small river or pond rather than run through it)
             float wade = ModConfig.JumpWaterDepth != null ? ModConfig.JumpWaterDepth.Value : 0.3f;
             float maxGap = ModConfig.JumpWaterWidth != null ? ModConfig.JumpWaterWidth.Value : 3f;
+            // 1.5.70: never inside a dungeon - there it took the gap beside a ledge in a Mistlands mine for "shallow water" and
+            // jumped (log 6f49ec1d: "jumping the shallow water" at the top, then 10 m down on the level below, fighting a Seeker)
+            if (c.InInterior()) return false;
             float waterAt = -1f, landAt = -1f; bool swim = false;
             for (float d = 0.5f; d <= 6.0f; d += 0.5f)
             {
                 Vector3 p = pos + dir * d;
                 float depth = MHR_Water.DepthAt(p);
+                // 1.5.70: ground (or the water's surface) well below our feet is a drop, not a stream - no jumping over it
+                if (MHR_Water.GroundAt(p) + depth < pos.y - 1.5f) return false;
                 if (waterAt < 0f) { if (depth > wade) waterAt = d; else if (d > 1.5f) return false; }
                 else if (depth < Mathf.Min(wade, 0.3f)) { landAt = d; break; }
                 if (waterAt >= 0f && depth > lim) swim = true;
