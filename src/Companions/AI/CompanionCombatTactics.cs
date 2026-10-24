@@ -555,6 +555,18 @@ public partial class CompanionCombatAI
 		float side = Vector3.Dot(from, right) >= 0f ? 1f : -1f;
 		Vector3 goal = angle < 70f ? t.transform.position + right * side * r : t.transform.position - fwd.normalized * r;
 		goal.y = me.y;
+		// 1.5.67: only round it over safe ground - no drop, deep water or fire on the way (log 26d28214: working round a
+		// Seeker on a ledge in the mines it walked off a 7 m drop)
+		Vector3 way = goal - me;
+		way.y = 0f;
+		float wayLen = way.magnitude;
+		if (wayLen > 0.3f && !MHR_Mover.SafeStep(me, way / wayLen, wayLen))
+		{
+			_flankSince = -1f;
+			_flankBlockedUntil = Time.time + 6f;
+			TLog("No safe way round " + t.m_name + " (a drop or water) - attacking from here");
+			return 0;
+		}
 		MHR_Mover.Go(_ai, dt, goal, 0.4f, allowRun: StaminaShare() > Resume, "Combat", MHR_Mover.SpeedJog);
 		return 1;
 	}
