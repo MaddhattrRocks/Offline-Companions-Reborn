@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Fix: a companion could end up behind a wall - e.g. stuck behind the invisible barrier in a burial chamber's entrance - when it was brought to you through a dungeon entrance, a portal or for falling behind; it now lands on a spot you can see, with floor at your height.
+- Fix: when you left a dungeon (or went in) without your companion, it could stay behind - especially while fighting; a following companion now comes through after you.
 - Bows: the stamina a companion uses holding a draw now goes by its own Bows skill (the game used yours), and it turns faster to keep its aim while drawn, like you swinging the camera round (Combat > BowAimTurnSpeed).
 - Fix: working its way round behind an enemy, a companion could walk off a ledge - it now only goes round over safe ground and otherwise attacks from where it is.
 - Companions eat the same food again when it has 3 minutes left, like a player topping up, instead of waiting for it to run out (Food > EatAgainMinutes).

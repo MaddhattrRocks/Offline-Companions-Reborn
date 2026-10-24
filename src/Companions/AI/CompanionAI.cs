@@ -1498,6 +1498,20 @@ public class CompanionAI : BaseAI
 			}
 		}
 		UpdateDebugLog(dt);
+		// 1.5.69: you went through a dungeon entrance or exit without it (the door only takes players): follow through it,
+		// fight or no fight (bug report: stuck in a burial chamber after the player left, "sometimes they won't even teleport
+		// to the player" - a fight inside kept it from ever reaching the follow code that warps it)
+		if (m_follow != null && _setup != null && _setup.GetFollow() && m_character != null)
+		{
+			Character followChar = m_follow.GetComponent<Character>();
+			if (followChar != null && !(followChar is Player tp && tp.IsTeleporting()) && followChar.InInterior() != m_character.InInterior() && Vector3.Distance(base.transform.position, m_follow.transform.position) > 30f)
+			{
+				CompanionsPlugin.Log.LogInfo("[Follow] You went " + (followChar.InInterior() ? "into" : "out of") + " the dungeon - following you through");
+				_combatAI?.Disengage();
+				TeleportToFollowTarget();
+				return true;
+			}
+		}
 		if (_combatAI != null)
 		{
 			if (_combatAI.IsEngaged)
@@ -1940,19 +1954,7 @@ public class CompanionAI : BaseAI
 		{
 			vector.Normalize();
 		}
-		Vector3 vector2 = position + vector * 2.5f;
-		Vector3 position2 = vector2;
-		for (int i = 0; i < 20; i++)
-		{
-			Vector2 vector3 = UnityEngine.Random.insideUnitCircle * 1.5f;
-			Vector3 vector4 = vector2 + new Vector3(vector3.x, 0f, vector3.y);
-			if (ZoneSystem.instance != null && ZoneSystem.instance.FindFloor(vector4, out var height))
-			{
-				vector4.y = height;
-				position2 = vector4;
-				break;
-			}
-		}
+		Vector3 position2 = MHR_SafeSpotNear(position, vector);
 		base.transform.position = position2;
 		Rigidbody body = _body;
 		if (body != null)
@@ -1964,6 +1966,37 @@ public class CompanionAI : BaseAI
 		{
 			m_nview.GetZDO().SetPosition(position2);
 		}
+	}
+
+	// 1.5.69: where to put a companion that's warped to you: a spot about 2 m off, behind you first, that you can see from
+	// where you stand and that has a floor about your height - not through a wall (bug report: "the companion cannot get
+	// out of a burial chambers, locked behind the invisible barrier" - the old pick was any random spot 3 m around, which
+	// in the crypt's small entrance room could be on the other side of a wall). None found: right where you are.
+	internal static Vector3 MHR_SafeSpotNear(Vector3 at, Vector3 preferDir)
+	{
+		Vector3 eye = at + Vector3.up * 1.2f;
+		int mask = LayerMask.GetMask("Default", "static_solid", "terrain", "piece", "vehicle");
+		float baseAngle = (preferDir.sqrMagnitude > 0.01f) ? Mathf.Atan2(preferDir.z, preferDir.x) * Mathf.Rad2Deg : 0f;
+		for (int ring = 0; ring < 2; ring++)
+		{
+			float r = ring == 0 ? 2f : 1.2f;
+			for (int k = 0; k < 8; k++)
+			{
+				float a = (baseAngle + (k % 2 == 0 ? 1 : -1) * ((k + 1) / 2) * 45f) * Mathf.Deg2Rad;
+				Vector3 p = at + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+				Vector3 chest = p + Vector3.up * 1.2f;
+				if (Physics.Linecast(eye, chest, mask, QueryTriggerInteraction.Ignore))
+				{
+					continue;
+				}
+				if (!Physics.Raycast(chest, Vector3.down, out RaycastHit hit, 3f, mask, QueryTriggerInteraction.Ignore) || Mathf.Abs(hit.point.y - at.y) > 1.2f)
+				{
+					continue;
+				}
+				return hit.point;
+			}
+		}
+		return at;
 	}
 
 	// 1.4.82: MHR_Mover's trapped rescue - put him back on a spot he walked from
