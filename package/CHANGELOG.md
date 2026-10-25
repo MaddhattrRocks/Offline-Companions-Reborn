@@ -3,6 +3,10 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- A tick that latches on to a companion is shaken off with a dodge roll, like a player does (new settings: Combat ShakeOffTicks, DodgeStamina); it no longer backs away while the tick feeds.
+- Companions don't swim out after an enemy in deep water - they shoot it from the bank, or wait there for it with a melee weapon. Fighting with Balanced stance, an enemy out in deep water always gets the bow.
+- Fix: a companion standing in a shallow pool wouldn't step anywhere in a fight ("standing its ground") - it now steps through water no deeper than where it stands.
+- Spike walls are spotted further ahead and turned away from harder when already at their edge.
 - Companions keep off spike walls (sharpened stakes and any other built defence that hurts what touches it) - they walk along them rather than into them, never step back into them in a fight, and don't land a jump on them.
 - Fix: several fight moves could take a companion off a ledge, into deep water or fire - backing off with a bow, running when badly hurt, moving about while waiting for an opening, stepping back to make room for a stab, and the last-ditch chase when no route was found. All of them now check the ground first and stand still rather than take an unsafe step.
 - Recall, respawn, recovering a lost companion and getting off a ship put the companion on a safe spot next to you (in view, dry, no fire or spikes) instead of any floor nearby.

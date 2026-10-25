@@ -174,6 +174,12 @@ public partial class CompanionCombatAI : MonoBehaviour
 			CheckMiss(force: false);
 		}
 		MHR_BowDraw.Maintain(_humanoid, Time.deltaTime);
+		// 1.5.73: a tick latched on: roll it off (MHR_TickShake)
+		if (_stam == null)
+		{
+			_stam = GetComponent<CompanionStamina>();
+		}
+		MHR_TickShake.Tick(_humanoid, _stam);
 	}
 
 	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
@@ -238,6 +244,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 			run = false;
 		}
 		// 1.5.65: a fight doesn't open doors; an attack order does ("Order" tag)
+		// 1.5.73: not swimming out after it (user, log 93298113: "Kept going after neck in deep water"): stand on the bank -
+		// a bow shoots from there, a melee weapon waits for it to come within reach
+		if (!_character.IsSwimming() && !IsOrdered(_targetCreature) && MHR_Water.WouldSwim(_character, point))
+		{
+			_ai.StopMoving();
+			UnsafeLog("not swimming out after " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - waiting on the bank");
+			return false;
+		}
 		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, IsOrdered(_targetCreature) ? "Order" : MHR_Mover.CombatTag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
 		if (!there && MHR_Mover.DoorBlocked(_ai))
 		{

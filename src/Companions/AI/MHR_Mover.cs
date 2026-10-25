@@ -379,7 +379,11 @@ namespace Companions
             // 1.5.72: a spike wall (a built piece that hurts what touches it) on the next step: walk along it, a little away
             // from it, instead of into it - also when the goal is right at it (an enemy caught on the stakes is hit from a
             // step off) (user: "what about defenses like a spike wall?")
-            Collider spike = SpikeNear(pos + dir * 0.8f, 0.6f);
+            // 1.5.73: further ahead and wider, and right where it stands - a stake wall's hurt zone reaches well out from the
+            // stakes (log 93298113: hit 1.6-3.7 m from them following you past); already at its edge, turn away harder
+            Collider spike = SpikeNear(pos, c.GetRadius() + 0.35f);
+            bool spikeClose = spike != null;
+            if (spike == null) spike = SpikeNear(pos + dir * 1.2f, 0.8f);
             if (spike != null)
             {
                 Vector3 cp = spike.ClosestPoint(pos); Vector3 off = pos - cp; off.y = 0f;
@@ -388,7 +392,7 @@ namespace Companions
                     off.Normalize();
                     Vector3 along = Vector3.Cross(Vector3.up, off);
                     if (Vector3.Dot(along, dir) < 0f) along = -along;
-                    dir = (along + off * 0.6f).normalized;
+                    dir = (along + off * (spikeClose ? 1.5f : 0.6f)).normalized;
                     if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + tag + "] keeping off the spikes at " + Fmt(cp)); }
                 }
             }
@@ -2361,20 +2365,23 @@ namespace Companions
             return true;
         }
         // 1.5.52: a short step in a fight (back, aside, out of a group) that's safe all the way: no wall, ground under every
-        // half metre no more than 1 m below or 0.8 m above, no water to wade into, no fire (the crypt fall, the hearth)
+        // half metre no more than 1 m below or 0.8 m above, no water to wade into (no deeper than where it stands), no fire
         public static bool SafeStep(Vector3 pos, Vector3 dir, float dist)
         {
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f || dist <= 0f) return false;
             dir.Normalize();
             if (Physics.Raycast(pos + Vector3.up * 0.5f, dir, dist + 0.3f, Mask())) return false;
+            // 1.5.73: already standing in shallow water, a step through water as deep is fine - only deeper (to swimming
+            // depth) is refused (log 93298113: stood its ground in a shallow pool, every step "into water")
+            float wade = Mathf.Min(1.0f, Mathf.Max(0.4f, MHR_Water.DepthAt(pos) + 0.15f));
             for (float x = 0.5f; x < dist + 0.49f; x += 0.5f)
             {
                 Vector3 p = pos + dir * Mathf.Min(x, dist);
                 RaycastHit hit;
                 if (!Physics.SphereCast(p + Vector3.up * 1.5f, 0.2f, Vector3.down, out hit, 2.7f, Mask())) return false;
                 if (hit.point.y < pos.y - 1.0f || hit.point.y > pos.y + 0.8f) return false;
-                if (MHR_Water.DepthAt(hit.point) > 0.4f) return false;
+                if (MHR_Water.DepthAt(hit.point) > wade) return false;
                 if (FireArea(hit.point, 0.5f) != null) return false;
                 if (SpikeNear(hit.point, 0.7f) != null) return false;
             }

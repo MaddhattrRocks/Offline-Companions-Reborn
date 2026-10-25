@@ -132,7 +132,9 @@ internal static class WeaponLogic
 				}
 			}
 			bool flag2 = BowLike(currentWeapon);
-			bool flag3 = itemData != null && (itemData2 == null || num > BowSwitch() || (!(num < MeleeSwitch()) && flag2));
+			// 1.5.73: a target out in swimming-deep water (a Neck in the river) gets the bow, whatever the distance - the melee
+			// weapon means wading out after it (log 93298113)
+			bool flag3 = itemData != null && (itemData2 == null || num > BowSwitch() || (!(num < MeleeSwitch()) && flag2) || (!h.IsSwimming() && num > 1.5f && MHR_Water.WouldSwim(h, character.transform.position)));
 			ItemDrop.ItemData itemData4 = null;
 			if (flag3)
 			{

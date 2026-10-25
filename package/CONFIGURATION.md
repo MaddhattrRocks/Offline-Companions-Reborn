@@ -291,6 +291,12 @@ Fighting defensively (DungeonDefensive): enemies within this many meters of you 
 **OrderHoldTime** — Default: 10 · Range: 0 – 60  
 After you recall a companion or send it somewhere, it leaves its fight and starts no new one for this many seconds - it still fights back against something hitting it up close. Companions only ever fight enemies they can see (not ones behind walls or closed doors), and only open a door to get at one when you order the attack.
 
+**ShakeOffTicks** — Default: On  
+A tick latched on to a companion is shaken off with a dodge roll, the way a player gets rid of one (it lets go of anyone dodging). Off: it is left to swing at it.
+
+**DodgeStamina** — Default: 10 · Range: 0 – 50  
+Stamina a companion's dodge roll costs (a player's roll costs 10, more in heavy armour).
+
 **RangedMeleeRange** — Default: 4 · Range: 1 – 15  
 Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.
 

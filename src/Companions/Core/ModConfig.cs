@@ -388,6 +388,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> CombatOrderHoldTime;
 
+	internal static ConfigEntry<bool> CombatShakeOffTicks;
+
+	internal static ConfigEntry<float> CombatDodgeStamina;
+
 	internal static ConfigEntry<float> CombatBowFullDrawRange;
 
 	internal static ConfigEntry<float> GatherRestStamina;
@@ -662,6 +666,8 @@ internal static class ModConfig
 		CombatDungeonDefensive = Bind(cfg, "Combat", "DungeonDefensive", defaultValue: true, "In a dungeon, mine or cave a companion fights defensively: it stays with you and fights what comes within DefendRange of you (and anything hitting it), instead of running off after enemies further down the corridor.");
 		CombatDefendRange = Bind(cfg, "Combat", "DefendRange", 8f, "Fighting defensively (DungeonDefensive): enemies within this many meters of you are fought; further off they're left to come to you.", new AcceptableValueRange<float>(3f, 30f));
 		CombatOrderHoldTime = Bind(cfg, "Combat", "OrderHoldTime", 10f, "After you recall a companion or send it somewhere, it leaves its fight and starts no new one for this many seconds - it still fights back against something hitting it up close. Companions only ever fight enemies they can see (not ones behind walls or closed doors), and only open a door to get at one when you order the attack.", new AcceptableValueRange<float>(0f, 60f));
+		CombatShakeOffTicks = Bind(cfg, "Combat", "ShakeOffTicks", defaultValue: true, "A tick latched on to a companion is shaken off with a dodge roll, the way a player gets rid of one (it lets go of anyone dodging). Off: it is left to swing at it.");
+		CombatDodgeStamina = Bind(cfg, "Combat", "DodgeStamina", 10f, "Stamina a companion's dodge roll costs (a player's roll costs 10, more in heavy armour).", new AcceptableValueRange<float>(0f, 50f));
 		CombatRangedMeleeRange = Bind(cfg, "Combat", "RangedMeleeRange", 4f, "Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.", new AcceptableValueRange<float>(1f, 15f));
 		CombatBowFullDrawRange = Bind(cfg, "Combat", "BowFullDrawRange", 15f, "Bows: from this many meters away a companion always draws fully - a weaker arrow is slower and drops short at range.", new AcceptableValueRange<float>(3f, 50f));
 		CombatFinishHits = Bind(cfg, "Combat", "FinishHits", 2, "An enemy this many hits or fewer from dead (judged from its own hits so far) is finished off with all the stamina it takes, as long as nothing else is close enough to hit the companion afterwards. 0 = never spend the stamina kept back for blocking.", new AcceptableValueRange<int>(0, 5));

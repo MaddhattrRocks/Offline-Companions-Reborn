@@ -104,9 +104,35 @@ public partial class CompanionCombatAI
 		return d < 2.5f || MHR_BowDraw.ClearShot(_character, c);
 	}
 
+	private Character _latched;
+
+	private float _latchedCheckAt;
+
+	// 1.5.73: a tick latched on to it (checked every 0.25 s)
+	internal Character Latched()
+	{
+		if (Time.time >= _latchedCheckAt)
+		{
+			_latchedCheckAt = Time.time + 0.25f;
+			_latched = MHR_TickShake.LatchedOn(_character);
+		}
+		return _latched;
+	}
+
+	private bool LatchedTarget()
+	{
+		return _targetCreature != null && Latched() == _targetCreature;
+	}
+
 	// the enemy to fight now, or null
 	internal Character PickTarget()
 	{
+		// 1.5.73: something latched on and feeding comes first, orders or not
+		Character latched = Latched();
+		if (latched != null && !latched.IsDead())
+		{
+			return latched;
+		}
 		if (Holding || _character == null)
 		{
 			return null;
