@@ -39,6 +39,12 @@ internal static class MHR_Board
 		public Ship HoldShip;
 		public Ship SatOn;
 		public float OwnerOffSince = -1f;
+		public float SeatSince = -1f;
+		public bool LaunchTried;
+		public bool HasLaunch;
+		public Vector3 Launch;
+		public Ship LeaveShip;
+		public float LeaveSince;
 	}
 
 	private static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
@@ -159,7 +165,11 @@ internal static class MHR_Board
 		s.FootstepsTried = false;
 		s.HoldUntil = 0f;
 		s.TreadSince = -1f;
+		s.SeatSince = -1f;
+		s.LaunchTried = false;
+		s.HasLaunch = false;
 		MHR_Mover.Release(ai);
+		MHR_Deck.Release(ai);
 		Log(ai.GetComponent<Character>()?.m_name + (auto ? " is following you aboard" : " is boarding the ship"));
 	}
 
@@ -171,7 +181,9 @@ internal static class MHR_Board
 			s.Ship = null;
 			s.Chair = null;
 			s.Footsteps = false;
+			s.SeatSince = -1f;
 			MHR_Mover.Release(ai);
+			MHR_Deck.Release(ai);
 		}
 	}
 
@@ -207,9 +219,9 @@ internal static class MHR_Board
 	}
 
 	// a free seat on the ship: none within 0.5 m of a character
-	private static Chair FreeChair(Ship ship, Chair prefer, Vector3 near)
+	private static Chair FreeChair(Ship ship, Chair prefer, Vector3 near, Character self)
 	{
-		if (Free(prefer))
+		if (Free(prefer, self))
 		{
 			return prefer;
 		}
@@ -217,7 +229,7 @@ internal static class MHR_Board
 		float bd = float.MaxValue;
 		foreach (Chair ch in ship.GetComponentsInChildren<Chair>())
 		{
-			if (!Free(ch))
+			if (!Free(ch, self))
 			{
 				continue;
 			}
@@ -238,7 +250,8 @@ internal static class MHR_Board
 		return ch != null && ch.gameObject.name.IndexOf("mast", System.StringComparison.OrdinalIgnoreCase) >= 0;
 	}
 
-	internal static bool Free(Chair ch)
+	// 1.5.85: `self` doesn't count (it walks up to its own seat)
+	internal static bool Free(Chair ch, Character self = null)
 	{
 		if (ch == null || !ch.m_inShip || ch.m_attachPoint == null || IsMast(ch))
 		{
@@ -246,7 +259,7 @@ internal static class MHR_Board
 		}
 		foreach (Character c in Character.GetAllCharacters())
 		{
-			if (c != null && Vector3.Distance(c.transform.position, ch.m_attachPoint.position) < 0.5f)
+			if (c != null && c != self && Vector3.Distance(c.transform.position, ch.m_attachPoint.position) < 0.5f)
 			{
 				return false;
 			}
@@ -320,15 +333,33 @@ internal static class MHR_Board
 			return false;
 		}
 		Ship ship = ShipUnder(p);
+		Ship mine = ShipUnder(c);
 		S s = Get(ai);
+		// 1.5.85: on a ship you're not on - walk to its side nearest you and get off (no teleport)
+		if (mine != null && mine != ship)
+		{
+			return Leave(ai, s, c, mine, p, dt);
+		}
+		s.LeaveShip = null;
 		if (ship == null)
 		{
 			s.HoldUntil = 0f;
 			return false;
 		}
-		if (ShipUnder(c) == ship)
+		// 1.5.85: standing on the same deck as you (no free seat): keep near you across the deck
+		if (mine == ship)
 		{
-			return false;
+			if (Flat(ai.transform.position, p.transform.position) > 2.5f && MHR_Deck.SpotNear(ship, p.transform.position, out Vector3 near))
+			{
+				MHR_Deck.Walk(ai, ship, near, 1.5f, out _);
+			}
+			else
+			{
+				MHR_Deck.Release(ai);
+				ai.StopMoving();
+				ai.LookAtPoint(p.transform.position);
+			}
+			return true;
 		}
 		// couldn't get aboard: wait on the shore while you're on that ship (the far-away catch-up still applies)
 		if (Time.time < s.HoldUntil && s.HoldShip == ship)
@@ -355,6 +386,107 @@ internal static class MHR_Board
 		}
 		Start(ai, ship, null, auto: true);
 		return Update(ai, dt);
+	}
+
+	// 1.5.85: getting off a ship like you do (user, log ce2af5bd: "They also seem to be teleporting a bit"): across the deck to
+	// the side nearest you, then over the side - a jump, a drop, or into the water and swim. 15 s and the normal follow (and
+	// its far-away catch-up) takes over.
+	private static bool Leave(CompanionAI ai, S s, Character c, Ship ship, Player p, float dt)
+	{
+		float now = Time.time;
+		if (s.LeaveShip != ship)
+		{
+			// you're in the water or mid-jump: stay aboard until you're on your feet somewhere
+			if (p.IsSwimming() || !p.IsOnGround())
+			{
+				MHR_Deck.Release(ai);
+				ai.StopMoving();
+				return true;
+			}
+			s.LeaveShip = ship;
+			s.LeaveSince = now;
+			s.NextJump = 0f;
+			Log(c.m_name + " getting off the ship");
+		}
+		if (now - s.LeaveSince > 15f)
+		{
+			MHR_Deck.Release(ai);
+			return false;
+		}
+		Vector3 me = ai.transform.position;
+		Vector3 you = p.transform.position;
+		if (MHR_Deck.SpotNear(ship, you, out Vector3 side))
+		{
+			bool there = MHR_Deck.Walk(ai, ship, side, 0.5f, out bool stuck);
+			if (!there && !stuck)
+			{
+				return true;
+			}
+		}
+		Vector3 dir = you - me;
+		dir.y = 0f;
+		if (dir.sqrMagnitude < 0.01f)
+		{
+			return false;
+		}
+		dir.Normalize();
+		ai.transform.rotation = Quaternion.LookRotation(dir);
+		if (c.IsOnGround() && now >= s.NextJump)
+		{
+			s.NextJump = now + 1.5f;
+			MHR_Jump.Leap(ai, c, dir);
+			Log(c.m_name + " jumping off the ship");
+		}
+		else
+		{
+			ai.MoveTowards(dir, run: false);
+		}
+		return true;
+	}
+
+	// 1.5.85: the dry spot nearest the ladder (a dock end, the bank) within 15 m of it - walk there, then dive in and swim the
+	// short way (user, log ce2af5bd: "It looked like they still took the long way around one of the times" - the ladder was
+	// 9.7 m off, past the 8 m dive range, and the route went 26 m round)
+	private static bool LaunchSpot(Ladder ladder, Vector3 me, out Vector3 spot)
+	{
+		spot = me;
+		Vector3 lp = ladder.transform.position;
+		int mask = Solid() | Vehicle();
+		for (int r = 1; r <= 15; r++)
+		{
+			float best = float.MaxValue;
+			bool found = false;
+			for (int k = 0; k < 24; k++)
+			{
+				Vector3 d = Quaternion.Euler(0f, k * 15f, 0f) * Vector3.forward;
+				Vector3 q = lp + d * r;
+				if (!Physics.Raycast(new Vector3(q.x, lp.y + 8f, q.z), Vector3.down, out RaycastHit hit, 30f, mask))
+				{
+					continue;
+				}
+				if (((1 << hit.collider.gameObject.layer) & Vehicle()) != 0 || hit.point.y > lp.y + 4f)
+				{
+					continue;
+				}
+				q = hit.point;
+				if (MHR_Water.DepthAt(q) >= 0.1f || Flat(q, me) > 40f)
+				{
+					continue;
+				}
+				float score = Flat(q, me);
+				if (score < best)
+				{
+					best = score;
+					spot = q;
+					found = true;
+				}
+			}
+			if (found)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// a seated companion that boarded with you gets up when you've left the ship (2 s on land, within 40 m)
@@ -406,13 +538,32 @@ internal static class MHR_Board
 		// aboard: a seat, or stand on the deck
 		if (ShipUnder(c) == ship)
 		{
-			Chair seat = FreeChair(ship, s.Chair, me);
+			Chair seat = FreeChair(ship, s.Chair, me, c);
 			bool auto = s.Auto;
-			Cancel(ai);
 			if (seat != null)
 			{
+				// 1.5.85: walks across the deck to the seat, then sits (user, log ce2af5bd: "Rather than getting up and walking to
+				// the seat they just apear there"); can't get closer for 5 s, or 20 s in all -> sits anyway
+				s.Chair = seat;
 				Vector3 local = ship.transform.InverseTransformPoint(seat.m_attachPoint.position);
-				Log($"{name} is aboard - taking a seat: '{SeatPath(seat.transform, ship.transform)}' at {local:F2} on the ship (world {seat.m_attachPoint.position:F1})");
+				if (s.SeatSince < 0f)
+				{
+					s.SeatSince = now;
+					s.ProgressAt = now;
+					Log($"{name} is aboard - walking to a seat: '{SeatPath(seat.transform, ship.transform)}' at {local:F2} on the ship");
+				}
+				Vector3 spot = MHR_Deck.SpotNear(ship, seat.m_attachPoint.position, out Vector3 l2) ? l2 : local;
+				bool there = MHR_Deck.Walk(ai, ship, spot, 0.6f, out bool stuck);
+				if (!there && !stuck && now - s.SeatSince < 20f)
+				{
+					return true;
+				}
+				if (!there)
+				{
+					Log(name + " can't get any closer to the seat - sitting down anyway");
+				}
+				Cancel(ai);
+				Log($"{name} sits down: '{SeatPath(seat.transform, ship.transform)}' (world {seat.m_attachPoint.position:F1})");
 				ai.AttachToShip(ship, seat);
 				if (auto)
 				{
@@ -421,6 +572,7 @@ internal static class MHR_Board
 			}
 			else
 			{
+				Cancel(ai);
 				Log(name + " is aboard - no free seat, standing on deck");
 				if (!auto)
 				{
@@ -485,7 +637,17 @@ internal static class MHR_Board
 		// use the ladder ... rather than just treading water for a moment to wait for the ladder to be in range")
 		Ladder near = NearestLadder(ship, me, out float flatL);
 		CompanionStamina st2 = ai.GetComponent<CompanionStamina>();
-		if (near != null && flatL <= 8f)
+		if (near != null && !s.LaunchTried && !c.IsSwimming() && flatL > 2f && flatL <= 15f)
+		{
+			s.LaunchTried = true;
+			s.HasLaunch = LaunchSpot(near, me, out s.Launch);
+			if (s.HasLaunch)
+			{
+				Log($"{name} heading for the water's edge nearest the ladder ({Flat(s.Launch, near.transform.position):F1} m from it)");
+			}
+		}
+		bool atLaunch = s.HasLaunch && Flat(me, s.Launch) < 1.2f;
+		if (near != null && (flatL <= 8f || atLaunch))
 		{
 			Vector3 toL = near.transform.position - me;
 			toL.y = 0f;
@@ -543,7 +705,7 @@ internal static class MHR_Board
 					}
 					return true;
 				}
-				if (MHR_Water.DepthAt(ahead) < 0.4f && ahead.y > me.y - 1.5f)
+				if ((MHR_Water.DepthAt(ahead) < 0.4f || atLaunch) && ahead.y > me.y - 1.5f)
 				{
 					// dry ground on the way to the edge: walk straight at the ladder
 					ai.transform.rotation = Quaternion.LookRotation(dirL);
@@ -625,7 +787,21 @@ internal static class MHR_Board
 		{
 			// walk (or swim) to the nearest ladder, else to our side of the ship
 			Vector3 goal = nearest != null ? nearest.transform.position : (DeckSpot(ship, me, out Vector3 d2) ? d2 : ship.transform.position);
-			MHR_Mover.Go(ai, dt, goal, 0.5f, dist > 8f, "Board", dist > 8f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+			bool toLaunch = s.HasLaunch && !c.IsSwimming() && !atLaunch;
+			if (toLaunch)
+			{
+				goal = s.Launch;
+			}
+			MHR_Mover.Go(ai, dt, goal, toLaunch ? 0.6f : 0.5f, dist > 8f, "Board", dist > 8f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+			if (toLaunch && MHR_Mover.Progressing(ai))
+			{
+				s.ProgressAt = now;
+			}
+			if (toLaunch && MHR_Mover.GaveUp(ai))
+			{
+				s.HasLaunch = false;
+				MHR_Mover.Release(ai);
+			}
 		}
 		if (now >= s.NextLog)
 		{

@@ -73,6 +73,8 @@ public class CompanionAI : BaseAI
 
 	private Ship _attachedShip;
 
+	private Chair _attachedChair;
+
 	private Vector3 _shipLocalPos;
 
 	private Quaternion _shipLocalRot;
@@ -592,7 +594,9 @@ public class CompanionAI : BaseAI
 			DetachFromShip();
 		}
 		_attachedShip = ship;
+		_attachedChair = chair;
 		_isOnShip = true;
+		WaterSafety.Clear(m_character);
 		CapsuleCollider component = GetComponent<CapsuleCollider>();
 		if (component != null)
 		{
@@ -668,39 +672,31 @@ public class CompanionAI : BaseAI
 		}
 		_isOnShip = false;
 		_attachedShip = null;
-		bool flag2 = false;
-		if (attachedShip != null)
+		Chair seat = _attachedChair;
+		_attachedChair = null;
+		// 1.5.85: stands up where it sat, as you do (Player.AttachStop: the seat's detach offset) - onto the deck next to
+		// the seat when the deck planner has one; it then walks off the ship (was a teleport to the ship's ladder, or next to
+		// you - user, log ce2af5bd: "They also seem to be teleporting a bit")
+		Vector3 up = base.transform.position + Vector3.up * 0.5f;
+		if (seat != null && seat.m_attachPoint != null)
 		{
-			Ladder componentInChildren = attachedShip.GetComponentInChildren<Ladder>();
-			if (componentInChildren != null)
+			up = seat.m_attachPoint.TransformPoint(seat.m_detachOffset);
+			if (attachedShip != null && MHR_Deck.SpotNear(attachedShip, seat.m_attachPoint.position, out Vector3 local))
 			{
-				Vector3 position = componentInChildren.transform.position + Vector3.up * 0.3f;
-				base.transform.position = position;
-				if (_body != null)
+				Vector3 deck = attachedShip.transform.TransformPoint(local) + attachedShip.transform.up * 0.05f;
+				if (Vector3.Distance(deck, seat.m_attachPoint.position) < 2f)
 				{
-					_body.position = position;
-					_body.linearVelocity = Vector3.zero;
-					ResetLiquidState();
+					up = deck;
 				}
-				flag2 = true;
 			}
 		}
-		if (!flag2 && MHR_Owner.Of(this) != null)
+		base.transform.position = up;
+		if (_body != null)
 		{
-			Vector3 position2 = MHR_Owner.Of(this).transform.position;
-			// 1.5.72: a safe spot next to you you can see (no wall, water, fire or spikes) - was any floor within 3 m
-			Vector3 position3 = MHR_SafeSpotNear(position2, -MHR_Owner.Of(this).transform.forward);
-			base.transform.position = position3;
-			if (_body != null)
-			{
-				_body.position = position3;
-				_body.linearVelocity = Vector3.zero;
-				ResetLiquidState();
-			}
-		}
-		if (!flag2 && MHR_Owner.Of(this) == null)
-		{
-			base.transform.position += new Vector3(0f, 0.5f, 0f);
+			_body.position = up;
+			Rigidbody shipBody = attachedShip != null ? attachedShip.GetComponent<Rigidbody>() : null;
+			_body.linearVelocity = shipBody != null ? shipBody.GetPointVelocity(up) : Vector3.zero;
+			ResetLiquidState();
 		}
 		RestoreFollowOrPatrol();
 	}

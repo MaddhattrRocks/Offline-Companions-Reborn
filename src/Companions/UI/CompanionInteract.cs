@@ -1429,16 +1429,18 @@ public class CompanionInteract : MonoBehaviour
 			if (pointed != null && !hashSet.Contains(pointed) && MHR_Board.Free(pointed))
 			{
 				hashSet.Add(pointed);
+				// 1.5.85: one already seated stands up and walks over (user, log ce2af5bd: "Rather than getting up and walking to
+				// the seat they just apear there")
 				if (component.IsOnShip)
 				{
-					component.AttachToShip(ship, pointed);
-					CompanionsPlugin.Log.LogInfo("[Board] " + setup.GetComponent<Character>()?.m_name + " moving to the seat you pointed at");
+					component.DetachFromShip();
+					CompanionsPlugin.Log.LogInfo("[Board] " + setup.GetComponent<Character>()?.m_name + " getting up for the seat you pointed at");
 				}
 				else
 				{
 					CancelExistingActions(setup);
-					component.SetPendingShipBoard(ship, pointed);
 				}
+				component.SetPendingShipBoard(ship, pointed);
 				num++;
 				continue;
 			}

@@ -90,7 +90,7 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | A tree, rock or ore | Gather it |
 | A cart | Hitch up and pull it (point again to unhitch) |
 | A ship | Board it (jumping aboard, or diving in and using the ship's ladder) and take a seat, or stand on deck if none is free |
-| A seat on a ship | Take that seat (moving to it if already aboard) |
+| A seat on a ship | Take that seat (getting up and walking over if already aboard) |
 | A bed | Go to sleep in it (point again to wake them) |
 | A fire | Sit by it (point again to get up) |
 | A closed door | Open it |
@@ -99,7 +99,7 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | Their tombstone | Go and collect their things |
 | The ground | Walk there and wait |
 
-**Ships.** When you're aboard a ship close by, following companions get on too (Follow > AutoBoard): they jump aboard from a dock or the shore, use the ship's ladder (swimming to it if they have the stamina), or follow your own steps aboard. They take a free seat, or stand on deck if none is free. If one can't get aboard it says so and waits on dry land nearby; a swim to the ladder it doesn't have the stamina for (well fed, a companion has more) is one it won't try. A companion that took a seat gets up again when you go ashore.
+**Ships.** When you're aboard a ship close by, following companions get on too (Follow > AutoBoard): they jump aboard from a dock or the shore, use the ship's ladder (swimming to it if they have the stamina), or follow your own steps aboard. They walk across the deck to a free seat, or stand on deck near you if none is free. If one can't get aboard it says so and waits on dry land nearby; a swim to the ladder it doesn't have the stamina for (well fed, a companion has more) is one it won't try. A companion that took a seat gets up again when you go ashore and walks, jumps or swims off after you.
 
 - **Hold** the command key to call your companions to you.
 - **Keep holding** for about 2 seconds to call **every** companion, however far away, including ones with Command switched off.
