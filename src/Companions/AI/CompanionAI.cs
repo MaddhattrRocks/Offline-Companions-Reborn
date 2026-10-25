@@ -142,11 +142,7 @@ public class CompanionAI : BaseAI
 
 	private int _lastFollowMode;
 
-	private const float PortalJumpThreshold = 15f;
 
-	private Vector3 _lastFollowPos = Vector3.positiveInfinity;
-
-	private float _lastFollowPosAt = -1f;
 
 	private int _formationSlot = -1;
 
@@ -598,7 +594,6 @@ public class CompanionAI : BaseAI
 		_attachedShip = ship;
 		_attachedChair = chair;
 		_isOnShip = true;
-		_lastFollowPos = Vector3.positiveInfinity;
 		WaterSafety.Clear(m_character);
 		CapsuleCollider component = GetComponent<CapsuleCollider>();
 		if (component != null)
@@ -675,7 +670,6 @@ public class CompanionAI : BaseAI
 		}
 		_isOnShip = false;
 		_attachedShip = null;
-		_lastFollowPos = Vector3.positiveInfinity;
 		Chair seat = _attachedChair;
 		_attachedChair = null;
 		// 1.5.85: stands up where it sat, as you do (Player.AttachStop: the seat's detach offset) - onto the deck next to
@@ -1159,27 +1153,16 @@ public class CompanionAI : BaseAI
 		{
 			Vector3 position = m_follow.transform.position;
 			float num = Vector3.Distance(base.transform.position, position);
-			// 1.5.86: a jump of 15 m only counts as a portal when the last look was just now - after the follow code was skipped
-			// (seated on a ship, asleep, a menu) the old spot is stale (user, log 79fb1bde: "When I jumped off the boat they
-			// teleported to me" - it had your spot from when it sat down)
-			if (!float.IsInfinity(_lastFollowPos.x) && Time.time - _lastFollowPosAt < 0.5f && Vector3.Distance(_lastFollowPos, position) > 15f)
-			{
-				TeleportToFollowTarget();
-			}
+			// 1.5.87: the original "you moved 15 m since the last look -> warp" rule is gone (it warped a companion getting off a
+			// ship, log 79fb1bde); every game teleport goes through Player.TeleportTo, which PortalPatches handles.
 			// 1.4.83: not while you can still see each other, unless it's half as far again (1.4.82 log: warped while the
 			// player watched it run the long way round)
 			// 1.4.103: and out of sight only when it isn't getting anywhere - a companion on its way round (out of a moat, up
 			// the stairs) keeps walking (user: "they just appeared next to me")
-			else if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || (!MHR_Mover.CanSee(base.transform.position, position) && !MHR_Mover.Progressing(this))))
+			if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || (!MHR_Mover.CanSee(base.transform.position, position) && !MHR_Mover.Progressing(this))))
 			{
 				TeleportToFollowTarget();
 			}
-			_lastFollowPos = position;
-			_lastFollowPosAt = Time.time;
-		}
-		else if (m_follow == null)
-		{
-			_lastFollowPos = Vector3.positiveInfinity;
 		}
 		if (_rest != null && _rest.IsNavigating)
 		{
