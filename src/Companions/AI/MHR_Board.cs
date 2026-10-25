@@ -32,6 +32,8 @@ internal static class MHR_Board
 		public Vector3 StepFrom;
 		public Vector3 StepTo;
 		public float StepBest = float.MaxValue;
+		public bool HasShore;
+		public Vector3 Shore;
 		public float HoldUntil;
 		public Ship HoldShip;
 		public Ship SatOn;
@@ -149,6 +151,18 @@ internal static class MHR_Board
 			return hit.collider.attachedRigidbody != null ? hit.collider.attachedRigidbody.GetComponent<Ship>() : hit.collider.GetComponentInParent<Ship>();
 		}
 		return null;
+	}
+
+	// 1.5.83: which seat it took, for the log (user: "The NPC is also sitting on a stool that does not look to be there")
+	private static string SeatPath(Transform t, Transform root)
+	{
+		string path = t.name;
+		while (t.parent != null && t.parent != root)
+		{
+			t = t.parent;
+			path = t.name + "/" + path;
+		}
+		return path;
 	}
 
 	// a free seat on the ship: none within 0.5 m of a character
@@ -271,6 +285,16 @@ internal static class MHR_Board
 		// couldn't get aboard: wait on the shore while you're on that ship (the far-away catch-up still applies)
 		if (Time.time < s.HoldUntil && s.HoldShip == ship)
 		{
+			if (s.HasShore && Flat(ai.transform.position, s.Shore) > 1f)
+			{
+				MHR_Mover.Go(ai, dt, s.Shore, 0.8f, false, "Board", MHR_Mover.SpeedJog);
+				if (MHR_Mover.GaveUp(ai))
+				{
+					s.HasShore = false;
+				}
+				return true;
+			}
+			s.HasShore = false;
 			ai.StopMoving();
 			ai.LookAtPoint(ship.transform.position);
 			return true;
@@ -339,7 +363,8 @@ internal static class MHR_Board
 			Cancel(ai);
 			if (seat != null)
 			{
-				Log(name + " is aboard - taking a seat");
+				Vector3 local = ship.transform.InverseTransformPoint(seat.m_attachPoint.position);
+				Log($"{name} is aboard - taking a seat: '{SeatPath(seat.transform, ship.transform)}' at {local:F2} on the ship (world {seat.m_attachPoint.position:F1})");
 				ai.AttachToShip(ship, seat);
 				if (auto)
 				{
@@ -377,6 +402,28 @@ internal static class MHR_Board
 			{
 				ld = d;
 				nearest = l;
+			}
+		}
+		// 1.5.83: resting on the bank for its breath before a swim isn't being stuck (log 6b069f3f: it gave up while resting,
+		// then stood in the shallows)
+		CompanionStamina stam = ai.GetComponent<CompanionStamina>();
+		if (MHR_Mover.RestingForSwim(ai))
+		{
+			s.ProgressAt = now;
+			if (now >= s.NextLog)
+			{
+				s.NextLog = now + 5f;
+				Log($"{name} resting before the swim ({(stam != null ? stam.Stamina : 0f):F0}/{(stam != null ? stam.MaxStamina : 0f):F0} stamina)");
+			}
+		}
+		// a swim longer than it has stamina for at all: say so and wait on the shore
+		float swimM = MHR_Mover.RouteSwim(ai);
+		if (swimM > 0.5f && stam != null && stam.MaxStamina > 0f && !c.IsSwimming())
+		{
+			float needSwim = MHR_Water.SwimStamina(c, swimM) * 1.25f + 5f;
+			if (needSwim > stam.MaxStamina)
+			{
+				return GiveUp(ai, s, c, $"the swim to the ladder ({swimM:F0} m) needs about {needSwim:F0} stamina, it has {stam.MaxStamina:F0} at most");
 			}
 		}
 		// progress = getting closer to the ship
@@ -468,18 +515,68 @@ internal static class MHR_Board
 		// stuck too long: wait on the shore
 		if (now - s.ProgressAt > StuckFor * 2f || now - s.Since > GiveUpAfter * 2f || (s.Footsteps && now - s.ProgressAt > StuckFor))
 		{
-			Log(name + " can't get aboard - waiting on the shore");
-			bool auto = s.Auto;
-			Cancel(ai);
-			s.HoldShip = ship;
-			s.HoldUntil = now + HoldFor;
-			ai.StopMoving();
-			if (!auto)
-			{
-				ai.BoardingEnded();
-			}
-			return false;
+			return GiveUp(ai, s, c, "no way found");
 		}
 		return true;
+	}
+
+	// 1.5.83: gives up for now and waits on dry land facing the ship - not where it stopped (it stood in the water)
+	private static bool GiveUp(CompanionAI ai, S s, Character c, string why)
+	{
+		Ship ship = s.Ship;
+		bool auto = s.Auto;
+		Log(c.m_name + " can't get aboard (" + why + ") - waiting on the shore");
+		Cancel(ai);
+		s.HoldShip = ship;
+		s.HoldUntil = Time.time + HoldFor;
+		s.HasShore = DryShore(ai.transform.position, ship != null ? ship.transform.position : ai.transform.position, out s.Shore);
+		if (!s.HasShore)
+		{
+			ai.StopMoving();
+		}
+		if (!auto)
+		{
+			ai.BoardingEnded();
+		}
+		return false;
+	}
+
+	// the nearest dry ground within 15 m (rings of 12 directions), a little towards the ship when it's a tie
+	private static bool DryShore(Vector3 me, Vector3 ship, out Vector3 spot)
+	{
+		spot = me;
+		if (MHR_Water.DepthAt(me) < 0.1f)
+		{
+			return false;
+		}
+		float best = float.MaxValue;
+		bool found = false;
+		Vector3 toShip = ship - me;
+		toShip.y = 0f;
+		foreach (float r in new float[6] { 2f, 4f, 6f, 9f, 12f, 15f })
+		{
+			for (int k = 0; k < 12; k++)
+			{
+				Vector3 d = Quaternion.Euler(0f, k * 30f, 0f) * Vector3.forward;
+				Vector3 p = me + d * r;
+				p.y = MHR_Water.GroundAt(p);
+				if (MHR_Water.DepthAt(p) >= 0.1f || p.y > me.y + 3f)
+				{
+					continue;
+				}
+				float score = r - (toShip.sqrMagnitude > 0.01f ? Vector3.Dot(d, toShip.normalized) : 0f);
+				if (score < best)
+				{
+					best = score;
+					spot = p;
+					found = true;
+				}
+			}
+			if (found)
+			{
+				break;
+			}
+		}
+		return found;
 	}
 }

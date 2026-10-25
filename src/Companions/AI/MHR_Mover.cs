@@ -97,6 +97,8 @@ namespace Companions
         // 1.4.110: how much swimming a job accepts to reach something (General.JobSwim)
         public static float JobSwim() { return ModConfig.JobSwim != null ? ModConfig.JobSwim.Value : 20f; }
         public static float RouteSwim(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? s.RouteSwim : 0f; }
+        // 1.5.83: waiting on the bank for its breath before a swim (MHR_Board doesn't count that as stuck)
+        public static bool RestingForSwim(CompanionAI ai) { S s = Peek(ai); return s != null && s.WaitStamina && Time.time - s.LastGo < 0.5f; }
         // 1.4.82: length of the current route, for callers that compare it with the straight line (0 when not moving)
         public static float RouteLength(CompanionAI ai)
         {
