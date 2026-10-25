@@ -300,9 +300,6 @@ An enemy a companion can't get at with its melee weapon (out in deep water, no w
 **BowEdgeMargin** — Default: 3 · Range: 0 – 10  
 Bows: a draw is only started this many meters inside the bow's 30 m reach, and a draw already started is kept while the target is up to twice this far past the reach (walking closer, not running), so a target at the edge doesn't cost the draw.
 
-**CounterWindow** — Default: 0.8 · Range: 0 – 3  
-Fighting like a player: after blocking or parrying a hit, a companion hits back if the attacker is within reach for this many seconds - instead of stepping away or holding off. 0 = off.
-
 **RangedMeleeRange** — Default: 4 · Range: 1 – 15  
 Ranged stance: the bow is out (also when not fighting); the melee weapon and shield only come out when an enemy gets within this many meters - or twice that while it's catching its breath - and go away again once it's past twice the distance.
 

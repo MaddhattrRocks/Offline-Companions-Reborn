@@ -641,7 +641,9 @@ public partial class CompanionCombatAI : MonoBehaviour
 					// 1.5.3: a sword only reaches someone about on our level - a skeleton a floor up (user log: 2.8 m away, 2 m up)
 					// had him swinging at the ladder between them instead of climbing on. Out of reach: keep moving.
 					float reachDy = _targetCreature.transform.position.y - base.transform.position.y;
-					if (!flag7 && (reachDy > 1.4f || reachDy < -1.8f)) flag8 = false;
+					// 1.5.76: not a tick latched on - it sits on the body, above its feet, and is always within reach
+					bool latchedOn = LatchedTarget();
+					if (!flag7 && !latchedOn && (reachDy > 1.4f || reachDy < -1.8f)) flag8 = false;
 					// on the way up a chain of ladders to it: finish the climb onto its floor first, like a player (user log: stopped
 					// half way up the last ladder and fought from it)
 					if (!flag7 && reachDy > 0.5f && MHR_Mover.OnLadderChain(_ai)) flag8 = false;
@@ -737,7 +739,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 						// 1.5.54: only for a narrow attack (a stab) - a sweep hits from right up close (log 4b8d4066: bronze sword
 						// hits at 0.2 m, while the step back cost it time again and again)
 						Attack meleeAtk = itemData.m_shared.m_attack;
-						if (!flag7 && tooClose > 0f && num3 < tooClose && !_character.InAttack() && (meleeAtk == null || meleeAtk.m_attackAngle < 40f))
+						if (!flag7 && !latchedOn && tooClose > 0f && num3 < tooClose && !_character.InAttack() && (meleeAtk == null || meleeAtk.m_attackAngle < 40f))
 						{
 							Vector3 away = base.transform.position - _targetCreature.transform.position;
 							away.y = 0f;
@@ -776,7 +778,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 							bool bow = MHR_BowDraw.NeedsDraw(_humanoid);
 							bool ready = bow ? flag3 : flag5;
 							float startAngle = bow ? Mathf.Max(maxAngle, 45f) : maxAngle;
-							if (ready && _ai.IsLookingAtPoint(_lastKnownTargetPos, startAngle, itemData.m_shared.m_aiInvertAngleCheck) && DoAttack(_targetCreature))
+							// 1.5.76: a tick latched on turns with it - it can never line up with it, so it swings as it is
+							if (ready && (latchedOn || _ai.IsLookingAtPoint(_lastKnownTargetPos, startAngle, itemData.m_shared.m_aiInvertAngleCheck)) && DoAttack(_targetCreature))
 							{
 								if (_tacticsOn)
 								{
@@ -947,6 +950,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 		}
 		// 1.5.65: lost from sight / out of the defended area -> let it go (CompanionCombatTargets)
 		CheckTargetStillValid();
+		// 1.5.76: a tick latched on is the target right away, not at the next 1 s target check
+		Character latched = HuntMode ? null : Latched();
+		if (latched != null && latched != _targetCreature && !latched.IsDead())
+		{
+			CompanionsPlugin.Log.LogDebug($"[Combat] {latched.m_name} is latched on - turning on it" + (_targetCreature != null ? $" (was fighting {_targetCreature.m_name})" : ""));
+			_targetCreature = latched;
+			_noSightSince = -1f;
+		}
 		if (_updateTargetTimer <= 0f && !_character.InAttack())
 		{
 			bool flag = Player.IsPlayerInRange(base.transform.position, 50f);
@@ -1051,7 +1062,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (_targetCreature != null)
 		{
 			canHearTarget = _ai.CanHearTarget(_targetCreature);
-			canSeeTarget = _ai.CanSeeTarget(_targetCreature);
+			// 1.5.76: a tick latched on is on its body - always "seen" (the eye ray can miss it)
+			canSeeTarget = _ai.CanSeeTarget(_targetCreature) || LatchedTarget();
 			if (canSeeTarget | canHearTarget)
 			{
 				_timeSinceSensedTarget = 0f;
@@ -1142,6 +1154,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 
 	private void UpdateBlocking(float dt)
 	{
+		// 1.5.76: a tick latched on - the shield only soaks its bites (and the stamina) while it keeps feeding; guard down
+		// and hit it (user, log fd7b1683: "This time the ticks latched on while the NPC was blocking. The NPC did not swing
+		// back" - ten blocked bites in a row, no swing)
+		if (Latched() != null)
+		{
+			ClearBlock();
+			return;
+		}
 		// 1.5.54: mid-combo it's committed - no raising the guard between swings (that broke the combo off)
 		if (_targetCreature == null || _character.InAttack() || _character.IsStaggering() || _parryAttackCount > 0 || (_tacticsOn && _burstLeft > 0))
 		{

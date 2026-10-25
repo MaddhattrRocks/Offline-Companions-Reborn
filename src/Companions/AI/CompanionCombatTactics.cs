@@ -591,38 +591,6 @@ public partial class CompanionCombatAI
 		float d = Vector3.Distance(me, t.transform.position);
 		float hover = Danger(t) + (ModConfig.CombatSpacingMargin?.Value ?? 0.4f);
 		float ourReach = MHR_MeleeReach(weapon) + t.GetRadius() + _character.GetRadius();
-		// 1.5.75: just blocked it and it's within reach: hit back now
-		if (Countering(t) && d <= ourReach && StaminaNow() - AttackCost(weapon) >= Reserve * StaminaMax())
-		{
-			_dipping = false;
-			TLog($"Blocked {t.m_name} - hitting back");
-			return 2;
-		}
-		// 1.5.75: an enemy that jumps in from well beyond our reach (a tick's 3.4 m leap against a 1.8 m spear): holding
-		// just outside that never gets a hit in. Guard up where it stands, hit it when it lands (Countering above, or the
-		// normal swing once it's in reach); after a few seconds without it coming, go in.
-		if (Leaper(t, ourReach))
-		{
-			if (_leapWaitFor != t)
-			{
-				_leapWaitFor = t;
-				_leapWaitSince = Time.time;
-				TLog($"{t.m_name} jumps in from {Danger(t):F1} m - guard up, hitting back when it lands");
-			}
-			if (Time.time - _leapWaitSince < 3f && d > ourReach)
-			{
-				_dipping = false;
-				_ai.StopMoving();
-				_ai.LookAtPoint(t.GetCenterPoint());
-				return 2;
-			}
-			if (Time.time - _leapWaitSince > 6f)
-			{
-				_leapWaitSince = Time.time;
-			}
-			_dipping = false;
-			return 0;
-		}
 		// within our own reach and outside its: hit it from here
 		if (d <= ourReach - 0.2f && d > Danger(t))
 		{
@@ -798,12 +766,6 @@ public partial class CompanionCombatAI
 	// moment it reacts)
 	private bool TryEvade(Character swinger)
 	{
-		// 1.5.75: not stepping away when hitting back is better: just blocked it and it's in reach, or it's a jumper (its
-		// reach far beyond ours - stepping out of a leap only invites the next one)
-		if (swinger != null && (Countering(swinger) || (swinger == _targetCreature && Leaper(swinger, MHR_MeleeReach(_humanoid.GetCurrentWeapon()) + swinger.GetRadius() + _character.GetRadius()))))
-		{
-			return false;
-		}
 		float chance = ModConfig.StepAwayChance?.Value ?? 0.3f;
 		if (StaminaShare() < Reserve)
 		{
@@ -940,37 +902,6 @@ public partial class CompanionCombatAI
 			return true;
 		}
 		return sw == _blockAgainst && _swingLandedAt >= _swingStartedAt;
-	}
-
-	// 1.5.75: blocked or parried a hit from it - right after, the attacker is next to it and open: hit back, like a player
-	// (user, log fd7b1683: "Most of the time the NPC just blocked rather than trying to attack or swing at the tick" - 29
-	// blocks, 26 swings, and after each block it stepped back out of the tick's 3.4 m leap range instead)
-	private Character _blockedBy;
-
-	private float _blockedAt = -10f;
-
-	private Character _leapWaitFor;
-
-	private float _leapWaitSince;
-
-	private static float CounterWindow => ModConfig.CombatCounterWindow?.Value ?? 0.8f;
-
-	// small and reaching far beyond its size: it jumps in (a tick, a wolf) - not a big hitter like a troll, whose reach is
-	// its arms and club
-	private bool Leaper(Character t, float ourReach)
-	{
-		return t != null && t.GetRadius() < 0.8f && Danger(t) > ourReach + 1f;
-	}
-
-	internal void NoteBlocked(Character attacker)
-	{
-		_blockedBy = attacker;
-		_blockedAt = Time.time;
-	}
-
-	private bool Countering(Character t)
-	{
-		return t != null && t == _blockedBy && Time.time - _blockedAt < CounterWindow;
 	}
 
 	// a hit on it or a block, from the creature whose swing it's watching: that swing has landed

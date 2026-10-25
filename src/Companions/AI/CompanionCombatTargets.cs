@@ -153,7 +153,9 @@ public partial class CompanionCombatAI
 			r.Ok = false;
 			r.Why = "it's out in deep water";
 		}
-		else if (d < 3f && (dy > 1.4f || dy < -1.8f))
+		// 1.5.76: only something standing (or flying) above or below - not a tick latched on or one in mid-jump (log fd7b1683:
+		// "bow for $enemy_tick (2.0 m): it's above, out of reach" swapped to the bow mid-fight)
+		else if (d < 3f && (dy > 1.4f || dy < -1.8f) && (c.IsOnGround() || c.IsFlying()) && MHR_Latched.LatchedOn(_character) != c)
 		{
 			r.Ok = false;
 			r.Why = dy > 0f ? "it's above, out of reach" : "it's below, out of reach";
@@ -210,7 +212,20 @@ public partial class CompanionCombatAI
 		if (Time.time >= _latchedCheckAt)
 		{
 			_latchedCheckAt = Time.time + 0.25f;
+			Character was = _latched;
 			_latched = MHR_Latched.LatchedOn(_character);
+			// 1.5.76: logged both ways, so a test log shows when one was feeding
+			if (_latched != was)
+			{
+				if (_latched != null)
+				{
+					CompanionsPlugin.Log.LogDebug($"[Combat] {_latched.m_name} latched on to {_character.m_name}");
+				}
+				if (was != null)
+				{
+					CompanionsPlugin.Log.LogDebug($"[Combat] {was.m_name} let go of {_character.m_name}" + (was.IsDead() ? " (dead)" : ""));
+				}
+			}
 		}
 		return _latched;
 	}

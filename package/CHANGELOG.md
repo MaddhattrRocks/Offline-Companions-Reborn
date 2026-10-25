@@ -3,8 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
-- After blocking or parrying a hit, a companion hits back when the attacker is within reach instead of stepping away (new setting: Combat CounterWindow).
-- Against small jumpers like ticks, a companion stands guard up and hits them when they land, instead of hovering just outside their leap and never getting a swing in.
+- A tick latched on to a companion: it turns on it at once, lowers its guard (blocking only soaks the bites while it keeps feeding), doesn't step away, and swings without waiting to line up with it.
+- Fix: Balanced stance no longer swaps to the bow for a tick that is latched on or mid-jump ("above, out of reach").
 - Companions don't swim or dive in for loot any more - a drop on the far side of water is left.
 - A tick latched on to a companion is its first target and is swung at - no more backing away while it feeds.
 - Balanced stance takes the bow, at any distance, for an enemy its melee weapon can't get at (out in deep water, a level above or below, no way to walk there) when it has a clear shot.
