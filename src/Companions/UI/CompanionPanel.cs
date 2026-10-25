@@ -126,6 +126,15 @@ public class CompanionPanel
 
 	private static readonly Color BtnTint = new Color(0f, 0f, 0f, 0.75f);
 
+	// 1.5.81: the summon and starter windows have no dark layers over the game's wood panel - not on the three sections,
+	// the buttons or the slider tracks (user: "there is like a dark highlight overlayed the 3 sections"; "Lets remove it
+	// from the extras too"). The trader tab keeps them. Set at the start of each Build.
+	private static bool s_noDark;
+
+	private static Color SectionBg => s_noDark ? Color.clear : ColBg;
+
+	private static Color Tint => s_noDark ? Color.clear : BtnTint;
+
 	private static readonly Color TabInactive = new Color(0.45f, 0.45f, 0.45f, 1f);
 
 	private const string BankDataKey = "TraderSharedBank_Balance";
@@ -157,6 +166,7 @@ public class CompanionPanel
 
 	public void Build(Transform parent, float colTopInset, float bottomPad, TMP_FontAsset font, GameObject buttonTemplate, float buttonHeight, float leftXL, float leftXR, float midXL, float midXR, float rightXL, float rightXR, float panelHeight)
 	{
+		s_noDark = StarterMode;
 		_current = CompanionAppearance.Default();
 		_selectedTier = CompanionTierData.Companion;
 		if (buttonHeight <= 0f)
@@ -231,7 +241,7 @@ public class CompanionPanel
 		component.offsetMax = new Vector2(xRight, 0f - colTopInset);
 		Image component2 = gameObject.GetComponent<Image>();
 		component2.sprite = null;
-		component2.color = ColBg;
+		component2.color = SectionBg;
 		return component;
 	}
 
@@ -560,7 +570,7 @@ public class CompanionPanel
 		component.anchorMax = Vector2.one;
 		component.offsetMin = Vector2.zero;
 		component.offsetMax = Vector2.zero;
-		gameObject2.GetComponent<Image>().color = BtnTint;
+		gameObject2.GetComponent<Image>().color = Tint;
 		gameObject2.GetComponent<Image>().raycastTarget = false;
 		return gameObject;
 	}
@@ -658,7 +668,7 @@ public class CompanionPanel
 		component3.anchorMax = Vector2.one;
 		component3.offsetMin = Vector2.zero;
 		component3.offsetMax = Vector2.zero;
-		gameObject2.GetComponent<Image>().color = BtnTint;
+		gameObject2.GetComponent<Image>().color = Tint;
 		gameObject2.GetComponent<Image>().raycastTarget = false;
 		TMP_Text componentInChildren = gameObject.GetComponentInChildren<TMP_Text>(includeInactive: true);
 		if (componentInChildren != null)
@@ -831,7 +841,7 @@ public class CompanionPanel
 		component4.anchorMax = Vector2.one;
 		component4.offsetMin = Vector2.zero;
 		component4.offsetMax = Vector2.zero;
-		gameObject2.GetComponent<Image>().color = BtnTint;
+		gameObject2.GetComponent<Image>().color = Tint;
 		gameObject2.GetComponent<Image>().raycastTarget = false;
 		slider2.value = initialValue;
 		slider2.onValueChanged.AddListener(delegate(float v)
@@ -1591,7 +1601,7 @@ public class CompanionPanel
 		component5.anchorMax = Vector2.one;
 		component5.offsetMin = Vector2.zero;
 		component5.offsetMax = Vector2.zero;
-		gameObject2.GetComponent<Image>().color = BtnTint;
+		gameObject2.GetComponent<Image>().color = Tint;
 		gameObject2.GetComponent<Image>().raycastTarget = false;
 		if (componentInChildren != null)
 		{
