@@ -234,7 +234,7 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 
 	public bool Interact(Humanoid user, bool hold, bool alt)
 	{
-		if (hold || user == null || user != Player.m_localPlayer || ShrinePanel.IsOpen || StarterCompanionPanel.Instance != null)
+		if (hold || user == null || user != Player.m_localPlayer || ShrinePanel.IsOpen || ShrinePanel.JustClosed || StarterCompanionPanel.Instance != null)
 		{
 			return false;
 		}

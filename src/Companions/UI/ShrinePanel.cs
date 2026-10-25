@@ -48,9 +48,18 @@ public class ShrinePanel : MonoBehaviour
 
 	private const float Width = 560f;
 
-	private const float RowHeight = 34f;
+	private const float RowHeight = 48f;
+
+	private const float CloseDistance = 4f;
+
+	private float _openedAt;
 
 	internal static bool IsOpen => _instance != null && _instance._root != null && _instance._root.activeSelf;
+
+	// 1.5.79: the Use press that closes the menu doesn't open it again on the same press
+	private static float s_closedAt = -10f;
+
+	internal static bool JustClosed => Time.time - s_closedAt < 0.3f;
 
 	internal static void Show(CompanionShrine shrine)
 	{
@@ -67,9 +76,11 @@ public class ShrinePanel : MonoBehaviour
 	// the two options
 	private void BuildMenu()
 	{
-		Begin(200f, ModLocalization.Loc("hc_shrine_title"));
-		AddButton(_root.transform, ModLocalization.Loc("hc_shrine_opt_recover"), new Vector2(0f, -56f), new Vector2(Width - 60f, 44f), BuildRecover);
-		AddButton(_root.transform, ModLocalization.LocFmt("hc_shrine_opt_buy", CompanionTierData.Price.ToString("N0")), new Vector2(0f, -112f), new Vector2(Width - 60f, 44f), Summon);
+		// 1.5.79: flavour text under the title (user's wording)
+		Begin(290f, ModLocalization.Loc("hc_shrine_title"));
+		AddText(_root.transform, ModLocalization.Loc("hc_shrine_flavor"), new Vector2(0f, -52f), new Vector2(Width - 60f, 70f), TextAlignmentOptions.Center);
+		float y = AddButton(_root.transform, ModLocalization.Loc("hc_shrine_opt_recover"), new Vector2(0f, -132f), new Vector2(Width - 120f, 44f), BuildRecover);
+		AddButton(_root.transform, ModLocalization.LocFmt("hc_shrine_opt_buy", CompanionTierData.Price.ToString("N0")), new Vector2(0f, -132f - y - 12f), new Vector2(Width - 120f, 44f), Summon);
 		CompanionsPlugin.Log.LogInfo("[Shrine] Menu opened");
 	}
 
@@ -78,9 +89,9 @@ public class ShrinePanel : MonoBehaviour
 	{
 		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> roster = MHR_Roster.GetRoster();
 		int rows = Mathf.Max(1, roster.Count);
-		Begin(110f + rows * (RowHeight + 4f) + 50f, ModLocalization.Loc("hc_shrine_opt_recover"));
+		Begin(130f + rows * (RowHeight + 4f) + 70f, ModLocalization.Loc("hc_shrine_opt_recover"));
 		CompanionsPlugin.Log.LogInfo($"[Shrine] Recover list - {roster.Count} companion(s) on the roster");
-		float y = -50f;
+		float y = -56f;
 		if (roster.Count == 0)
 		{
 			AddText(_root.transform, ModLocalization.Loc("hc_shrine_none"), new Vector2(0f, y), new Vector2(Width - 40f, RowHeight * 2f), TextAlignmentOptions.Center);
@@ -93,7 +104,7 @@ public class ShrinePanel : MonoBehaviour
 			AddText(_root.transform, entry.Name + "  -  " + StatusText(status), new Vector2(canRecover ? -60f : 0f, y), new Vector2(canRecover ? Width - 160f : Width - 40f, RowHeight), TextAlignmentOptions.Left);
 			if (canRecover)
 			{
-				AddButton(_root.transform, ModLocalization.Loc("hc_shrine_btn_recover"), new Vector2(Width / 2f - 70f, y), new Vector2(110f, RowHeight - 4f), delegate
+				AddButton(_root.transform, ModLocalization.Loc("hc_shrine_btn_recover"), new Vector2(Width / 2f - 80f, y), new Vector2(130f, RowHeight - 4f), delegate
 				{
 					AskRecover(entry, status);
 				});
@@ -179,11 +190,13 @@ public class ShrinePanel : MonoBehaviour
 		rt.pivot = new Vector2(0.5f, 0.5f);
 		rt.sizeDelta = new Vector2(Width, height);
 		GameLook.ApplyPanel(_root.GetComponent<Image>(), BgColor);
-		TextMeshProUGUI t = AddText(_root.transform, title, new Vector2(0f, -6f), new Vector2(Width - 60f, 34f), TextAlignmentOptions.Center);
+		TextMeshProUGUI t = AddText(_root.transform, title, new Vector2(0f, -10f), new Vector2(Width - 60f, 38f), TextAlignmentOptions.Center);
 		t.fontSize = 20f;
 		t.color = LabelColor;
 		t.fontStyle = FontStyles.Bold;
-		AddCloseButton(_root.transform);
+		// 1.5.79: the game's own title style; no close button - E, Escape or walking away close it, like a chest
+		GameLook.ApplyTitle(t);
+		_openedAt = Time.time;
 		Cursor.lockState = CursorLockMode.None;
 		Cursor.visible = true;
 	}
@@ -203,6 +216,8 @@ public class ShrinePanel : MonoBehaviour
 		tmp.alignment = align;
 		tmp.raycastTarget = false;
 		tmp.textWrappingMode = TextWrappingModes.Normal;
+		// 1.5.79: the game's own body text style
+		GameLook.ApplyBody(tmp);
 		RectTransform rt = go.GetComponent<RectTransform>();
 		rt.anchorMin = new Vector2(0.5f, 1f);
 		rt.anchorMax = new Vector2(0.5f, 1f);
@@ -212,13 +227,17 @@ public class ShrinePanel : MonoBehaviour
 		return tmp;
 	}
 
-	private void AddButton(Transform parent, string label, Vector2 pos, Vector2 size, Action onClick)
+	// returns the height the button took
+	private float AddButton(Transform parent, string label, Vector2 pos, Vector2 size, Action onClick)
 	{
-		// 1.5.78: a copy of the game's Craft button when there is one
-		GameObject template = GameLook.ButtonTemplate();
-		if (template != null)
+		// 1.5.78: a copy of the game's Craft button when there is one; 1.5.79: with its own parts, at its own height
+		GameObject copy = GameLook.CopyButton(parent, label, out float h);
+		if (copy != null)
 		{
-			GameObject copy = CompanionPanel.CreateButton(template, parent, "Btn", label);
+			if (h > 1f)
+			{
+				size.y = h;
+			}
 			RectTransform crt = copy.GetComponent<RectTransform>();
 			crt.anchorMin = new Vector2(0.5f, 1f);
 			crt.anchorMax = new Vector2(0.5f, 1f);
@@ -228,12 +247,11 @@ public class ShrinePanel : MonoBehaviour
 			Button cb = copy.GetComponent<Button>();
 			if (cb != null)
 			{
-				cb.interactable = true;
 				cb.onClick.AddListener(delegate
 				{
 					onClick?.Invoke();
 				});
-				return;
+				return size.y;
 			}
 			UnityEngine.Object.Destroy(copy);
 		}
@@ -264,27 +282,7 @@ public class ShrinePanel : MonoBehaviour
 		trt.offsetMin = Vector2.zero;
 		trt.offsetMax = Vector2.zero;
 		tmp.color = LabelColor;
-	}
-
-	private void AddCloseButton(Transform parent)
-	{
-		GameObject go = new GameObject("CloseBtn", typeof(RectTransform), typeof(Image), typeof(Button));
-		go.transform.SetParent(parent, worldPositionStays: false);
-		RectTransform rt = go.GetComponent<RectTransform>();
-		rt.anchorMin = new Vector2(1f, 1f);
-		rt.anchorMax = new Vector2(1f, 1f);
-		rt.pivot = new Vector2(1f, 1f);
-		rt.sizeDelta = new Vector2(28f, 28f);
-		rt.anchoredPosition = new Vector2(-4f, -4f);
-		go.GetComponent<Image>().color = new Color(0.3f, 0.15f, 0.1f, 0.7f);
-		go.GetComponent<Button>().onClick.AddListener(Close);
-		TextMeshProUGUI tmp = AddText(go.transform, "X", Vector2.zero, Vector2.zero, TextAlignmentOptions.Center);
-		RectTransform trt = tmp.GetComponent<RectTransform>();
-		trt.anchorMin = Vector2.zero;
-		trt.anchorMax = Vector2.one;
-		trt.offsetMin = Vector2.zero;
-		trt.offsetMax = Vector2.zero;
-		tmp.color = Color.white;
+		return size.y;
 	}
 
 	private static TMP_FontAsset ResolveFont()
@@ -311,8 +309,21 @@ public class ShrinePanel : MonoBehaviour
 		}
 		Cursor.lockState = CursorLockMode.None;
 		Cursor.visible = true;
-		if (!UnifiedPopup.IsVisible() && (Input.GetKeyDown(KeyCode.Escape) || ZInput.GetButtonDown("JoyButtonB")))
+		if (UnifiedPopup.IsVisible())
 		{
+			return;
+		}
+		// 1.5.79: closes like a chest (user: "Pressing 'e' or use again should close the menu just like a chest or walking away
+		// from the shrine") - Escape, Use again (not the press that opened it), or more than CloseDistance from the shrine
+		Player p = Player.m_localPlayer;
+		bool use = Time.time - _openedAt > 0.3f && (ZInput.GetButtonDown("Use") || ZInput.GetButtonDown("JoyUse"));
+		bool away = _shrine == null || p == null || p.IsDead() || Vector3.Distance(p.transform.position, _shrine.transform.position) > CloseDistance;
+		if (Input.GetKeyDown(KeyCode.Escape) || ZInput.GetButtonDown("JoyButtonB") || use || away)
+		{
+			if (away)
+			{
+				CompanionsPlugin.Log.LogInfo("[Shrine] Menu closed - walked away");
+			}
 			Close();
 		}
 	}
@@ -334,6 +345,7 @@ public class ShrinePanel : MonoBehaviour
 	private void Close()
 	{
 		Clear();
+		s_closedAt = Time.time;
 	}
 
 	private void OnDestroy()

@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Odin's Shrine menu: the game's own text styles and buttons, a line of flavour text, and no close button - it closes like a chest (Use again, Escape, or walking away).
 - Odin's Shrine: "Summon a new companion" checks your coins first - short, a popup says how many you have and need, and the window doesn't open; the coins are taken when you press Summon Companion.
 - The summon and starter windows have new text (Odin's offering), and both buttons say Summon Companion; hair and beard styles show their proper names.
 - The shrine menu and the companion customising window use the game's own window and button look instead of textures packed in the mod.

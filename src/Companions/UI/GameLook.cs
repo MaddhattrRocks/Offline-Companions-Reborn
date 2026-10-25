@@ -1,4 +1,5 @@
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -103,6 +104,128 @@ internal static class GameLook
 			img.sprite = null;
 			img.color = fallback;
 		}
+	}
+
+	private static bool s_textLogged;
+
+	private static bool s_buttonLogged;
+
+	// 1.5.79: a title like the game's container window title ("Chest")
+	internal static void ApplyTitle(TMP_Text t)
+	{
+		CopyText(t, InventoryGui.instance?.m_containerName, "title");
+	}
+
+	// 1.5.79: body text like the game's crafting description
+	internal static void ApplyBody(TMP_Text t)
+	{
+		CopyText(t, InventoryGui.instance?.m_recipeDecription, "body");
+	}
+
+	private static void CopyText(TMP_Text t, TMP_Text src, string what)
+	{
+		if (t == null || src == null)
+		{
+			return;
+		}
+		if (src.font != null)
+		{
+			t.font = src.font;
+			t.fontSharedMaterial = src.fontSharedMaterial;
+		}
+		t.enableAutoSizing = false;
+		t.fontSize = src.enableAutoSizing ? src.fontSizeMax : src.fontSize;
+		t.color = src.color;
+		t.fontStyle = src.fontStyle;
+		if (!s_textLogged)
+		{
+			s_textLogged = true;
+			TMP_Text title = InventoryGui.instance?.m_containerName;
+			TMP_Text body = InventoryGui.instance?.m_recipeDecription;
+			CompanionsPlugin.Log.LogInfo($"[UI] Game look: title text '{title?.font?.name}' {title?.fontSize:F0} (auto {title?.enableAutoSizing}), body text '{body?.font?.name}' {body?.fontSize:F0} (auto {body?.enableAutoSizing})");
+		}
+	}
+
+	// 1.5.79: a copy of the game's Craft button with its own pieces (frame, label, sound), less the gamepad hint and the
+	// hold-to-craft bar; at its own height (user: "It just looks like something is off for the buttons")
+	internal static GameObject CopyButton(Transform parent, string label, out float height)
+	{
+		height = 0f;
+		GameObject template = ButtonTemplate();
+		if (template == null)
+		{
+			return null;
+		}
+		GameObject go = UnityEngine.Object.Instantiate(template, parent);
+		go.name = "Btn";
+		go.SetActive(value: true);
+		RectTransform trt = template.GetComponent<RectTransform>();
+		height = trt != null ? trt.rect.height : 0f;
+		foreach (UIGamePad pad in go.GetComponentsInChildren<UIGamePad>(includeInactive: true))
+		{
+			if (pad.m_hint != null)
+			{
+				UnityEngine.Object.Destroy(pad.m_hint);
+			}
+			UnityEngine.Object.Destroy(pad);
+		}
+		Transform progress = InventoryGui.instance?.m_craftProgressPanel;
+		if (progress != null && progress.IsChildOf(template.transform))
+		{
+			Transform same = go.transform.Find(GetPath(template.transform, progress));
+			if (same != null)
+			{
+				UnityEngine.Object.Destroy(same.gameObject);
+			}
+		}
+		ContentSizeFitter fitter = go.GetComponent<ContentSizeFitter>();
+		if (fitter != null)
+		{
+			UnityEngine.Object.Destroy(fitter);
+		}
+		LayoutElement layout = go.GetComponent<LayoutElement>();
+		if (layout != null)
+		{
+			UnityEngine.Object.Destroy(layout);
+		}
+		Button b = go.GetComponent<Button>();
+		if (b != null)
+		{
+			b.onClick.RemoveAllListeners();
+			b.interactable = true;
+			b.navigation = new Navigation
+			{
+				mode = Navigation.Mode.Automatic
+			};
+		}
+		TMP_Text text = go.GetComponentInChildren<TMP_Text>(includeInactive: true);
+		if (text != null)
+		{
+			text.gameObject.SetActive(value: true);
+			text.text = label;
+		}
+		if (!s_buttonLogged)
+		{
+			s_buttonLogged = true;
+			string kids = "";
+			foreach (Transform c in template.transform)
+			{
+				kids += (kids.Length > 0 ? ", " : "") + c.name;
+			}
+			CompanionsPlugin.Log.LogInfo($"[UI] Game look: Craft button {trt?.rect.width:F0} x {height:F0}, label '{text?.font?.name}' {text?.fontSize:F0} (auto {text?.enableAutoSizing}), parts: {kids}");
+		}
+		return go;
+	}
+
+	private static string GetPath(Transform root, Transform t)
+	{
+		string path = t.name;
+		while (t.parent != null && t.parent != root)
+		{
+			t = t.parent;
+			path = t.name + "/" + path;
+		}
+		return path;
 	}
 
 	// the game's Craft button, to copy

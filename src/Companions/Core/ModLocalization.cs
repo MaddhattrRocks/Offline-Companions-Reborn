@@ -72,6 +72,7 @@ public static class ModLocalization
 			{ "hc_ui_desc_hire", "Odin will summon another companion if you make an offering of {0} coins. Customize their appearance on the left, then summon them.\n\nThey will follow you, fight by your side, and carry supplies. Equip them with gear and keep them fed to stay battle-ready." },
 			{ "hc_shrine_use", "Your companions" },
 			{ "hc_shrine_title", "Odin's Shrine" },
+			{ "hc_shrine_flavor", "Here you can make an offering to Odin to receive a boon and check on those who are joining you on this adventure." },
 			{ "hc_shrine_opt_recover", "Recover lost companions" },
 			{ "hc_shrine_opt_buy", "Summon a new companion ({0} coins)" },
 			{ "hc_shrine_btn_recover", "Recover" },
