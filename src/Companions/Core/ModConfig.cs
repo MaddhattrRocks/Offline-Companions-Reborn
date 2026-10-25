@@ -582,7 +582,7 @@ internal static class ModConfig
 	internal static void Init(ConfigFile cfg)
 	{
 		// [General]
-		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "Coins it costs to hire another companion at Odin's Shrine (alt-use the shrine), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
+		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "Coins it costs to purchase another companion at Odin's Shrine (shrine menu > Purchase a new companion), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
 		// 1.5.71: the old default (2000) was never used for anything - move it to the new default
 		if (CompanionPrice.Value == 2000)
 		{

@@ -1160,7 +1160,9 @@ public partial class CompanionCombatAI
 		return size;
 	}
 
-	internal bool WantsChain => _tacticsOn && _burstLeft > 0;
+	// 1.5.77: a tick latched on - the whole combo, swing after swing, as long as there's the stamina for the next one, until
+	// it's dead (user: "They should if they have stamina until the tick is dead. Then keep clear until stamina is restored")
+	internal bool WantsChain => (_tacticsOn && _burstLeft > 0) || (LatchedTarget() && StaminaNow() >= AttackCost(_humanoid.GetCurrentWeapon()));
 
 	private static readonly System.Reflection.FieldInfo s_curAttackT = HarmonyLib.AccessTools.Field(typeof(Humanoid), "m_currentAttack");
 

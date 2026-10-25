@@ -536,7 +536,15 @@ public partial class CompanionCombatAI : MonoBehaviour
 		_tacticsOn = TacticsFor(_humanoid.GetCurrentWeapon());
 		UpdateBlocking(dt);
 		float healthPercentage = _character.GetHealthPercentage();
-		if (healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
+		// 1.5.77: not with a tick latched on - it comes along and keeps feeding; it fights it off instead (user, log 0a0d75c2:
+		// both deaths were "Badly hurt - running to its owner" with the tick still on)
+		bool latchedNow = Latched() != null;
+		if (latchedNow && healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && Time.time >= _nextFleeLog)
+		{
+			_nextFleeLog = Time.time + 5f;
+			CompanionsPlugin.Log.LogInfo($"[Flee] hp={healthPercentage:P0} but {Latched().m_name} is latched on - running won't shake it, fighting it");
+		}
+		if (!latchedNow && healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
 		{
 			Player localPlayer = Player.m_localPlayer;
 			if (localPlayer != null)

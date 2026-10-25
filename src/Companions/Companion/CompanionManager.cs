@@ -432,7 +432,7 @@ public static class CompanionManager
 		int have = inv.CountItems("$item_coins");
 		if (have < price)
 		{
-			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0")));
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0"), (price - have).ToString("N0")));
 			return false;
 		}
 		if (!SpawnCompanion(appearance, CompanionTierData.Companion))
@@ -440,7 +440,7 @@ public static class CompanionManager
 			return false;
 		}
 		inv.RemoveItem("$item_coins", price);
-		CompanionsPlugin.Log.LogInfo($"[CompanionManager] Hired a companion for {price} coins ({have - price} left)");
+		CompanionsPlugin.Log.LogInfo($"[CompanionManager] Purchased a companion for {price} coins ({have - price} left)");
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_hired"));
 		return true;
 	}

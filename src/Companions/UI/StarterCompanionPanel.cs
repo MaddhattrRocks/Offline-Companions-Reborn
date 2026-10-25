@@ -197,7 +197,7 @@ public class StarterCompanionPanel : MonoBehaviour
 		gameObject.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.9f);
 		gameObject.GetComponent<Button>().onClick.AddListener(delegate
 		{
-			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Hire cancelled" : "[StarterPanel] Skipped via close button — will re-appear next session");
+			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Purchase cancelled" : "[StarterPanel] Skipped via close button — will re-appear next session");
 			Close();
 		});
 		GameObject gameObject2 = new GameObject("X", typeof(RectTransform));
@@ -267,7 +267,7 @@ public class StarterCompanionPanel : MonoBehaviour
 		}
 		if (Input.GetKeyDown(KeyCode.Escape) || ZInput.GetButtonDown("JoyBack"))
 		{
-			CompanionsPlugin.Log.LogInfo("[StarterPanel] Skipped — will re-appear next session");
+			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Purchase cancelled" : "[StarterPanel] Skipped — will re-appear next session");
 			Close();
 		}
 	}

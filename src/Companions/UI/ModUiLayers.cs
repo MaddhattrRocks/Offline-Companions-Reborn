@@ -25,6 +25,9 @@ internal static class ModUiLayers
 
 	internal const int ConfigPanel = Base + 5;
 
+	// 1.5.77: Odin's Shrine menu (recover / purchase)
+	internal const int ShrinePanel = Base + 6;
+
 	private static bool _logged;
 
 	// Once per session, the first time one of our panels opens: every root canvas in the scene with its order, so a

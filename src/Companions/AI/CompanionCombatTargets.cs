@@ -106,6 +106,8 @@ public partial class CompanionCombatAI
 
 	private Character _latched;
 
+	private string _latchedName;
+
 	private class Reach
 	{
 		public float At;
@@ -213,17 +215,22 @@ public partial class CompanionCombatAI
 		{
 			_latchedCheckAt = Time.time + 0.25f;
 			Character was = _latched;
+			string wasName = _latchedName;
+			bool hadOne = wasName != null;
 			_latched = MHR_Latched.LatchedOn(_character);
+			_latchedName = _latched != null ? _latched.m_name : null;
 			// 1.5.76: logged both ways, so a test log shows when one was feeding
-			if (_latched != was)
+			// plain reference compare: a tick that died is already destroyed, which Unity's == treats as null
+			if (!ReferenceEquals(_latched, was))
 			{
 				if (_latched != null)
 				{
 					CompanionsPlugin.Log.LogDebug($"[Combat] {_latched.m_name} latched on to {_character.m_name}");
 				}
-				if (was != null)
+				// 1.5.77: also when it died and is already gone (Unity null) - the name was kept
+				if (hadOne)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Combat] {was.m_name} let go of {_character.m_name}" + (was.IsDead() ? " (dead)" : ""));
+					CompanionsPlugin.Log.LogDebug($"[Combat] {wasName} let go of {_character.m_name}" + (was == null || was.IsDead() ? " (dead)" : ""));
 				}
 			}
 		}

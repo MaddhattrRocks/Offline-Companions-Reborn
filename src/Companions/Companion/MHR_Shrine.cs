@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using TMPro;
 using UnityEngine;
 
@@ -211,103 +210,6 @@ internal static class MHR_Shrine
 		}
 		return list.ToArray();
 	}
-
-	private static string StatusText(MHR_Roster.Status s)
-	{
-		return s switch
-		{
-			MHR_Roster.Status.Alive => "<color=#80E080>Alive</color>",
-			MHR_Roster.Status.Dead => "<color=#C0C0C0>Dead</color> (its tombstone will bring it back)",
-			MHR_Roster.Status.Lost => "<color=#FF7060>Lost</color>",
-			_ => "<color=#FFCC50>Unknown</color> (not nearby - it may still be alive)",
-		};
-	}
-
-	// 1.5.71: hire another companion - the customising panel, paid in coins from your pack when you confirm
-	internal static void Hire()
-	{
-		int price = CompanionTierData.Price;
-		int have = CompanionManager.CoinsInPack();
-		CompanionsPlugin.Log.LogInfo($"[Shrine] Hire - price {price}, you have {have} coins");
-		if (have < price)
-		{
-			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0")));
-			return;
-		}
-		StarterCompanionPanel.ShowHirePanel();
-	}
-
-	// Using the shrine: the roster in the game's message window, then a Yes / No for each companion that can be brought
-	// back (Lost first, then Unknown). No moves on to the next one.
-	internal static void Use(CompanionShrine shrine)
-	{
-		if (!UnifiedPopup.IsAvailable() || UnifiedPopup.IsVisible())
-		{
-			return;
-		}
-		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> roster = MHR_Roster.GetRoster();
-		CompanionsPlugin.Log.LogInfo($"[Shrine] Used - {roster.Count} companion(s) on the roster");
-		StringBuilder stringBuilder = new StringBuilder();
-		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> list = new List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>>();
-		foreach (KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> item in roster)
-		{
-			stringBuilder.Append(item.Key.Name).Append(": ").Append(StatusText(item.Value))
-				.Append('\n');
-			if (item.Value == MHR_Roster.Status.Lost)
-			{
-				list.Add(item);
-			}
-		}
-		foreach (KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> item2 in roster)
-		{
-			if (item2.Value == MHR_Roster.Status.Unknown)
-			{
-				list.Add(item2);
-			}
-		}
-		string text = stringBuilder.ToString().TrimEnd('\n');
-		if (roster.Count == 0)
-		{
-			text = "No companions on your roster in this world yet. A companion joins the roster once it has been near you for a few seconds.";
-		}
-		if (list.Count == 0)
-		{
-			UnifiedPopup.Push(new WarningPopup(DisplayName, text + ((roster.Count > 0) ? "\n\nNone of your companions needs bringing back." : ""), delegate
-			{
-				UnifiedPopup.Pop();
-			}, localizeText: false));
-		}
-		else
-		{
-			Ask(shrine, text, list, 0);
-		}
-	}
-
-	private static void Ask(CompanionShrine shrine, string rosterText, List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> candidates, int index)
-	{
-		if (index >= candidates.Count || shrine == null)
-		{
-			return;
-		}
-		MHR_Roster.Entry entry = candidates[index].Key;
-		string text = rosterText + "\n\nBring " + entry.Name + " back here? It returns with its gear and settings from the last roster save. If the old " + entry.Name + " turns up later, it will be removed.";
-		if (candidates[index].Value == MHR_Roster.Status.Unknown)
-		{
-			text = text + "\n\n<color=#FFCC50>Warning:</color> " + entry.Name + " may still be alive somewhere that isn't loaded" + (entry.Dead ? " (last known: it died, and its tombstone keeps its items too)." : ".");
-		}
-		UnifiedPopup.Push(new YesNoPopup(DisplayName, text, delegate
-		{
-			UnifiedPopup.Pop();
-			if (shrine != null)
-			{
-				MHR_Roster.RecoverAt(entry, shrine.transform.position + shrine.transform.forward * 2f);
-			}
-		}, delegate
-		{
-			UnifiedPopup.Pop();
-			Ask(shrine, rosterText, candidates, index + 1);
-		}, localizeText: false));
-	}
 }
 
 public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
@@ -316,8 +218,8 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 
 	public string GetHoverText()
 	{
-		// 1.5.71: alt-use hires another companion
-		return Localization.instance.Localize(MHR_Shrine.DisplayName + "\n[<color=yellow><b>$KEY_Use</b></color>] Your companions\n[<color=yellow><b>$KEY_AltPlace + $KEY_Use</b></color>] " + ModLocalization.LocFmt("hc_shrine_hire", CompanionTierData.Price.ToString("N0")));
+		// 1.5.77: one use - the shrine menu (recover lost companions / purchase a new one); the alt-use hire is gone
+		return Localization.instance.Localize(MHR_Shrine.DisplayName + "\n[<color=yellow><b>$KEY_Use</b></color>] " + ModLocalization.Loc("hc_shrine_use"));
 	}
 
 	public string GetHoverName()
@@ -332,16 +234,11 @@ public class CompanionShrine : MonoBehaviour, Hoverable, Interactable
 
 	public bool Interact(Humanoid user, bool hold, bool alt)
 	{
-		if (hold || user == null || user != Player.m_localPlayer)
+		if (hold || user == null || user != Player.m_localPlayer || ShrinePanel.IsOpen || StarterCompanionPanel.Instance != null)
 		{
 			return false;
 		}
-		if (alt)
-		{
-			MHR_Shrine.Hire();
-			return true;
-		}
-		MHR_Shrine.Use(this);
+		ShrinePanel.Show(this);
 		return true;
 	}
 
