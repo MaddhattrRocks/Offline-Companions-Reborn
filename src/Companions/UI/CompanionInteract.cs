@@ -791,6 +791,13 @@ public class CompanionInteract : MonoBehaviour
 					DirectSmelt(allCompanions, localId);
 					return;
 				}
+				// 1.5.90: a beehive - empty it and keep the honey (was "move here")
+				Beehive hive = collider.GetComponentInParent<Beehive>();
+				if (hive != null)
+				{
+					DirectHive(allCompanions, localId, hive);
+					return;
+				}
 				Ship componentInParent8 = collider.GetComponentInParent<Ship>();
 				if (componentInParent8 != null)
 				{
@@ -1356,6 +1363,39 @@ public class CompanionInteract : MonoBehaviour
 		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → repair at \"{station.m_name}\"");
 	}
 
+	// 1.5.90: the first companion in scope empties the hive and keeps the honey
+	private static void DirectHive(IReadOnlyList<CompanionSetup> setups, string localId, Beehive hive)
+	{
+		foreach (CompanionSetup setup in setups)
+		{
+			if (!IsOwned(setup, localId) || !MHR_InScope(setup))
+			{
+				continue;
+			}
+			CompanionAI ai = setup.GetComponent<CompanionAI>();
+			if (ai == null)
+			{
+				continue;
+			}
+			CompanionTalk talk = setup.GetComponent<CompanionTalk>();
+			if (hive.m_honeyItem == null || MHR_Hive.HoneyIn(hive) <= 0)
+			{
+				SayRandom(talk, new string[1] { ModLocalization.Loc("hc_cmd_hive_empty") });
+				CompanionsPlugin.Log.LogDebug("[Direct] beehive is empty - nothing to collect");
+				return;
+			}
+			if (!PrivateArea.CheckAccess(hive.transform.position, 0f, flash: true))
+			{
+				return;
+			}
+			CancelExistingActions(setup);
+			ai.SetHiveOrder(hive);
+			SayRandom(talk, new string[1] { ModLocalization.Loc("hc_cmd_hive") });
+			CompanionsPlugin.Log.LogDebug("[Direct] 1 companion(s) → collect honey");
+			return;
+		}
+	}
+
 	private static void DirectSmelt(IReadOnlyList<CompanionSetup> setups, string localId)
 	{
 		CompanionTalk companionTalk = null;
@@ -1707,6 +1747,7 @@ public class CompanionInteract : MonoBehaviour
 				component.CancelMoveTarget();
 				component.CancelPendingDeposit();
 				component.CancelPendingShipBoard();
+				component.CancelHiveOrder();
 				component.CancelTombstoneRecovery();
 				component.ClearTargets();
 				component.StopMoving();
@@ -1870,6 +1911,7 @@ public class CompanionInteract : MonoBehaviour
 			component2.CancelMoveTarget();
 			component2.CancelPendingDeposit();
 			component2.CancelPendingShipBoard();
+			component2.CancelHiveOrder();
 			component2.CancelTombstoneRecovery();
 			if (component2.IsOnShip)
 			{

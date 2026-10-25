@@ -413,6 +413,8 @@ public static class ModLocalization
 			{ "hc_cmd_repair_nothing_1", "Nothing to fix here." },
 			{ "hc_cmd_repair_nothing_2", "My gear's fine." },
 			{ "hc_cmd_repair_nothing_3", "No repairs needed." },
+			{ "hc_cmd_hive", "I'll fetch the honey." },
+			{ "hc_cmd_hive_empty", "No honey in there yet." },
 			{ "hc_cmd_tombstone_1", "I'll grab my things." },
 			{ "hc_cmd_tombstone_2", "Let me get that." },
 			{ "hc_cmd_tombstone_3", "On my way to pick that up." },

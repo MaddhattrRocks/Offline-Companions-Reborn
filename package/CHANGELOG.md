@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Pointing the command key at a beehive sends a companion to empty it and keep the honey (it says so when there's none yet).
+- Fixed the overhead stamina bar turning into a plain grey bar after a portal (or after the companion was out of range).
 - Getting off a ship: a companion steps to the nearest point of the side facing you (not the deck spot nearest you), runs at it and jumps, keeps heading your way in the air, and jumps again straight away if it lands back on the deck.
 - Swimming costs companions stamina like the player: 5 a second at Swim skill 0, less with skill (setting Stamina SwimDrainAtSkill0 replaces SwimDrainRate, which was 10). Boarding counts only the swim to within reach of the ladder, so a companion no longer waits for nearly full stamina or gives up on a swim it can make.
 - A companion you ordered aboard also gets up and follows you when you go ashore, as long as it's following you.

@@ -51,6 +51,10 @@ public class CompanionFood : MonoBehaviour
 
 	private ZNetView _nview;
 
+	// 1.5.90: the "already active" rejection is logged once per food until it changes (log 32bba563: ~250 lines with honey
+	// as its only food)
+	private string _lastActiveReject;
+
 	private Humanoid _humanoid;
 
 	private Character _character;
@@ -555,9 +559,14 @@ public class CompanionFood : MonoBehaviour
 		}
 		if (!isRefresh && IsFoodAlreadyActive(item.m_shared.m_name))
 		{
-			CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — already active in another slot");
+			if (_lastActiveReject != text)
+			{
+				_lastActiveReject = text;
+				CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — already active in another slot (logged once)");
+			}
 			return false;
 		}
+		_lastActiveReject = null;
 		if (!CanApplyConsumeStatus(item))
 		{
 			CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — status effect conflict");

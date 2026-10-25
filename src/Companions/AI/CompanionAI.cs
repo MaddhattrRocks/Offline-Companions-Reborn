@@ -295,6 +295,22 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	// 1.5.90: the beehive order (MHR_Hive)
+	internal void SetHiveOrder(Beehive hive)
+	{
+		SetFollowTarget(null);
+		MHR_Hive.Start(this, hive);
+	}
+
+	internal void CancelHiveOrder()
+	{
+		if (MHR_Hive.Active(this))
+		{
+			MHR_Hive.Cancel(this);
+			RestoreFollowOrPatrol();
+		}
+	}
+
 	// an ordered boarding gave up: back to following / patrolling
 	internal void BoardingEnded()
 	{
@@ -1178,6 +1194,11 @@ public class CompanionAI : BaseAI
 			}
 			return true;
 		}
+		// 1.5.90: emptying a beehive you pointed at
+		if (MHR_Hive.Active(this) && MHR_Hive.Update(this, dt))
+		{
+			return true;
+		}
 		// 1.5.82: boarding a ship (ordered, or following you aboard)
 		if (MHR_Board.Active(this))
 		{
@@ -1787,7 +1808,7 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		float magnitude = m_character.GetVelocity().magnitude;
-		bool flag = m_follow != null || PendingMoveTarget.HasValue || PendingCartAttach != null || MHR_Board.Active(this) || (_rest != null && _rest.IsNavigating);
+		bool flag = m_follow != null || PendingMoveTarget.HasValue || PendingCartAttach != null || MHR_Board.Active(this) || MHR_Hive.Active(this) || (_rest != null && _rest.IsNavigating);
 		if (magnitude < 0.1f && flag)
 		{
 			_furnitureStuckTimer += dt;

@@ -104,6 +104,7 @@ internal static class PortalPatches
 				component3.CancelMoveTarget();
 				component3.CancelPendingCart();
 				component3.CancelPendingShipBoard();
+				component3.CancelHiveOrder();
 				component3.CancelPendingDeposit();
 				component3.CancelTombstoneRecovery();
 				component3.SetFollowTarget(Player.m_localPlayer?.gameObject);

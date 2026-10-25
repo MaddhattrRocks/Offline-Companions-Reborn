@@ -90,6 +90,7 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | A tree, rock or ore | Gather it |
 | A cart | Hitch up and pull it (point again to unhitch) |
 | A ship | Board it (jumping aboard, or diving in and using the ship's ladder) and take a seat, or stand on deck if none is free |
+| A beehive | Empty it and keep the honey |
 | A seat on a ship | Take that seat (getting up and walking over if already aboard) |
 | A bed | Go to sleep in it (point again to wake them) |
 | A fire | Sit by it (point again to get up) |
