@@ -35,6 +35,7 @@ internal static class MHR_Deck
 		public float ProgressAt;
 		public float BestLeft = float.MaxValue;
 		public bool Walking;
+		public bool StuckLogged;
 	}
 
 	private const float Cell = 0.5f;
@@ -232,6 +233,61 @@ internal static class MHR_Deck
 		return true;
 	}
 
+	// 1.5.89: the nearest spot along the side of the ship that faces `world` (you, ashore): an edge cell (deck missing next to
+	// it) whose outward side points your way - from a seat at the bow that's a step sideways, not the length of the deck
+	// (log 81234e48: ~10 s walking to the deck spot nearest you before jumping off)
+	internal static bool SideSpot(Ship ship, Vector3 meWorld, Vector3 world, out Vector3 local)
+	{
+		local = Vector3.zero;
+		Grid g = For(ship);
+		if (g == null || g.Walk == null || g.Count == 0)
+		{
+			return false;
+		}
+		Transform t = ship.transform;
+		Vector3 me = t.InverseTransformPoint(meWorld);
+		Vector3 you = t.InverseTransformPoint(world);
+		float bd = float.MaxValue;
+		for (int x = 0; x < g.W; x++)
+		{
+			for (int z = 0; z < g.H; z++)
+			{
+				if (!g.Walk[x * g.H + z])
+				{
+					continue;
+				}
+				Vector3 c = Center(g, x, z);
+				Vector2 toYou = new Vector2(you.x - c.x, you.z - c.z);
+				if (toYou.sqrMagnitude < 0.01f)
+				{
+					continue;
+				}
+				toYou.Normalize();
+				bool edge = false;
+				for (int k = 0; k < 4 && !edge; k++)
+				{
+					int dx = k == 0 ? 1 : (k == 1 ? -1 : 0);
+					int dz = k == 2 ? 1 : (k == 3 ? -1 : 0);
+					int nx = x + dx;
+					int nz = z + dz;
+					bool open = nx < 0 || nz < 0 || nx >= g.W || nz >= g.H || !g.Walk[nx * g.H + nz];
+					edge = open && Vector2.Dot(new Vector2(dx, dz), toYou) > 0.5f;
+				}
+				if (!edge)
+				{
+					continue;
+				}
+				float d = (c.x - me.x) * (c.x - me.x) + (c.z - me.z) * (c.z - me.z);
+				if (d < bd)
+				{
+					bd = d;
+					local = c;
+				}
+			}
+		}
+		return bd < float.MaxValue;
+	}
+
 	// A* over the cells, 8 directions, no cutting corners; the path in the ship's frame
 	private static bool Plan(Grid g, Vector3 fromLocal, Vector3 toLocal, List<Vector3> path)
 	{
@@ -348,7 +404,8 @@ internal static class MHR_Deck
 
 	// walks on the deck to a spot in the ship's frame; true once within `dist` of it. Only for a companion on that deck.
 	// 1.5.86: jogs; walks only for the last `walkLast` metres (a seat) - was the last 3 m (log 79fb1bde: "moving very slow")
-	internal static bool Walk(CompanionAI ai, Ship ship, Vector3 goalLocal, float dist, out bool stuck, float walkLast = 1f)
+	// 1.5.89: stuck after `stuckAfter` s without getting 0.2 m closer; the start and a stuck walk are logged
+	internal static bool Walk(CompanionAI ai, Ship ship, Vector3 goalLocal, float dist, out bool stuck, float walkLast = 1f, float stuckAfter = 5f)
 	{
 		stuck = false;
 		Grid g = For(ship);
@@ -374,22 +431,40 @@ internal static class MHR_Deck
 			{
 				w.ProgressAt = now;
 				w.BestLeft = float.MaxValue;
+				w.StuckLogged = false;
 			}
-			if (g == null || !Plan(g, me, goalLocal, w.Path))
+			bool planned = g != null && Plan(g, me, goalLocal, w.Path);
+			if (!planned)
 			{
 				w.Path.Clear();
 				w.Path.Add(goalLocal);
 			}
 			w.Idx = 0;
+			if (fresh)
+			{
+				float len = 0f;
+				Vector3 prev = me;
+				foreach (Vector3 p in w.Path)
+				{
+					len += new Vector2(p.x - prev.x, p.z - prev.z).magnitude;
+					prev = p;
+				}
+				CompanionsPlugin.Log?.LogDebug($"[Deck] {c?.m_name} walking {len:F1} m over {w.Path.Count} cells from {me:F1} to {goalLocal:F1} on the ship{(planned ? "" : " (no route on the grid - straight)")}");
+			}
 		}
 		if (left < w.BestLeft - 0.2f)
 		{
 			w.BestLeft = left;
 			w.ProgressAt = now;
 		}
-		if (now - w.ProgressAt > 5f)
+		if (now - w.ProgressAt > stuckAfter)
 		{
 			stuck = true;
+			if (!w.StuckLogged)
+			{
+				w.StuckLogged = true;
+				CompanionsPlugin.Log?.LogInfo($"[Deck] {c?.m_name} stuck at {me:F1} on the ship, {left:F1} m from {goalLocal:F1}");
+			}
 		}
 		while (w.Idx < w.Path.Count - 1 && new Vector2(me.x - w.Path[w.Idx].x, me.z - w.Path[w.Idx].z).magnitude < 0.35f)
 		{

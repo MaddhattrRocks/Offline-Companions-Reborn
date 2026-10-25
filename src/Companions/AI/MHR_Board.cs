@@ -45,6 +45,10 @@ internal static class MHR_Board
 		public Vector3 Launch;
 		public Ship LeaveShip;
 		public float LeaveSince;
+		public bool HasLeaveSpot;
+		public Vector3 LeaveSpot;
+		public float LeapAt = -10f;
+		public Vector3 LeapDir;
 	}
 
 	private static readonly Dictionary<int, S> s_s = new Dictionary<int, S>();
@@ -354,6 +358,13 @@ internal static class MHR_Board
 		{
 			return Leave(ai, s, c, mine, p, dt);
 		}
+		// 1.5.89: in the air after jumping off - keep heading your way until it lands (log 81234e48: the follow route took over
+		// mid-jump, "taking the 30m way round", and it came down on the deck again)
+		if (mine == null && s.LeaveShip != null && !c.IsOnGround() && !c.IsSwimming() && Time.time - s.LeapAt < 3f)
+		{
+			ai.MoveTowards(s.LeapDir, run: true);
+			return true;
+		}
 		s.LeaveShip = null;
 		if (ship == null)
 		{
@@ -420,6 +431,8 @@ internal static class MHR_Board
 			s.LeaveShip = ship;
 			s.LeaveSince = now;
 			s.NextJump = 0f;
+			s.LeapAt = -10f;
+			s.HasLeaveSpot = MHR_Deck.SideSpot(ship, ai.transform.position, p.transform.position, out s.LeaveSpot) || MHR_Deck.SpotNear(ship, p.transform.position, out s.LeaveSpot);
 			Log(c.m_name + " getting off the ship");
 		}
 		if (now - s.LeaveSince > 15f)
@@ -429,9 +442,10 @@ internal static class MHR_Board
 		}
 		Vector3 me = ai.transform.position;
 		Vector3 you = p.transform.position;
-		if (MHR_Deck.SpotNear(ship, you, out Vector3 side))
+		// not straight after a jump - it's at the side already (the walk would pull it back from the rail)
+		if (s.HasLeaveSpot && now - s.LeapAt > 1.5f)
 		{
-			bool there = MHR_Deck.Walk(ai, ship, side, 0.5f, out bool stuck, walkLast: 0f);
+			bool there = MHR_Deck.Walk(ai, ship, s.LeaveSpot, 0.5f, out bool stuck, walkLast: 0f, stuckAfter: 3f);
 			if (!there && !stuck)
 			{
 				return true;
@@ -446,15 +460,15 @@ internal static class MHR_Board
 		}
 		dir.Normalize();
 		ai.transform.rotation = Quaternion.LookRotation(dir);
+		// over the side like you: run at it and jump, again as soon as it's back on its feet on the deck
+		ai.MoveTowards(dir, run: true);
 		if (c.IsOnGround() && now >= s.NextJump)
 		{
-			s.NextJump = now + 1.5f;
+			s.NextJump = now + 0.5f;
+			s.LeapAt = now;
+			s.LeapDir = dir;
 			MHR_Jump.Leap(ai, c, dir);
 			Log(c.m_name + " jumping off the ship");
-		}
-		else
-		{
-			ai.MoveTowards(dir, run: false);
 		}
 		return true;
 	}
