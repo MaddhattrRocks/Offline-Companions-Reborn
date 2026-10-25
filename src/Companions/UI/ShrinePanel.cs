@@ -1,117 +1,108 @@
-using System;
 using System.Collections.Generic;
+using System.Text;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace Companions;
 
 // 1.5.77: Odin's Shrine menu (user: "Using the shrine should give a popup that has 2 options. 1. Recover lost companions
-// 2. Purchase a new companion. The recover lost companions should show each companion and their status, with an option to
-// recover dead or lost companions like how it works now. The purchase should pop-up the same starting window to customize
-// the companion. Then have a purchase button at the bottom"). The recover list keeps the old rules: Lost and Unknown can be
-// brought back (each asks first, Unknown with its warning); a dead one is brought back by its tombstone.
+// 2. Purchase a new companion ..."). 1.5.80: it IS the game's own popup now - the one the unsummon and quit confirms use -
+// with its buttons relabelled (user: "The buttons and background look like they are poorly scaled rather than take from
+// the game ... The unsummon option does not have this issue. Same with the quit game menu"; "The font size is two
+// different sizes. It should be something close to how the 'ok' button looks"). This component only opens the popups and
+// closes them like a chest: Use again, Escape, or walking away.
 public class ShrinePanel : MonoBehaviour
 {
-	[HarmonyPatch(typeof(Hud), "InRadial")]
-	private static class HudInRadial_Patch
-	{
-		private static void Postfix(ref bool __result)
-		{
-			if (!__result && IsOpen)
-			{
-				__result = true;
-			}
-		}
-	}
-
 	private static ShrinePanel _instance;
 
 	private CompanionShrine _shrine;
 
-	private Canvas _canvas;
-
-	private GameObject _root;
-
-	private TMP_FontAsset _font;
-
-	private static readonly Color BgColor = new Color(0.08f, 0.07f, 0.06f, 0.94f);
-
-	private static readonly Color ButtonColor = new Color(0.15f, 0.13f, 0.1f, 0.9f);
-
-	private static readonly Color ButtonHover = new Color(0.25f, 0.22f, 0.16f, 0.9f);
-
-	private static readonly Color LabelColor = new Color(1f, 0.9f, 0.5f, 1f);
-
-	private static readonly Color TextColor = new Color(0.85f, 0.8f, 0.65f, 1f);
-
-	private const float Width = 560f;
-
-	private const float RowHeight = 48f;
-
-	private const float CloseDistance = 4f;
+	// one of our popups is showing
+	private bool _active;
 
 	private float _openedAt;
 
-	internal static bool IsOpen => _instance != null && _instance._root != null && _instance._root.activeSelf;
+	private const float CloseDistance = 4f;
 
-	// 1.5.79: the Use press that closes the menu doesn't open it again on the same press
 	private static float s_closedAt = -10f;
 
+	private static readonly AccessTools.FieldRef<UnifiedPopup, TMP_Text> s_leftText = AccessTools.FieldRefAccess<UnifiedPopup, TMP_Text>("buttonLeftText");
+
+	private static readonly AccessTools.FieldRef<UnifiedPopup, TMP_Text> s_rightText = AccessTools.FieldRefAccess<UnifiedPopup, TMP_Text>("buttonRightText");
+
+	private static readonly AccessTools.FieldRef<UnifiedPopup, TMP_Text> s_centerText = AccessTools.FieldRefAccess<UnifiedPopup, TMP_Text>("buttonCenterText");
+
+	private static readonly System.Reflection.FieldInfo s_popupInstance = AccessTools.Field(typeof(UnifiedPopup), "instance");
+
+	internal static bool IsOpen => _instance != null && _instance._active;
+
+	// 1.5.79: the Use press that closes the menu doesn't open it again on the same press
 	internal static bool JustClosed => Time.time - s_closedAt < 0.3f;
 
 	internal static void Show(CompanionShrine shrine)
 	{
+		if (!UnifiedPopup.IsAvailable() || UnifiedPopup.IsVisible())
+		{
+			return;
+		}
 		if (_instance == null)
 		{
 			GameObject gameObject = new GameObject("HC_ShrinePanel");
-			UnityEngine.Object.DontDestroyOnLoad(gameObject);
+			Object.DontDestroyOnLoad(gameObject);
 			_instance = gameObject.AddComponent<ShrinePanel>();
 		}
 		_instance._shrine = shrine;
-		_instance.BuildMenu();
+		_instance._openedAt = Time.time;
+		_instance.ShowMenu();
 	}
 
-	// the two options
-	private void BuildMenu()
+	// the two options: Recover companions (left), Summon companion (right)
+	private void ShowMenu()
 	{
-		// 1.5.79: flavour text under the title (user's wording)
-		Begin(290f, ModLocalization.Loc("hc_shrine_title"));
-		AddText(_root.transform, ModLocalization.Loc("hc_shrine_flavor"), new Vector2(0f, -52f), new Vector2(Width - 60f, 70f), TextAlignmentOptions.Center);
-		float y = AddButton(_root.transform, ModLocalization.Loc("hc_shrine_opt_recover"), new Vector2(0f, -132f), new Vector2(Width - 120f, 44f), BuildRecover);
-		AddButton(_root.transform, ModLocalization.LocFmt("hc_shrine_opt_buy", CompanionTierData.Price.ToString("N0")), new Vector2(0f, -132f - y - 12f), new Vector2(Width - 120f, 44f), Summon);
+		string text = ModLocalization.Loc("hc_shrine_flavor") + "\n\n" + ModLocalization.LocFmt("hc_shrine_offering", CompanionTierData.Price.ToString("N0"));
+		Push(new YesNoPopup(ModLocalization.Loc("hc_shrine_title"), text, Summon, ShowRecover, localizeText: false), ModLocalization.Loc("hc_shrine_btn_summon"), ModLocalization.Loc("hc_shrine_btn_recover_list"), null);
 		CompanionsPlugin.Log.LogInfo("[Shrine] Menu opened");
 	}
 
-	// each companion on the roster and its status; Recover for a lost one (or one that isn't loaded)
-	private void BuildRecover()
+	// each companion on the roster and its status; Recover when one can be brought back, Back to the menu
+	private void ShowRecover()
 	{
 		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> roster = MHR_Roster.GetRoster();
-		int rows = Mathf.Max(1, roster.Count);
-		Begin(130f + rows * (RowHeight + 4f) + 70f, ModLocalization.Loc("hc_shrine_opt_recover"));
 		CompanionsPlugin.Log.LogInfo($"[Shrine] Recover list - {roster.Count} companion(s) on the roster");
-		float y = -56f;
-		if (roster.Count == 0)
-		{
-			AddText(_root.transform, ModLocalization.Loc("hc_shrine_none"), new Vector2(0f, y), new Vector2(Width - 40f, RowHeight * 2f), TextAlignmentOptions.Center);
-		}
+		List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> candidates = new List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>>();
+		StringBuilder sb = new StringBuilder();
 		foreach (KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> item in roster)
 		{
-			MHR_Roster.Entry entry = item.Key;
-			MHR_Roster.Status status = item.Value;
-			bool canRecover = status == MHR_Roster.Status.Lost || status == MHR_Roster.Status.Unknown;
-			AddText(_root.transform, entry.Name + "  -  " + StatusText(status), new Vector2(canRecover ? -60f : 0f, y), new Vector2(canRecover ? Width - 160f : Width - 40f, RowHeight), TextAlignmentOptions.Left);
-			if (canRecover)
+			sb.Append(item.Key.Name).Append(" - ").Append(StatusText(item.Value)).Append('\n');
+			if (CanRecover(item.Value))
 			{
-				AddButton(_root.transform, ModLocalization.Loc("hc_shrine_btn_recover"), new Vector2(Width / 2f - 80f, y), new Vector2(130f, RowHeight - 4f), delegate
-				{
-					AskRecover(entry, status);
-				});
+				candidates.Add(item);
 			}
-			y -= RowHeight + 4f;
 		}
-		AddButton(_root.transform, ModLocalization.Loc("hc_shrine_back"), new Vector2(0f, y - 10f), new Vector2(160f, 34f), BuildMenu);
+		// Lost first, then Unsummoned, then Unknown
+		candidates.Sort((KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> a, KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status> b) => Order(a.Value).CompareTo(Order(b.Value)));
+		string text = roster.Count == 0 ? ModLocalization.Loc("hc_shrine_none") : sb.ToString().TrimEnd('\n');
+		string header = ModLocalization.Loc("hc_shrine_recover_title");
+		if (candidates.Count == 0)
+		{
+			Push(new WarningPopup(header, text, ShowMenu, localizeText: false), null, null, ModLocalization.Loc("hc_shrine_back"));
+			return;
+		}
+		Push(new YesNoPopup(header, text, delegate
+		{
+			AskRecover(candidates, 0);
+		}, ShowMenu, localizeText: false), ModLocalization.Loc("hc_shrine_btn_recover"), ModLocalization.Loc("hc_shrine_back"), null);
+	}
+
+	private static bool CanRecover(MHR_Roster.Status s)
+	{
+		return s == MHR_Roster.Status.Lost || s == MHR_Roster.Status.Unknown || s == MHR_Roster.Status.Unsummoned;
+	}
+
+	private static int Order(MHR_Roster.Status s)
+	{
+		return s == MHR_Roster.Status.Lost ? 0 : (s == MHR_Roster.Status.Unsummoned ? 1 : 2);
 	}
 
 	private static string StatusText(MHR_Roster.Status s)
@@ -121,41 +112,46 @@ public class ShrinePanel : MonoBehaviour
 			MHR_Roster.Status.Alive => "<color=#80E080>" + ModLocalization.Loc("hc_shrine_alive") + "</color>",
 			MHR_Roster.Status.Dead => "<color=#C0C0C0>" + ModLocalization.Loc("hc_shrine_dead") + "</color>",
 			MHR_Roster.Status.Lost => "<color=#FF7060>" + ModLocalization.Loc("hc_shrine_lost") + "</color>",
+			MHR_Roster.Status.Unsummoned => "<color=#FF9F50>" + ModLocalization.Loc("hc_shrine_unsummoned") + "</color>",
 			_ => "<color=#FFCC50>" + ModLocalization.Loc("hc_shrine_unknown") + "</color>",
 		};
 	}
 
-	// the same question the shrine asked before (game popup, above this panel)
-	private void AskRecover(MHR_Roster.Entry entry, MHR_Roster.Status status)
+	// Yes / No for each one that can be brought back (game order: Yes right, No left); No moves on to the next
+	private void AskRecover(List<KeyValuePair<MHR_Roster.Entry, MHR_Roster.Status>> candidates, int index)
 	{
-		if (!UnifiedPopup.IsAvailable() || UnifiedPopup.IsVisible())
+		if (index >= candidates.Count)
 		{
+			ShowRecover();
 			return;
 		}
+		MHR_Roster.Entry entry = candidates[index].Key;
+		MHR_Roster.Status status = candidates[index].Value;
 		string text = "Bring " + entry.Name + " back here? It returns with its gear and settings from the last roster save. If the old " + entry.Name + " turns up later, it will be removed.";
-		if (status == MHR_Roster.Status.Unknown)
+		if (status == MHR_Roster.Status.Unsummoned)
+		{
+			text = "Bring " + entry.Name + " back here? It returns with its looks, skills and settings, but without its gear - that stays in the tombstone where it was unsummoned.";
+		}
+		else if (status == MHR_Roster.Status.Unknown)
 		{
 			text = text + "\n\n<color=#FFCC50>Warning:</color> " + entry.Name + " may still be alive somewhere that isn't loaded" + (entry.Dead ? " (last known: it died, and its tombstone keeps its items too)." : ".");
 		}
-		UnifiedPopup.Push(new YesNoPopup(MHR_Shrine.DisplayName, text, delegate
+		Push(new YesNoPopup(ModLocalization.Loc("hc_shrine_recover_title"), text, delegate
 		{
-			UnifiedPopup.Pop();
+			Close();
 			CompanionShrine shrine = _shrine;
 			if (shrine != null)
 			{
-				CompanionsPlugin.Log.LogInfo("[Shrine] Recovering " + entry.Name);
+				CompanionsPlugin.Log.LogInfo($"[Shrine] Recovering {entry.Name} ({status})");
 				MHR_Roster.RecoverAt(entry, shrine.transform.position + shrine.transform.forward * 2f);
 			}
-			Close();
 		}, delegate
 		{
-			UnifiedPopup.Pop();
-		}, localizeText: false));
+			AskRecover(candidates, index + 1);
+		}, localizeText: false), null, null, null);
 	}
 
-	// 1.5.78: the offering is checked here (user: "The check should pop-up a notification when you click on the button to
-	// bring up the menu to spawn a new NPC. If you dont have enough coins in the player inventory the custom menu should not
-	// open"); the coins are taken when the companion is summoned
+	// 1.5.78: the offering is checked here; the coins are taken when the companion is summoned
 	private void Summon()
 	{
 		int price = CompanionTierData.Price;
@@ -170,151 +166,47 @@ public class ShrinePanel : MonoBehaviour
 		StarterCompanionPanel.ShowHirePanel();
 	}
 
-	private void Begin(float height, string title)
+	// replaces whatever of ours is showing with the next popup, then relabels its buttons
+	private void Push(PopupBase popup, string right, string left, string center)
 	{
-		Clear();
-		_font = ResolveFont();
-		GameObject canvasGo = new GameObject("ShrineCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-		canvasGo.transform.SetParent(base.transform, worldPositionStays: false);
-		_canvas = canvasGo.GetComponent<Canvas>();
-		_canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-		_canvas.sortingOrder = ModUiLayers.ShrinePanel;
-		CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
-		scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-		scaler.referenceResolution = new Vector2(1920f, 1080f);
-		_root = new GameObject("ShrineRoot", typeof(RectTransform), typeof(Image));
-		_root.transform.SetParent(canvasGo.transform, worldPositionStays: false);
-		RectTransform rt = _root.GetComponent<RectTransform>();
-		rt.anchorMin = new Vector2(0.5f, 0.5f);
-		rt.anchorMax = new Vector2(0.5f, 0.5f);
-		rt.pivot = new Vector2(0.5f, 0.5f);
-		rt.sizeDelta = new Vector2(Width, height);
-		GameLook.ApplyPanel(_root.GetComponent<Image>(), BgColor);
-		TextMeshProUGUI t = AddText(_root.transform, title, new Vector2(0f, -10f), new Vector2(Width - 60f, 38f), TextAlignmentOptions.Center);
-		t.fontSize = 20f;
-		t.color = LabelColor;
-		t.fontStyle = FontStyles.Bold;
-		// 1.5.79: the game's own title style; no close button - E, Escape or walking away close it, like a chest
-		GameLook.ApplyTitle(t);
-		_openedAt = Time.time;
-		Cursor.lockState = CursorLockMode.None;
-		Cursor.visible = true;
+		if (_active && UnifiedPopup.IsVisible())
+		{
+			UnifiedPopup.Pop();
+		}
+		UnifiedPopup.Push(popup);
+		_active = true;
+		UnifiedPopup up = s_popupInstance?.GetValue(null) as UnifiedPopup;
+		if (up == null)
+		{
+			return;
+		}
+		SetLabel(s_rightText(up), right);
+		SetLabel(s_leftText(up), left);
+		SetLabel(s_centerText(up), center);
 	}
 
-	private TextMeshProUGUI AddText(Transform parent, string text, Vector2 pos, Vector2 size, TextAlignmentOptions align)
+	private static void SetLabel(TMP_Text t, string label)
 	{
-		GameObject go = new GameObject("Text", typeof(RectTransform));
-		go.transform.SetParent(parent, worldPositionStays: false);
-		TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
-		if (_font != null)
+		if (t != null && label != null)
 		{
-			tmp.font = _font;
+			t.text = label;
 		}
-		tmp.text = text;
-		tmp.fontSize = 15f;
-		tmp.color = TextColor;
-		tmp.alignment = align;
-		tmp.raycastTarget = false;
-		tmp.textWrappingMode = TextWrappingModes.Normal;
-		// 1.5.79: the game's own body text style
-		GameLook.ApplyBody(tmp);
-		RectTransform rt = go.GetComponent<RectTransform>();
-		rt.anchorMin = new Vector2(0.5f, 1f);
-		rt.anchorMax = new Vector2(0.5f, 1f);
-		rt.pivot = new Vector2(0.5f, 1f);
-		rt.sizeDelta = size;
-		rt.anchoredPosition = pos;
-		return tmp;
-	}
-
-	// returns the height the button took
-	private float AddButton(Transform parent, string label, Vector2 pos, Vector2 size, Action onClick)
-	{
-		// 1.5.78: a copy of the game's Craft button when there is one; 1.5.79: with its own parts, at its own height
-		GameObject copy = GameLook.CopyButton(parent, label, out float h);
-		if (copy != null)
-		{
-			if (h > 1f)
-			{
-				size.y = h;
-			}
-			RectTransform crt = copy.GetComponent<RectTransform>();
-			crt.anchorMin = new Vector2(0.5f, 1f);
-			crt.anchorMax = new Vector2(0.5f, 1f);
-			crt.pivot = new Vector2(0.5f, 1f);
-			crt.sizeDelta = size;
-			crt.anchoredPosition = pos;
-			Button cb = copy.GetComponent<Button>();
-			if (cb != null)
-			{
-				cb.onClick.AddListener(delegate
-				{
-					onClick?.Invoke();
-				});
-				return size.y;
-			}
-			UnityEngine.Object.Destroy(copy);
-		}
-		GameObject go = new GameObject("Btn", typeof(RectTransform), typeof(Image), typeof(Button));
-		go.transform.SetParent(parent, worldPositionStays: false);
-		RectTransform rt = go.GetComponent<RectTransform>();
-		rt.anchorMin = new Vector2(0.5f, 1f);
-		rt.anchorMax = new Vector2(0.5f, 1f);
-		rt.pivot = new Vector2(0.5f, 1f);
-		rt.sizeDelta = size;
-		rt.anchoredPosition = pos;
-		go.GetComponent<Image>().color = ButtonColor;
-		Button b = go.GetComponent<Button>();
-		ColorBlock colors = b.colors;
-		colors.normalColor = ButtonColor;
-		colors.highlightedColor = ButtonHover;
-		colors.pressedColor = ButtonHover;
-		colors.selectedColor = ButtonHover;
-		b.colors = colors;
-		b.onClick.AddListener(delegate
-		{
-			onClick?.Invoke();
-		});
-		TextMeshProUGUI tmp = AddText(go.transform, label, Vector2.zero, Vector2.zero, TextAlignmentOptions.Center);
-		RectTransform trt = tmp.GetComponent<RectTransform>();
-		trt.anchorMin = Vector2.zero;
-		trt.anchorMax = Vector2.one;
-		trt.offsetMin = Vector2.zero;
-		trt.offsetMax = Vector2.zero;
-		tmp.color = LabelColor;
-		return size.y;
-	}
-
-	private static TMP_FontAsset ResolveFont()
-	{
-		if (InventoryGui.instance != null)
-		{
-			TextMeshProUGUI[] texts = InventoryGui.instance.GetComponentsInChildren<TextMeshProUGUI>(includeInactive: true);
-			for (int i = 0; i < texts.Length; i++)
-			{
-				if (texts[i] != null && texts[i].font != null && texts[i].font.name.IndexOf("LiberationSans", StringComparison.OrdinalIgnoreCase) < 0)
-				{
-					return texts[i].font;
-				}
-			}
-		}
-		return TMP_Settings.defaultFontAsset;
 	}
 
 	private void Update()
 	{
-		if (_root == null || !_root.activeSelf)
+		if (!_active)
 		{
 			return;
 		}
-		Cursor.lockState = CursorLockMode.None;
-		Cursor.visible = true;
-		if (UnifiedPopup.IsVisible())
+		// closed some other way
+		if (!UnifiedPopup.IsVisible())
 		{
+			_active = false;
+			s_closedAt = Time.time;
 			return;
 		}
-		// 1.5.79: closes like a chest (user: "Pressing 'e' or use again should close the menu just like a chest or walking away
-		// from the shrine") - Escape, Use again (not the press that opened it), or more than CloseDistance from the shrine
+		// 1.5.79: closes like a chest - Escape, Use again (not the press that opened it), or walking away
 		Player p = Player.m_localPlayer;
 		bool use = Time.time - _openedAt > 0.3f && (ZInput.GetButtonDown("Use") || ZInput.GetButtonDown("JoyUse"));
 		bool away = _shrine == null || p == null || p.IsDead() || Vector3.Distance(p.transform.position, _shrine.transform.position) > CloseDistance;
@@ -328,23 +220,13 @@ public class ShrinePanel : MonoBehaviour
 		}
 	}
 
-	private void Clear()
-	{
-		if (_root != null)
-		{
-			UnityEngine.Object.Destroy(_root);
-			_root = null;
-		}
-		if (_canvas != null)
-		{
-			UnityEngine.Object.Destroy(_canvas.gameObject);
-			_canvas = null;
-		}
-	}
-
 	private void Close()
 	{
-		Clear();
+		if (_active && UnifiedPopup.IsVisible())
+		{
+			UnifiedPopup.Pop();
+		}
+		_active = false;
 		s_closedAt = Time.time;
 	}
 

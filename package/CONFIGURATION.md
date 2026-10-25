@@ -45,7 +45,10 @@ Every setting in the mod, what it does and what it starts at.
 The basics: what a companion costs, its health, stamina and carrying limits, and how far "home" reaches.
 
 **CompanionPrice** — Default: 1000 · Range: 0 – 50000  
-The offering in coins to summon another companion at Odin's Shrine (shrine menu > Summon a new companion), paid from your pack.
+The offering in coins to summon another companion at Odin's Shrine (Summon companion), paid from your pack.
+
+**RecoverUnsummoned** — Default: On  
+An unsummoned (despawned) companion can be brought back at Odin's Shrine (Recover companions) - with its name, looks, skills and settings, but not its gear, which stays in the tombstone where it was unsummoned - until you next load this world. Off: unsummoning is permanent.
 
 **SpawnStarterCompanion** — Default: On  
 The first time you enter a world with a character, you're offered one companion for free.

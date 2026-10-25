@@ -1491,6 +1491,8 @@ public class CompanionPanel
 		{
 			componentInChildren.gameObject.SetActive(value: true);
 			componentInChildren.text = label;
+			// 1.5.80: labels like the game popup's OK button
+			GameLook.ApplyButtonText(componentInChildren);
 		}
 		StripButtonHints(gameObject, componentInChildren);
 		return gameObject;

@@ -14,6 +14,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<int> CompanionPrice;
 
+	internal static ConfigEntry<bool> RecoverUnsummoned;
+
 	internal static ConfigEntry<bool> SpawnStarterCompanion;
 
 	internal static ConfigEntry<bool> ResetStarterFlag;
@@ -582,7 +584,8 @@ internal static class ModConfig
 	internal static void Init(ConfigFile cfg)
 	{
 		// [General]
-		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "The offering in coins to summon another companion at Odin's Shrine (shrine menu > Summon a new companion), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
+		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "The offering in coins to summon another companion at Odin's Shrine (Summon companion), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
+		RecoverUnsummoned = Bind(cfg, "General", "RecoverUnsummoned", defaultValue: true, "An unsummoned (despawned) companion can be brought back at Odin's Shrine (Recover companions) - with its name, looks, skills and settings, but not its gear, which stays in the tombstone where it was unsummoned - until you next load this world. Off: unsummoning is permanent.");
 		// 1.5.71: the old default (2000) was never used for anything - move it to the new default
 		if (CompanionPrice.Value == 2000)
 		{

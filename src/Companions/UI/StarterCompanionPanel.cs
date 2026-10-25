@@ -62,6 +62,8 @@ public class StarterCompanionPanel : MonoBehaviour
 		_canvas.sortingOrder = ModUiLayers.StarterCompanionPanel;
 		base.gameObject.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 		base.gameObject.GetComponent<CanvasScaler>().referenceResolution = new Vector2(1920f, 1080f);
+		// 1.5.80: scaled like the game's own GUI
+		GameLook.MatchGameScale(base.gameObject.GetComponent<CanvasScaler>());
 		base.gameObject.AddComponent<GraphicRaycaster>();
 		_backdrop = new GameObject("Backdrop", typeof(RectTransform), typeof(Image));
 		_backdrop.transform.SetParent(base.transform, worldPositionStays: false);

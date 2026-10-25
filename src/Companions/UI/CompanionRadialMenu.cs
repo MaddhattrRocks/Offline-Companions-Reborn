@@ -1723,7 +1723,9 @@ public class CompanionRadialMenu : MonoBehaviour
 				MHR_DespawnConfirmed();
 				return;
 			}
-			UnifiedPopup.Push(new YesNoPopup(ModLocalization.Loc("hc_despawn_popup_title"), string.Format(ModLocalization.Loc("hc_despawn_popup_text"), arg), MHR_DespawnConfirmed, MHR_DespawnCancelled, localizeText: false));
+			// 1.5.80: says when Odin's Shrine can still bring them back ([General] RecoverUnsummoned)
+			string despawnText = string.Format(ModLocalization.Loc("hc_despawn_popup_text"), arg) + ((ModConfig.RecoverUnsummoned?.Value ?? true) ? "\n\n" + ModLocalization.Loc("hc_despawn_popup_recover") : "");
+			UnifiedPopup.Push(new YesNoPopup(ModLocalization.Loc("hc_despawn_popup_title"), despawnText, MHR_DespawnConfirmed, MHR_DespawnCancelled, localizeText: false));
 			CompanionsPlugin.Log.LogInfo($"[Radial] Despawn — asking for confirmation for \"{arg}\"");
 		}
 	}

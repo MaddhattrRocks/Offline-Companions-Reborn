@@ -16,6 +16,8 @@ internal static class GameLook
 
 	private static Material s_panelMat;
 
+	private static float s_panelPpu = 1f;
+
 	private static bool s_looked;
 
 	// the inventory window's panel background (the player inventory panel's own image, or the largest "bkg" image in it)
@@ -72,7 +74,8 @@ internal static class GameLook
 		{
 			s_panel = best.sprite;
 			s_panelMat = best.material;
-			CompanionsPlugin.Log.LogInfo($"[UI] Game look: panel background '{s_panel.name}' from the inventory window ({from})");
+			s_panelPpu = best.pixelsPerUnitMultiplier;
+			CompanionsPlugin.Log.LogInfo($"[UI] Game look: panel background '{s_panel.name}' from the inventory window ({from}), border scale {s_panelPpu:F2}");
 		}
 		else
 		{
@@ -93,6 +96,8 @@ internal static class GameLook
 		{
 			img.sprite = s;
 			img.type = s.border.sqrMagnitude > 0f ? Image.Type.Sliced : Image.Type.Simple;
+			// 1.5.80: the same border scale as the game's image (the edges came out stretched without it)
+			img.pixelsPerUnitMultiplier = s_panelPpu;
 			if (s_panelMat != null && s_panelMat != img.defaultMaterial)
 			{
 				img.material = s_panelMat;
@@ -106,24 +111,52 @@ internal static class GameLook
 		}
 	}
 
-	private static bool s_textLogged;
+	private static bool s_scaleLogged;
 
-	private static bool s_buttonLogged;
+	private static readonly System.Reflection.FieldInfo s_popupInstance = HarmonyLib.AccessTools.Field(typeof(UnifiedPopup), "instance");
 
-	// 1.5.79: a title like the game's container window title ("Chest")
-	internal static void ApplyTitle(TMP_Text t)
+	private static readonly System.Reflection.FieldInfo s_popupCenterText = HarmonyLib.AccessTools.Field(typeof(UnifiedPopup), "buttonCenterText");
+
+	// 1.5.80: our canvas scales like the game's own GUI canvas (the one its popups are in), so copied sprites, borders and
+	// font sizes come out the size the game draws them (user: "The summon companion page looks odd. The buttons and
+	// background look like they are poorly scaled")
+	internal static void MatchGameScale(CanvasScaler ours)
 	{
-		CopyText(t, InventoryGui.instance?.m_containerName, "title");
+		if (ours == null)
+		{
+			return;
+		}
+		UnifiedPopup popup = s_popupInstance?.GetValue(null) as UnifiedPopup;
+		Canvas root = popup != null ? popup.GetComponentInParent<Canvas>()?.rootCanvas : null;
+		CanvasScaler game = root != null ? root.GetComponent<CanvasScaler>() : null;
+		if (game == null)
+		{
+			if (!s_scaleLogged)
+			{
+				s_scaleLogged = true;
+				CompanionsPlugin.Log.LogInfo("[UI] Game look: no game canvas scaler found - keeping 1920x1080 scaling");
+			}
+			return;
+		}
+		ours.uiScaleMode = game.uiScaleMode;
+		ours.referenceResolution = game.referenceResolution;
+		ours.screenMatchMode = game.screenMatchMode;
+		ours.matchWidthOrHeight = game.matchWidthOrHeight;
+		ours.scaleFactor = game.scaleFactor;
+		ours.referencePixelsPerUnit = game.referencePixelsPerUnit;
+		if (!s_scaleLogged)
+		{
+			s_scaleLogged = true;
+			CompanionsPlugin.Log.LogInfo($"[UI] Game look: canvas '{root.name}' {game.uiScaleMode}, reference {game.referenceResolution}, match {game.matchWidthOrHeight:F2}, scale factor {game.scaleFactor:F2} (canvas scale {root.scaleFactor:F2})");
+		}
 	}
 
-	// 1.5.79: body text like the game's crafting description
-	internal static void ApplyBody(TMP_Text t)
+	// 1.5.80: button labels like the game popup's OK button (user: "It should be something close to how the 'ok' button
+	// looks when the message about being short gold coins pops up")
+	internal static void ApplyButtonText(TMP_Text t)
 	{
-		CopyText(t, InventoryGui.instance?.m_recipeDecription, "body");
-	}
-
-	private static void CopyText(TMP_Text t, TMP_Text src, string what)
-	{
+		UnifiedPopup popup = s_popupInstance?.GetValue(null) as UnifiedPopup;
+		TMP_Text src = popup != null ? s_popupCenterText?.GetValue(popup) as TMP_Text : null;
 		if (t == null || src == null)
 		{
 			return;
@@ -133,99 +166,12 @@ internal static class GameLook
 			t.font = src.font;
 			t.fontSharedMaterial = src.fontSharedMaterial;
 		}
-		t.enableAutoSizing = false;
-		t.fontSize = src.enableAutoSizing ? src.fontSizeMax : src.fontSize;
-		t.color = src.color;
+		float size = src.enableAutoSizing ? src.fontSizeMax : src.fontSize;
+		t.enableAutoSizing = true;
+		t.fontSizeMax = size;
+		t.fontSizeMin = Mathf.Min(10f, size);
+		t.fontSize = size;
 		t.fontStyle = src.fontStyle;
-		if (!s_textLogged)
-		{
-			s_textLogged = true;
-			TMP_Text title = InventoryGui.instance?.m_containerName;
-			TMP_Text body = InventoryGui.instance?.m_recipeDecription;
-			CompanionsPlugin.Log.LogInfo($"[UI] Game look: title text '{title?.font?.name}' {title?.fontSize:F0} (auto {title?.enableAutoSizing}), body text '{body?.font?.name}' {body?.fontSize:F0} (auto {body?.enableAutoSizing})");
-		}
-	}
-
-	// 1.5.79: a copy of the game's Craft button with its own pieces (frame, label, sound), less the gamepad hint and the
-	// hold-to-craft bar; at its own height (user: "It just looks like something is off for the buttons")
-	internal static GameObject CopyButton(Transform parent, string label, out float height)
-	{
-		height = 0f;
-		GameObject template = ButtonTemplate();
-		if (template == null)
-		{
-			return null;
-		}
-		GameObject go = UnityEngine.Object.Instantiate(template, parent);
-		go.name = "Btn";
-		go.SetActive(value: true);
-		RectTransform trt = template.GetComponent<RectTransform>();
-		height = trt != null ? trt.rect.height : 0f;
-		foreach (UIGamePad pad in go.GetComponentsInChildren<UIGamePad>(includeInactive: true))
-		{
-			if (pad.m_hint != null)
-			{
-				UnityEngine.Object.Destroy(pad.m_hint);
-			}
-			UnityEngine.Object.Destroy(pad);
-		}
-		Transform progress = InventoryGui.instance?.m_craftProgressPanel;
-		if (progress != null && progress.IsChildOf(template.transform))
-		{
-			Transform same = go.transform.Find(GetPath(template.transform, progress));
-			if (same != null)
-			{
-				UnityEngine.Object.Destroy(same.gameObject);
-			}
-		}
-		ContentSizeFitter fitter = go.GetComponent<ContentSizeFitter>();
-		if (fitter != null)
-		{
-			UnityEngine.Object.Destroy(fitter);
-		}
-		LayoutElement layout = go.GetComponent<LayoutElement>();
-		if (layout != null)
-		{
-			UnityEngine.Object.Destroy(layout);
-		}
-		Button b = go.GetComponent<Button>();
-		if (b != null)
-		{
-			b.onClick.RemoveAllListeners();
-			b.interactable = true;
-			b.navigation = new Navigation
-			{
-				mode = Navigation.Mode.Automatic
-			};
-		}
-		TMP_Text text = go.GetComponentInChildren<TMP_Text>(includeInactive: true);
-		if (text != null)
-		{
-			text.gameObject.SetActive(value: true);
-			text.text = label;
-		}
-		if (!s_buttonLogged)
-		{
-			s_buttonLogged = true;
-			string kids = "";
-			foreach (Transform c in template.transform)
-			{
-				kids += (kids.Length > 0 ? ", " : "") + c.name;
-			}
-			CompanionsPlugin.Log.LogInfo($"[UI] Game look: Craft button {trt?.rect.width:F0} x {height:F0}, label '{text?.font?.name}' {text?.fontSize:F0} (auto {text?.enableAutoSizing}), parts: {kids}");
-		}
-		return go;
-	}
-
-	private static string GetPath(Transform root, Transform t)
-	{
-		string path = t.name;
-		while (t.parent != null && t.parent != root)
-		{
-			t = t.parent;
-			path = t.name + "/" + path;
-		}
-		return path;
 	}
 
 	// the game's Craft button, to copy
