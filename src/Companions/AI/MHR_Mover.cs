@@ -3064,10 +3064,18 @@ namespace Companions
         public static float SwimLimit(Character c) { return Mathf.Max(0.3f, (c != null ? c.m_swimDepth : 2f) - 0.4f); }
         public static bool WouldSwim(Character c, Vector3 p) { return DepthAt(p) > SwimLimit(c); }
 
+        public static float SwimDrainSkill(Character c)
+        {
+            float skill = 0f;
+            try { if (c != null) skill = c.GetSkillFactor(Skills.SkillType.Swim); } catch { }
+            return Mathf.Lerp(1f, 0.4f, Mathf.Clamp01(skill));
+        }
+
         public static float SwimStamina(Character c, float meters)
         {
             float speed = c != null && c.m_swimSpeed > 0.1f ? c.m_swimSpeed : 2f;
-            float drain = ModConfig.StaminaSwimDrain != null ? ModConfig.StaminaSwimDrain.Value : 10f;
+            // 1.5.88: like the player (Player.OnSwimming: Lerp(5, 2, Swim skill) per second while moving)
+            float drain = (ModConfig.StaminaSwimDrain != null ? ModConfig.StaminaSwimDrain.Value : 5f) * SwimDrainSkill(c);
             return meters / speed * drain;
         }
 

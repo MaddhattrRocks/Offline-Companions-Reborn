@@ -702,7 +702,8 @@ internal static class ModConfig
 		StaminaRegenRate = Bind(cfg, "Stamina", "RegenRate", 6f, "Stamina a companion gets back per second when it isn't using any.", new AcceptableValueRange<float>(1f, 30f));
 		StaminaRunDrain = Bind(cfg, "Stamina", "RunDrainRate", 10f, "Stamina used per second while running.", new AcceptableValueRange<float>(1f, 30f));
 		StaminaSneakDrain = Bind(cfg, "Stamina", "SneakDrainRate", 5f, "Stamina used per second while sneaking.", new AcceptableValueRange<float>(1f, 30f));
-		StaminaSwimDrain = Bind(cfg, "Stamina", "SwimDrainRate", 10f, "Stamina used per second while swimming.", new AcceptableValueRange<float>(1f, 30f));
+		// 1.5.88: new key (was SwimDrainRate 10 - double the player's) so existing config files pick up the player's rate
+		StaminaSwimDrain = Bind(cfg, "Stamina", "SwimDrainAtSkill0", 5f, "Stamina used per second while swimming (and moving), at Swim skill 0 - it drops to 40% of this at Swim 100, like the player (the game's rate is 5).", new AcceptableValueRange<float>(1f, 30f));
 		StaminaRegenDelay = Bind(cfg, "Stamina", "RegenDelay", 1f, "Seconds after using stamina before it starts coming back.", new AcceptableValueRange<float>(0.1f, 5f));
 		// [Rest]
 		SleepAtNight = Bind(cfg, "Rest", "SleepAtNight", defaultValue: true, "At night, a companion within BedRange of its claimed bed stops what it's doing and goes to bed, including when it's working. It goes back to its job in the morning.");

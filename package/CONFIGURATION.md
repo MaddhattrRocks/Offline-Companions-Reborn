@@ -377,8 +377,8 @@ Stamina used per second while running.
 **SneakDrainRate** — Default: 5 · Range: 1 – 30  
 Stamina used per second while sneaking.
 
-**SwimDrainRate** — Default: 10 · Range: 1 – 30  
-Stamina used per second while swimming.
+**SwimDrainAtSkill0** — Default: 5 · Range: 1 – 30  
+Stamina used per second while swimming (and moving), at Swim skill 0 - it drops to 40% of this at Swim 100, like the player (the game's rate is 5).
 
 **RegenDelay** — Default: 1 · Range: 0.1 – 5  
 Seconds after using stamina before it starts coming back.

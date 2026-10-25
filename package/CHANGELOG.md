@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Swimming costs companions stamina like the player: 5 a second at Swim skill 0, less with skill (setting Stamina SwimDrainAtSkill0 replaces SwimDrainRate, which was 10). Boarding counts only the swim to within reach of the ladder, so a companion no longer waits for nearly full stamina or gives up on a swim it can make.
+- A companion you ordered aboard also gets up and follows you when you go ashore, as long as it's following you.
 - Fixed a following companion warping to you when you got off a ship: the original "you moved 15 m, warp after you" check is gone. Portals, dungeon doors and map teleports still bring following companions along (as before), and one that falls far behind still catches up (Follow TeleportDistance).
 - Ships: companions jog across the deck (walking only the last step to a seat), know you're aboard when the game does, and use the ship's ladder only while swimming or standing - not in mid-dive.
 - Ships: companions walk across the deck to their seat and sit down (also when you point them at another seat), and get up and walk, jump or swim off when you go ashore - no more teleporting on and off seats. Each ship type gets a small deck map the first time a companion is aboard one.

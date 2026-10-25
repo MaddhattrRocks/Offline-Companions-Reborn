@@ -59,6 +59,9 @@ internal static class MHR_Board
 
 	private const float HoldFor = 20f;
 
+	// 1.5.88: the ladder is used from 2 m (Ladder.m_useDistance) and treading water is free - the swim ends this far short of it
+	private const float LadderReach = 1.7f;
+
 	private static int Vehicle()
 	{
 		if (s_vehicle == -1)
@@ -125,7 +128,7 @@ internal static class MHR_Board
 			return false;
 		}
 		CompanionStamina stam = c.GetComponent<CompanionStamina>();
-		return flat < 3.5f || stam == null || stam.Stamina >= MHR_Water.SwimStamina(c, flat) * 1.1f;
+		return flat < 3.5f || stam == null || stam.Stamina >= MHR_Water.SwimStamina(c, Mathf.Max(0f, flat - LadderReach)) * 1.1f;
 	}
 
 	private static Ladder NearestLadder(Ship ship, Vector3 me, out float flat)
@@ -501,12 +504,18 @@ internal static class MHR_Board
 		return false;
 	}
 
-	// a seated companion that boarded with you gets up when you've left the ship (2 s on land, within 40 m)
+	// a seated companion gets up when you've left the ship (2 s on land, within 40 m) - only while it's following you
 	internal static bool ShouldLeaveSeat(CompanionAI ai, Ship ship)
 	{
 		S s = Peek(ai);
 		if (s == null || s.SatOn == null || s.SatOn != ship)
 		{
+			return false;
+		}
+		CompanionSetup setup = ai.GetComponent<CompanionSetup>();
+		if (setup == null || !setup.GetFollow())
+		{
+			s.OwnerOffSince = -1f;
 			return false;
 		}
 		Player owner = MHR_Owner.Of(ai);
@@ -577,10 +586,9 @@ internal static class MHR_Board
 				Cancel(ai);
 				Log($"{name} sits down: '{SeatPath(seat.transform, ship.transform)}' (world {seat.m_attachPoint.position:F1})");
 				ai.AttachToShip(ship, seat);
-				if (auto)
-				{
-					Get(ai).SatOn = ship;
-				}
+				// 1.5.88: ordered aboard too - it gets up when you go ashore if it's following you (log 5930316c: "did not leave
+				// when I did")
+				Get(ai).SatOn = ship;
 			}
 			else
 			{
@@ -629,16 +637,6 @@ internal static class MHR_Board
 				Log($"{name} resting before the swim ({(stam != null ? stam.Stamina : 0f):F0}/{(stam != null ? stam.MaxStamina : 0f):F0} stamina)");
 			}
 		}
-		// a swim longer than it has stamina for at all: say so and wait on the shore
-		float swimM = MHR_Mover.RouteSwim(ai);
-		if (swimM > 0.5f && stam != null && stam.MaxStamina > 0f && !c.IsSwimming())
-		{
-			float needSwim = MHR_Water.SwimStamina(c, swimM) * 1.25f + 5f;
-			if (needSwim > stam.MaxStamina)
-			{
-				return GiveUp(ai, s, c, $"the swim to the ladder ({swimM:F0} m) needs about {needSwim:F0} stamina, it has {stam.MaxStamina:F0} at most");
-			}
-		}
 		// progress = getting closer to the ship
 		float dist = Flat(me, ship.transform.position);
 		if (dist < s.Best - 0.5f)
@@ -657,6 +655,18 @@ internal static class MHR_Board
 			if (s.HasLaunch)
 			{
 				Log($"{name} heading for the water's edge nearest the ladder ({Flat(s.Launch, near.transform.position):F1} m from it)");
+			}
+		}
+		// a swim longer than it has stamina for at all: say so and wait on the shore
+		// 1.5.88: from the launch spot when it has one (log 5930316c: gave up on the walking route's 9 m swim, then dived in from
+		// 4.4 m and made it when you ordered it), and only to within reach of the ladder
+		float swimM = s.HasLaunch && near != null ? Mathf.Max(0f, Flat(s.Launch, near.transform.position) - LadderReach) : MHR_Mover.RouteSwim(ai);
+		if (swimM > 0.5f && stam != null && stam.MaxStamina > 0f && !c.IsSwimming())
+		{
+			float needSwim = MHR_Water.SwimStamina(c, swimM) * 1.25f + 5f;
+			if (needSwim > stam.MaxStamina)
+			{
+				return GiveUp(ai, s, c, $"the swim to the ladder ({swimM:F0} m) needs about {needSwim:F0} stamina, it has {stam.MaxStamina:F0} at most");
 			}
 		}
 		bool atLaunch = s.HasLaunch && Flat(me, s.Launch) < 1.2f;
@@ -697,7 +707,7 @@ internal static class MHR_Board
 				if (MHR_Water.DepthAt(ahead) > 0.8f)
 				{
 					// at the water's edge facing the ladder: dive in, if it has the stamina for the swim
-					float need = MHR_Water.SwimStamina(c, flatL) * 1.25f + 5f;
+					float need = MHR_Water.SwimStamina(c, Mathf.Max(0f, flatL - LadderReach)) * 1.25f + 5f;
 					if (st2 != null && st2.Stamina < need)
 					{
 						ai.StopMoving();
