@@ -81,19 +81,6 @@ public class CompanionAI : BaseAI
 
 	private ZSyncAnimation _zanim;
 
-	private Ship _pendingShip;
-
-	private Chair _pendingShipChair;
-
-	private Ladder _pendingShipLadder;
-
-	private float _pendingShipTimeout;
-
-	private const float LadderBoardRange = 6f;
-
-	private const float ShipBoardingRange = 10f;
-
-	private const float ShipBoardingTimeout = 30f;
 
 	internal Vagon PendingCartAttach;
 
@@ -217,7 +204,7 @@ public class CompanionAI : BaseAI
 
 	internal bool IsOnShip => _isOnShip;
 
-	internal bool IsBoardingShip => _pendingShip != null;
+	internal bool IsBoardingShip => MHR_Board.Active(this);
 
 	private static float TombstoneScanInterval => ModConfig.TombstoneScanInterval.Value;
 
@@ -298,15 +285,20 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	// 1.5.82: boarding is MHR_Board's now (like a player: jump, the ship's ladder, swim, your steps - no teleporting)
 	internal void CancelPendingShipBoard()
 	{
-		if (!(_pendingShip == null))
+		if (MHR_Board.Active(this))
 		{
-			_pendingShip = null;
-			_pendingShipChair = null;
-			_pendingShipLadder = null;
+			MHR_Board.Cancel(this);
 			RestoreFollowOrPatrol();
 		}
+	}
+
+	// an ordered boarding gave up: back to following / patrolling
+	internal void BoardingEnded()
+	{
+		RestoreFollowOrPatrol();
 	}
 
 	internal void CancelPendingDeposit()
@@ -760,32 +752,8 @@ public class CompanionAI : BaseAI
 
 	internal void SetPendingShipBoard(Ship ship, Chair chair)
 	{
-		_pendingShip = ship;
-		_pendingShipChair = chair;
-		_pendingShipTimeout = 30f;
 		SetFollowTarget(null);
-		Ladder[] componentsInChildren = ship.GetComponentsInChildren<Ladder>();
-		if (componentsInChildren != null && componentsInChildren.Length != 0)
-		{
-			Ladder pendingShipLadder = null;
-			float num = float.MaxValue;
-			Ladder[] array = componentsInChildren;
-			foreach (Ladder ladder in array)
-			{
-				float num2 = Vector3.Distance(base.transform.position, ladder.transform.position);
-				if (num2 < num)
-				{
-					num = num2;
-					pendingShipLadder = ladder;
-				}
-			}
-			_pendingShipLadder = pendingShipLadder;
-		}
-		else
-		{
-			_pendingShipLadder = null;
-		}
-		string text = ((_pendingShipLadder != null) ? $"ladder at {_pendingShipLadder.transform.position:F1}" : "no ladder found");
+		MHR_Board.Start(this, ship, chair, auto: false);
 	}
 
 	internal void SetMoveTarget(Vector3 pos)
@@ -1144,6 +1112,12 @@ public class CompanionAI : BaseAI
 		}
 		if (_isOnShip)
 		{
+			// 1.5.82: a companion that sat down when following you aboard gets up when you've gone ashore
+			if (_attachedShip != null && MHR_Board.ShouldLeaveSeat(this, _attachedShip))
+			{
+				DetachFromShip();
+				return true;
+			}
 			UpdateShipAttach();
 			AIGateDiag.Report(_setup, "OnShip");
 			return true;
@@ -1217,72 +1191,13 @@ public class CompanionAI : BaseAI
 			}
 			return true;
 		}
-		if (_pendingShip != null)
+		// 1.5.82: boarding a ship (ordered, or following you aboard)
+		if (MHR_Board.Active(this))
 		{
-			_pendingShipTimeout -= dt;
-			if (_pendingShip == null || _pendingShipChair == null || _pendingShipChair.m_attachPoint == null)
+			if (MHR_Board.Update(this, dt))
 			{
-				CancelPendingShipBoard();
+				return true;
 			}
-			else if (_pendingShipTimeout <= 0f)
-			{
-				Ship pendingShip = _pendingShip;
-				Chair pendingShipChair = _pendingShipChair;
-				_pendingShip = null;
-				_pendingShipChair = null;
-				_pendingShipLadder = null;
-				AttachToShip(pendingShip, pendingShipChair);
-			}
-			else if (_pendingShipLadder != null)
-			{
-				Vector3 position2 = _pendingShipLadder.transform.position;
-				Vector3 vector = position2 - base.transform.position;
-				float magnitude = new Vector2(vector.x, vector.z).magnitude;
-				if (magnitude < 6f)
-				{
-					if (_pendingShipLadder.m_targetPos != null)
-					{
-						base.transform.position = _pendingShipLadder.m_targetPos.position;
-						base.transform.rotation = _pendingShipLadder.m_targetPos.rotation;
-						if (_body != null)
-						{
-							_body.position = _pendingShipLadder.m_targetPos.position;
-							_body.linearVelocity = Vector3.zero;
-							ResetLiquidState();
-						}
-					}
-					Ship pendingShip2 = _pendingShip;
-					Chair pendingShipChair2 = _pendingShipChair;
-					_pendingShip = null;
-					_pendingShipChair = null;
-					_pendingShipLadder = null;
-					AttachToShip(pendingShip2, pendingShipChair2);
-				}
-				else
-				{
-					Vector3 position3 = _pendingShip.transform.position;
-					MoveTo(dt, position3, 0.5f, magnitude > 15f);
-				}
-			}
-			else
-			{
-				Vector3 position4 = _pendingShip.transform.position;
-				float num4 = Vector3.Distance(base.transform.position, position4);
-				if (num4 < 10f)
-				{
-					Ship pendingShip3 = _pendingShip;
-					Chair pendingShipChair3 = _pendingShipChair;
-					_pendingShip = null;
-					_pendingShipChair = null;
-					_pendingShipLadder = null;
-					AttachToShip(pendingShip3, pendingShipChair3);
-				}
-				else
-				{
-					MoveTo(dt, position4, 0.5f, num4 > 15f);
-				}
-			}
-			return true;
 		}
 		if (PendingCartAttach != null)
 		{
@@ -1599,6 +1514,11 @@ public class CompanionAI : BaseAI
 		if (m_follow != null)
 		{
 			MHR_Mover.FollowWatch(this, m_follow);
+			// 1.5.82: you're aboard a ship close by - board it too (or wait on the shore if it couldn't)
+			if (MHR_Board.FollowHook(this, m_follow, dt))
+			{
+				return true;
+			}
 			// 1.4.76: following a player goes through MHR_Follow; the old formation code is left for other targets
 			if (!MHR_Follow.Update(this, m_follow, dt))
 			{
@@ -1880,7 +1800,7 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		float magnitude = m_character.GetVelocity().magnitude;
-		bool flag = m_follow != null || PendingMoveTarget.HasValue || PendingCartAttach != null || _pendingShip != null || (_rest != null && _rest.IsNavigating);
+		bool flag = m_follow != null || PendingMoveTarget.HasValue || PendingCartAttach != null || MHR_Board.Active(this) || (_rest != null && _rest.IsNavigating);
 		if (magnitude < 0.1f && flag)
 		{
 			_furnitureStuckTimer += dt;

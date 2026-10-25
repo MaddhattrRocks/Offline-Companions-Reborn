@@ -139,6 +139,12 @@ How companions follow you around.
 **MaxDistance** — Default: 10 · Range: 4 – 30  
 How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.
 
+**AutoBoard** — Default: On  
+When you're aboard a ship close by, a following companion gets on too, the way you would: it jumps aboard from a dock or the shore, uses the ship's ladder (swimming to it if it has the stamina), or follows your own steps aboard. If it can't, it waits on the shore. A companion that took a seat gets up again when you go ashore.
+
+**BoardRange** — Default: 20 · Range: 5 – 60  
+AutoBoard: how close (meters) the ship has to be for a following companion to board it on its own. The ship also has to be nearly still.
+
 **IndoorDistance** — Default: 4 · Range: 2 – 10  
 The same range while you're indoors (under a roof), so companions stay in the room with you.
 

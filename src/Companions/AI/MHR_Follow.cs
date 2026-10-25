@@ -385,6 +385,33 @@ namespace Companions
             return true;
         }
 
+        // 1.5.82: where the player stepped onto this ship - the last step before their recorded steps on its deck, and the first
+        // one on it (a jump, or the ladder) - for a companion that can't find its own way aboard
+        internal static bool StepsOnto(GameObject player, Ship ship, out Vector3 from, out Vector3 to)
+        {
+            from = to = Vector3.zero;
+            T t;
+            if (player == null || ship == null || !s_t.TryGetValue(player.GetInstanceID(), out t) || t.Steps.Count < 2) return false;
+            int vehicle = LayerMask.GetMask("vehicle");
+            List<Vector3> st = t.Steps;
+            bool next = OnShip(st[st.Count - 1], ship, vehicle);
+            for (int i = st.Count - 2; i >= 0; i--)
+            {
+                bool on = OnShip(st[i], ship, vehicle);
+                if (next && !on) { from = st[i]; to = st[i + 1]; return true; }
+                next = on;
+            }
+            return false;
+        }
+
+        static bool OnShip(Vector3 p, Ship ship, int vehicle)
+        {
+            RaycastHit hit;
+            if (!Physics.Raycast(p + Vector3.up * 0.5f, Vector3.down, out hit, 1.5f, vehicle)) return false;
+            Ship s = hit.collider.attachedRigidbody != null ? hit.collider.attachedRigidbody.GetComponent<Ship>() : hit.collider.GetComponentInParent<Ship>();
+            return s == ship;
+        }
+
         static void EndPath(S s, string why)
         {
             s.OnPath = false; s.PathApproach = false;

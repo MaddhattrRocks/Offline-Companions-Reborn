@@ -89,7 +89,7 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | An enemy | Attack it |
 | A tree, rock or ore | Gather it |
 | A cart | Hitch up and pull it (point again to unhitch) |
-| A ship | Board it and take a seat |
+| A ship | Board it (jumping aboard, the ship's ladder, or swimming to it) and take a seat, or stand on deck if none is free |
 | A bed | Go to sleep in it (point again to wake them) |
 | A fire | Sit by it (point again to get up) |
 | A closed door | Open it |
@@ -97,6 +97,8 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | A crafting station | Repair their gear there |
 | Their tombstone | Go and collect their things |
 | The ground | Walk there and wait |
+
+**Ships.** When you're aboard a ship close by, following companions get on too (Follow > AutoBoard): they jump aboard from a dock or the shore, use the ship's ladder (swimming to it if they have the stamina), or follow your own steps aboard. They take a free seat, or stand on deck if none is free. If one can't get aboard it says so and waits on the shore. A companion that took a seat gets up again when you go ashore.
 
 - **Hold** the command key to call your companions to you.
 - **Keep holding** for about 2 seconds to call **every** companion, however far away, including ones with Command switched off.

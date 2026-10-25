@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Companions get on ships like a player: they jump aboard from a dock or the shore, use the ship's ladder (swimming to it if they have the stamina), or follow your own steps aboard - on the board order, and on their own when you're aboard a ship close by (new settings: Follow AutoBoard, BoardRange). No more teleporting into a seat; one that can't get aboard waits on the shore. A companion that boarded with you gets up again when you go ashore.
 - Odin's Shrine buttons read Summon and Recover (the longer labels were shrunk to fit); the summon and starter windows lose the dark layers over their sections, buttons and sliders.
 - Odin's Shrine now uses the game's own popup (the same one as the unsummon and quit confirms) for its menu and the recover list.
 - An unsummoned companion can be brought back at the shrine - without its gear - until you next load the world (new setting: General RecoverUnsummoned).

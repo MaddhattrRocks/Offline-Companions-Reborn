@@ -297,6 +297,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> FollowMaxDistance;
 
+	internal static ConfigEntry<bool> FollowAutoBoard;
+
+	internal static ConfigEntry<float> FollowBoardRange;
+
 	internal static ConfigEntry<float> FollowIndoorDistance;
 
 	internal static ConfigEntry<bool> FollowRegroup;
@@ -620,6 +624,8 @@ internal static class ModConfig
 		MeleeKey = Bind(cfg, "Controls", "MeleeKey", KeyCode.None, "Sets the Melee stance, like PassiveKey.");
 		// [Follow]
 		FollowMaxDistance = Bind(cfg, "Follow", "MaxDistance", 10f, "How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.", new AcceptableValueRange<float>(4f, 30f));
+		FollowAutoBoard = Bind(cfg, "Follow", "AutoBoard", defaultValue: true, "When you're aboard a ship close by, a following companion gets on too, the way you would: it jumps aboard from a dock or the shore, uses the ship's ladder (swimming to it if it has the stamina), or follows your own steps aboard. If it can't, it waits on the shore. A companion that took a seat gets up again when you go ashore.");
+		FollowBoardRange = Bind(cfg, "Follow", "BoardRange", 20f, "AutoBoard: how close (meters) the ship has to be for a following companion to board it on its own. The ship also has to be nearly still.", new AcceptableValueRange<float>(5f, 60f));
 		FollowIndoorDistance = Bind(cfg, "Follow", "IndoorDistance", 4f, "The same range while you're indoors (under a roof), so companions stay in the room with you.", new AcceptableValueRange<float>(2f, 10f));
 		FollowRegroup = Bind(cfg, "Follow", "Regroup", defaultValue: true, "When you stand still for RegroupTime seconds, companions come back and wait close to you. Off = they stay wherever they stopped.");
 		FollowRegroupTime = Bind(cfg, "Follow", "RegroupTime", 45f, "Seconds you stand still before companions regroup around you (see Regroup).", new AcceptableValueRange<float>(5f, 600f));

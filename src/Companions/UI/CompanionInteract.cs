@@ -1438,24 +1438,12 @@ public class CompanionInteract : MonoBehaviour
 					}
 				}
 			}
+			// 1.5.82: no free seat - it boards the same way and stands on deck (was put on the ship's middle)
 			if (chair2 != null)
 			{
 				hashSet.Add(chair2);
-				component.SetPendingShipBoard(ship, chair2);
 			}
-			else
-			{
-				Vector3 position2 = ship.transform.position + ship.transform.up * 1.5f;
-				setup.transform.position = position2;
-				Rigidbody component2 = setup.GetComponent<Rigidbody>();
-				if (component2 != null)
-				{
-					component2.position = position2;
-					component2.linearVelocity = Vector3.zero;
-				}
-				component.SetFollowTarget(ship.gameObject);
-				component.FreezeTimer = 1f;
-			}
+			component.SetPendingShipBoard(ship, chair2);
 			if (companionTalk == null)
 			{
 				companionTalk = setup.GetComponent<CompanionTalk>();
