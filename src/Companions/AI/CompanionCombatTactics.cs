@@ -76,7 +76,7 @@ public partial class CompanionCombatAI
 
 	private bool TacticsFor(ItemDrop.ItemData weapon)
 	{
-		// 1.5.73: no stepping away from a tick latched on - it comes along; swing at it (or roll it off, MHR_TickShake)
+		// 1.5.73: no stepping away from a tick latched on - it comes along; swing at it (MHR_Latched)
 		return FightLikePlayer && weapon != null && !MHR_IsProjectileWeapon(weapon) && _targetCreature != null && !_stalking && !Unaware(_targetCreature) && !LatchedTarget();
 	}
 

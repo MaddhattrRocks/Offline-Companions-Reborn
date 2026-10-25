@@ -106,6 +106,102 @@ public partial class CompanionCombatAI
 
 	private Character _latched;
 
+	private class Reach
+	{
+		public float At;
+		public bool Ok;
+		public string Why;
+	}
+
+	private readonly Dictionary<Character, Reach> _reach = new Dictionary<Character, Reach>();
+
+	private Character _stuckOn;
+
+	private float _stuckSince;
+
+	private float _stuckHealth;
+
+	private static float LeashFromYou => ModConfig.CombatLeashFromYou?.Value ?? 25f;
+
+	// 1.5.74: can a melee weapon get at it? Not out in swimming-deep water, not a level above or below it right here, and
+	// with a walking route there that isn't a long way round (checked every 2 s per enemy)
+	internal bool MeleeCanReach(Character c, out string why)
+	{
+		why = null;
+		if (c == null || _character == null)
+		{
+			return true;
+		}
+		if (_reach.TryGetValue(c, out Reach r) && Time.time < r.At)
+		{
+			why = r.Why;
+			return r.Ok;
+		}
+		if (_reach.Count > 40)
+		{
+			_reach.Clear();
+		}
+		r = new Reach { At = Time.time + 2f, Ok = true };
+		Vector3 me = base.transform.position;
+		Vector3 it = c.transform.position;
+		Vector3 flat = it - me;
+		float dy = flat.y;
+		flat.y = 0f;
+		float d = flat.magnitude;
+		if (!_character.IsSwimming() && MHR_Water.WouldSwim(_character, it))
+		{
+			r.Ok = false;
+			r.Why = "it's out in deep water";
+		}
+		else if (d < 3f && (dy > 1.4f || dy < -1.8f))
+		{
+			r.Ok = false;
+			r.Why = dy > 0f ? "it's above, out of reach" : "it's below, out of reach";
+		}
+		else if (d > 2.5f)
+		{
+			if (!MHR_Mover.WalkRoute(me, it, out float len))
+			{
+				r.Ok = false;
+				r.Why = "there's no way to walk there";
+			}
+			else if (len > d * 2f + 15f)
+			{
+				r.Ok = false;
+				r.Why = $"the only way there is a long way round ({len:F0} m)";
+			}
+		}
+		_reach[c] = r;
+		why = r.Why;
+		return r.Ok;
+	}
+
+	// 1.5.74: an enemy only to be shot at, not walked up to: melee can't get at it, or - fighting defensively - it is
+	// further than DefendRange from you
+	internal bool BowOnly(Character c, out string why)
+	{
+		if (!MeleeCanReach(c, out why))
+		{
+			return true;
+		}
+		if (Defensive())
+		{
+			Player owner = MHR_Owner.Of(_setup);
+			float range = ModConfig.CombatDefendRange?.Value ?? 8f;
+			if (owner != null && c != null && Vector3.Distance(owner.transform.position, c.transform.position) > range)
+			{
+				why = $"fighting defensively, it's more than {range:F0} m from you";
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private bool BowReady()
+	{
+		return MHR_IsProjectileWeapon(_humanoid.GetCurrentWeapon()) || MHR_Crossbow.HasReadyRanged(_humanoid);
+	}
+
 	private float _latchedCheckAt;
 
 	// 1.5.73: a tick latched on to it (checked every 0.25 s)
@@ -114,7 +210,7 @@ public partial class CompanionCombatAI
 		if (Time.time >= _latchedCheckAt)
 		{
 			_latchedCheckAt = Time.time + 0.25f;
-			_latched = MHR_TickShake.LatchedOn(_character);
+			_latched = MHR_Latched.LatchedOn(_character);
 		}
 		return _latched;
 	}
@@ -180,15 +276,35 @@ public partial class CompanionCombatAI
 			{
 				continue;
 			}
-			if (defensive && owner != null && Vector3.Distance(owner.transform.position, c.transform.position) > defendRange && !(onMe && d - c.GetRadius() < 3f))
+			bool upClose = onMe && d - c.GetRadius() < 3f;
+			// 1.5.74: nothing further than LeashFromYou from you
+			if (owner != null && !upClose && Vector3.Distance(owner.transform.position, c.transform.position) > LeashFromYou)
 			{
 				continue;
 			}
-			if (!CanGetAt(c))
+			// in a dungeon only what comes close to you - or, with a bow ready, whatever is after you it has a clear shot
+			// at, shot from where it stands (1.5.74: user, "some bugs were below us and it would have been a good place
+			// to use a bow")
+			bool bowShot = false;
+			if (defensive && owner != null && Vector3.Distance(owner.transform.position, c.transform.position) > defendRange && !upClose)
+			{
+				if (!BowReady() || d > 30f || (cai != null && !cai.IsAlerted()))
+				{
+					continue;
+				}
+				bowShot = true;
+			}
+			if (!CanGetAt(c) || (bowShot && !MHR_BowDraw.ClearShot(_character, c)))
 			{
 				continue;
 			}
 			float score = d - (onMe ? 6f : 0f) - (itsTarget != null && itsTarget.IsPlayer() ? 2f : 0f) - (c == _targetCreature ? 3f : 0f);
+			// 1.5.74: one it can't get at with its melee weapon counts as much further off - a Greydwarf at 5 m beats a Neck
+			// out in the river
+			if (!upClose && !MeleeCanReach(c, out _))
+			{
+				score += 15f;
+			}
 			if (score < bestScore)
 			{
 				bestScore = score;
@@ -215,11 +331,23 @@ public partial class CompanionCombatAI
 			_noSightSince = -1f;
 			return;
 		}
+		Player you = MHR_Owner.Of(_setup);
+		if (you != null && Vector3.Distance(you.transform.position, c.transform.position) > LeashFromYou)
+		{
+			TargetLog($"[Combat] {c.m_name} is more than {LeashFromYou:F0} m from you - letting it go and coming back");
+			LetGo(c, 10f);
+			return;
+		}
+		if (GiveUpOnUnreachable(c))
+		{
+			return;
+		}
 		if (Defensive())
 		{
 			Player owner = MHR_Owner.Of(_setup);
 			float range = (ModConfig.CombatDefendRange?.Value ?? 8f) + 3f;
-			if (owner != null && Vector3.Distance(owner.transform.position, c.transform.position) > range)
+			// 1.5.74: with a bow it keeps shooting from where it stands (ChaseMove doesn't walk it away from you)
+			if (owner != null && Vector3.Distance(owner.transform.position, c.transform.position) > range && !(BowReady() && MHR_BowDraw.ClearShot(_character, c)))
 			{
 				TargetLog($"[Combat] {c.m_name} is more than {range:F0} m from you - fighting defensively, letting it come to us");
 				_ignoreUntil[c] = Time.time + 3f;
@@ -243,6 +371,43 @@ public partial class CompanionCombatAI
 			_targetCreature = null;
 			_noSightSince = -1f;
 		}
+	}
+
+	private void LetGo(Character c, float secs)
+	{
+		_ignoreUntil[c] = Time.time + secs;
+		_targetCreature = null;
+		_noSightSince = -1f;
+		_stuckOn = null;
+		MHR_Mover.Release(_ai);
+	}
+
+	// 1.5.74: an enemy it can't get at in melee (out in deep water, no way there) and that isn't hurt for GiveUpTime: let
+	// it go for 20 s (log 93298113: shot at a Neck out in the river, missed, ran out of breath, and stayed on it while
+	// you walked off)
+	private bool GiveUpOnUnreachable(Character c)
+	{
+		if (MeleeCanReach(c, out string why))
+		{
+			_stuckOn = null;
+			return false;
+		}
+		float hp = c.GetHealth();
+		if (_stuckOn != c || hp < _stuckHealth - 0.01f)
+		{
+			_stuckOn = c;
+			_stuckSince = Time.time;
+			_stuckHealth = hp;
+			return false;
+		}
+		float limit = ModConfig.CombatGiveUpTime?.Value ?? 10f;
+		if (Time.time - _stuckSince < limit)
+		{
+			return false;
+		}
+		CompanionsPlugin.Log.LogDebug($"[Combat] Can't get at {c.m_name} ({why}) and not a hit on it for {limit:F0} s - letting it go");
+		LetGo(c, 20f);
+		return true;
 	}
 
 	// the chase came to a closed door: a fight doesn't open doors (an order does)

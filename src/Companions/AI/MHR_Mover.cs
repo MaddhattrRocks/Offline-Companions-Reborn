@@ -741,6 +741,18 @@ namespace Companions
             return len;
         }
 
+        // 1.5.74: a walking route that gets there, and how long it is (for "can a melee weapon get at it")
+        static readonly List<Vector3> s_walkPath = new List<Vector3>();
+        public static bool WalkRoute(Vector3 from, Vector3 to, out float len)
+        {
+            len = 0f;
+            if (!GetPath(from, to, s_walkPath, MHR_CompanionNavMesh.AgentOrHumanoid, false)) return false;
+            Vector3 end = s_walkPath[s_walkPath.Count - 1];
+            if (Flat(end, to) > 1.5f || Mathf.Abs(end.y - to.y) > 2.2f) return false;
+            len = PathLength(from, s_walkPath);
+            return true;
+        }
+
         static bool GetPath(Vector3 from, Vector3 to, List<Vector3> path, Pathfinding.AgentType agent, bool requireFull)
         {
             path.Clear();

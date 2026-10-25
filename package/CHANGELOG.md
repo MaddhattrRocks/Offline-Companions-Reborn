@@ -3,7 +3,12 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
-- A tick that latches on to a companion is shaken off with a dodge roll, like a player does (new settings: Combat ShakeOffTicks, DodgeStamina); it no longer backs away while the tick feeds.
+- A tick latched on to a companion is its first target and is swung at - no more backing away while it feeds.
+- Balanced stance takes the bow, at any distance, for an enemy its melee weapon can't get at (out in deep water, a level above or below, no way to walk there) when it has a clear shot.
+- In a dungeon a companion with a bow shoots alerted enemies it has a clear shot at from where it stands, out to bow range, without leaving you.
+- Companions let an enemy go once it is more than 25 m from you and come back (new setting: Combat LeashFromYou).
+- An enemy a companion can't get at and hasn't hurt for 10 s is let go and left alone for 20 s (new setting: Combat GiveUpTime); one it can't get at also counts as further away when picking what to fight, so a closer enemy comes first.
+- Bows: a draw starts a little inside the 30 m reach, and a draw already started carries on, walking closer, if the target steps just out of reach (new setting: Combat BowEdgeMargin).
 - Companions don't swim out after an enemy in deep water - they shoot it from the bank, or wait there for it with a melee weapon. Fighting with Balanced stance, an enemy out in deep water always gets the bow.
 - Fix: a companion standing in a shallow pool wouldn't step anywhere in a fight ("standing its ground") - it now steps through water no deeper than where it stands.
 - Spike walls are spotted further ahead and turned away from harder when already at their edge.

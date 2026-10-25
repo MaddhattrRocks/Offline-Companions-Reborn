@@ -174,12 +174,6 @@ public partial class CompanionCombatAI : MonoBehaviour
 			CheckMiss(force: false);
 		}
 		MHR_BowDraw.Maintain(_humanoid, Time.deltaTime);
-		// 1.5.73: a tick latched on: roll it off (MHR_TickShake)
-		if (_stam == null)
-		{
-			_stam = GetComponent<CompanionStamina>();
-		}
-		MHR_TickShake.Tick(_humanoid, _stam);
 	}
 
 	// 1.5.4: it has swung at, shot at or thrown at its current target since engaging it (a hunter only swaps prey before that)
@@ -250,6 +244,12 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			_ai.StopMoving();
 			UnsafeLog("not swimming out after " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - waiting on the bank");
+			return false;
+		}
+		// 1.5.74: fighting defensively, a target beyond DefendRange is only shot at from here, never walked to
+		if (!IsOrdered(_targetCreature) && _targetCreature != null && Defensive() && MHR_IsProjectileWeapon(_humanoid.GetCurrentWeapon()) && BowOnly(_targetCreature, out _))
+		{
+			_ai.StopMoving();
 			return false;
 		}
 		bool there = MHR_Mover.Go(_ai, dt, point, Mathf.Max(dist, 1f), run, IsOrdered(_targetCreature) ? "Order" : MHR_Mover.CombatTag, run ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
@@ -628,7 +628,10 @@ public partial class CompanionCombatAI : MonoBehaviour
 					// so a hunter with a spear or axe (no bow ready) stopped 20 m off and stabbed at the air (user video).
 					// Now it sneaks right up and strikes like a melee fighter.
 					bool flag7 = flag6;
-					float num5 = (flag7 ? 30f : MHR_MeleeReach(itemData));
+					// 1.5.74: a draw starts BowEdgeMargin inside the 30 m reach and carries on to twice that past it (user: "Some of
+					// the draws at the edge of range caused the NPC to draw, mob gets out of range, run after it, then drawn again")
+					float edge = ModConfig.CombatBowEdgeMargin?.Value ?? 3f;
+					float num5 = (flag7 ? (MHR_BowDraw.IsDrawing(_humanoid) ? BowReach + edge * 2f : BowReach - edge) : MHR_MeleeReach(itemData));
 					// 1.5.4: not right at the edge of the reach (user: "using 1.8 and forcing the NPC to ensure it is under 2.0")
 					if (!flag7)
 					{
@@ -666,7 +669,12 @@ public partial class CompanionCombatAI : MonoBehaviour
 					// clear between it and the target (a hill, a rock): walk a few meters closer, still drawing.
 					else if (flag7 && flag8 && canSeeTarget && MHR_BowDraw.NeedsDraw(_humanoid))
 					{
-						if (MHR_BowDraw.ClearShot(_character, _targetCreature))
+						// past the reach with a draw on: walk in a little, still drawing
+						if (num3 > BowReach)
+						{
+							ChaseMove(dt, _targetCreature.transform.position, BowReach - edge, run: false);
+						}
+						else if (MHR_BowDraw.ClearShot(_character, _targetCreature))
 						{
 							_ai.StopMoving();
 						}
@@ -1371,6 +1379,9 @@ public partial class CompanionCombatAI : MonoBehaviour
 	}
 
 	private const float CombatLeash = 40f;
+
+	// a bow's reach (the AI starts shots within it)
+	private const float BowReach = 30f;
 
 	private static bool IsPassiveAnimal(Character c)
 	{
