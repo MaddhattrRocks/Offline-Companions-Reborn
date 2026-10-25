@@ -32,6 +32,11 @@ public partial class CompanionCombatAI
 
 	private readonly Dictionary<Character, float> _ignoreUntil = new Dictionary<Character, float>();
 
+	// 1.5.91: let go because melee couldn't get at it - picked up again as soon as it can
+	private readonly HashSet<Character> _letGoUnreachable = new HashSet<Character>();
+
+	private float _liftCheckAt;
+
 	private float _noSightSince = -1f;
 
 	private float _indoorCheckAt;
@@ -53,6 +58,7 @@ public partial class CompanionCombatAI
 		_ordered = target;
 		_holdUntil = 0f;
 		_ignoreUntil.Remove(target);
+		_letGoUnreachable.Remove(target);
 	}
 
 	// a recall or move order: let go of the fight and start no new one for a while
@@ -276,7 +282,10 @@ public partial class CompanionCombatAI
 			}
 			if (_ignoreUntil.TryGetValue(c, out float until) && Time.time < until)
 			{
-				continue;
+				if (!LiftIgnore(c))
+				{
+					continue;
+				}
 			}
 			float d = Vector3.Distance(me, c.transform.position);
 			if (d > maxRange)
@@ -395,9 +404,34 @@ public partial class CompanionCombatAI
 		}
 	}
 
+	// 1.5.91: an enemy let go is taken up again once the reason is gone (user, log 32bba563: a greydwarf let go out in deep
+	// water came ashore and swung at you for a while; it was only fought once it hit the companion): melee can reach it now
+	// (let go as unreachable), or it's swinging at you or the companion within 5 m (any reason). Checked twice a second.
+	private bool LiftIgnore(Character c)
+	{
+		if (Time.time < _liftCheckAt)
+		{
+			return false;
+		}
+		Character after = c.GetBaseAI()?.GetTargetCreature();
+		Player you = MHR_Owner.Of(_setup);
+		bool attacking = c.InAttack() && after != null && (after == _character || after == you) && Vector3.Distance(c.transform.position, after.transform.position) < 5f;
+		bool reach = !attacking && _letGoUnreachable.Contains(c) && MeleeCanReach(c, out _);
+		if (!attacking && !reach)
+		{
+			_liftCheckAt = Time.time + 0.5f;
+			return false;
+		}
+		_ignoreUntil.Remove(c);
+		_letGoUnreachable.Remove(c);
+		CompanionsPlugin.Log.LogDebug($"[Combat] {c.m_name} {(attacking ? "is attacking " + (after == _character ? "it" : "you") : "came within reach")} - back on it");
+		return true;
+	}
+
 	private void LetGo(Character c, float secs)
 	{
 		_ignoreUntil[c] = Time.time + secs;
+		_letGoUnreachable.Remove(c);
 		_targetCreature = null;
 		_noSightSince = -1f;
 		_stuckOn = null;
@@ -429,6 +463,7 @@ public partial class CompanionCombatAI
 		}
 		CompanionsPlugin.Log.LogDebug($"[Combat] Can't get at {c.m_name} ({why}) and not a hit on it for {limit:F0} s - letting it go");
 		LetGo(c, 20f);
+		_letGoUnreachable.Add(c);
 		return true;
 	}
 

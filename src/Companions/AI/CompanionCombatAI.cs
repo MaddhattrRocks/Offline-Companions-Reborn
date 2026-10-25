@@ -488,11 +488,21 @@ public partial class CompanionCombatAI : MonoBehaviour
 				_engaged = true;
 				_attackedTarget = false;
 				Character after = target.GetBaseAI()?.GetTargetCreature();
-				CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
+				// 1.5.91: once per target until it changes or 30 s pass (log 32bba563: ~20 lines for one greydwarf)
+				if (target != _engageLogged || Time.time - _engageLoggedAt > 30f)
+				{
+					_engageLogged = target;
+					_engageLoggedAt = Time.time;
+					CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
+				}
 				_ai.SetAlerted(alert: true);
 			}
 		}
 	}
+
+	private Character _engageLogged;
+
+	private float _engageLoggedAt;
 
 	internal bool UpdateCombat(float dt)
 	{
