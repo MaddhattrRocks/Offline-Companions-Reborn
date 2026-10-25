@@ -246,7 +246,8 @@ public partial class CompanionCombatAI : MonoBehaviour
 		}
 		if (!there && MHR_Mover.GaveUp(_ai))
 		{
-			return _ai.GameMoveTo(dt, point, dist, run);
+			// 1.5.72: the game's walk only while the next meters are safe (CompanionCombatSafety)
+			return SafeGameMove(dt, point, dist, run);
 		}
 		return there;
 	}
@@ -531,7 +532,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 				if (fleeLog) { _nextFleeLog = Time.time + 5f; CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\""); }
 				TryEquipShield();
 				// 1.5.52: to the owner when the enemy isn't in the way, through the mover (edges, water); else away from it
-				if (FleeToOwner(dt) || _ai.FleeFrom(dt, _targetCreature.transform.position))
+				if (FleeToOwner(dt) || SafeFlee(dt, _targetCreature.transform.position))
 				{
 					return true;
 				}
@@ -557,7 +558,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 				{
 					_pauseTimer = Random.Range(0f, 0.3f);
 				}
-				_ai.RandomMovementAroundPoint(dt, _targetCreature.transform.position, 4f, _ai.IsAlerted());
+				SafeWander(dt, _targetCreature.transform.position, 4f, _ai.IsAlerted());
 				return true;
 			}
 		}
@@ -586,7 +587,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (_targetCreature != null && itemData != null && !flag5 && !_character.InAttack() && !flag6 && !HuntMode && !flag && !_tacticsOn)
 		{
 			Vector3 position = _targetCreature.transform.position;
-			_ai.RandomMovementAroundPoint(dt, position, (_ai.m_randomMoveRange > 0f) ? _ai.m_randomMoveRange : 5f, _ai.IsAlerted());
+			SafeWander(dt, position, (_ai.m_randomMoveRange > 0f) ? _ai.m_randomMoveRange : 5f, _ai.IsAlerted());
 			return true;
 		}
 		if ((_targetStatic == null && _targetCreature == null) || itemData == null)
@@ -644,7 +645,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 					// until it fell over, log aec6b3cf); then it stands, and the melee fallback takes over when it closes in
 					else if (flag7 && !_character.InAttack() && num3 < 10f && canSeeTarget && _ai.IsAlerted() && !MHR_BowDraw.IsResting(_humanoid))
 					{
-						_ai.FleeFrom(dt, _targetCreature.transform.position);
+						SafeFlee(dt, _targetCreature.transform.position);
 					}
 					// 1.5.62: with a bow, like a player: stand and draw while turning to it, loose, draw again - not running circles
 					// round it at 20 m (the draw only counted on the frames it happened to be lined up: 6-8 s per arrow). Nothing
@@ -667,7 +668,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 					}
 					else if (flag7 && flag8 && canSeeTarget && _ai.IsAlerted() && !flag9)
 					{
-						_ai.RandomMovementAroundPoint(dt, _targetCreature.transform.position, 20f, run: true);
+						SafeWander(dt, _targetCreature.transform.position, 20f, run: true);
 					}
 					else if (flag9)
 					{
@@ -720,7 +721,11 @@ public partial class CompanionCombatAI : MonoBehaviour
 							away.y = 0f;
 							if (away.sqrMagnitude < 0.01f) away = -base.transform.forward;
 							// 1.5.52: set the move direction directly - MoveTowards only walks forward, so it never stepped back
-							_character.SetMoveDir(away.normalized);
+							// 1.5.72: only onto safe ground, else it swings from where it is
+							if (MHR_Mover.SafeStep(base.transform.position, away, 1f))
+							{
+								_character.SetMoveDir(away.normalized);
+							}
 							_character.SetRun(run: false);
 							_ai.LookAtPoint(aimAt);
 							if (Time.time >= _nextCloseLog)
@@ -774,7 +779,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 					float dist2 = (flag6 ? 20f : 0f);
 					if (_beenAtLastPos)
 					{
-						_ai.RandomMovement(dt, _lastKnownTargetPos);
+						SafeWander(dt, _lastKnownTargetPos, 5f, run: false);
 						if (_timeSinceAttacking > 15f)
 						{
 							_unableToAttackTargetTimer = 15f;
@@ -803,7 +808,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 					}
 					else
 					{
-						_ai.RandomMovement(dt, character.transform.position);
+						SafeWander(dt, character.transform.position, 5f, run: false);
 					}
 				}
 				else
@@ -813,7 +818,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 			}
 			else
 			{
-				_ai.RandomMovement(dt, base.transform.position);
+				SafeWander(dt, base.transform.position, 5f, run: false);
 			}
 		}
 		return true;

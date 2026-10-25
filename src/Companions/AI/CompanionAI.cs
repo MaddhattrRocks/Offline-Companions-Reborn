@@ -696,18 +696,8 @@ public class CompanionAI : BaseAI
 		if (!flag2 && MHR_Owner.Of(this) != null)
 		{
 			Vector3 position2 = MHR_Owner.Of(this).transform.position;
-			Vector3 position3 = position2 + Vector3.right * 2f;
-			for (int j = 0; j < 20; j++)
-			{
-				Vector2 vector = UnityEngine.Random.insideUnitCircle * 3f;
-				Vector3 vector2 = position2 + new Vector3(vector.x, 0f, vector.y);
-				if (ZoneSystem.instance != null && ZoneSystem.instance.FindFloor(vector2, out var height))
-				{
-					vector2.y = height;
-					position3 = vector2;
-					break;
-				}
-			}
+			// 1.5.72: a safe spot next to you you can see (no wall, water, fire or spikes) - was any floor within 3 m
+			Vector3 position3 = MHR_SafeSpotNear(position2, -MHR_Owner.Of(this).transform.forward);
 			base.transform.position = position3;
 			if (_body != null)
 			{
@@ -1749,7 +1739,10 @@ public class CompanionAI : BaseAI
 				}
 				float solidHeight = ZoneSystem.instance.GetSolidHeight(vector3);
 				float num3 = Mathf.Max(liquidLevel, 30f);
-				if (solidHeight > num3)
+				// 1.5.72: not the rim of a drop (user: "a tar pit could have a large drop next to it") - the ground just beyond
+				// the spot isn't far below it, and it isn't in a fire or against spikes
+				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
+				if (solidHeight > num3 && !rim)
 				{
 					float num4 = Vector3.Distance(position, vector3);
 					if (num4 < num)
@@ -1990,6 +1983,11 @@ public class CompanionAI : BaseAI
 					continue;
 				}
 				if (!Physics.Raycast(chest, Vector3.down, out RaycastHit hit, 3f, mask, QueryTriggerInteraction.Ignore) || Mathf.Abs(hit.point.y - at.y) > 1.2f)
+				{
+					continue;
+				}
+				// 1.5.72: and dry, not in a fire or against spikes
+				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null)
 				{
 					continue;
 				}

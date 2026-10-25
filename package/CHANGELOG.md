@@ -3,6 +3,9 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Companions keep off spike walls (sharpened stakes and any other built defence that hurts what touches it) - they walk along them rather than into them, never step back into them in a fight, and don't land a jump on them.
+- Fix: several fight moves could take a companion off a ledge, into deep water or fire - backing off with a bow, running when badly hurt, moving about while waiting for an opening, stepping back to make room for a stab, and the last-ditch chase when no route was found. All of them now check the ground first and stand still rather than take an unsafe step.
+- Recall, respawn, recovering a lost companion and getting off a ship put the companion on a safe spot next to you (in view, dry, no fire or spikes) instead of any floor nearby.
 - Hire more companions: alt-use Odin's Shrine (Shift + Use) to hire another companion for 1,000 coins from your pack - you choose its looks in the same panel as your first one (General > CompanionPrice).
 - Fix: in a dungeon a companion could take the gap beside a ledge for shallow water and jump it, landing on the level below; it no longer jumps "water" in dungeons or where the ground drops away.
 - Fix: a companion could end up behind a wall - e.g. stuck behind the invisible barrier in a burial chamber's entrance - when it was brought to you through a dungeon entrance, a portal or for falling behind; it now lands on a spot you can see, with floor at your height.

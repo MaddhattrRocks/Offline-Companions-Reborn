@@ -211,7 +211,18 @@ namespace Companions
             }
 
             // a sidestep / hop in progress
-            if (now < s.StepUntil) { Steer(ai, c, s, s.StepDir, s.StepRun, false); return false; }
+            if (now < s.StepUntil)
+            {
+                // 1.5.72: a walking step (a sidestep out of being stuck) stops at a drop, fire or spikes on the way - it was only
+                // checked when it started (jumps are left alone - they're in the air)
+                if (!s.StepRun && c.IsOnGround() && (DropAhead(pos, s.StepDir, 0.8f, 1.2f) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
+                {
+                    s.StepUntil = 0f; Halt(ai, c, s);
+                    Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
+                    return false;
+                }
+                Steer(ai, c, s, s.StepDir, s.StepRun, false); return false;
+            }
 
             // 1.4.88: never stand in a fire
             if (EscapeFire(ai)) return false;
@@ -333,7 +344,7 @@ namespace Companions
             }
 
             // 1.4.97: going straight and there's a gap right ahead: leap it
-            if (s.Direct && !s.Quiet && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(c, pos, dir))
+            if (s.Direct && !s.Quiet && !c.IsSwimming() && c.IsOnGround() && now >= s.NextJump && GapAhead(c, pos, dir) && !LandingHazard(pos, dir))
             {
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
@@ -363,6 +374,23 @@ namespace Companions
                 }
                 Vector3 round;
                 if (FireExit(pos, dir, out round)) dir = round;
+            }
+
+            // 1.5.72: a spike wall (a built piece that hurts what touches it) on the next step: walk along it, a little away
+            // from it, instead of into it - also when the goal is right at it (an enemy caught on the stakes is hit from a
+            // step off) (user: "what about defenses like a spike wall?")
+            Collider spike = SpikeNear(pos + dir * 0.8f, 0.6f);
+            if (spike != null)
+            {
+                Vector3 cp = spike.ClosestPoint(pos); Vector3 off = pos - cp; off.y = 0f;
+                if (off.sqrMagnitude > 0.0001f)
+                {
+                    off.Normalize();
+                    Vector3 along = Vector3.Cross(Vector3.up, off);
+                    if (Vector3.Dot(along, dir) < 0f) along = -along;
+                    dir = (along + off * 0.6f).normalized;
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + tag + "] keeping off the spikes at " + Fmt(cp)); }
+                }
             }
 
             // 1.5.2: never walk off a ledge that hurts (user log: a "full" route off the small 57.4 floor of a ladder tower -
@@ -2048,6 +2076,51 @@ namespace Companions
         // 1.4.88-89 used type Fire, the wide area fire-shy creatures keep away from: it covered the whole kitchen, so
         // almost every spot by a chest counted as "in a fire" and cooking couldn't reach anything (1.4.89 log).
         // 1.5.44: in the flames or within margin of them - for picking a spot to stand (idle spots, follow spots)
+        // 1.5.72: a built piece that hurts whatever touches it - a spike wall (sharpened stakes, the Dvergr ones, modded
+        // ones): a Piece with an Aoe that does damage and isn't a fire (fires are handled above, and a hearth or campfire
+        // has an Aoe too). Found by what it does, not by name. Returns the collider nearest p, or null.
+        static readonly Collider[] s_spikeBuf = new Collider[32];
+        public static Collider SpikeNear(Vector3 p, float r)
+        {
+            try
+            {
+                int n = Physics.OverlapSphereNonAlloc(p + Vector3.up * 0.6f, r, s_spikeBuf, ~0, QueryTriggerInteraction.Collide);
+                for (int i = 0; i < n; i++)
+                {
+                    Collider col = s_spikeBuf[i];
+                    if (col == null) continue;
+                    Aoe aoe = col.GetComponentInParent<Aoe>();
+                    if (aoe == null || aoe.GetComponentInParent<Piece>() == null || aoe.GetComponentInParent<Fireplace>() != null) continue;
+                    if (aoe.m_damage.GetTotalDamage() <= 0f) continue;
+                    return col;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // 1.5.72: a short nudge (closing the last bit on a tree or rock) - a drop, fire or spikes that far ahead. Not a wall
+        // check: the thing it's walking up to is the wall.
+        public static bool HazardAhead(Vector3 pos, Vector3 dir, float dist)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return true;
+            dir.Normalize();
+            Vector3 p = pos + dir * dist;
+            return DropAhead(pos, dir, dist, 1.2f) || FireArea(p, 0.3f) != null || SpikeNear(p, 0.6f) != null;
+        }
+
+        // 1.5.72: fire or spikes where a jump would land (2-4 m on)
+        static bool LandingHazard(Vector3 pos, Vector3 dir)
+        {
+            for (float d = 2f; d <= 4f; d += 1f)
+            {
+                Vector3 p = pos + dir * d;
+                if (FireArea(p, 0.5f) != null || SpikeNear(p, 0.7f) != null) return true;
+            }
+            return false;
+        }
+
         public static bool NearFire(Vector3 p, float margin)
         {
             return FireArea(p, margin) != null;
@@ -2303,6 +2376,7 @@ namespace Companions
                 if (hit.point.y < pos.y - 1.0f || hit.point.y > pos.y + 0.8f) return false;
                 if (MHR_Water.DepthAt(hit.point) > 0.4f) return false;
                 if (FireArea(hit.point, 0.5f) != null) return false;
+                if (SpikeNear(hit.point, 0.7f) != null) return false;
             }
             return true;
         }
@@ -2316,6 +2390,7 @@ namespace Companions
             RaycastHit hit;
             if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) return false;
             if (hit.point.y < pos.y - 1.2f) return false;   // 1.4.82: not over a ledge
+            if (SpikeNear(hit.point, 0.7f) != null || FireArea(hit.point, 0.4f) != null) return false;   // 1.5.72
             return MHR_Water.DepthAt(hit.point) < 1.0f;
         }
 
@@ -2397,7 +2472,7 @@ namespace Companions
             // a lot in and out of the water in the swamp rather than wading through the water. They should be jumping out
             // of the water when it gets them to dry land.")
             bool dryBeyond = landAt > 0f && MHR_Water.DepthAt(pos + dir * landAt) < 0.05f && MHR_Water.DepthAt(pos + dir * (landAt + 1f)) < 0.05f && MHR_Water.DepthAt(pos + dir * (landAt + 2f)) < 0.05f;
-            if (!s.Quiet && landAt > 0f && dryBeyond && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y))
+            if (!s.Quiet && landAt > 0f && dryBeyond && landAt - waterAt <= maxGap && landY < pos.y + 1.0f && MHR_Jump.CanAfford(c) && landAt <= MHR_Jump.Reach(c, dir, landY - pos.y) && !LandingHazard(pos, dir))
             {
                 // a stream or puddle we can clear: jump it and stay dry
                 Leap(ai, c, dir, 6.5f);
@@ -2417,7 +2492,7 @@ namespace Companions
                 {
                     Vector3 l = pos + dir * Mathf.Min(reach, 6f);
                     float ly = MHR_Water.GroundAt(l);
-                    if (!MHR_Water.WouldSwim(c, l) && ly < pos.y + 0.5f && ly > pos.y - (ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f))
+                    if (!MHR_Water.WouldSwim(c, l) && ly < pos.y + 0.5f && ly > pos.y - (ModConfig.MaxDrop != null ? ModConfig.MaxDrop.Value : 3f) && !LandingHazard(pos, dir))
                     {
                         Leap(ai, c, dir, 6.5f);
                         s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;

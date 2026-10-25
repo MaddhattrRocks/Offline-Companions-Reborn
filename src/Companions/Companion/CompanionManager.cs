@@ -328,6 +328,14 @@ public static class CompanionManager
 
 	internal static Vector3 FindSpawnPosition(Vector3 origin, float radius)
 	{
+		// 1.5.72: a safe spot about 2 m away in plain view first (no wall between, a floor at that height, dry, no fire or
+		// spikes) - recall, respawn, roster recovery and hiring used any floor within the radius (a roof, the sea bed, behind
+		// a wall)
+		Vector3 safe = CompanionAI.MHR_SafeSpotNear(origin, Vector3.back);
+		if (safe != origin)
+		{
+			return safe;
+		}
 		for (int i = 0; i < 20; i++)
 		{
 			Vector2 vector = Random.insideUnitCircle * radius;
