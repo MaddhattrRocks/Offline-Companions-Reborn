@@ -34,6 +34,7 @@ internal static class MHR_Board
 		public float StepBest = float.MaxValue;
 		public bool HasShore;
 		public Vector3 Shore;
+		public float TreadSince = -1f;
 		public float HoldUntil;
 		public Ship HoldShip;
 		public Ship SatOn;
@@ -102,6 +103,45 @@ internal static class MHR_Board
 		return s != null && s.Ship != null;
 	}
 
+	// 1.5.84: the boarding companion's nearest ship ladder and its flat distance (WaterSafety asks, so it doesn't turn back
+	// for the shore with the ladder right there)
+	internal static bool KeepSwimming(Character c)
+	{
+		CompanionAI ai = c != null ? c.GetComponent<CompanionAI>() : null;
+		S s = Peek(ai);
+		if (s == null || s.Ship == null)
+		{
+			return false;
+		}
+		Ladder l = NearestLadder(s.Ship, c.transform.position, out float flat);
+		if (l == null || flat > 8f)
+		{
+			return false;
+		}
+		CompanionStamina stam = c.GetComponent<CompanionStamina>();
+		return flat < 3.5f || stam == null || stam.Stamina >= MHR_Water.SwimStamina(c, flat) * 1.1f;
+	}
+
+	private static Ladder NearestLadder(Ship ship, Vector3 me, out float flat)
+	{
+		flat = float.MaxValue;
+		Ladder best = null;
+		foreach (Ladder l in ship.GetComponentsInChildren<Ladder>())
+		{
+			if (l == null || l.m_targetPos == null)
+			{
+				continue;
+			}
+			float d = Flat(me, l.transform.position);
+			if (d < flat)
+			{
+				flat = d;
+				best = l;
+			}
+		}
+		return best;
+	}
+
 	internal static void Start(CompanionAI ai, Ship ship, Chair chair, bool auto)
 	{
 		if (ai == null || ship == null)
@@ -118,6 +158,7 @@ internal static class MHR_Board
 		s.Footsteps = false;
 		s.FootstepsTried = false;
 		s.HoldUntil = 0f;
+		s.TreadSince = -1f;
 		MHR_Mover.Release(ai);
 		Log(ai.GetComponent<Character>()?.m_name + (auto ? " is following you aboard" : " is boarding the ship"));
 	}
@@ -190,9 +231,16 @@ internal static class MHR_Board
 		return best;
 	}
 
-	private static bool Free(Chair ch)
+	// 1.5.84: the mast has a seat point but no seat (log ca66e4e5: "taking a seat: 'interactive/mast'" - user: "sitting in
+	// the middle of the boat rather than one of the seats ... There are 2 seats near the front and 2 near the rear")
+	internal static bool IsMast(Chair ch)
 	{
-		if (ch == null || !ch.m_inShip || ch.m_attachPoint == null)
+		return ch != null && ch.gameObject.name.IndexOf("mast", System.StringComparison.OrdinalIgnoreCase) >= 0;
+	}
+
+	internal static bool Free(Chair ch)
+	{
+		if (ch == null || !ch.m_inShip || ch.m_attachPoint == null || IsMast(ch))
 		{
 			return false;
 		}
@@ -432,6 +480,78 @@ internal static class MHR_Board
 		{
 			s.Best = dist;
 			s.ProgressAt = now;
+		}
+		// 1.5.84: like a player (user: "Its faster to jump off the dock to the boat and wait till you pop up from the water then
+		// use the ladder ... rather than just treading water for a moment to wait for the ladder to be in range")
+		Ladder near = NearestLadder(ship, me, out float flatL);
+		CompanionStamina st2 = ai.GetComponent<CompanionStamina>();
+		if (near != null && flatL <= 8f)
+		{
+			Vector3 toL = near.transform.position - me;
+			toL.y = 0f;
+			Vector3 dirL = toL.sqrMagnitude > 0.01f ? toL.normalized : ai.transform.forward;
+			if (c.IsSwimming() && flatL < 3.5f)
+			{
+				// in the water by the ladder: tread water (no stamina) until it's in reach
+				if (s.TreadSince < 0f)
+				{
+					s.TreadSince = now;
+					Log(name + " treading water by the ladder until it's in reach");
+				}
+				s.ProgressAt = now;
+				if (flatL > 0.8f)
+				{
+					ai.transform.rotation = Quaternion.LookRotation(dirL);
+					ai.MoveTowards(dirL, run: false);
+				}
+				else
+				{
+					ai.StopMoving();
+				}
+				if (now - s.TreadSince > 20f)
+				{
+					return GiveUp(ai, s, c, "the ladder never came within reach");
+				}
+				return true;
+			}
+			s.TreadSince = -1f;
+			if (!c.IsSwimming() && c.IsOnGround() && !Physics.Raycast(me + Vector3.up * 0.5f, dirL, 1.5f, Solid()))
+			{
+				Vector3 ahead = me + dirL * 1.2f;
+				ahead.y = MHR_Water.GroundAt(ahead);
+				if (MHR_Water.DepthAt(ahead) > 0.8f)
+				{
+					// at the water's edge facing the ladder: dive in, if it has the stamina for the swim
+					float need = MHR_Water.SwimStamina(c, flatL) * 1.25f + 5f;
+					if (st2 != null && st2.Stamina < need)
+					{
+						ai.StopMoving();
+						s.ProgressAt = now;
+						if (now >= s.NextLog)
+						{
+							s.NextLog = now + 5f;
+							Log($"{name} resting before the swim to the ladder ({st2.Stamina:F0}/{need:F0} stamina)");
+						}
+						return true;
+					}
+					if (now >= s.NextJump)
+					{
+						s.NextJump = now + 2f;
+						s.ProgressAt = now;
+						MHR_Jump.Leap(ai, c, dirL);
+						Log($"{name} diving in towards the ladder ({flatL:F1} m)");
+					}
+					return true;
+				}
+				if (MHR_Water.DepthAt(ahead) < 0.4f && ahead.y > me.y - 1.5f)
+				{
+					// dry ground on the way to the edge: walk straight at the ladder
+					ai.transform.rotation = Quaternion.LookRotation(dirL);
+					ai.MoveTowards(dirL, run: false);
+					s.ProgressAt = now;
+					return true;
+				}
+			}
 		}
 		// on a dock or the shore with the deck in jump reach: jump aboard
 		if (c.IsOnGround() && !c.IsSwimming() && now >= s.NextJump && DeckSpot(ship, me, out Vector3 deck))

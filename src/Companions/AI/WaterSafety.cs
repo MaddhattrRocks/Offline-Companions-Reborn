@@ -49,6 +49,17 @@ internal static class WaterSafety
 				return false;
 			}
 			int instanceID = character.GetInstanceID();
+			// 1.5.84: boarding with a ship's ladder close by - keep on for the ladder (treading water costs no stamina)
+			if (MHR_Board.KeepSwimming(character))
+			{
+				if (_shoreTarget.ContainsKey(instanceID))
+				{
+					_shoreTarget.Remove(instanceID);
+					_shoreRefresh.Remove(instanceID);
+					_shoreStartTime.Remove(instanceID);
+				}
+				return false;
+			}
 			bool flag = _shoreTarget.ContainsKey(instanceID);
 			if (flag)
 			{

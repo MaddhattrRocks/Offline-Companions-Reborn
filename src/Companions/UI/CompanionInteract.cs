@@ -794,7 +794,9 @@ public class CompanionInteract : MonoBehaviour
 				Ship componentInParent8 = collider.GetComponentInParent<Ship>();
 				if (componentInParent8 != null)
 				{
-					DirectBoard(allCompanions, localId, componentInParent8);
+					// 1.5.84: pointing at one of its seats - that seat (user: "I tried to use command on the seats and was ignored")
+					Chair pointedSeat = collider.GetComponentInParent<Chair>();
+					DirectBoard(allCompanions, localId, componentInParent8, (pointedSeat != null && pointedSeat.m_inShip && !MHR_Board.IsMast(pointedSeat)) ? pointedSeat : null);
 					return;
 				}
 				TombStone componentInParent9 = collider.GetComponentInParent<TombStone>();
@@ -1382,7 +1384,7 @@ public class CompanionInteract : MonoBehaviour
 		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → smelt mode");
 	}
 
-	private static void DirectBoard(IReadOnlyList<CompanionSetup> setups, string localId, Ship ship)
+	private static void DirectBoard(IReadOnlyList<CompanionSetup> setups, string localId, Ship ship, Chair pointed = null)
 	{
 		Chair[] componentsInChildren = ship.GetComponentsInChildren<Chair>();
 		List<Chair> list = new List<Chair>();
@@ -1390,7 +1392,7 @@ public class CompanionInteract : MonoBehaviour
 		Chair[] array = componentsInChildren;
 		foreach (Chair chair in array)
 		{
-			if (!chair.m_inShip || chair.m_attachPoint == null)
+			if (!chair.m_inShip || chair.m_attachPoint == null || MHR_Board.IsMast(chair))
 			{
 				continue;
 			}
@@ -1419,7 +1421,28 @@ public class CompanionInteract : MonoBehaviour
 				continue;
 			}
 			CompanionAI component = setup.GetComponent<CompanionAI>();
-			if (component == null || component.IsOnShip)
+			if (component == null)
+			{
+				continue;
+			}
+			// 1.5.84: a seat pointed at goes to the first companion - one already aboard moves to it
+			if (pointed != null && !hashSet.Contains(pointed) && MHR_Board.Free(pointed))
+			{
+				hashSet.Add(pointed);
+				if (component.IsOnShip)
+				{
+					component.AttachToShip(ship, pointed);
+					CompanionsPlugin.Log.LogInfo("[Board] " + setup.GetComponent<Character>()?.m_name + " moving to the seat you pointed at");
+				}
+				else
+				{
+					CancelExistingActions(setup);
+					component.SetPendingShipBoard(ship, pointed);
+				}
+				num++;
+				continue;
+			}
+			if (component.IsOnShip)
 			{
 				continue;
 			}
