@@ -130,12 +130,6 @@ public class CompanionPanel
 
 	private const string BankDataKey = "TraderSharedBank_Balance";
 
-	private static Sprite _catBtnSprite;
-
-	private static Sprite _sliderBgSprite;
-
-	private static Sprite _genderBtnSprite;
-
 	public GameObject Root { get; private set; }
 
 	public void Teardown()
@@ -159,9 +153,6 @@ public class CompanionPanel
 			Root = null;
 		}
 		_listsLoaded = false;
-		DestroySprite(ref _catBtnSprite);
-		DestroySprite(ref _sliderBgSprite);
-		DestroySprite(ref _genderBtnSprite);
 	}
 
 	public void Build(Transform parent, float colTopInset, float bottomPad, TMP_FontAsset font, GameObject buttonTemplate, float buttonHeight, float leftXL, float leftXR, float midXL, float midXR, float rightXL, float rightXR, float panelHeight)
@@ -225,67 +216,6 @@ public class CompanionPanel
 			RenderSettings.ambientMode = _savedAmbientMode;
 			RenderSettings.ambientLight = _savedAmbient;
 			RenderSettings.ambientIntensity = _savedAmbientIntensity;
-		}
-	}
-
-	private static Sprite GetCatBtnSprite()
-	{
-		if (_catBtnSprite != null)
-		{
-			return _catBtnSprite;
-		}
-		Texture2D texture2D = TextureLoader.LoadUITexture("CategoryBackground");
-		if (texture2D == null)
-		{
-			return null;
-		}
-		_catBtnSprite = Sprite.Create(texture2D, new Rect(0f, 0f, texture2D.width, texture2D.height), new Vector2(0.5f, 0.5f), 100f, 0u, SpriteMeshType.FullRect, new Vector4(12f, 12f, 12f, 12f));
-		_catBtnSprite.name = "CategoryBackground";
-		return _catBtnSprite;
-	}
-
-	private static Sprite GetSliderBgSprite()
-	{
-		if (_sliderBgSprite != null)
-		{
-			return _sliderBgSprite;
-		}
-		Texture2D texture2D = TextureLoader.LoadUITexture("SliderBackground");
-		if (texture2D == null)
-		{
-			return null;
-		}
-		_sliderBgSprite = Sprite.Create(texture2D, new Rect(0f, 0f, texture2D.width, texture2D.height), new Vector2(0.5f, 0.5f), 100f);
-		_sliderBgSprite.name = "SliderBackground";
-		return _sliderBgSprite;
-	}
-
-	private static Sprite GetGenderBtnSprite()
-	{
-		if (_genderBtnSprite != null)
-		{
-			return _genderBtnSprite;
-		}
-		Texture2D texture2D = TextureLoader.LoadUITexture("ButtonBackground");
-		if (texture2D == null)
-		{
-			return null;
-		}
-		_genderBtnSprite = Sprite.Create(texture2D, new Rect(0f, 0f, texture2D.width, texture2D.height), new Vector2(0.5f, 0.5f), 100f);
-		_genderBtnSprite.name = "ButtonBackground";
-		return _genderBtnSprite;
-	}
-
-	private static void DestroySprite(ref Sprite sprite)
-	{
-		if (sprite != null)
-		{
-			if (sprite.texture != null)
-			{
-				UnityEngine.Object.Destroy(sprite.texture);
-			}
-			UnityEngine.Object.Destroy(sprite);
-			sprite = null;
 		}
 	}
 
@@ -639,7 +569,7 @@ public class CompanionPanel
 	{
 		if (StarterMode)
 		{
-			CompanionsPlugin.Log.LogInfo($"[Panel] Starter spawn confirmed — gender={_current.ModelIndex}, " + "hair=" + _current.HairItem + ", beard=" + _current.BeardItem);
+			CompanionsPlugin.Log.LogInfo((HireMode ? "[Panel] Summon confirmed" : "[Panel] Starter spawn confirmed") + $" — gender={_current.ModelIndex}, " + "hair=" + _current.HairItem + ", beard=" + _current.BeardItem);
 			OnSpawnConfirmed?.Invoke(_current);
 		}
 		else
@@ -719,15 +649,7 @@ public class CompanionPanel
 		component.anchorMax = anchorMax;
 		component.offsetMin = Vector2.zero;
 		component.offsetMax = Vector2.zero;
-		Sprite genderBtnSprite = GetGenderBtnSprite();
-		Image component2 = gameObject.GetComponent<Image>();
-		if (component2 != null && genderBtnSprite != null)
-		{
-			component2.sprite = genderBtnSprite;
-			component2.type = Image.Type.Simple;
-			component2.preserveAspect = false;
-			component2.color = Color.white;
-		}
+		// 1.5.78: the copied Craft button keeps the game's own look (no packed texture)
 		GameObject gameObject2 = new GameObject("Tint", typeof(RectTransform), typeof(Image));
 		gameObject2.transform.SetParent(gameObject.transform, worldPositionStays: false);
 		gameObject2.transform.SetAsFirstSibling();
@@ -856,39 +778,6 @@ public class CompanionPanel
 		component2.pivot = new Vector2(0.5f, 1f);
 		component2.sizeDelta = new Vector2(-4f, sliderH);
 		component2.anchoredPosition = new Vector2(0f, y);
-		Sprite sliderBgSprite = GetSliderBgSprite();
-		if (sliderBgSprite != null)
-		{
-			Image image = null;
-			Transform transform = gameObject.transform.Find("Background");
-			if (transform != null)
-			{
-				image = transform.GetComponent<Image>();
-			}
-			if (image == null)
-			{
-				Image[] componentsInChildren = gameObject.GetComponentsInChildren<Image>(includeInactive: true);
-				foreach (Image image2 in componentsInChildren)
-				{
-					if (image2 != null && image2.gameObject.name.IndexOf("background", StringComparison.OrdinalIgnoreCase) >= 0)
-					{
-						image = image2;
-						break;
-					}
-				}
-			}
-			if (image == null)
-			{
-				image = gameObject.GetComponent<Image>();
-			}
-			if (image != null)
-			{
-				image.sprite = sliderBgSprite;
-				image.type = Image.Type.Simple;
-				image.preserveAspect = false;
-				image.color = Color.white;
-			}
-		}
 		slider2.onValueChanged.RemoveAllListeners();
 		slider2.transition = Selectable.Transition.None;
 		slider2.wholeNumbers = false;
@@ -902,6 +791,21 @@ public class CompanionPanel
 				image3.color = new Color(1f, 1f, 1f, image3.color.a);
 			}
 		}
+		// 1.5.78: the track is the game's panel background (was a packed texture)
+		Transform sliderBg = gameObject.transform.Find("Background");
+		Image sliderBgImg = sliderBg != null ? sliderBg.GetComponent<Image>() : null;
+		if (sliderBgImg == null)
+		{
+			foreach (Image image4 in componentsInChildren2)
+			{
+				if (image4 != null && image4.gameObject.name.IndexOf("background", StringComparison.OrdinalIgnoreCase) >= 0)
+				{
+					sliderBgImg = image4;
+					break;
+				}
+			}
+		}
+		GameLook.ApplyPanel(sliderBgImg, new Color(0.12f, 0.1f, 0.08f, 0.95f));
 		if (slider2.fillRect != null)
 		{
 			Image component3 = slider2.fillRect.GetComponent<Image>();
@@ -944,6 +848,28 @@ public class CompanionPanel
 		Color c = Color.Lerp(HairBlonde, HairDark, t) * Mathf.Lerp(0.1f, 1f, t2);
 		_current.HairColor = Utils.ColorToVec3(c);
 		RefreshPreviewAppearance();
+	}
+
+	// 1.5.78: the style's name as the game's character creator shows it ("Hair12" -> its localised item name), else the
+	// prefab name
+	private static string StyleName(string prefab)
+	{
+		try
+		{
+			string key = ObjectDB.instance?.GetItemPrefab(prefab)?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name;
+			if (!string.IsNullOrEmpty(key) && Localization.instance != null)
+			{
+				string loc = Localization.instance.Localize(key);
+				if (!string.IsNullOrEmpty(loc) && !loc.StartsWith("[") && !loc.StartsWith("$"))
+				{
+					return loc;
+				}
+			}
+		}
+		catch
+		{
+		}
+		return prefab;
 	}
 
 	private void RefreshTypeButtons()
@@ -1410,11 +1336,11 @@ public class CompanionPanel
 	{
 		if (_hairNameText != null)
 		{
-			_hairNameText.text = ((_hairs.Count > 0) ? _hairs[_hairIndex] : "—");
+			_hairNameText.text = ((_hairs.Count > 0) ? StyleName(_hairs[_hairIndex]) : "—");
 		}
 		if (_beardNameText != null)
 		{
-			_beardNameText.text = ((_beardIndex == 0) ? ModLocalization.Loc("hc_ui_beard_none") : ((_beards.Count > _beardIndex) ? _beards[_beardIndex] : "—"));
+			_beardNameText.text = ((_beardIndex == 0) ? ModLocalization.Loc("hc_ui_beard_none") : ((_beards.Count > _beardIndex) ? StyleName(_beards[_beardIndex]) : "—"));
 		}
 	}
 
@@ -1546,7 +1472,7 @@ public class CompanionPanel
 		return 0;
 	}
 
-	private static GameObject CreateButton(GameObject template, Transform parent, string name, string label)
+	internal static GameObject CreateButton(GameObject template, Transform parent, string name, string label)
 	{
 		GameObject gameObject = UnityEngine.Object.Instantiate(template, parent);
 		gameObject.name = name;
@@ -1630,7 +1556,7 @@ public class CompanionPanel
 		{
 			UnityEngine.Object.Destroy(component3);
 		}
-		Sprite catBtnSprite = GetCatBtnSprite();
+		// 1.5.78: the copied button keeps the game's own sprite (no packed texture)
 		Image image = gameObject.GetComponent<Image>();
 		if (image == null)
 		{
@@ -1638,12 +1564,6 @@ public class CompanionPanel
 		}
 		if (image != null)
 		{
-			if (catBtnSprite != null)
-			{
-				image.sprite = catBtnSprite;
-				image.type = Image.Type.Simple;
-				image.preserveAspect = false;
-			}
 			image.color = Color.white;
 			image.raycastTarget = true;
 		}

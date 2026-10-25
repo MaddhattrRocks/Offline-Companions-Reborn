@@ -69,7 +69,7 @@ public class ShrinePanel : MonoBehaviour
 	{
 		Begin(200f, ModLocalization.Loc("hc_shrine_title"));
 		AddButton(_root.transform, ModLocalization.Loc("hc_shrine_opt_recover"), new Vector2(0f, -56f), new Vector2(Width - 60f, 44f), BuildRecover);
-		AddButton(_root.transform, ModLocalization.LocFmt("hc_shrine_opt_buy", CompanionTierData.Price.ToString("N0")), new Vector2(0f, -112f), new Vector2(Width - 60f, 44f), Purchase);
+		AddButton(_root.transform, ModLocalization.LocFmt("hc_shrine_opt_buy", CompanionTierData.Price.ToString("N0")), new Vector2(0f, -112f), new Vector2(Width - 60f, 44f), Summon);
 		CompanionsPlugin.Log.LogInfo("[Shrine] Menu opened");
 	}
 
@@ -142,11 +142,20 @@ public class ShrinePanel : MonoBehaviour
 		}, localizeText: false));
 	}
 
-	// the starting window, with a Purchase button; the coins are checked when it's pressed
-	private void Purchase()
+	// 1.5.78: the offering is checked here (user: "The check should pop-up a notification when you click on the button to
+	// bring up the menu to spawn a new NPC. If you dont have enough coins in the player inventory the custom menu should not
+	// open"); the coins are taken when the companion is summoned
+	private void Summon()
 	{
-		CompanionsPlugin.Log.LogInfo($"[Shrine] Purchase - price {CompanionTierData.Price}, you have {CompanionManager.CoinsInPack()} coins");
+		int price = CompanionTierData.Price;
+		int have = CompanionManager.CoinsInPack();
+		CompanionsPlugin.Log.LogInfo($"[Shrine] Summon - offering {price}, you have {have} coins");
 		Close();
+		if (have < price)
+		{
+			CompanionManager.ShowShortPopup(price, have);
+			return;
+		}
 		StarterCompanionPanel.ShowHirePanel();
 	}
 
@@ -169,7 +178,7 @@ public class ShrinePanel : MonoBehaviour
 		rt.anchorMax = new Vector2(0.5f, 0.5f);
 		rt.pivot = new Vector2(0.5f, 0.5f);
 		rt.sizeDelta = new Vector2(Width, height);
-		_root.GetComponent<Image>().color = BgColor;
+		GameLook.ApplyPanel(_root.GetComponent<Image>(), BgColor);
 		TextMeshProUGUI t = AddText(_root.transform, title, new Vector2(0f, -6f), new Vector2(Width - 60f, 34f), TextAlignmentOptions.Center);
 		t.fontSize = 20f;
 		t.color = LabelColor;
@@ -205,6 +214,29 @@ public class ShrinePanel : MonoBehaviour
 
 	private void AddButton(Transform parent, string label, Vector2 pos, Vector2 size, Action onClick)
 	{
+		// 1.5.78: a copy of the game's Craft button when there is one
+		GameObject template = GameLook.ButtonTemplate();
+		if (template != null)
+		{
+			GameObject copy = CompanionPanel.CreateButton(template, parent, "Btn", label);
+			RectTransform crt = copy.GetComponent<RectTransform>();
+			crt.anchorMin = new Vector2(0.5f, 1f);
+			crt.anchorMax = new Vector2(0.5f, 1f);
+			crt.pivot = new Vector2(0.5f, 1f);
+			crt.sizeDelta = size;
+			crt.anchoredPosition = pos;
+			Button cb = copy.GetComponent<Button>();
+			if (cb != null)
+			{
+				cb.interactable = true;
+				cb.onClick.AddListener(delegate
+				{
+					onClick?.Invoke();
+				});
+				return;
+			}
+			UnityEngine.Object.Destroy(copy);
+		}
 		GameObject go = new GameObject("Btn", typeof(RectTransform), typeof(Image), typeof(Button));
 		go.transform.SetParent(parent, worldPositionStays: false);
 		RectTransform rt = go.GetComponent<RectTransform>();

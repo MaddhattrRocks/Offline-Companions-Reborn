@@ -430,9 +430,11 @@ public static class CompanionManager
 		}
 		int price = CompanionTierData.Price;
 		int have = inv.CountItems("$item_coins");
+		// 1.5.78: checked again in case coins left the pack while the window was open; a game popup (the centre message was
+		// drawn under the window's backdrop - log b2e01999: 14 presses with 0 coins and nothing to see)
 		if (have < price)
 		{
-			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0"), (price - have).ToString("N0")));
+			ShowShortPopup(price, have);
 			return false;
 		}
 		if (!SpawnCompanion(appearance, CompanionTierData.Companion))
@@ -440,9 +442,27 @@ public static class CompanionManager
 			return false;
 		}
 		inv.RemoveItem("$item_coins", price);
-		CompanionsPlugin.Log.LogInfo($"[CompanionManager] Purchased a companion for {price} coins ({have - price} left)");
+		CompanionsPlugin.Log.LogInfo($"[CompanionManager] Summoned a companion for an offering of {price} coins ({have - price} left)");
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_hired"));
 		return true;
+	}
+
+	// 1.5.78: not enough coins for the offering - the game's own popup
+	internal static void ShowShortPopup(int price, int have)
+	{
+		string text = ModLocalization.LocFmt("hc_msg_hire_need", price.ToString("N0"), have.ToString("N0"), (price - have).ToString("N0"));
+		CompanionsPlugin.Log.LogInfo("[Shrine] " + text);
+		if (UnifiedPopup.IsAvailable() && !UnifiedPopup.IsVisible())
+		{
+			UnifiedPopup.Push(new WarningPopup(ModLocalization.Loc("hc_shrine_title"), text, delegate
+			{
+				UnifiedPopup.Pop();
+			}, localizeText: false));
+		}
+		else
+		{
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, text);
+		}
 	}
 
 	public static void SpawnStarterWithAppearance(CompanionAppearance appearance)

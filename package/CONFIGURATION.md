@@ -45,7 +45,7 @@ Every setting in the mod, what it does and what it starts at.
 The basics: what a companion costs, its health, stamina and carrying limits, and how far "home" reaches.
 
 **CompanionPrice** — Default: 1000 · Range: 0 – 50000  
-Coins it costs to purchase another companion at Odin's Shrine (shrine menu > Purchase a new companion), paid from your pack.
+The offering in coins to summon another companion at Odin's Shrine (shrine menu > Summon a new companion), paid from your pack.
 
 **SpawnStarterCompanion** — Default: On  
 The first time you enter a world with a character, you're offered one companion for free.

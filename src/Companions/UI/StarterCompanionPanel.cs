@@ -15,8 +15,6 @@ public class StarterCompanionPanel : MonoBehaviour
 
 	private GameObject _container;
 
-	private static Sprite _panelBgSprite;
-
 	private bool _refreshPending;
 
 	public static StarterCompanionPanel Instance { get; private set; }
@@ -57,22 +55,6 @@ public class StarterCompanionPanel : MonoBehaviour
 		}
 	}
 
-	private static Sprite GetPanelBgSprite()
-	{
-		if (_panelBgSprite != null)
-		{
-			return _panelBgSprite;
-		}
-		Texture2D texture2D = TextureLoader.LoadUITexture("PanelBackground");
-		if (texture2D == null)
-		{
-			return null;
-		}
-		_panelBgSprite = Sprite.Create(texture2D, new Rect(0f, 0f, texture2D.width, texture2D.height), new Vector2(0.5f, 0.5f), 100f);
-		_panelBgSprite.name = "StarterPanelBackground";
-		return _panelBgSprite;
-	}
-
 	private void Awake()
 	{
 		_canvas = base.gameObject.AddComponent<Canvas>();
@@ -97,17 +79,8 @@ public class StarterCompanionPanel : MonoBehaviour
 		component2.pivot = new Vector2(0.5f, 0.5f);
 		component2.sizeDelta = new Vector2(920f, 560f);
 		Image component3 = _container.GetComponent<Image>();
-		Sprite panelBgSprite = GetPanelBgSprite();
-		if (panelBgSprite != null)
-		{
-			component3.sprite = panelBgSprite;
-			component3.type = Image.Type.Simple;
-			component3.color = Color.white;
-		}
-		else
-		{
-			component3.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
-		}
+		// 1.5.78: the game's own panel background (was a packed texture)
+		GameLook.ApplyPanel(component3, new Color(0.05f, 0.05f, 0.08f, 0.95f));
 		component3.raycastTarget = true;
 		TMP_FontAsset tMP_FontAsset = ResolveFont();
 		GameObject gameObject = ResolveButtonTemplate();
@@ -197,7 +170,7 @@ public class StarterCompanionPanel : MonoBehaviour
 		gameObject.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.9f);
 		gameObject.GetComponent<Button>().onClick.AddListener(delegate
 		{
-			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Purchase cancelled" : "[StarterPanel] Skipped via close button — will re-appear next session");
+			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Summon cancelled" : "[StarterPanel] Skipped via close button — will re-appear next session");
 			Close();
 		});
 		GameObject gameObject2 = new GameObject("X", typeof(RectTransform));
@@ -267,7 +240,7 @@ public class StarterCompanionPanel : MonoBehaviour
 		}
 		if (Input.GetKeyDown(KeyCode.Escape) || ZInput.GetButtonDown("JoyBack"))
 		{
-			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Purchase cancelled" : "[StarterPanel] Skipped — will re-appear next session");
+			CompanionsPlugin.Log.LogInfo(_hire ? "[StarterPanel] Summon cancelled" : "[StarterPanel] Skipped — will re-appear next session");
 			Close();
 		}
 	}

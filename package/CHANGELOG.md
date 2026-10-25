@@ -3,6 +3,9 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Odin's Shrine: "Summon a new companion" checks your coins first - short, a popup says how many you have and need, and the window doesn't open; the coins are taken when you press Summon Companion.
+- The summon and starter windows have new text (Odin's offering), and both buttons say Summon Companion; hair and beard styles show their proper names.
+- The shrine menu and the companion customising window use the game's own window and button look instead of textures packed in the mod.
 - Odin's Shrine opens a menu: Recover lost companions (each companion with its status, a Recover button for a lost one) or Purchase a new companion (the customising window with a Purchase button; 1,000 coins from your pack, and it tells you how many you're short). The Shift+E hire is gone.
 - A tick latched on: the companion swings its whole combo at it while it has the stamina, and doesn't run away with it still feeding.
 - A tick latched on to a companion: it turns on it at once, lowers its guard (blocking only soaks the bites while it keeps feeding), doesn't step away, and swings without waiting to line up with it.
