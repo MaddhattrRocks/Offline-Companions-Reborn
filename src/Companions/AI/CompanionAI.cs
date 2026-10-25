@@ -146,6 +146,8 @@ public class CompanionAI : BaseAI
 
 	private Vector3 _lastFollowPos = Vector3.positiveInfinity;
 
+	private float _lastFollowPosAt = -1f;
+
 	private int _formationSlot = -1;
 
 	private CompanionSetup _setup;
@@ -596,6 +598,7 @@ public class CompanionAI : BaseAI
 		_attachedShip = ship;
 		_attachedChair = chair;
 		_isOnShip = true;
+		_lastFollowPos = Vector3.positiveInfinity;
 		WaterSafety.Clear(m_character);
 		CapsuleCollider component = GetComponent<CapsuleCollider>();
 		if (component != null)
@@ -672,6 +675,7 @@ public class CompanionAI : BaseAI
 		}
 		_isOnShip = false;
 		_attachedShip = null;
+		_lastFollowPos = Vector3.positiveInfinity;
 		Chair seat = _attachedChair;
 		_attachedChair = null;
 		// 1.5.85: stands up where it sat, as you do (Player.AttachStop: the seat's detach offset) - onto the deck next to
@@ -1155,7 +1159,10 @@ public class CompanionAI : BaseAI
 		{
 			Vector3 position = m_follow.transform.position;
 			float num = Vector3.Distance(base.transform.position, position);
-			if (!float.IsInfinity(_lastFollowPos.x) && Vector3.Distance(_lastFollowPos, position) > 15f)
+			// 1.5.86: a jump of 15 m only counts as a portal when the last look was just now - after the follow code was skipped
+			// (seated on a ship, asleep, a menu) the old spot is stale (user, log 79fb1bde: "When I jumped off the boat they
+			// teleported to me" - it had your spot from when it sat down)
+			if (!float.IsInfinity(_lastFollowPos.x) && Time.time - _lastFollowPosAt < 0.5f && Vector3.Distance(_lastFollowPos, position) > 15f)
 			{
 				TeleportToFollowTarget();
 			}
@@ -1168,6 +1175,7 @@ public class CompanionAI : BaseAI
 				TeleportToFollowTarget();
 			}
 			_lastFollowPos = position;
+			_lastFollowPosAt = Time.time;
 		}
 		else if (m_follow == null)
 		{

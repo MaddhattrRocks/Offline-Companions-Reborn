@@ -188,6 +188,13 @@ internal static class MHR_Board
 	}
 
 	// the ship under a character standing on its deck (a short ray down onto the ship's own colliders)
+	// 1.5.86: you count as aboard when the ship has you on its list of players aboard (log 79fb1bde: you'd loaded in aboard,
+	// the ray missed you, and it set off getting off the ship)
+	private static bool Aboard(Player p, Ship ship)
+	{
+		return p != null && ship != null && (ShipUnder(p) == ship || ship.IsPlayerInBoat(p));
+	}
+
 	internal static Ship ShipUnder(Character c)
 	{
 		if (c == null)
@@ -335,6 +342,10 @@ internal static class MHR_Board
 		Ship ship = ShipUnder(p);
 		Ship mine = ShipUnder(c);
 		S s = Get(ai);
+		if (mine != null && ship != mine && Aboard(p, mine))
+		{
+			ship = mine;
+		}
 		// 1.5.85: on a ship you're not on - walk to its side nearest you and get off (no teleport)
 		if (mine != null && mine != ship)
 		{
@@ -351,7 +362,7 @@ internal static class MHR_Board
 		{
 			if (Flat(ai.transform.position, p.transform.position) > 2.5f && MHR_Deck.SpotNear(ship, p.transform.position, out Vector3 near))
 			{
-				MHR_Deck.Walk(ai, ship, near, 1.5f, out _);
+				MHR_Deck.Walk(ai, ship, near, 1.5f, out _, walkLast: 0f);
 			}
 			else
 			{
@@ -417,12 +428,13 @@ internal static class MHR_Board
 		Vector3 you = p.transform.position;
 		if (MHR_Deck.SpotNear(ship, you, out Vector3 side))
 		{
-			bool there = MHR_Deck.Walk(ai, ship, side, 0.5f, out bool stuck);
+			bool there = MHR_Deck.Walk(ai, ship, side, 0.5f, out bool stuck, walkLast: 0f);
 			if (!there && !stuck)
 			{
 				return true;
 			}
 		}
+		MHR_Deck.Release(ai);
 		Vector3 dir = you - me;
 		dir.y = 0f;
 		if (dir.sqrMagnitude < 0.01f)
@@ -502,7 +514,7 @@ internal static class MHR_Board
 		{
 			return false;
 		}
-		if (ShipUnder(owner) == ship || !owner.IsOnGround() || Vector3.Distance(owner.transform.position, ai.transform.position) > 40f)
+		if (Aboard(owner, ship) || !owner.IsOnGround() || Vector3.Distance(owner.transform.position, ai.transform.position) > 40f)
 		{
 			s.OwnerOffSince = -1f;
 			return false;
@@ -553,7 +565,7 @@ internal static class MHR_Board
 					Log($"{name} is aboard - walking to a seat: '{SeatPath(seat.transform, ship.transform)}' at {local:F2} on the ship");
 				}
 				Vector3 spot = MHR_Deck.SpotNear(ship, seat.m_attachPoint.position, out Vector3 l2) ? l2 : local;
-				bool there = MHR_Deck.Walk(ai, ship, spot, 0.6f, out bool stuck);
+				bool there = MHR_Deck.Walk(ai, ship, spot, 0.6f, out bool stuck, walkLast: 1f);
 				if (!there && !stuck && now - s.SeatSince < 20f)
 				{
 					return true;
@@ -591,7 +603,8 @@ internal static class MHR_Board
 				continue;
 			}
 			float d = Vector3.Distance(me, l.transform.position);
-			if (d < l.m_useDistance - 0.1f)
+			// 1.5.86: swimming or standing, like you - not mid-dive (log 79fb1bde: it used the ladder in the air from 4.9 m)
+			if (d < l.m_useDistance - 0.1f && (c.IsSwimming() || c.IsOnGround()))
 			{
 				l.Interact(h, hold: false, alt: false);
 				Log(name + " used the ship's ladder");

@@ -347,7 +347,8 @@ internal static class MHR_Deck
 	}
 
 	// walks on the deck to a spot in the ship's frame; true once within `dist` of it. Only for a companion on that deck.
-	internal static bool Walk(CompanionAI ai, Ship ship, Vector3 goalLocal, float dist, out bool stuck)
+	// 1.5.86: jogs; walks only for the last `walkLast` metres (a seat) - was the last 3 m (log 79fb1bde: "moving very slow")
+	internal static bool Walk(CompanionAI ai, Ship ship, Vector3 goalLocal, float dist, out bool stuck, float walkLast = 1f)
 	{
 		stuck = false;
 		Grid g = For(ship);
@@ -402,7 +403,7 @@ internal static class MHR_Deck
 			return false;
 		}
 		dir.Normalize();
-		bool walk = left < 3f;
+		bool walk = left < walkLast;
 		if (c != null && walk != w.Walking)
 		{
 			c.SetWalk(walk);
