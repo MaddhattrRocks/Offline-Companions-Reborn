@@ -35,6 +35,9 @@ internal static class MHR_Board
 		public bool HasShore;
 		public Vector3 Shore;
 		public float TreadSince = -1f;
+		public float WadeBest = float.MaxValue;
+		public float WadeAt = -1f;
+		public bool WadeGaveUp;
 		public float HoldUntil;
 		public Ship HoldShip;
 		public Ship SatOn;
@@ -175,6 +178,9 @@ internal static class MHR_Board
 		s.SeatSince = -1f;
 		s.LaunchTried = false;
 		s.HasLaunch = false;
+		s.WadeBest = float.MaxValue;
+		s.WadeAt = -1f;
+		s.WadeGaveUp = false;
 		MHR_Mover.Release(ai);
 		MHR_Deck.Release(ai);
 		Log(ai.GetComponent<Character>()?.m_name + (auto ? " is following you aboard" : " is boarding the ship"));
@@ -674,7 +680,8 @@ internal static class MHR_Board
 		// a swim longer than it has stamina for at all: say so and wait on the shore
 		// 1.5.88: from the launch spot when it has one (log 5930316c: gave up on the walking route's 9 m swim, then dived in from
 		// 4.4 m and made it when you ordered it), and only to within reach of the ladder
-		float swimM = s.HasLaunch && near != null ? Mathf.Max(0f, Flat(s.Launch, near.transform.position) - LadderReach) : MHR_Mover.RouteSwim(ai);
+		// 1.5.92: already in the water (wading) - straight at the ladder, not the walking route round the dock
+		float swimM = s.HasLaunch && near != null ? Mathf.Max(0f, Flat(s.Launch, near.transform.position) - LadderReach) : (near != null && MHR_Water.DepthAt(me) > 0.3f ? Mathf.Max(0f, flatL - LadderReach) : MHR_Mover.RouteSwim(ai));
 		if (swimM > 0.5f && stam != null && stam.MaxStamina > 0f && !c.IsSwimming())
 		{
 			float needSwim = MHR_Water.SwimStamina(c, swimM) * 1.25f + 5f;
@@ -738,6 +745,9 @@ internal static class MHR_Board
 						s.NextJump = now + 2f;
 						s.ProgressAt = now;
 						MHR_Jump.Leap(ai, c, dirL);
+						// 1.5.92: the launch spot is used once (log 571a5159: it landed in the shallows, walked the long way back
+						// round the dock to the launch spot and dived again - three times)
+						s.HasLaunch = false;
 						Log($"{name} diving in towards the ladder ({flatL:F1} m)");
 					}
 					return true;
@@ -772,6 +782,41 @@ internal static class MHR_Board
 					Log($"{name} jumping aboard ({gap:F1} m across, {dy:+0.0;-0.0} m up)");
 					return true;
 				}
+			}
+		}
+		// 1.5.92: standing in the water short of swimming depth with the ladder close: wade straight at it like you - the
+		// ladder is used from the shallows once it's in reach (above), or it swims when it gets deep. No headway for 4 s ->
+		// the normal route to the ladder.
+		if (near != null && !s.WadeGaveUp && !c.IsSwimming() && flatL <= 15f && MHR_Water.DepthAt(me) > 0.3f)
+		{
+			if (s.WadeAt < 0f)
+			{
+				s.WadeAt = now;
+				s.WadeBest = flatL;
+				Log($"{name} wading to the ladder ({flatL:F1} m)");
+			}
+			if (flatL < s.WadeBest - 0.3f)
+			{
+				s.WadeBest = flatL;
+				s.WadeAt = now;
+				s.ProgressAt = now;
+			}
+			if (now - s.WadeAt > 4f)
+			{
+				s.WadeGaveUp = true;
+				Log(name + " can't wade any closer to the ladder - going round");
+			}
+			else
+			{
+				Vector3 toW = near.transform.position - me;
+				toW.y = 0f;
+				if (toW.sqrMagnitude > 0.01f)
+				{
+					toW.Normalize();
+					ai.transform.rotation = Quaternion.LookRotation(toW);
+					ai.MoveTowards(toW, run: false);
+				}
+				return true;
 			}
 		}
 		// your own steps onto the ship, once it's been stuck for a while

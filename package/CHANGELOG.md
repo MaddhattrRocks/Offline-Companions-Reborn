@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.6
+- Boarding through shallow water: a companion that lands in the shallows wades straight to the ship's ladder and uses it from there (or swims once it's deep), instead of running back round the dock to dive in again.
 - An enemy a companion gave up on because it couldn't reach it (out in deep water) is taken on again as soon as it can be reached, or as soon as it attacks you or the companion - it used to be ignored for 20 s even after it came ashore and went for you.
 - Pointing the command key at a beehive sends a companion to empty it and keep the honey (it says so when there's none yet).
 - Fixed the overhead stamina bar turning into a plain grey bar after a portal (or after the companion was out of range).
