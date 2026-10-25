@@ -89,7 +89,8 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | An enemy | Attack it |
 | A tree, rock or ore | Gather it |
 | A cart | Hitch up and pull it (point again to unhitch) |
-| A ship | Board it (jumping aboard, the ship's ladder, or swimming to it) and take a seat, or stand on deck if none is free |
+| A ship | Board it (jumping aboard, or diving in and using the ship's ladder) and take a seat, or stand on deck if none is free |
+| A seat on a ship | Take that seat (moving to it if already aboard) |
 | A bed | Go to sleep in it (point again to wake them) |
 | A fire | Sit by it (point again to get up) |
 | A closed door | Open it |
