@@ -300,7 +300,7 @@ Fighting defensively (DungeonDefensive): enemies within this many meters of you 
 **OrderHoldTime** — Default: 10 · Range: 0 – 60  
 After you recall a companion or send it somewhere, it leaves its fight and starts no new one for this many seconds - it still fights back against something hitting it up close. Companions only ever fight enemies they can see (not ones behind walls or closed doors), and only open a door to get at one when you order the attack.
 
-**LeashFromYou** — Default: 25 · Range: 10 – 60  
+**LeashFromYou** — Default: 35 · Range: 10 – 60  
 A companion lets an enemy go once it is further than this many meters from you, and starts no fight with one that far from you - it comes back to you instead. An attack order, or something hitting it up close, still keeps the fight going.
 
 **GiveUpTime** — Default: 10 · Range: 3 – 60  

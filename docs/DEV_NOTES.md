@@ -35,6 +35,10 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.6 release (user, 2026-10-26)
+- README highlights for 1.5.6 approved; Future Plans rewritten (next: second combat review with per-enemy strategies, combat on ships, late-game features and weapons, animal husbandry; Haldor recruiting dropped).
+- Combat LeashFromYou default 25 -> 35 m (user: "35m is fine"): bow draws start inside 30 m, so 25 m cut off shots at the edge of bow range on your side; 40 m would overlap the fixed 40 m CombatLeash (enemy from the companion itself) and the 50 m follow catch-up. Existing config files keep their saved value.
+
 ### 1.5.93 - boarding: jump aboard first (user, log c22fc35d (1.5.92): "kept jumping into the water to get to the ladder when they could jump directly onto the boat deck")
 - Log c22fc35d: three boardings, dive -> wade/tread -> ladder each time, never "jumping aboard". The near-ladder branch (ladder within 8 m or at the launch spot: dive / walk straight) returned before the jump-aboard check, and the launch spot is the dry ground nearest the ladder, not a spot in jump reach of the deck.
 - MHR_Board: JumpCheck(c, ship, from, cols, ...) (DeckSpot on our side, 0.3-4 m across, <= 1.6 m up / 3 m down, MHR_Jump.Reach + 0.3, clear line); TryJumpAboard runs before the takeoff/launch/dive steps (every 1.5 s, on the ground, not swimming), and logs one near miss per boarding ("can't jump aboard from ...: gap, up, reach, clear").

@@ -13,7 +13,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 ## Recent Highlights (v1.5.6)
 - **Fights like a player.** Companions swing full combos, block or parry by chance (better with skill), keep just out of an enemy's reach and go in on an opening, work round behind an enemy busy with you, and keep stamina back for blocking. Ticks latched on are fought first.
 - **Bows like a player.** Companions draw before each shot (quicker, weaker draws up close), Ranged stance carries the bow, and Balanced takes the bow for enemies its sword can't reach - out in deep water, a level up or down.
-- **Smarter about where they fight.** Only enemies they can see; no doors opened mid-fight; defensive in dungeons; no swimming out after enemies; back to you if a fight drifts more than 25 m away; and they follow you through dungeon doors even mid-fight.
+- **Smarter about where they fight.** Only enemies they can see; no doors opened mid-fight; defensive in dungeons; no swimming out after enemies; back to you if a fight drifts more than 35 m away; and they follow you through dungeon doors even mid-fight.
 - **Ships.** Companions get aboard like a player - jumping on from the dock, or swimming and wading to the ladder - walk to a seat (or the one you point at), and get off with you when you go ashore. No more teleporting on and off.
 - **Odin's Shrine.** Summon more companions for an offering of coins, and recover lost ones - or one you unsummoned by mistake - from the shrine's menu.
 - **Beehives.** Point the command key at a beehive and a companion empties it and keeps the honey.
@@ -229,14 +229,19 @@ Install with a mod manager (recommended), or manually drop `Companions.dll` into
 
 ## Future Plans
 
+Next up:
+- A second combat review: strategies for each kind of enemy (ticks, leapers, ranged and flying enemies, bosses) and better weapon choice.
+- Combat on ships: companions get up from their seats to defend the ship and shoot over the side.
+- More late-game features and weapons: magic staffs, crossbows and the gear and dangers of the later biomes.
+- Animal husbandry: caring for tamed animals - feeding, keeping them penned, breeding.
+
+Later:
 - Keep developing the companion AI so it behaves more like another player.
 - More multiplayer features.
 - A review of skills and stats (health, regen, stamina, skill gains) against a player's.
-- Combat improvements.
-- A full ship and cart review.
+- A cart review.
 - Outposts: a way for companions to treat a second base like home.
 - Smarter chest organisation (ore near the smelter, food near the cooking stations…).
-- Add a way to recruit companions from Haldor's shop.
 
 ## Source
 
