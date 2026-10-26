@@ -36,6 +36,7 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
 ### 1.5.6 release (user, 2026-10-26)
+- Hexium rejected the zip: "CHANGELOG.md is too long, max: 100000" (it was 104,980 characters). Split (user: "The change log mostly wont be read by anyone so the entries can be fairly brief for the zip builds"): `package/CHANGELOG.md` keeps 1.5.0 on with brief lines (1.5.6 cut to 12), plus a link to `CHANGELOG-full.md` (repo root, the full history with every detail). From now on: brief lines in the package changelog, detail in CHANGELOG-full.md.
 - README highlights for 1.5.6 approved; Future Plans rewritten (next: second combat review with per-enemy strategies, combat on ships, late-game features and weapons, animal husbandry; Haldor recruiting dropped).
 - Combat LeashFromYou default 25 -> 35 m (user: "35m is fine"): bow draws start inside 30 m, so 25 m cut off shots at the edge of bow range on your side; 40 m would overlap the fixed 40 m CombatLeash (enemy from the companion itself) and the 50 m follow catch-up. Existing config files keep their saved value.
 
