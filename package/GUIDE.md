@@ -89,7 +89,9 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | An enemy | Attack it |
 | A tree, rock or ore | Gather it |
 | A cart | Hitch up and pull it (point again to unhitch) |
-| A ship | Board it and take a seat |
+| A ship | Board it (jumping aboard, or diving in and using the ship's ladder) and take a seat, or stand on deck if none is free |
+| A beehive | Empty it and keep the honey |
+| A seat on a ship | Take that seat (getting up and walking over if already aboard) |
 | A bed | Go to sleep in it (point again to wake them) |
 | A fire | Sit by it (point again to get up) |
 | A closed door | Open it |
@@ -97,6 +99,8 @@ Look at something and press the **command key** (`Z`). Your nearby companions do
 | A crafting station | Repair their gear there |
 | Their tombstone | Go and collect their things |
 | The ground | Walk there and wait |
+
+**Ships.** When you're aboard a ship close by, following companions get on too (Follow > AutoBoard): they jump aboard from a dock or the shore (from where you jumped, or the nearest spot in jump reach), use the ship's ladder (swimming to it if they have the stamina), or follow your own steps aboard. They walk across the deck to a free seat, or stand on deck near you if none is free. If one can't get aboard it says so and waits on dry land nearby; a swim to the ladder it doesn't have the stamina for (well fed, a companion has more) is one it won't try. A seated companion that is following you gets up again when you go ashore and walks, jumps or swims off after you.
 
 - **Hold** the command key to call your companions to you.
 - **Keep holding** for about 2 seconds to call **every** companion, however far away, including ones with Command switched off.
@@ -321,7 +325,7 @@ A companion can carry 300 weight, the same as a player.
 |:---|:---|
 | **Balanced** | Chooses melee or a bow/crossbow depending on distance |
 | **Passive** | Never starts a fight; just follows or works |
-| **Ranged** | Prefers a bow or crossbow and keeps its distance |
+| **Ranged** | Carries its bow and keeps its distance; the melee weapon and shield only come out when an enemy gets close (Combat > RangedMeleeRange) |
 | **Melee** | Sticks to melee weapons |
 
 **Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
@@ -332,12 +336,20 @@ A companion can carry 300 weight, the same as a player.
 - Anything that attacks them is always fought back.
 
 **How they fight**
-- **Blocking:** they block with a shield, parry and counter-attack.
-- **Several attackers:** they switch to their best blocking shield (a tower shield, say) when 3 or more enemies attack at once.
+- **Combos:** with a melee weapon they swing the weapon's combo (3 swings, the last one for double damage) when there's an opening, then guard or step back out of reach. Low on stamina, the combo is shorter.
+- **Spacing:** one on one, they keep just outside the enemy's reach and go in for a combo when it can't swing again in time (it just swung, or it's staggered), then step back out. A swing at the edge of its reach they usually step back from instead of blocking.
+- **Flanking:** when an enemy is busy with you or someone else, they work round behind it and attack from there, out of its swings. (The game's backstab bonus only counts on enemies that haven't noticed anyone.)
+- **Openings:** they swing when nothing is swinging at them, when their target is staggered, or right after a swing at them has landed on their shield. A staggered enemy (after a parry, say) always gets at least one hit, even while they're catching their breath.
+- **Blocking:** they block swings that can reach them. Some blocks are parries, more often as their Blocking skill rises; the rest are plain blocks.
+- **Stepping out:** now and then they step back or aside out of a swing instead of blocking, when there's safe ground to step to.
+- **Stamina:** they keep some stamina back for blocking. Low on stamina, they step back out of the enemy's reach and guard while their breath comes back, walk up to the next enemy meanwhile, and only fight on if they can't get clear. An enemy one or two hits from dead is finished off even if it empties their stamina, as long as nothing else is close enough to hit them.
+- **Walls:** if their swings would hit your walls and there's a clear spot next to the enemy, they move there between combos.
+- **Several attackers:** with enemies on them from different sides, they move until all of them are on one side. With 3 or more on them, they switch to their best blocking shield (a tower shield, say).
+- These are chances, not certainties - they misjudge now and then. `[Combat] FightLikePlayer` off goes back to the older one-swing-at-a-time fighting.
 - **Weapon choice:** they pick the weapon that does the most damage to *this* enemy, using its weaknesses and resistances.
 - **Fire:** they open with a torch against enemies weak to fire, then switch back.
 - **Bows and crossbows:** used only when they carry the matching ammo, at 15 m and beyond. Under 12 m they switch back to melee.
-- **Low health:** below 30% they fight defensively, and below 15% they run.
+- **Low health:** below 30% they fight defensively, and below 15% they run - to you, when the enemy isn't in the way.
 - **Backstabs:** companions don't take backstab damage.
 
 **After the fight**
@@ -382,7 +394,11 @@ With Pickup on, they go and pick up what the kill dropped (within 30 m). They wo
 
 Your game keeps a roster of your companions in each world, saving each one's gear and settings every minute while it's near you, and whenever the game saves your character (including when you log out or quit). If a companion goes missing for good (for example deleted by a server without the mod), you can bring it back.
 
-**Odin's Shrine.** Build one with the hammer (Misc tab, next to a workbench) for 10 stone, 5 wood and 3 greydwarf eyes. It looks like a gravestone (or a ward stone, with Death > ShrineModel). Use it to see your companions in this world and their status. For each one that's Lost or Unknown it asks whether to bring it back; say Yes and it appears next to the shrine, say No to move on to the next one. You can change the cost with Death > ShrineRecipe, or turn the shrine off with Death > ShrineBuildable.
+**Odin's Shrine.** Build one with the hammer (Misc tab, next to a workbench) for 10 stone, 5 wood and 3 greydwarf eyes. It looks like a gravestone (or a ward stone, with Death > ShrineModel). Use it to open the shrine (Use again, Escape or walking away closes it), with two buttons. **Recover** lists your companions in this world with their status; if any can be brought back (Lost, Unknown, or Unsummoned this session) press Recover, and it asks about each one in turn - Yes brings it back next to the shrine. A dead one comes back from its tombstone by itself. **Summon** is below.
+
+**Unsummoned by mistake?** With General > RecoverUnsummoned on (the default), an unsummoned companion stays on the shrine's list as Unsummoned until you next load the world. Recovering it brings back its name, looks, skills and settings, but not its gear - that's in the tombstone where it was unsummoned. You can change the cost with Death > ShrineRecipe, or turn the shrine off with Death > ShrineBuildable.
+
+**Summoning another companion.** Press Summon at the shrine. Odin asks for an offering of 1,000 coins from your pack (General > CompanionPrice): if you're short, a popup tells you how many coins you have and how many more you need, and nothing opens. Otherwise you choose its looks in the same panel as your first companion and press Summon Companion at the bottom; the coins are taken then.
 
 **From the config** (no shrine needed):
 

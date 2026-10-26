@@ -325,6 +325,7 @@ public class CompanionRadialMenu : MonoBehaviour
 	{
 		if (!(companion == null))
 		{
+			ModUiLayers.LogSceneLayers("Command wheel");
 			// 1.4.152: its player opens the wheel - their game runs the companion, so what they pick takes effect
 			if (MHR_Owner.IsMine(companion))
 			{
@@ -770,7 +771,7 @@ public class CompanionRadialMenu : MonoBehaviour
 		gameObject.transform.SetParent(base.transform, worldPositionStays: false);
 		_canvas = gameObject.GetComponent<Canvas>();
 		_canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-		_canvas.sortingOrder = 30;
+		_canvas.sortingOrder = ModUiLayers.RadialMenu;
 		CanvasScaler component = gameObject.GetComponent<CanvasScaler>();
 		component.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 		component.referenceResolution = new Vector2(1920f, 1080f);
@@ -1722,7 +1723,9 @@ public class CompanionRadialMenu : MonoBehaviour
 				MHR_DespawnConfirmed();
 				return;
 			}
-			UnifiedPopup.Push(new YesNoPopup(ModLocalization.Loc("hc_despawn_popup_title"), string.Format(ModLocalization.Loc("hc_despawn_popup_text"), arg), MHR_DespawnConfirmed, MHR_DespawnCancelled, localizeText: false));
+			// 1.5.80: says when Odin's Shrine can still bring them back ([General] RecoverUnsummoned)
+			string despawnText = string.Format(ModLocalization.Loc("hc_despawn_popup_text"), arg) + ((ModConfig.RecoverUnsummoned?.Value ?? true) ? "\n\n" + ModLocalization.Loc("hc_despawn_popup_recover") : "");
+			UnifiedPopup.Push(new YesNoPopup(ModLocalization.Loc("hc_despawn_popup_title"), despawnText, MHR_DespawnConfirmed, MHR_DespawnCancelled, localizeText: false));
 			CompanionsPlugin.Log.LogInfo($"[Radial] Despawn — asking for confirmation for \"{arg}\"");
 		}
 	}

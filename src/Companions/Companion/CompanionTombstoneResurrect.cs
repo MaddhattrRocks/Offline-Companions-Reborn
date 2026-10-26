@@ -137,15 +137,15 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 		{
 			return null;
 		}
-		string text4 = (string.IsNullOrEmpty(text) ? "Companion" : text);
+		string text4 = (string.IsNullOrEmpty(text) ? ModLocalization.Loc("hc_tier_companion") : text);
 		if (_isHolding)
 		{
 			float num = Time.time - _holdStartTime;
 			float num2 = Mathf.Clamp01(num / 7f);
 			int num3 = Mathf.RoundToInt(num2 * 100f);
-			return $"{text4}\n[<color=yellow><b>$KEY_Use</b></color>] Resurrecting... {num3}%";
+			return text4 + "\n[<color=yellow><b>$KEY_Use</b></color>] " + ModLocalization.LocFmt("hc_tomb_resurrecting", num3);
 		}
-		return text4 + "\n[<color=yellow><b>$KEY_Use</b></color>] Hold to resurrect";
+		return text4 + "\n[<color=yellow><b>$KEY_Use</b></color>] " + ModLocalization.Loc("hc_tomb_hold_resurrect");
 	}
 
 	internal static void MHR_RemoveGravePinNear(Vector3 pos)

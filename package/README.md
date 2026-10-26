@@ -10,25 +10,13 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down.
 
-## Recent Highlights (v1.5.5)
-
-This is a big update. With working jobs! The short version:
-
-- **New movement.** Companions find their own way around your base like a player: opening and closing doors as they go, lining up with doorways, hopping steps, dropping off ledges, jumping streams and small gaps, and walking around water instead of swimming when the dry way isn't much longer.
-- **Idle behaviour.** A companion whose job has nothing to do no longer just stands there. It does small chores nearby, sits down, wanders over to check on stations and chests, or comes over for a chat — and gets straight back to work the moment there's something to do.
-- **Repair and Restock.** A new job that keeps your base running: repairs damaged building pieces with a hammer, keeps fires, torches, braziers and hot tubs fuelled, empties beehives, stacks surplus wood and stone into piles, and sorts your chests.
-- **Cooking.** Cooks and brews at every kind of cooking station like a player: cauldron, prep table, mead ketill, spit, iron cooking station, oven and fermenters, keeping its own fires lit and brewing the meads you'll need for the next boss first.
-- **Gathering works like Hunt.** With Follow on, Wood, Stone, Ore and Forage only go for what's close to you as you travel. With Follow off they work an area. Early in the game they also pick up branches, stones and flint by hand.
-- **Your orders come first.** Every order you give takes priority over the companion's job, and the job picks up where it left off afterwards.
-- **Multiplayer.** A companion always treats its owner as its player, even when another player's game happens to be running it. It uses chests safely (no lost or duplicated items) and respects wards and private chests.
-- **Companion recovery (1.5.1).** Your game keeps a roster of your companions. General > ShowCompanionRoster shows whether each one is Alive, Dead, Lost or Unknown, and General > RecoverLostCompanion brings a lost one back with its gear. Or build Odin's Shrine (cheap, early game) to see them and bring one back.
-- **Ladders and safer movement (1.5.3).** Companions climb ladders like a player, including towers of short ladders and ladders in world ruins, and follow your exact path up a tight tower when they can't find their own way. They stop at the edge of drops that would hurt and take fall damage like a player.
-- **Stays where you left it (1.5.3).** A companion with Follow off no longer follows you after loading in, and with nothing to do it idles where it is instead of wandering back to where it first appeared or to a far-off home.
-- **Better hunting (1.5.4).** Hunters walk up quietly, sneak the last stretch and stop for breath when they need to. With a spear they throw from range and go pick it back up, and they switch to a closer animal before striking.
-- **Tells you what it's doing (1.5.5).** A status line under its name says what it's doing, and when a job is stuck, why - with the numbers from your settings ("Wood 512/500 - at the limit."). Companions talk far less, and what they say fits what they're doing and where they are.
-- **Gear first after death (1.5.5).** A revived companion gets its gear back from its tombstone when it's safe, eats, then goes back to its stance. A message says where it came back. Added keybinds for swapping stances (unbound by default).
-- **Farming on tilled ground (1.5.5).** Ground you've tilled counts as a farm zone.
-- **Cleaned-up settings.** The config file has been reorganised into clear sections with plain-language descriptions. Settings you'd already changed are carried over automatically.
+## Recent Highlights (v1.5.6)
+- **Fights like a player.** Companions swing full combos, block or parry by chance (better with skill), keep just out of an enemy's reach and go in on an opening, work round behind an enemy busy with you, and keep stamina back for blocking. Ticks latched on are fought first.
+- **Bows like a player.** Companions draw before each shot (quicker, weaker draws up close), Ranged stance carries the bow, and Balanced takes the bow for enemies its sword can't reach - out in deep water, a level up or down.
+- **Smarter about where they fight.** Only enemies they can see; no doors opened mid-fight; defensive in dungeons; no swimming out after enemies; back to you if a fight drifts more than 35 m away; and they follow you through dungeon doors even mid-fight.
+- **Ships.** Companions get aboard like a player - jumping on from the dock, or swimming and wading to the ladder - walk to a seat (or the one you point at), and get off with you when you go ashore. No more teleporting on and off.
+- **Odin's Shrine.** Summon more companions for an offering of coins, and recover lost ones - or one you unsummoned by mistake - from the shrine's menu.
+- **Beehives.** Point the command key at a beehive and a companion empties it and keeps the honey.
 
 See `CHANGELOG.md` for the version-by-version detail.
 
@@ -241,14 +229,19 @@ Install with a mod manager (recommended), or manually drop `Companions.dll` into
 
 ## Future Plans
 
+Next up:
+- A second combat review: strategies for each kind of enemy (ticks, leapers, ranged and flying enemies, bosses) and better weapon choice.
+- Combat on ships: companions get up from their seats to defend the ship and shoot over the side.
+- More late-game features and weapons: magic staffs, crossbows and the gear and dangers of the later biomes.
+- Animal husbandry: caring for tamed animals - feeding, keeping them penned, breeding.
+
+Later:
 - Keep developing the companion AI so it behaves more like another player.
 - More multiplayer features.
 - A review of skills and stats (health, regen, stamina, skill gains) against a player's.
-- Combat improvements.
-- A full ship and cart review.
+- A cart review.
 - Outposts: a way for companions to treat a second base like home.
 - Smarter chest organisation (ore near the smelter, food near the cooking stations…).
-- Add a way to recruit companions from Haldor's shop.
 
 ## Source
 

@@ -112,6 +112,7 @@ public class ConfigPanel : MonoBehaviour
 		{
 			Build();
 		}
+		ModUiLayers.LogSceneLayers("F8 panel");
 		if (IsBrokenTmpFont(_font))
 		{
 			TMP_FontAsset tMP_FontAsset = ResolveFont();
@@ -207,7 +208,7 @@ public class ConfigPanel : MonoBehaviour
 	{
 		_canvas = base.gameObject.AddComponent<Canvas>();
 		_canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-		_canvas.sortingOrder = 31;
+		_canvas.sortingOrder = ModUiLayers.ConfigPanel;
 		CanvasScaler canvasScaler = base.gameObject.AddComponent<CanvasScaler>();
 		canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 		canvasScaler.referenceResolution = new Vector2(1920f, 1080f);
@@ -1059,7 +1060,7 @@ public class ConfigPanel : MonoBehaviour
 		{
 			btnImg.color = (typed.Value ? GoldColor : TabInactive);
 		}
-		GameObject gameObject4 = CreateLabel(gameObject3.transform, typed.Value ? "ON" : "OFF", 11f, Color.white);
+		GameObject gameObject4 = CreateLabel(gameObject3.transform, ModLocalization.Loc(typed.Value ? "hc_radial_on" : "hc_radial_off"), 11f, Color.white);
 		RectTransform component3 = gameObject4.GetComponent<RectTransform>();
 		component3.anchorMin = Vector2.zero;
 		component3.anchorMax = Vector2.one;
@@ -1072,13 +1073,13 @@ public class ConfigPanel : MonoBehaviour
 		{
 			typed.Value = !typed.Value;
 			btnImg.color = (typed.Value ? GoldColor : (hasToggleSprite ? Color.white : TabInactive));
-			btnTMP.text = (typed.Value ? "ON" : "OFF");
+			btnTMP.text = (ModLocalization.Loc(typed.Value ? "hc_radial_on" : "hc_radial_off"));
 		});
 		CreateDefaultButton(gameObject.transform, entry, delegate
 		{
 			typed.Value = (bool)entry.DefaultValue;
 			btnImg.color = (typed.Value ? GoldColor : (hasToggleSprite ? Color.white : TabInactive));
-			btnTMP.text = (typed.Value ? "ON" : "OFF");
+			btnTMP.text = (ModLocalization.Loc(typed.Value ? "hc_radial_on" : "hc_radial_off"));
 		});
 		_entryData.Add(entry);
 		_entrySliders.Add(null);
@@ -1086,7 +1087,7 @@ public class ConfigPanel : MonoBehaviour
 		{
 			typed.Value = (bool)entry.DefaultValue;
 			btnImg.color = (typed.Value ? GoldColor : (hasToggleSprite ? Color.white : TabInactive));
-			btnTMP.text = (typed.Value ? "ON" : "OFF");
+			btnTMP.text = (ModLocalization.Loc(typed.Value ? "hc_radial_on" : "hc_radial_off"));
 		});
 		return gameObject;
 	}

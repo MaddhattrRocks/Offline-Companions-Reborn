@@ -21,7 +21,7 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	public const string PluginName = "Offline Companions Reborn";
 
-	public const string PluginVersion = "1.5.5";
+	public const string PluginVersion = "1.5.6";
 
 	private static Harmony _harmony;
 
@@ -160,6 +160,14 @@ public class CompanionsPlugin : BaseUnityPlugin
 		catch (Exception ex)
 		{
 			Log.LogWarning("[Respawn] Tracker error: " + ex.ToString());
+		}
+		try
+		{
+			PlayerCombatLog.Tick();
+		}
+		catch (Exception ex3)
+		{
+			Log.LogWarning("[You] Player combat log error: " + ex3.Message);
 		}
 		try
 		{
