@@ -97,6 +97,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - Game look for the rest of the UI (user, 1.5.78): ConfigPanel (F8), HUD bars, interact panel, command wheel icons still use the packed PNGs.
 - Bow-swap cooldown (user, 1.5.76): especially for fast-moving targets, so Balanced does not flip between bow and melee mid-fight.
 - Greydwarf reach in spacing (user, 1.5.91, log 32bba563): the companion kept "just out of greydwarf's reach (its reach 2.7 m)" - the game's swing reach is ~1.2 m ([You] lines), so it hung back more than needed. Check the Danger/reach estimate per enemy in the enemy strategies overhaul.
+- Combat on ships (user, 1.5.93: "The combat on ships should go on the backlog"): seated companions are switched off entirely (OnShip gate before combat) - get up for a threat, fight from the deck (bow with a clear shot over the side via MHR_Deck spots, melee from the side nearest a swimming enemy), sit back down after. Open questions from 1.5.91: any threat or only an attack; and while you steer.
+- Second combat review, with per-enemy strategies (user, 1.5.93): a second pass over combat including the enemy strategies overhaul below (reach estimates such as the greydwarf one, ticks, leapers).
 - Ticks in the enemy strategies overhaul (user, 1.5.74).
   - Swing sweep vs a latched tick (user, log 0a0d75c2): Balanced took the spear (40 deg stab) every tick fight; a tick latched 95 deg off to the side was missed, the iron sword (90 deg sweep) hit ticks 21-33 deg off every time. Think about weapon choice / sweep for ticks.
   - Dodge roll when a latched tick can't be reached - off to the side or on the back (user). (1.5.73 had a roll; the user wants it only for this case.)
