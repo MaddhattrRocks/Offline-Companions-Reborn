@@ -8,7 +8,7 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **GitHub:** [MaddhattrRocks/Offline-Companions-Reborn](https://github.com/MaddhattrRocks/Offline-Companions-Reborn) — source code, the full guide and settings reference, and bug reports.
 
-> **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down. You can also report it in the [Bugs tab on Nexus Mods](https://www.nexusmods.com/valheim/mods/4047?tab=bugs) or start a thread on [Hexium](https://valheim.hexium.gg/mods/Maddhattr/Offline_Companions_Reborn); GitHub is the most useful if you can attach the log.
+> **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down. You can also report it in the [Bugs tab on Nexus Mods](https://www.nexusmods.com/valheim/mods/4047?tab=bugs) or start a thread on [Hexium](https://valheim.hexium.gg/mods/Maddhattr/Offline_Companions_Reborn#fn-threads).
 
 ## Recent Highlights (v1.5.6)
 - **Fights like a player.** Companions swing full combos, block or parry by chance (better with skill), keep just out of an enemy's reach and go in on an opening, work round behind an enemy busy with you, and keep stamina back for blocking. Ticks latched on are fought first.
