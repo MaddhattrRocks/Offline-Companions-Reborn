@@ -36,6 +36,11 @@ internal static class MHR_Board
 		public Vector3 Shore;
 		public float TreadSince = -1f;
 		public float WadeBest = float.MaxValue;
+		public bool TakeoffTried;
+		public bool HasTakeoff;
+		public Vector3 Takeoff;
+		public int TakeoffJumps;
+		public bool JumpLogged;
 		public float WadeAt = -1f;
 		public bool WadeGaveUp;
 		public float HoldUntil;
@@ -181,6 +186,10 @@ internal static class MHR_Board
 		s.WadeBest = float.MaxValue;
 		s.WadeAt = -1f;
 		s.WadeGaveUp = false;
+		s.TakeoffTried = false;
+		s.HasTakeoff = false;
+		s.TakeoffJumps = 0;
+		s.JumpLogged = false;
 		MHR_Mover.Release(ai);
 		MHR_Deck.Release(ai);
 		Log(ai.GetComponent<Character>()?.m_name + (auto ? " is following you aboard" : " is boarding the ship"));
@@ -288,14 +297,14 @@ internal static class MHR_Board
 	}
 
 	// a spot on the deck on our side of the ship: the ship's closest point to us, a metre in, straight down onto it
-	private static bool DeckSpot(Ship ship, Vector3 me, out Vector3 spot)
+	private static bool DeckSpot(Ship ship, Vector3 me, out Vector3 spot, Collider[] cols = null)
 	{
 		spot = Vector3.zero;
 		Vector3 center = ship.transform.position;
 		Collider best = null;
 		float bd = float.MaxValue;
 		Vector3 bp = center;
-		foreach (Collider col in ship.GetComponentsInChildren<Collider>())
+		foreach (Collider col in cols ?? ship.GetComponentsInChildren<Collider>())
 		{
 			if (col == null || col.isTrigger || ((1 << col.gameObject.layer) & Vehicle()) == 0)
 			{
@@ -664,6 +673,62 @@ internal static class MHR_Board
 			s.Best = dist;
 			s.ProgressAt = now;
 		}
+		// 1.5.93: jump straight aboard when it can - checked before diving in (user, log c22fc35d: "kept jumping into the water
+		// to get to the ladder when they could jump directly onto the boat deck" - the dive/walk branch always took the frame
+		// first and the jump check was never reached)
+		if (TryJumpAboard(ai, s, c, me, ship, now, name))
+		{
+			return true;
+		}
+		// 1.5.93: somewhere to jump aboard from, before any swim: where you jumped aboard yourself (your steps), else dry ground
+		// within 15 m with the deck in jump reach. Walk there and jump; three jumps that don't land aboard -> the ladder.
+		if (!s.TakeoffTried && !c.IsSwimming() && MHR_Water.DepthAt(me) < 0.3f)
+		{
+			s.TakeoffTried = true;
+			Player owner = MHR_Owner.Of(ai);
+			if (owner != null && MHR_Follow.StepsOnto(owner.gameObject, ship, out Vector3 from, out _) && MHR_Water.DepthAt(from) < 0.1f && Flat(from, me) < 30f && JumpCheck(c, ship, from, null, out _, out _, out _, out _, out _))
+			{
+				s.HasTakeoff = true;
+				s.Takeoff = from;
+				Log($"{name} going to jump aboard where you did, from {from:F1}");
+			}
+			else if (JumpSpot(c, ship, me, out Vector3 spot))
+			{
+				s.HasTakeoff = true;
+				s.Takeoff = spot;
+				Log($"{name} going to jump aboard from {spot:F1} ({Flat(spot, me):F1} m away)");
+			}
+		}
+		if (s.HasTakeoff && !c.IsSwimming())
+		{
+			if (Flat(me, s.Takeoff) > 0.6f)
+			{
+				MHR_Mover.Go(ai, dt, s.Takeoff, 0.4f, dist > 8f, "Board", dist > 8f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
+				if (MHR_Mover.Progressing(ai))
+				{
+					s.ProgressAt = now;
+				}
+				if (MHR_Mover.GaveUp(ai))
+				{
+					s.HasTakeoff = false;
+					MHR_Mover.Release(ai);
+					Log(name + " can't get to the spot to jump aboard from - the ladder instead");
+				}
+				return true;
+			}
+			// there: face the deck and wait for the jump check (above) - a few tries, then the ladder
+			if (s.TakeoffJumps >= 3 || now - s.ProgressAt > 6f)
+			{
+				s.HasTakeoff = false;
+				Log(name + " couldn't jump aboard from there - the ladder instead");
+			}
+			else
+			{
+				ai.StopMoving();
+				ai.LookAtPoint(ship.transform.position);
+				return true;
+			}
+		}
 		// 1.5.84: like a player (user: "Its faster to jump off the dock to the boat and wait till you pop up from the water then
 		// use the ladder ... rather than just treading water for a moment to wait for the ladder to be in range")
 		Ladder near = NearestLadder(ship, me, out float flatL);
@@ -758,28 +823,6 @@ internal static class MHR_Board
 					ai.transform.rotation = Quaternion.LookRotation(dirL);
 					ai.MoveTowards(dirL, run: false);
 					s.ProgressAt = now;
-					return true;
-				}
-			}
-		}
-		// on a dock or the shore with the deck in jump reach: jump aboard
-		if (c.IsOnGround() && !c.IsSwimming() && now >= s.NextJump && DeckSpot(ship, me, out Vector3 deck))
-		{
-			float gap = Flat(me, deck);
-			float dy = deck.y - me.y;
-			Vector3 dir = deck - me;
-			dir.y = 0f;
-			if (gap > 0.3f && gap <= 4f && dy <= 1.6f && dy >= -3f && dir.sqrMagnitude > 0.01f)
-			{
-				dir.Normalize();
-				float reach = MHR_Jump.Reach(c, dir, dy);
-				bool clear = !Physics.Linecast(me + Vector3.up * 1.2f, deck + Vector3.up * 0.8f, Solid());
-				if (reach >= gap + 0.3f && clear)
-				{
-					s.NextJump = now + 1.5f;
-					s.ProgressAt = now;
-					MHR_Jump.Leap(ai, c, dir);
-					Log($"{name} jumping aboard ({gap:F1} m across, {dy:+0.0;-0.0} m up)");
 					return true;
 				}
 			}
@@ -896,6 +939,131 @@ internal static class MHR_Board
 			return GiveUp(ai, s, c, "no way found");
 		}
 		return true;
+	}
+
+	// 1.5.93: can it jump aboard from `from` (feet): the deck spot on our side (DeckSpot) 0.3-4 m across, no more than 1.6 m
+	// up or 3 m down, within its running jump's reach (MHR_Jump.Reach) and nothing solid in the way
+	private static bool JumpCheck(Character c, Ship ship, Vector3 from, Collider[] cols, out Vector3 dir, out float gap, out float dy, out float reach, out bool clear)
+	{
+		dir = Vector3.zero;
+		gap = dy = reach = 0f;
+		clear = false;
+		if (!DeckSpot(ship, from, out Vector3 deck, cols))
+		{
+			return false;
+		}
+		gap = Flat(from, deck);
+		dy = deck.y - from.y;
+		dir = deck - from;
+		dir.y = 0f;
+		if (dir.sqrMagnitude < 0.01f)
+		{
+			return false;
+		}
+		dir.Normalize();
+		reach = MHR_Jump.Reach(c, dir, dy);
+		clear = !Physics.Linecast(from + Vector3.up * 1.2f, deck + Vector3.up * 0.8f, Solid());
+		return gap > 0.3f && gap <= 4f && dy <= 1.6f && dy >= -3f && reach >= gap + 0.3f && clear;
+	}
+
+	// on the ground (dock, shore, shallows) with the deck in jump reach: jump aboard. A near miss is logged once per boarding.
+	private static bool TryJumpAboard(CompanionAI ai, S s, Character c, Vector3 me, Ship ship, float now, string name)
+	{
+		if (!c.IsOnGround() || c.IsSwimming() || now < s.NextJump)
+		{
+			return false;
+		}
+		bool ok = JumpCheck(c, ship, me, null, out Vector3 dir, out float gap, out float dy, out float reach, out bool clear);
+		if (!ok)
+		{
+			if (!s.JumpLogged && gap > 0f && gap <= 6f)
+			{
+				s.JumpLogged = true;
+				CompanionsPlugin.Log?.LogInfo($"[Board] {name} can't jump aboard from {me:F1}: {gap:F1} m across, {dy:+0.0;-0.0} m up, its jump reaches {reach:F1} m, {(clear ? "clear" : "something in the way")}");
+			}
+			return false;
+		}
+		s.NextJump = now + 1.5f;
+		s.ProgressAt = now;
+		if (s.HasTakeoff)
+		{
+			s.TakeoffJumps++;
+		}
+		MHR_Jump.Leap(ai, c, dir);
+		Log($"{name} jumping aboard ({gap:F1} m across, {dy:+0.0;-0.0} m up)");
+		return true;
+	}
+
+	// dry ground within 15 m (1 m grid) with the deck in jump reach, nearest first
+	private static bool JumpSpot(Character c, Ship ship, Vector3 me, out Vector3 spot)
+	{
+		spot = me;
+		Collider[] all = ship.GetComponentsInChildren<Collider>();
+		List<Collider> hull = new List<Collider>();
+		foreach (Collider col in all)
+		{
+			if (col != null && !col.isTrigger && ((1 << col.gameObject.layer) & Vehicle()) != 0 && !(col is MeshCollider mc && !mc.convex))
+			{
+				hull.Add(col);
+			}
+		}
+		if (hull.Count == 0)
+		{
+			return false;
+		}
+		Collider[] cols = hull.ToArray();
+		int mask = Solid() | Vehicle();
+		float best = float.MaxValue;
+		for (int x = -15; x <= 15; x++)
+		{
+			for (int z = -15; z <= 15; z++)
+			{
+				if (x * x + z * z > 225)
+				{
+					continue;
+				}
+				Vector3 q = me + new Vector3(x, 0f, z);
+				float d = Flat(q, me);
+				if (d >= best)
+				{
+					continue;
+				}
+				// close enough to the hull to be worth the full check
+				float near = float.MaxValue;
+				foreach (Collider col in cols)
+				{
+					Vector3 p;
+					try
+					{
+						p = col.ClosestPoint(q);
+					}
+					catch
+					{
+						continue;
+					}
+					near = Mathf.Min(near, Flat(p, q));
+				}
+				if (near > 3.5f)
+				{
+					continue;
+				}
+				if (!Physics.Raycast(new Vector3(q.x, me.y + 6f, q.z), Vector3.down, out RaycastHit hit, 15f, mask) || ((1 << hit.collider.gameObject.layer) & Vehicle()) != 0)
+				{
+					continue;
+				}
+				q = hit.point;
+				if (MHR_Water.DepthAt(q) >= 0.1f || Mathf.Abs(q.y - me.y) > 4f)
+				{
+					continue;
+				}
+				if (JumpCheck(c, ship, q, cols, out _, out _, out _, out _, out _))
+				{
+					best = d;
+					spot = q;
+				}
+			}
+		}
+		return best < float.MaxValue;
 	}
 
 	// 1.5.83: gives up for now and waits on dry land facing the ship - not where it stopped (it stood in the water)
