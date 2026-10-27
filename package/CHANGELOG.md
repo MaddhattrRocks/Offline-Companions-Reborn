@@ -9,7 +9,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Portals follow the game's item rules for companions (General > PortalItems); ore they carry is left in a nearby chest, or they wait.
 - Fixed the summon window not taking clicks for some players.
 - Stone and Ore no longer mine walls or other built pieces.
-- Wood takes fallen logs first, then stumps, then standing trees, and chops a log where it lies low enough to reach.
+- Wood takes fallen logs first, then stumps, then standing trees, finishes the log it split before starting another, and chops a log where it can reach it with nothing in the way.
+- Gathering: a companion whose swings aren't damaging what it's working on (a rock in the way) tries another side, then moves on.
 
 ## 1.5.6
 - Combat: full combos, parries and blocks by chance (better with skill), spacing and going in on an opening, flanking, finishing blows, stamina kept for blocking.

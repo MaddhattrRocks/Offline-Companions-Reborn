@@ -13,7 +13,9 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed the summon window's buttons not taking clicks (and showing "Missing requirement" when hovered) after you had opened your inventory somewhere you couldn't craft - they were copies of the game's Craft button, greyed out at that moment.
 - Stone and Ore leave buildings alone: built pieces (yours or part of a location) and walls are no longer mined for stone.
 - Wood works through fallen logs first, then stumps, and only then fells a standing tree (logs and stumps were taken nearest first, together).
-- Wood: a log lying on a slope or across something is chopped at the part near the ground it can reach, instead of walking under its middle (it got stuck there, gave up on the log and came back to it).
+- Wood: a log lying on a slope or across something is chopped at the part near the ground it can reach, instead of walking under its middle (it got stuck there, gave up on the log and came back to it). The spot has to have a clear line to the log - a rock in between doesn't count.
+- Wood: after splitting a log or felling a tree, the pieces that come out of it are finished first (within 6 m, for 30 s), instead of the nearest other log.
+- Gathering: a companion checks its swings land - three swings that don't lower the target's health and it tries another side of a log, then leaves it for a while (it chopped 17 times at a rock under a log).
 
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.
