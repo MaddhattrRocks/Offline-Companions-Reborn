@@ -2178,6 +2178,10 @@ public class HarvestController : MonoBehaviour
 
 	private Vector3 _logPoint;
 
+	// 1.5.66: where the log was when the spot was picked - the spot is kept while the log stays put (user, log 2285db5e:
+	// "Keeps moving when hitting a log. Moves to an end then side or somewhere else along the log")
+	private Vector3 _logPointLogPos;
+
 	private static int s_groundMask = -1;
 
 	// ground spots round the log (1 m grid over its footprint, 1.5 m out); for each, the nearest point of the log -
@@ -2185,10 +2189,11 @@ public class HarvestController : MonoBehaviour
 	// the one nearest the companion. Refreshed every 2 s (logs roll); the log's position when none is.
 	private Vector3 LogReachPoint()
 	{
-		if (_target == _logPointFor && Time.time - _logPointAt < 2f)
+		if (_target == _logPointFor && _logPointAt > 0f && Vector3.Distance(_target.transform.position, _logPointLogPos) < 0.5f)
 		{
 			return _logPoint;
 		}
+		_logPointLogPos = _target.transform.position;
 		_logPointFor = _target;
 		_logPointAt = Time.time;
 		_logPoint = _target.transform.position;

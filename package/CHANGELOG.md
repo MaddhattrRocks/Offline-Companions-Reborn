@@ -10,6 +10,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fixed the summon window not taking clicks for some players.
 - Stone and Ore no longer mine walls or other built pieces.
 - Wood takes fallen logs first, then stumps, then standing trees, finishes the log it split before starting another, and chops a log where it can reach it with nothing in the way.
+- Wood: chops a log from one spot instead of moving along it, and only steps aside when a tree comes down, not when a log breaks.
 - Gathering: a companion whose swings aren't damaging what it's working on (a rock in the way) tries another side, then moves on.
 
 ## 1.5.6
