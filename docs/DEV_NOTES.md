@@ -35,6 +35,13 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.67 - hit register for gathering (user, log 9e9a7e57 (1.5.66): "Lost track of the other log that was created. Had a hard time finding where to stand for a stump. Same with a log. He would get a few hits then move if a tree had not fully fallen. Still kind of squirrely with figuring out where to stand and hit the log. Maybe we do need a hit register on the logs.")
+- Patches/HarvestHitRegister.cs: postfixes on TreeLog/TreeBase/Destructible/MineRock/MineRock5.Damage(HitData); hit.GetAttacker() a companion -> HarvestController.OnHitRegistered(go) (matches the target, its parent or child).
+- SwingsNotLanding now: at each swing, did a hit register since the last one? 2 misses in a row -> another side (logs) / blacklist. Replaces the 3-swing health check (TargetHealth kept, unused).
+- _goodSpot: where it stood when a hit landed; HoldingGoodSpot (within 0.8 m, no miss since) skips the every-2-swings reapproach and the LateUpdate low-target walk-in.
+- LogSettling: TreeLog Rigidbody velocity/angular > 0.3 -> stop, no spot, wait up to 3 s (called at the top of UpdateMoving and UpdateAttacking).
+- Pieces by identity: NoteLogsAround at Target set records TreeLog ids within 15 m (minus known pieces); after a TreeLog/TreeBase breaks, a new TreeLog within 30 m of the break for 60 s is an own piece (_ownPieces, kept across a chain of breaks), preferred and exempt from InWorkArea.
+
 ### 1.5.66 - one spot per log, no step-aside for logs (user, log 2285db5e (1.5.65): "Keeps moving when hitting a log. Moves to an end then side or somewhere else along the log. Runs off a few steps after chopping a log then goes back to get the dropped items" - "Moved around the rock this time")
 - Log 2285db5e: split halves finished first, swings land (3-7 hits per piece), round the rock. LogReachPoint refreshed every 2 s as "nearest to the companion" - it moved as he did; MHR_GatherRules.OnTargetDestroyed stepped 4 m uphill for 2.5 s on TreeLog too.
 - LogReachPoint kept per target while the log stays within 0.5 m of where it was (a failed spot still forces a re-pick, _logPointAt = -10). OnTargetDestroyed: TreeBase only.
