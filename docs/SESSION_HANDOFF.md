@@ -95,6 +95,8 @@ Paste this into a new session to pick up where we left off. Details per version 
 - README credit (user, 2026-10-26): "give a call out and credit to Necrustic from nexus mods for the constant bug reports and feedback. It really helps to catch things I have missed or overlooked." Planned: a short "Thanks" section in package/README.md before "## Source" (shows on Thunderstore, Hexium and the Nexus page text); show the wording to the user with the Recent Highlights before packaging.
 
 ## Backlog (talk through with the user before building)
+- Companions aware of each other (user, 1.5.62 test): know what the others are doing and where, so work is shared out - e.g. the free one goes for the honey while another rests, two don't go for the same tree/chest/hive, an order goes to whoever is free. (Partly there: s_claimedTargets in HarvestController.)
+- Summon preview gender switch logs "SkinnedMeshRenderer: Rendering stopped because the data for mesh 'bodyfem'/'body' ... does not match the expected mesh data size and vertex stride" (4 lines per switch, preview clone only; log 4122afdf) - look into it (VisEquipment.SetModel on the preview clone).
 - Accessory choice (user, 1.5.62): companions do equip accessories (the trinket/utility slot) - review how the best one is picked (AutoEquipBest), e.g. a strength belt when carrying a lot vs. other utility items, and the belt for the carry limit (CompanionTierData.CarryLimit counts it once worn).
 - Summon/starter customise window: remove the X in the corner, close with Escape/Use like the shrine menu (user, 1.5.79).
 - Bigger buttons on the shrine popup (user, 1.5.81: revisit after testing) - resize UnifiedPopup's buttons while ours is up and restore them on close.
