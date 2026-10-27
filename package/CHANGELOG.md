@@ -13,6 +13,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Wood: chops a log from one spot instead of moving along it, and only steps aside when a tree comes down, not when a log breaks.
 - Gathering: a companion whose swings aren't damaging what it's working on (a rock in the way) tries another side, then moves on.
 - Gathering: companions stay where their swings land until the target breaks, wait for a fresh log to stop rolling, and keep track of every piece of a tree they cut.
+- Wood: a log that keeps rolling or is stuck up in the branches is left for a moment instead of chased.
 
 ## 1.5.6
 - Combat: full combos, parries and blocks by chance (better with skill), spacing and going in on an opening, flanking, finishing blows, stamina kept for blocking.

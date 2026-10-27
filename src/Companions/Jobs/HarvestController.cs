@@ -386,6 +386,11 @@ public class HarvestController : MonoBehaviour
 
 	private float _settleSince;
 
+	private GameObject _settleLoggedFor;
+
+	// 1.5.68: LogReachPoint found a spot on the ground it can swing at the log from
+	private bool _logPointFound;
+
 	private readonly List<Vector3> _logBadPoints = new List<Vector3>();
 
 	// 1.4.79: many rocks are swapped for a cracked copy on the first hit (Destructible.m_spawnWhenDamaged): the object
@@ -1004,7 +1009,7 @@ public class HarvestController : MonoBehaviour
 
 	private void UpdateMoving()
 	{
-		if (LogSettling())
+		if (LogSettling() || LogOutOfReach())
 		{
 			return;
 		}
@@ -1226,7 +1231,7 @@ public class HarvestController : MonoBehaviour
 
 	private void UpdateAttacking()
 	{
-		if (LogSettling())
+		if (LogSettling() || LogOutOfReach())
 		{
 			return;
 		}
@@ -1333,7 +1338,8 @@ public class HarvestController : MonoBehaviour
 			num3 = new Vector3(vector.x, 0f, vector.z).magnitude;
 		}
 		_attackDiagTimer -= Time.deltaTime;
-		if (num3 > num2)
+		// 1.5.68: a log is reached in 3D - not from under it (log 9aef82b6: a swing from 10.6 m below a log in the branches)
+		if (num3 > num2 || (_targetType == "TreeLog" && num > attackRange + 0.5f && !_character.InAttack()))
 		{
 			_reapproach = true;
 			_attackFaceLocked = false;
@@ -2254,14 +2260,51 @@ public class HarvestController : MonoBehaviour
 		{
 			_settleFor = _target;
 			_settleSince = Time.time;
-			LogInfo("Waiting for \"" + _target.name + "\" to stop moving");
+			if (_settleLoggedFor != _target)
+			{
+				_settleLoggedFor = _target;
+				LogInfo("Waiting for \"" + _target.name + "\" to stop moving");
+			}
 		}
-		if (Time.time - _settleSince > 3f)
+		// 1.5.68: stands and waits up to 8 s, then leaves a log that keeps rolling or sliding for a while instead of chasing
+		// it (user, log 9aef82b6: "went chasing a rolling log that was not settling")
+		if (Time.time - _settleSince > 8f)
 		{
-			return false;
+			SetAside("it keeps rolling");
+			return true;
 		}
 		_logPointAt = -10f;
 		_ai?.StopMoving();
+		return true;
+	}
+
+	// 1.5.68: leave the target for 15 s (it may settle or fall), then it's a candidate again
+	private void SetAside(string why)
+	{
+		if (_target == null)
+		{
+			return;
+		}
+		LogInfo("Leaving \"" + _target.name + "\" for a moment - " + why);
+		_blacklist[_target.GetInstanceID()] = Time.time - Mathf.Max(0f, BlacklistDuration - 15f);
+		_settleFor = null;
+		ResetToIdle();
+	}
+
+	// 1.5.68: a log with no part it can reach from the ground (hung up in the branches - log 9aef82b6: one 13 m up, swung
+	// at from 10.6 m below, knocked loose and chased down the slope)
+	private bool LogOutOfReach()
+	{
+		if (_targetType != "TreeLog" || _target == null)
+		{
+			return false;
+		}
+		LogReachPoint();
+		if (_logPointFound)
+		{
+			return false;
+		}
+		SetAside("no part of it is in reach from the ground");
 		return true;
 	}
 
@@ -2317,6 +2360,7 @@ public class HarvestController : MonoBehaviour
 		_logPointFor = _target;
 		_logPointAt = Time.time;
 		_logPoint = _target.transform.position;
+		_logPointFound = false;
 		if (s_groundMask == -1)
 		{
 			s_groundMask = LayerMask.GetMask("terrain", "Default", "static_solid", "piece");
@@ -2385,6 +2429,7 @@ public class HarvestController : MonoBehaviour
 					{
 						best = d;
 						_logPoint = p;
+						_logPointFound = true;
 					}
 				}
 			}

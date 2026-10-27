@@ -20,6 +20,10 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Gathering: the game now tells a companion when one of its swings lands on a tree, log, stump or rock (a hit register). Once a swing lands it stays on that spot until the target breaks - no re-approaching or shuffling along the log - and only moves after 2 swings in a row that didn't land (another side first, then it leaves the target).
 - Wood: a log that has just fallen or split is left alone until it stops rolling (up to 3 s) before the companion picks where to stand.
 - Wood: the logs a tree or log breaks into are remembered and finished first wherever they roll (within 30 m, for 60 s), even outside the Follow range; logs that were already lying there don't count.
+- Wood: a companion waits up to 8 s for a log to stop rolling or sliding; one that keeps moving is left for 15 s instead of chased down the slope.
+- Wood: a log hung up in the branches with no part in reach from the ground is left for 15 s (it may fall) - no more swinging at it from underneath.
+- Wood: no swing at a log that's further away than the axe reaches; it steps closer first.
+- Quieter log: the food check's "no food found" line is written once until the inventory or food changes.
 
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.

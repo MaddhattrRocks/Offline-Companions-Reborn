@@ -35,6 +35,13 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.68 - rolling and hung-up logs (user, log 9aef82b6 (1.5.67): "went chasing a rolling log that was not settling. Other than that one off situation it looks much much better.")
+- Log 9aef82b6: own pieces finished first, hits from one spot, settle waits fine. A piece hung 13 m up in the branches was taken (own piece), swung at from 10.6 m below (the attack range check was horizontal for trees/logs), knocked loose and chased while it slid; also one rolling downhill (1627-1673). Food "no food found" 816 lines.
+- LogSettling: wait up to 8 s (was 3, then chase), then SetAside (blacklist entry dated so it expires after 15 s, ResetToIdle). Wait line once per target.
+- LogOutOfReach: LogReachPoint sets _logPointFound; no usable ground spot -> SetAside 15 s. Called with LogSettling at the top of UpdateMoving/UpdateAttacking.
+- UpdateAttacking: TreeLog also needs 3D distance <= reach + 0.5 (else reapproach).
+- CompanionFood: no-food line once per slot until the item count changes or it eats.
+
 ### 1.5.67 - hit register for gathering (user, log 9e9a7e57 (1.5.66): "Lost track of the other log that was created. Had a hard time finding where to stand for a stump. Same with a log. He would get a few hits then move if a tree had not fully fallen. Still kind of squirrely with figuring out where to stand and hit the log. Maybe we do need a hit register on the logs.")
 - Patches/HarvestHitRegister.cs: postfixes on TreeLog/TreeBase/Destructible/MineRock/MineRock5.Damage(HitData); hit.GetAttacker() a companion -> HarvestController.OnHitRegistered(go) (matches the target, its parent or child).
 - SwingsNotLanding now: at each swing, did a hit register since the last one? 2 misses in a row -> another side (logs) / blacklist. Replaces the 3-swing health check (TargetHealth kept, unused).
