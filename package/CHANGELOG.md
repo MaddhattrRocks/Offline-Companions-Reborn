@@ -2,6 +2,11 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.7
+- Fixed the summon window not taking clicks for some players.
+- Stone and Ore no longer mine walls or other built pieces.
+- Wood takes fallen logs first, then stumps, then standing trees.
+
 ## 1.5.6
 - Combat: full combos, parries and blocks by chance (better with skill), spacing and going in on an opening, flanking, finishing blows, stamina kept for blocking.
 - Bows drawn like a player (draw time, partial draws); Ranged stance carries the bow; Balanced takes the bow for enemies melee can't reach.

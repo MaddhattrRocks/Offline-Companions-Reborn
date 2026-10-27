@@ -2519,6 +2519,9 @@ public class HarvestController : MonoBehaviour
 		float num2 = float.MaxValue;
 		_bestTree = null;
 		_bestTreeDist = float.MaxValue;
+		// 1.5.61: Wood goes logs, then stumps, then standing trees (player report: "skipping wood logs most of the time")
+		GameObject bestStump = null;
+		float bestStumpDist = float.MaxValue;
 		int num3 = 0;
 		int num4 = 0;
 		int num5 = 0;
@@ -2536,6 +2539,11 @@ public class HarvestController : MonoBehaviour
 			string type;
 			GameObject harvestCandidateWithType = GetHarvestCandidateWithType(collider, mode, out type);
 			if (harvestCandidateWithType == null || !MHR_GatherRules.AllowTarget(this, harvestCandidateWithType, mode) || !_seenIds.Add(harvestCandidateWithType.GetInstanceID()))
+			{
+				continue;
+			}
+			// 1.5.61: Stone and Ore leave buildings alone - built pieces and walls (player report: mining stone walls for stone)
+			if ((mode == 2 || mode == 3) && IsBuilt(harvestCandidateWithType))
 			{
 				continue;
 			}
@@ -2598,6 +2606,14 @@ public class HarvestController : MonoBehaviour
 						_bestTree = harvestCandidateWithType;
 					}
 				}
+				else if (type == "Stump")
+				{
+					if (num11 < bestStumpDist)
+					{
+						bestStumpDist = num11;
+						bestStump = harvestCandidateWithType;
+					}
+				}
 				else if (num11 < num2)
 				{
 					num2 = num11;
@@ -2627,6 +2643,12 @@ public class HarvestController : MonoBehaviour
 		else
 		{
 			Log($"  Breakdown [{text}]: {num7} deposits (total {num3} unique targets)");
+		}
+		if (gameObject == null && bestStump != null)
+		{
+			gameObject = bestStump;
+			num2 = bestStumpDist;
+			Log("No logs found - taking the nearest stump");
 		}
 		if (gameObject == null && _bestTree != null)
 		{
@@ -2828,6 +2850,12 @@ public class HarvestController : MonoBehaviour
 			LogInfo($"Forage scan: no pickables found within {ScanRadius}m");
 		}
 		return gameObject;
+	}
+
+	// part of a building: a placed piece (yours or a location's) or anything named as a wall
+	private static bool IsBuilt(GameObject go)
+	{
+		return go.GetComponentInParent<Piece>() != null || go.GetComponentInParent<WearNTear>() != null || go.name.IndexOf("wall", StringComparison.OrdinalIgnoreCase) >= 0;
 	}
 
 	private static GameObject GetHarvestCandidateWithType(Collider col, int mode, out string type)

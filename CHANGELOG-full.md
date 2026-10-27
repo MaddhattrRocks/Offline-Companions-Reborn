@@ -4,6 +4,11 @@ Every change, version by version. The `CHANGELOG.md` shipped with the mod is a s
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.7
+- Fixed the summon window's buttons not taking clicks (and showing "Missing requirement" when hovered) after you had opened your inventory somewhere you couldn't craft - they were copies of the game's Craft button, greyed out at that moment.
+- Stone and Ore leave buildings alone: built pieces (yours or part of a location) and walls are no longer mined for stone.
+- Wood works through fallen logs first, then stumps, and only then fells a standing tree (logs and stumps were taken nearest first, together).
+
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.
 - Boarding through shallow water: a companion that lands in the shallows wades straight to the ship's ladder and uses it from there (or swims once it's deep), instead of running back round the dock to dive in again.

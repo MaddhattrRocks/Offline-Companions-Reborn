@@ -35,6 +35,12 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.61 - summon window clicks, Stone/Ore skip buildings, Wood order (player reports via the user, 2026-10-27)
+- Summon window "not clickable" (player screenshot: "Missing requirement" tooltip over the hair style arrow; "if you load the game near it, it works, if you go far away it won't"): CompanionPanel.CreateButton / CreateCategoryArrowButton copy InventoryGui.m_craftButton, which the game sets interactable = false (and its UITooltip to $msg_missingrequirement) whenever the last selected recipe can't be made (InventoryGui.UpdateRecipe). The copies kept that. MakeUsable: every Selectable interactable, UITooltip removed. The user couldn't reproduce with cheats (Player.NoCostCheat keeps the craft button interactable). Same family as the 1.5.90 grey stamina bar (a game element copied in a changed state).
+- Stone/Ore: ScanForTarget skips candidates that are part of a building (Piece or WearNTear in the parents, or "wall" in the name) - the Stone filter took any Destructible a pickaxe can hurt and an axe can't.
+- Wood: strict order logs -> stumps -> standing trees (stumps were mixed with logs, nearest first).
+- Flying companions (another player, maybe a mod that changes player height): waiting for a log and mod list.
+
 ### 1.5.6 release (user, 2026-10-26)
 - Hexium rejected the zip: "CHANGELOG.md is too long, max: 100000" (it was 104,980 characters). Split (user: "The change log mostly wont be read by anyone so the entries can be fairly brief for the zip builds"): `package/CHANGELOG.md` keeps 1.5.0 on with brief lines (1.5.6 cut to 12), plus a link to `CHANGELOG-full.md` (repo root, the full history with every detail). From now on: brief lines in the package changelog, detail in CHANGELOG-full.md.
 - README highlights for 1.5.6 approved; Future Plans rewritten (next: second combat review with per-enemy strategies, combat on ships, late-game features and weapons, animal husbandry; Haldor recruiting dropped).
