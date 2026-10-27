@@ -2047,6 +2047,95 @@ public class HarvestController : MonoBehaviour
 		return target != null;
 	}
 
+	private GameObject _logPointFor;
+
+	private float _logPointAt;
+
+	private Vector3 _logPoint;
+
+	private static int s_groundMask = -1;
+
+	// ground spots round the log (1 m grid over its footprint, 1.5 m out); for each, the nearest point of the log -
+	// usable when it is within 1.2 m above the ground there and 1 m sideways (in swing reach of someone standing there);
+	// the one nearest the companion. Refreshed every 2 s (logs roll); the log's position when none is.
+	private Vector3 LogReachPoint()
+	{
+		if (_target == _logPointFor && Time.time - _logPointAt < 2f)
+		{
+			return _logPoint;
+		}
+		_logPointFor = _target;
+		_logPointAt = Time.time;
+		_logPoint = _target.transform.position;
+		if (s_groundMask == -1)
+		{
+			s_groundMask = LayerMask.GetMask("terrain", "Default", "static_solid", "piece");
+		}
+		List<Collider> cols = new List<Collider>();
+		Bounds box = default(Bounds);
+		bool any = false;
+		foreach (Collider c in _target.GetComponentsInChildren<Collider>())
+		{
+			if (c == null || !c.enabled || c.isTrigger || (c is MeshCollider mc && !mc.convex))
+			{
+				continue;
+			}
+			cols.Add(c);
+			if (any)
+			{
+				box.Encapsulate(c.bounds);
+			}
+			else
+			{
+				box = c.bounds;
+				any = true;
+			}
+		}
+		if (!any)
+		{
+			return _logPoint;
+		}
+		Vector3 me = base.transform.position;
+		float best = float.MaxValue;
+		for (float x = box.min.x - 1.5f; x <= box.max.x + 1.5f; x += 1f)
+		{
+			for (float z = box.min.z - 1.5f; z <= box.max.z + 1.5f; z += 1f)
+			{
+				Vector3 top = new Vector3(x, box.max.y + 2f, z);
+				if (!Physics.Raycast(top, Vector3.down, out RaycastHit hit, box.size.y + 8f, s_groundMask) || hit.collider.GetComponentInParent<TreeLog>() != null)
+				{
+					continue;
+				}
+				Vector3 ground = hit.point;
+				foreach (Collider c in cols)
+				{
+					Vector3 p;
+					try
+					{
+						p = c.ClosestPoint(ground + Vector3.up * 0.8f);
+					}
+					catch
+					{
+						continue;
+					}
+					float up = p.y - ground.y;
+					float side = new Vector2(p.x - ground.x, p.z - ground.z).magnitude;
+					if (up > 1.2f || up < -0.5f || side > 1f)
+					{
+						continue;
+					}
+					float d = Vector3.Distance(me, ground);
+					if (d < best)
+					{
+						best = d;
+						_logPoint = p;
+					}
+				}
+			}
+		}
+		return _logPoint;
+	}
+
 	private Vector3 GetEffectiveTargetPosition()
 	{
 		if (_target == null)
@@ -2130,6 +2219,13 @@ public class HarvestController : MonoBehaviour
 				}
 			}
 			return vector;
+		}
+		// 1.5.64: a log - the part of it near the ground that it can stand next to, not its middle (user, log 862662de:
+		// "Swinging at a log he cannot reach. Need to check for a part touching the ground and swing near there" - a fir
+		// log's middle was 3.6 m above it on a slope)
+		if (_targetType == "TreeLog")
+		{
+			return LogReachPoint();
 		}
 		if (_targetType == "MineRock")
 		{
