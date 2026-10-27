@@ -16,6 +16,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> RecoverUnsummoned;
 
+	internal static ConfigEntry<string> PortalItems;
+
 	internal static ConfigEntry<bool> SpawnStarterCompanion;
 
 	internal static ConfigEntry<bool> ResetStarterFlag;
@@ -589,6 +591,7 @@ internal static class ModConfig
 	{
 		// [General]
 		CompanionPrice = Bind(cfg, "General", "CompanionPrice", 1000, "The offering in coins to summon another companion at Odin's Shrine (Summon companion), paid from your pack.", new AcceptableValueRange<int>(0, 50000));
+		PortalItems = Bind(cfg, "General", "PortalItems", "Game", "What a following companion may carry through a portal with you. Game: the same rules as you - ore, metals and the like only through a portal that allows everything or with the world's portal setting on Casual, boss items never; it first puts what can't go through in a chest within 15 m of it, otherwise it stays behind and says why. AllowAll: it comes through with anything.", new AcceptableValueList<string>("Game", "AllowAll"));
 		RecoverUnsummoned = Bind(cfg, "General", "RecoverUnsummoned", defaultValue: true, "An unsummoned (despawned) companion can be brought back at Odin's Shrine (Recover companions) - with its name, looks, skills and settings, but not its gear, which stays in the tombstone where it was unsummoned - until you next load this world. Off: unsummoning is permanent.");
 		// 1.5.71: the old default (2000) was never used for anything - move it to the new default
 		if (CompanionPrice.Value == 2000)

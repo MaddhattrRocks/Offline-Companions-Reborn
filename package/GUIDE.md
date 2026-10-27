@@ -128,7 +128,7 @@ Home matters because companions:
 - **Stand still for 45 seconds** and your companions come back and wait close to you.
 - **Stop indoors** and they sit down near you: on a free chair or bench, otherwise the floor. Near home, they empty their bags first. Once seated they stay put while you move about within 10 m (Follow > SitStayRange), and get up when you go further or step outside.
 - If a companion falls far behind (50 m) and can't see you, it catches up by appearing next to you.
-- They go through portals with you.
+- They go through portals with you. By the game's rules (General > PortalItems): ore, metals and the like only through a portal that allows everything or with the world's portal setting on Casual. A companion carrying them first leaves them in a chest within 15 m, otherwise it stays behind and says why.
 
 ## Jobs
 
@@ -315,7 +315,7 @@ The moment its job has something to do, it gets back to work. It also stops idli
 - Jobs looking for a chest don't use carts or ship holds. The exceptions: a full gatherer away from home can unload into one, and you can always point a companion at one.
 
 **Carrying**
-A companion can carry 300 weight, the same as a player.
+A companion can carry 300 weight, the same as a player, plus what its gear adds (a strength belt). Over that it is encumbered like you: walking pace, no running or jumping, stamina draining while it moves, and it stops when that runs out.
 
 ## Combat
 

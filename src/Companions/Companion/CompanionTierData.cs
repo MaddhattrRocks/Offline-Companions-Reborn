@@ -1,3 +1,4 @@
+using UnityEngine;
 using System.Collections.Generic;
 
 namespace Companions;
@@ -23,6 +24,26 @@ public static class CompanionTierData
 	public static int Price => ModConfig.CompanionPrice.Value;
 
 	public static float MaxCarryWeight => ModConfig.MaxCarryWeight.Value;
+
+	// 1.5.62: what this companion can carry - General > MaxCarryWeight plus what its gear adds (a strength belt +150),
+	// times the world's carry weight modifier, like Player.GetMaxCarryWeight
+	public static float CarryLimit(Component c)
+	{
+		float limit = MaxCarryWeight;
+		Character ch = c != null ? c.GetComponent<Character>() : null;
+		SEMan se = ch != null ? ch.GetSEMan() : null;
+		if (se != null)
+		{
+			se.ModifyMaxCarryWeight(MaxCarryWeight, ref limit);
+		}
+		return limit * Game.m_carryWeightRate;
+	}
+
+	// how much more than the base limit its gear allows (for the job thresholds set against the base)
+	public static float CarryBonus(Component c)
+	{
+		return Mathf.Max(0f, CarryLimit(c) - MaxCarryWeight);
+	}
 
 	public static bool IsDvergerVariant(int prefabHash)
 	{

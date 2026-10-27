@@ -221,7 +221,8 @@ public class HarvestController : MonoBehaviour
 
 	private static float DropScanRadius => ModConfig.HarvestDropScanRadius.Value;
 
-	private static float OverweightThreshold => ModConfig.HarvestOverweightThreshold.Value;
+	// 1.5.62: raised by what its gear adds to the carry limit (a strength belt)
+	private float OverweightThreshold => ModConfig.HarvestOverweightThreshold.Value + CompanionTierData.CarryBonus(this);
 
 	public bool IsInGatherMode { get; private set; }
 

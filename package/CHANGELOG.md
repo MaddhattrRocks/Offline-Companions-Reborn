@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.7
+- Companions get encumbered like a player when they carry too much; a strength belt raises their limit.
+- Portals follow the game's item rules for companions (General > PortalItems); ore they carry is left in a nearby chest, or they wait.
 - Fixed the summon window not taking clicks for some players.
 - Stone and Ore no longer mine walls or other built pieces.
 - Wood takes fallen logs first, then stumps, then standing trees.

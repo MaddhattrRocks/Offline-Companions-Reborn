@@ -47,6 +47,9 @@ The basics: what a companion costs, its health, stamina and carrying limits, and
 **CompanionPrice** — Default: 1000 · Range: 0 – 50000  
 The offering in coins to summon another companion at Odin's Shrine (Summon companion), paid from your pack.
 
+**PortalItems** — Default: `Game` · Options: `Game`, `AllowAll`  
+What a following companion may carry through a portal with you. Game: the same rules as you - ore, metals and the like only through a portal that allows everything or with the world's portal setting on Casual, boss items never; it first puts what can't go through in a chest within 15 m of it, otherwise it stays behind and says why. AllowAll: it comes through with anything.
+
 **RecoverUnsummoned** — Default: On  
 An unsummoned (despawned) companion can be brought back at Odin's Shrine (Recover companions) - with its name, looks, skills and settings, but not its gear, which stays in the tombstone where it was unsummoned - until you next load this world. Off: unsummoning is permanent.
 
