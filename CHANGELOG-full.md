@@ -24,6 +24,9 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Wood: a log hung up in the branches with no part in reach from the ground is left for 15 s (it may fall) - no more swinging at it from underneath.
 - Wood: no swing at a log that's further away than the axe reaches; it steps closer first.
 - Quieter log: the food check's "no food found" line is written once until the inventory or food changes.
+- Water: a swimming companion stuck at a bank jumps out toward where it's going, like a player (the game lets a swimmer that touches the ground jump). Its get-unstuck steps are no longer cancelled by the deep water round it (it stood still in a pool by a stake wall for 7 minutes).
+- Wood: a log caught in a standing tree no longer counts as reachable from the tree's trunk; a companion right under a log above its reach leaves it for 15 s instead of walking in place for minutes.
+- Wood: when you walk off and the companion leaves its log to catch up, it doesn't pick the same log straight back up (it did, over and over, swapping axe and sword each time); it looks for work again after 3 s.
 
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.

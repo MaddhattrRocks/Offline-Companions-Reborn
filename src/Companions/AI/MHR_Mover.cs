@@ -217,7 +217,7 @@ namespace Companions
             {
                 // 1.5.72: a walking step (a sidestep out of being stuck) stops at a drop, fire or spikes on the way - it was only
                 // checked when it started (jumps are left alone - they're in the air)
-                if (!s.StepRun && c.IsOnGround() && (DropAhead(pos, s.StepDir, 0.8f, 1.2f) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
+                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && (DropAhead(pos, s.StepDir, 0.8f, 1.2f) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
                     Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
@@ -858,6 +858,14 @@ namespace Companions
             Vector3 left = Quaternion.Euler(0f, -45f, 0f) * back, right = Quaternion.Euler(0f, 45f, 0f) * back;
             Vector3 a = leftFirst ? left : right, b = leftFirst ? right : left;
             Vector3 side = Quaternion.Euler(0f, 90f, 0f) * dir;
+            // 1.5.69: already swimming - deep water round it isn't a drop to stay out of
+            if (c.IsSwimming())
+            {
+                Vector3 wpick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, side) ? side : -side;
+                s.StepDir = wpick; s.StepRun = false; s.StepUntil = now + 1.2f;
+                Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - swimming to the side");
+                return;
+            }
             if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
             // 1.5.2: never step back off a ledge either (user log: stuck at the top of a ladder, it stepped back down the shaft)
             Vector3 pick = SafeClear(pos, a) ? a : SafeClear(pos, b) ? b : SafeClear(pos, back) ? back : side;
@@ -2282,7 +2290,20 @@ namespace Companions
 
         static void Hop(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why)
         {
-            if (c.IsSwimming() || !c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            // 1.5.69: swimming against a bank - jump out like a player (the game lets a swimmer that touches the world jump,
+            // Character.Jump: InLiquidSwimDepth and m_hitWorldTime < 0.25). Log fc93f903: stuck 7 minutes in the pool by
+            // the stake wall, every unstuck step cancelled by the deep water
+            if (c.IsSwimming())
+            {
+                ai.transform.rotation = Quaternion.LookRotation(dir);
+                c.Jump(false);
+                Rigidbody wrb = ai.GetComponent<Rigidbody>();
+                if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
+                s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
+                Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
+                return;
+            }
+            if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             if (DropAhead(pos, dir, 1.5f, 1.2f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.Jump(false);

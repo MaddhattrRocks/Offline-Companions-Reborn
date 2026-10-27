@@ -776,6 +776,8 @@ public class HarvestController : MonoBehaviour
 			Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up");
 			ResetToIdle();
 			RestoreLoadout();
+			// 1.5.69: catch up first (log fc93f903: it took the same log straight back, 57 times)
+			_scanTimer = 3f;
 			return;
 		}
 		_heartbeatTimer -= Time.deltaTime;
@@ -1338,6 +1340,13 @@ public class HarvestController : MonoBehaviour
 			num3 = new Vector3(vector.x, 0f, vector.z).magnitude;
 		}
 		_attackDiagTimer -= Time.deltaTime;
+		// 1.5.69: right under a log that's above its reach - leave it (log fc93f903: walked "closer" to a log 6.4 m up for
+		// minutes; each re-approach reset the stuck timer)
+		if (_targetType == "TreeLog" && num3 <= attackRange && num > attackRange + 0.5f && !_character.InAttack())
+		{
+			SetAside("it's above its reach");
+			return;
+		}
 		// 1.5.68: a log is reached in 3D - not from under it (log 9aef82b6: a swing from 10.6 m below a log in the branches)
 		if (num3 > num2 || (_targetType == "TreeLog" && num > attackRange + 0.5f && !_character.InAttack()))
 		{
@@ -2202,6 +2211,12 @@ public class HarvestController : MonoBehaviour
 		return _noDamageSwings >= 2;
 	}
 
+	// following and further from you than a job may take it - the "You moved on" distance
+	private bool TooFarFromYou()
+	{
+		return !_isDirectedHarvest && _setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null && Vector3.Distance(base.transform.position, MHR_Owner.Of(this).transform.position) > PlayerRange() + 15f;
+	}
+
 	// it's working from a spot its swings land from - no walking about
 	private bool HoldingGoodSpot => _hasGoodSpot && _hitCheckFor == _target && _noDamageSwings == 0 && Vector3.Distance(_goodSpot, base.transform.position) < 0.8f;
 
@@ -2396,7 +2411,7 @@ public class HarvestController : MonoBehaviour
 			for (float z = box.min.z - 1.5f; z <= box.max.z + 1.5f; z += 1f)
 			{
 				Vector3 top = new Vector3(x, box.max.y + 2f, z);
-				if (!Physics.Raycast(top, Vector3.down, out RaycastHit hit, box.size.y + 8f, s_groundMask) || hit.collider.GetComponentInParent<TreeLog>() != null)
+				if (!Physics.Raycast(top, Vector3.down, out RaycastHit hit, box.size.y + 8f, s_groundMask) || hit.collider.GetComponentInParent<TreeLog>() != null || hit.collider.GetComponentInParent<TreeBase>() != null)
 				{
 					continue;
 				}
@@ -2972,7 +2987,7 @@ public class HarvestController : MonoBehaviour
 				{
 					continue;
 				}
-				bool own = IsOwnPiece(harvestCandidateWithType, type);
+				bool own = !TooFarFromYou() && IsOwnPiece(harvestCandidateWithType, type);
 				if (!own && !InWorkArea(harvestCandidateWithType.transform.position, type))
 				{
 					outOfRange++;

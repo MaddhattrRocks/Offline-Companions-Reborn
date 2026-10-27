@@ -14,6 +14,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Gathering: a companion whose swings aren't damaging what it's working on (a rock in the way) tries another side, then moves on.
 - Gathering: companions stay where their swings land until the target breaks, wait for a fresh log to stop rolling, and keep track of every piece of a tree they cut.
 - Wood: a log that keeps rolling or is stuck up in the branches is left for a moment instead of chased.
+- Companions jump out of the water at a bank like a player instead of getting stuck.
+- Wood: fixed standing under a log caught in a tree, and picking up and dropping the same log when you walk away.
 
 ## 1.5.6
 - Combat: full combos, parries and blocks by chance (better with skill), spacing and going in on an opening, flanking, finishing blows, stamina kept for blocking.
