@@ -35,6 +35,8 @@ Previous version: **1.4.51** — build tag `v69-despawn-and-equip-flag-fix`. Ver
 - **The user builds the DLLs** (`dotnet build -c Release` on their PC). Don't build and hand over a DLL unless they ask. Compiling in a session just to check for errors is fine; say so, and don't send the output.
 - Releases will go up as GitHub Releases once the repo is public ("very soon"). Until then the README's Source section says the code will be on GitHub soon.
 
+### 1.5.7 - release (user, log 7b050fc3: "As long as there are no issues in the log I think we should build release 1.5.7"): README Recent Highlights v1.5.7 (summon window, Stone/Ore and buildings, Wood, encumbrance, portals, safer round the house) and a Thanks section (Necrustic), wording approved by the user; version 1.5.7.
+
 ### 1.5.70 - repair at a base, repair wait by place, rise diagnostic (user, log 31cb468a: "Can you check if the NPC should have fixed up their gear when we were home?" / companion on the roof: "There is no way onto the roof"; log 188ac60a: "Lets add 1. We might as well build the set aside distance thing and the repair when near a workbech.")
 - RepairThreshold (MHR_ToolKeeper): no home + inside EffectArea PlayerBase -> HomeThreshold (80%). Gunter has no home set, so 50% applied at the forge.
 - RepairController: _noStationAt per item; the NoStationWait (10 min) ends once the companion is ScanRadius (20 m) from where it was set. The 47% axe was set aside in the woods and still skipped at home.
