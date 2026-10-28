@@ -378,7 +378,7 @@ namespace Companions
                     return false;
                 }
                 Vector3 round;
-                if (FireExit(pos, dir, out round)) dir = round;
+                if (FireExit(pos, dir, out round, true)) dir = round;
             }
 
             // 1.5.72: a spike wall (a built piece that hurts what touches it) on the next step: walk along it, a little away
@@ -427,7 +427,7 @@ namespace Companions
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
             // 1.4.86: walk up stairs like a player; only hop when a step actually holds him up (1.4.85 hopped every step)
-            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir))
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f))
             {
                 s.NextHop = now + 0.6f;
                 ai.transform.rotation = Quaternion.LookRotation(dir);
@@ -689,14 +689,30 @@ namespace Companions
                             EffectArea fire = FireArea(p, 0.5f);
                             if (fire == null) continue;
                             Vector3 a, b;
-                            if (!FireBypass(fire, prev, dir, next, out a, out b))
+                            List<Vector3> way;
+                            if (FireBypass(fire, prev, dir, next, out a, out b))
                             {
-                                // no clear way round: leave the route (the per-step fire check steers round it)
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
+                                s.Path.Insert(i, b); s.Path.Insert(i, a);
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
                                 return;
                             }
-                            s.Path.Insert(i, b); s.Path.Insert(i, a);
-                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
+                            // 1.5.70: a ring of spots round the fire, the shortest chain of clear stretches through them (log
+                            // bced720b: the two-corner way round didn't fit in the room, it steered step by step onto the stone)
+                            if (FireRing(fire, prev, next, i == 0, out way))
+                            {
+                                s.Path.InsertRange(i, way);
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " by " + way.Count + " spots round it"); }
+                                return;
+                            }
+                            // no way round: a job leaves this errand (it skips that chest/target - Repair and Restock sorting
+                            // between chests either side of the hearth); following you it steers round step by step
+                            if (s.Tag != FollowTag)
+                            {
+                                s.GaveUp = true; s.GaveUpAt = now;
+                                Dbg("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is through the fire at " + Fmt(fire.transform.position) + " - not going");
+                                return;
+                            }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
                             return;
                         }
                     }
@@ -712,19 +728,8 @@ namespace Companions
         static bool FireBypass(EffectArea fire, Vector3 from, Vector3 dir, Vector3 next, out Vector3 a, out Vector3 b)
         {
             a = b = Vector3.zero;
-            Collider col = fire.GetComponent<Collider>();
-            Vector3 c = col != null ? col.bounds.center : fire.transform.position;
-            float r = col != null ? Mathf.Max(col.bounds.extents.x, col.bounds.extents.z) : 2f;
-            Piece piece = fire.GetComponentInParent<Piece>();
-            if (piece != null)
-            {
-                foreach (Collider pc in piece.GetComponentsInChildren<Collider>())
-                {
-                    if (pc == null || pc.isTrigger) continue;
-                    Vector3 off = pc.bounds.center - c; off.y = 0f;
-                    r = Mathf.Max(r, off.magnitude + Mathf.Max(pc.bounds.extents.x, pc.bounds.extents.z));
-                }
-            }
+            Vector3 c;
+            float r = FireReach(fire, out c);
             Vector3 side = new Vector3(-dir.z, 0f, dir.x);
             for (float extra = 0.8f; extra <= 3.3f; extra += 0.5f)
             {
@@ -747,13 +752,89 @@ namespace Companions
             return false;
         }
 
-        static bool LegClearOfFire(Vector3 p0, Vector3 p1)
+        // the fire's middle and how far its piece, flames and damage zone reach out from it
+        static float FireReach(EffectArea fire, out Vector3 c)
+        {
+            Collider col = fire.GetComponent<Collider>();
+            c = col != null ? col.bounds.center : fire.transform.position;
+            float r = col != null ? Mathf.Max(col.bounds.extents.x, col.bounds.extents.z) : 2f;
+            Piece piece = fire.GetComponentInParent<Piece>();
+            if (piece != null)
+            {
+                foreach (Collider pc in piece.GetComponentsInChildren<Collider>())
+                {
+                    if (pc == null) continue;
+                    Vector3 off = pc.bounds.center - c; off.y = 0f;
+                    r = Mathf.Max(r, off.magnitude + Mathf.Max(pc.bounds.extents.x, pc.bounds.extents.z));
+                }
+            }
+            return Mathf.Min(r, 4f);
+        }
+
+        static bool FireRing(EffectArea fire, Vector3 from, Vector3 next, bool fromIsHere, out List<Vector3> way)
+        {
+            way = null;
+            Vector3 c;
+            float r = FireReach(fire, out c);
+            const int N = 12;
+            float[] rings = { r + 0.9f, r + 1.7f };
+            int count = N * rings.Length;
+            Vector3[] pt = new Vector3[count];
+            bool[] ok = new bool[count];
+            for (int ring = 0; ring < rings.Length; ring++)
+                for (int k = 0; k < N; k++)
+                {
+                    float ang = k * Mathf.PI * 2f / N;
+                    Vector3 p = c + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * rings[ring];
+                    Vector3 g;
+                    int idx = ring * N + k;
+                    ok[idx] = GroundAt(p, from.y, out g) && !NearFire(g, 0.5f);
+                    pt[idx] = g;
+                }
+            // Dijkstra: node `count` is where it is, `count + 1` the next corner
+            int S0 = count, T = count + 1;
+            float[] dist = new float[count + 2];
+            int[] back = new int[count + 2];
+            bool[] done = new bool[count + 2];
+            for (int i = 0; i < dist.Length; i++) { dist[i] = float.MaxValue; back[i] = -1; }
+            dist[S0] = 0f;
+            Vector3 P(int i) { return i == S0 ? from : i == T ? next : pt[i]; }
+            for (int iter = 0; iter < count + 2; iter++)
+            {
+                int u = -1; float best = float.MaxValue;
+                for (int i = 0; i < dist.Length; i++) if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+                if (u < 0 || u == T) break;
+                done[u] = true;
+                for (int v = 0; v < count + 2; v++)
+                {
+                    if (done[v] || v == S0 || (v < count && !ok[v])) continue;
+                    if (u < count && v < count)
+                    {
+                        // round the ring: the next spot either way, or the same/next angle on the other ring
+                        int du = Mathf.Abs((u % N) - (v % N)); du = Mathf.Min(du, N - du);
+                        if (du > 1) continue;
+                    }
+                    if (u == S0 && v == T) continue;
+                    Vector3 a = P(u), b = P(v);
+                    float d = Vector3.Distance(a, b);
+                    if (dist[u] + d >= dist[v]) continue;
+                    if (!CanSee(a, b) || !LegClearOfFire(a, b, u == S0 && fromIsHere ? 0.6f : 0.2f)) continue;
+                    dist[v] = dist[u] + d; back[v] = u;
+                }
+            }
+            if (back[T] < 0) return false;
+            way = new List<Vector3>();
+            for (int i = back[T]; i >= 0 && i != S0; i = back[i]) way.Insert(0, pt[i]);
+            return way.Count > 0;
+        }
+
+        static bool LegClearOfFire(Vector3 p0, Vector3 p1, float skipStart = 0.2f)
         {
             Vector3 leg = p1 - p0; leg.y = 0f;
             float len = leg.magnitude;
             if (len < 0.05f) return FireArea(p0, 0.5f) == null;
             Vector3 dir = leg / len;
-            for (float t = 0.2f; t < len; t += 0.4f)
+            for (float t = skipStart; t < len; t += 0.4f)
             {
                 Vector3 p = p0 + dir * t; p.y = Mathf.Lerp(p0.y, p1.y, t / len);
                 if (FireArea(p, 0.5f) != null) return false;
@@ -2200,6 +2281,7 @@ namespace Companions
                     EffectArea a = EffectArea.IsPointInsideArea(p + Vector3.up * h, EffectArea.Type.Burning, radius);
                     if (a != null) return a;
                 }
+                return FireZoneAt(p, radius);
             }
             catch { }
             return null;
@@ -2207,14 +2289,69 @@ namespace Companions
 
         public static bool InFire(Vector3 p)
         {
-            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f) != null; }
+            try { return EffectArea.IsPointInsideArea(p + Vector3.up * 0.3f, EffectArea.Type.Burning, 0.3f) != null || FireZoneAt(p, 0.2f) != null; }
             catch { return false; }
+        }
+
+        // 1.5.70: a lit fire's damage zone (its Aoe - the part that hurts, a box, a trigger or a sphere) isn't its Burning
+        // effect area (what the checks above look at) - log bced720b: hurt on the hearth stone 0.6 m from its middle. Lit
+        // fireplaces with a damaging Aoe, refreshed every 2 s.
+        class FireZone { public Fireplace Fp; public EffectArea Area; public Aoe Aoe; public Collider[] Triggers; }
+        static readonly List<FireZone> s_zones = new List<FireZone>();
+        static float s_zonesAt = -10f;
+
+        static EffectArea FireZoneAt(Vector3 p, float margin)
+        {
+            float now = Time.time;
+            if (now - s_zonesAt > 2f)
+            {
+                s_zonesAt = now;
+                s_zones.Clear();
+                foreach (Fireplace fp in UnityEngine.Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+                {
+                    if (fp == null || !fp.IsBurning()) continue;
+                    EffectArea area = fp.GetComponentInChildren<EffectArea>();
+                    foreach (Aoe aoe in fp.GetComponentsInChildren<Aoe>(false))
+                    {
+                        if (aoe == null || (aoe.m_damage.m_fire <= 0f && aoe.m_damageSelf <= 0f && aoe.m_damage.GetTotalDamage() <= 0f)) continue;
+                        List<Collider> trig = new List<Collider>();
+                        foreach (Collider tc in aoe.GetComponents<Collider>()) if (tc != null && tc.isTrigger) trig.Add(tc);
+                        s_zones.Add(new FireZone { Fp = fp, Area = area, Aoe = aoe, Triggers = trig.ToArray() });
+                    }
+                }
+            }
+            for (int i = 0; i < s_zones.Count; i++)
+            {
+                FireZone z = s_zones[i];
+                if (z.Aoe == null || !z.Aoe.isActiveAndEnabled) continue;
+                Vector3 at = z.Aoe.transform.position;
+                if ((at - p).sqrMagnitude > 64f) continue;
+                for (float h = 0.3f; h < 2f; h += 0.6f)
+                {
+                    Vector3 q = p + Vector3.up * h;
+                    bool inside;
+                    if (z.Aoe.m_useTriggers && z.Triggers.Length > 0)
+                    {
+                        inside = false;
+                        foreach (Collider tc in z.Triggers) if (tc != null && Vector3.Distance(tc.ClosestPoint(q), q) <= margin) { inside = true; break; }
+                    }
+                    else if (z.Aoe.m_useCollider != null)
+                    {
+                        Vector3 local = Quaternion.Inverse(z.Aoe.transform.rotation) * (q - (at + z.Aoe.m_useCollider.center));
+                        Vector3 half = z.Aoe.m_useCollider.size * 0.5f + Vector3.one * margin;
+                        inside = Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.y) <= half.y && Mathf.Abs(local.z) <= half.z;
+                    }
+                    else inside = Vector3.Distance(q, at) <= z.Aoe.m_radius + margin;
+                    if (inside) return z.Area ?? z.Fp.GetComponentInChildren<EffectArea>();
+                }
+            }
+            return null;
         }
 
         // the nearest way out: a direction 1.5 m away that isn't in a fire and has ground
         // 1.4.100: further out too - a hearth's flames reach past 1.5 m from its middle (1.4.99 test: got up from a chair
         // into the hearth and stood in it, every way out within 1.5 m still counted as fire)
-        static bool FireExit(Vector3 pos, Vector3 prefer, out Vector3 dir)
+        static bool FireExit(Vector3 pos, Vector3 prefer, out Vector3 dir, bool wholeLeg = false)
         {
             dir = Vector3.zero;
             prefer.y = 0f;
@@ -2225,7 +2362,7 @@ namespace Companions
                 {
                     float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 45f;
                     Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
-                    if (!NearFire(pos + d * r, 0.3f) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; return true; }
+                    if (!NearFire(pos + d * r, 0.3f) && !DropAhead(pos, d, 1.0f, 1.2f) && (!wholeLeg || LegClearOfFire(pos, pos + d * r, 0.6f))) { dir = d; return true; }
                 }
             return false;
         }
@@ -2339,7 +2476,8 @@ namespace Companions
                 return;
             }
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
-            if (DropAhead(pos, dir, 1.5f, 1.2f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            // 1.5.70: never hop toward a fire (the hearth stone is a step it would hop up onto)
+            if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
