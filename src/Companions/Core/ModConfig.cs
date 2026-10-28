@@ -55,6 +55,10 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> UseTorchOpener;
 
+	internal static ConfigEntry<bool> TorchBurnsDown;
+
+	internal static ConfigEntry<float> TorchDarkThreshold;
+
 	internal static ConfigEntry<bool> EngageOnNotice;
 
 	internal static ConfigEntry<float> TorchOpenerTimeout;
@@ -693,6 +697,8 @@ internal static class ModConfig
 		BowSwitchDistance = Bind(cfg, "Combat", "BowSwitchDistance", 15f, "A companion with a bow or crossbow switches to it when its target is further away than this (meters).", new AcceptableValueRange<float>(5f, 60f));
 		MeleeSwitchDistance = Bind(cfg, "Combat", "MeleeSwitchDistance", 12f, "It switches back to its melee weapon when the target comes closer than this (meters).", new AcceptableValueRange<float>(3f, 40f));
 		UseTorchOpener = Bind(cfg, "Combat", "UseTorchOpener", defaultValue: true, "Against enemies that are weak to fire, open with a torch to set them alight, then switch back to the best weapon.");
+		TorchBurnsDown = Bind(cfg, "Torch", "BurnsDown", defaultValue: true, "A torch in a companion's hand burns down like yours and is gone at 0 durability. Off: companions' torches last forever (the game itself only burns down players' torches).");
+		TorchDarkThreshold = Bind(cfg, "Torch", "DarkThreshold", 0.15f, "In a dungeon or cave, a companion lights a torch when the light there is below this (0 = pitch black, 1 = bright day). The log shows the light level each time you go into one ([Torch] lines), to tune this. Outdoors it's simply night.", new AcceptableValueRange<float>(0f, 1f));
 		TorchOpenerTimeout = Bind(cfg, "Combat", "TorchOpenerTimeout", 4f, "Seconds to keep trying to set an enemy alight before giving up and switching back.", new AcceptableValueRange<float>(1f, 10f));
 		TorchOpenerCooldown = Bind(cfg, "Combat", "TorchOpenerCooldown", 10f, "Seconds before the same enemy can be opened on with a torch again.", new AcceptableValueRange<float>(0f, 60f));
 		TorchOpenerMinTargetHealth = Bind(cfg, "Combat", "TorchOpenerMinTargetHealth", 40f, "No torch opener on enemies with less maximum health than this - not worth it.", new AcceptableValueRange<float>(0f, 500f));

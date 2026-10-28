@@ -130,6 +130,8 @@ public class RepairController : MonoBehaviour
 		}
 		_tempWorn.Clear();
 		inventory.GetWornItems(_tempWorn);
+		// 1.5.71: torches burn down and are used up, never repaired (user: "add a check so the NPC will not try to repair the torch")
+		_tempWorn.RemoveAll(it => it?.m_shared != null && it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch);
 		if (_tempWorn.Count == 0)
 		{
 			Log("DirectRepairAt — no worn items");
@@ -300,6 +302,8 @@ public class RepairController : MonoBehaviour
 		}
 		_tempWorn.Clear();
 		inventory.GetWornItems(_tempWorn);
+		// 1.5.71: torches burn down and are used up, never repaired (user: "add a check so the NPC will not try to repair the torch")
+		_tempWorn.RemoveAll(it => it?.m_shared != null && it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch);
 		if (_tempWorn.Count == 0)
 		{
 			return;
@@ -544,7 +548,7 @@ public class RepairController : MonoBehaviour
 		{
 			return false;
 		}
-		if (!item.m_shared.m_canBeReparied)
+		if (!item.m_shared.m_canBeReparied || item.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch)
 		{
 			return false;
 		}

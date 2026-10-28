@@ -4,6 +4,9 @@ Every change, version by version. The `CHANGELOG.md` shipped with the mod is a s
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.8
+- Torches: a companion carries a torch at night outdoors and in dungeons and caves that are dark by their own light (Torch > DarkThreshold - crypts and troll caves are dark, sunken crypts and the Mistlands dungeons less so); not inside a base with a lit fire close by, nor within 5 m of you holding your own. It takes the torch with the most left, and lights it again after a job or a fight has had its hands. Its torch burns down like a player's and is gone at 0 (the game burns down only players' torches - Torch > BurnsDown, on by default); it says so when its last one burns out. Torches are never repaired.
+
 ## 1.5.7
 - The beehive order goes to the nearest companion that isn't resting, sleeping or heading to bed (it went to the first one on the list, even one on its way to bed).
 - A companion carrying out one of your orders (beehive, boarding, move, cart, chest, tombstone) no longer goes to bed in the middle of it.

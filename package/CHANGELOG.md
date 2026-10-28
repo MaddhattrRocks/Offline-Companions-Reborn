@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.8
+- Torches: companions carry one at night and in dark dungeons and caves, not in a lit base or next to you holding yours; it burns down like yours (Torch > BurnsDown) and is never repaired.
+
 ## 1.5.7
 - The beehive order goes to the nearest companion that isn't resting; companions don't go to bed in the middle of an order.
 - Companions step round a tree or rock that is in the way of their swing.

@@ -180,7 +180,17 @@ public class CompanionAI : BaseAI
 
 	private const float TorchCheckInterval = 3f;
 
-	private ItemDrop.ItemData _equippedTorch;
+	// 1.5.71: torches (user: "lets go over how the npc uses a torch at night") - it wants one in the dark (night outdoors, a
+	// dark dungeon by its light level), not in a lit base or next to you holding yours; it burns down like a player's
+	private bool _torchWanted;
+
+	private float _torchDrainAt;
+
+	private bool _torchBurnedOut;
+
+	private string _lightLogKey;
+
+	internal bool WantsTorch => _torchWanted;
 
 	private const float SuppressedMoveInterval = 9999f;
 
@@ -418,46 +428,148 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	private static bool IsTorch(ItemDrop.ItemData it)
+	{
+		return it != null && it.m_shared != null && it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+	}
+
 	private void UpdateTorch()
 	{
+		Humanoid humanoid = m_character as Humanoid;
+		if (humanoid == null)
+		{
+			return;
+		}
+		float now = Time.time;
+		ItemDrop.ItemData right = ReflectionHelper.GetRightItem(humanoid);
+		// burns down like a player's (the game drains held items for players only - Humanoid.UpdateEquipment)
+		if (IsTorch(right) && right.m_shared.m_useDurability && (ModConfig.TorchBurnsDown?.Value ?? true))
+		{
+			float dt = _torchDrainAt > 0f ? Mathf.Min(now - _torchDrainAt, 5f) : 0f;
+			_torchDrainAt = now;
+			right.m_durability -= right.m_shared.m_durabilityDrain * dt * Game.m_durabilityRate;
+			if (right.m_durability <= 0f)
+			{
+				humanoid.UnequipItem(right, triggerEquipEffects: false);
+				if (right.m_shared.m_destroyBroken)
+				{
+					humanoid.GetInventory()?.RemoveItem(right);
+				}
+				CompanionsPlugin.Log.LogInfo("[Torch] \"" + m_character.m_name + "\": the torch burned out");
+				_torchBurnedOut = true;
+				_torchCheckTimer = 0f;
+				right = null;
+			}
+		}
+		else
+		{
+			_torchDrainAt = 0f;
+		}
 		_torchCheckTimer -= Time.deltaTime;
 		if (_torchCheckTimer > 0f)
 		{
 			return;
 		}
 		_torchCheckTimer = 3f;
-		Humanoid humanoid = m_character as Humanoid;
-		if (humanoid == null)
+		bool fighting = _combatAI != null && _combatAI.IsEngaged;
+		bool want = !fighting && IsDarkHere() && !LitBaseNear() && !YouHoldTorchNear();
+		_torchWanted = want;
+		if (TorchOpener.IsActive(humanoid) || humanoid.InAttack())
 		{
 			return;
 		}
-		bool flag = _combatAI != null && _combatAI.IsEngaged;
-		bool flag2 = EnvMan.IsNight() && !flag;
-		if (flag2 && _equippedTorch == null)
+		// a job's tool in hand comes first; the torch comes back when the job puts it away
+		bool jobHands = _setup != null && _setup.SuppressAutoEquip;
+		if (want && !jobHands && !IsTorch(right) && !m_character.IsSwimming())
 		{
-			Inventory inventory = humanoid.GetInventory();
-			if (inventory == null)
+			ItemDrop.ItemData best = null;
+			Inventory inv = humanoid.GetInventory();
+			if (inv != null)
 			{
-				return;
-			}
-			{
-				foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
+				foreach (ItemDrop.ItemData it in inv.GetAllItems())
 				{
-					if (allItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch)
+					if (IsTorch(it) && (!it.m_shared.m_useDurability || it.m_durability > 0f) && (best == null || it.m_durability > best.m_durability))
 					{
-						humanoid.EquipItem(allItem);
-						_equippedTorch = allItem;
-						break;
+						best = it;
 					}
 				}
-				return;
+			}
+			if (best != null)
+			{
+				humanoid.EquipItem(best);
+				_torchBurnedOut = false;
+				CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" lit a torch (" + (best.m_shared.m_useDurability ? (best.m_durability / Mathf.Max(1f, best.GetMaxDurability()) * 100f).ToString("F0") + "% left" : "no wear") + ")");
+			}
+			else if (_torchBurnedOut)
+			{
+				_torchBurnedOut = false;
+				GetComponent<CompanionTalk>()?.SayProblem("no_torches", ModLocalization.Loc("hc_say_no_torches"));
 			}
 		}
-		if (!flag2 && _equippedTorch != null)
+		else if (!want && IsTorch(right))
 		{
-			humanoid.UnequipItem(_equippedTorch, triggerEquipEffects: false);
-			_equippedTorch = null;
+			humanoid.UnequipItem(right, triggerEquipEffects: false);
+			CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" put the torch away");
+			_setup?.SyncEquipmentToInventory();
 		}
+	}
+
+	// night outdoors; in a dungeon or cave, by its light (crypts and troll caves are dark, sunken crypts and the Mistlands
+	// dungeons less so - user). The game only lights the place you are in, so away from you inside one it counts as dark.
+	private bool IsDarkHere()
+	{
+		Vector3 pos = base.transform.position;
+		if (!Character.InInterior(pos))
+		{
+			return EnvMan.IsNight();
+		}
+		Player p = Player.m_localPlayer;
+		if (p == null || !p.InInterior() || Vector3.Distance(p.transform.position, pos) > 100f)
+		{
+			return true;
+		}
+		float light = RenderSettings.ambientLight.grayscale;
+		float threshold = ModConfig.TorchDarkThreshold?.Value ?? 0.15f;
+		bool dark = light < threshold;
+		string env = EnvMan.instance?.GetCurrentEnvironment()?.m_name ?? "?";
+		string key = env + (dark ? "/dark" : "/lit");
+		if (key != _lightLogKey)
+		{
+			_lightLogKey = key;
+			CompanionsPlugin.Log.LogInfo($"[Torch] \"{m_character.m_name}\" in {env}, light {light:F2} ({(dark ? "dark" : "light enough")}, DarkThreshold {threshold:F2})");
+		}
+		return dark;
+	}
+
+	// in a base with a lit fire close by (a hearth, a campfire, a standing torch)
+	private bool LitBaseNear()
+	{
+		Vector3 pos = base.transform.position;
+		try
+		{
+			if (EffectArea.IsPointInsideArea(pos, EffectArea.Type.PlayerBase, 0f) == null)
+			{
+				return false;
+			}
+			foreach (Collider c in Physics.OverlapSphere(pos, 8f))
+			{
+				Fireplace fp = c != null ? c.GetComponentInParent<Fireplace>() : null;
+				if (fp != null && fp.IsBurning())
+				{
+					return true;
+				}
+			}
+		}
+		catch
+		{
+		}
+		return false;
+	}
+
+	private bool YouHoldTorchNear()
+	{
+		Player p = Player.m_localPlayer;
+		return p != null && IsTorch(ReflectionHelper.GetRightItem(p)) && Vector3.Distance(p.transform.position, base.transform.position) < 5f;
 	}
 
 	public GameObject GetFollowTarget()

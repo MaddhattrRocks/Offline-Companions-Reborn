@@ -348,6 +348,7 @@ A companion can carry 300 weight, the same as a player, plus what its gear adds 
 - These are chances, not certainties - they misjudge now and then. `[Combat] FightLikePlayer` off goes back to the older one-swing-at-a-time fighting.
 - **Weapon choice:** they pick the weapon that does the most damage to *this* enemy, using its weaknesses and resistances.
 - **Fire:** they open with a torch against enemies weak to fire, then switch back.
+- **Torches:** at night and in dark dungeons and caves they carry a torch (the one with the most left), not in a lit base or right next to you holding yours. It burns down like yours, and they never repair torches - keep a few in their bag.
 - **Bows and crossbows:** used only when they carry the matching ammo, at 15 m and beyond. Under 12 m they switch back to melee.
 - **Low health:** below 30% they fight defensively, and below 15% they run - to you, when the enemy isn't in the way.
 - **Backstabs:** companions don't take backstab damage.

@@ -23,6 +23,7 @@ Every setting in the mod, what it does and what it starts at.
 - [Follow](#follow)
 - [Movement](#movement)
 - [Combat](#combat)
+- [Torch](#torch)
 - [Food](#food)
 - [Stamina](#stamina)
 - [Rest](#rest)
@@ -350,6 +351,16 @@ Seconds before the same enemy can be opened on with a torch again.
 
 **TorchOpenerMinTargetHealth** — Default: 40 · Range: 0 – 500  
 No torch opener on enemies with less maximum health than this - not worth it.
+
+## Torch
+
+
+
+**BurnsDown** — Default: On  
+A torch in a companion's hand burns down like yours and is gone at 0 durability. Off: companions' torches last forever (the game itself only burns down players' torches).
+
+**DarkThreshold** — Default: 0.15 · Range: 0 – 1  
+In a dungeon or cave, a companion lights a torch when the light there is below this (0 = pitch black, 1 = bright day). The log shows the light level each time you go into one ([Torch] lines), to tune this. Outdoors it's simply night.
 
 ## Food
 

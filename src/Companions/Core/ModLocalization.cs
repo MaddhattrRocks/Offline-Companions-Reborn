@@ -417,6 +417,7 @@ public static class ModLocalization
 			{ "hc_cmd_hive", "I'll fetch the honey." },
 			{ "hc_cmd_hive_empty", "No honey in there yet." },
 			{ "hc_say_encumbered", "This is too heavy - I can barely move." },
+			{ "hc_say_no_torches", "My last torch burned out." },
 			{ "hc_say_portal_stay", "I can't take {0} through the portal - I'll wait here." },
 			{ "hc_say_portal_left", "Left {0} in the chest by the portal." },
 			{ "hc_cmd_tombstone_1", "I'll grab my things." },

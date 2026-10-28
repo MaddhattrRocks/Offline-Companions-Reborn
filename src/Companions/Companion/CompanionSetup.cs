@@ -1094,7 +1094,9 @@ public class CompanionSetup : MonoBehaviour
 		CompanionsPlugin.Log.LogDebug($"[Setup] Weapon decision: use2H={flag} " + "desired=\"" + (itemData11?.m_shared?.m_name ?? "none") + "\" current=\"" + (itemData9?.m_shared?.m_name ?? "none") + "\" " + $"needsSwap={itemData11 != null && itemData9 != itemData11}");
 		bool flag2 = _combatAI != null && _combatAI.IsEngaged;
 		bool flag3 = (itemData9 != null && itemData9.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) || (itemData10 != null && itemData10.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow);
-		if (!flag2 && (!flag3 || GetCombatStance() != 2) && itemData11 != null && itemData9 != itemData11)
+		// 1.5.71: not the torch it's carrying in the dark
+		bool torchLit = itemData9 != null && itemData9.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch && _ai != null && _ai.WantsTorch;
+		if (!flag2 && !torchLit && (!flag3 || GetCombatStance() != 2) && itemData11 != null && itemData9 != itemData11)
 		{
 			if (itemData9 != null)
 			{
