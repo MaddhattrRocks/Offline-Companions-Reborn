@@ -2,6 +2,24 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.7
+- The beehive order goes to the nearest companion that isn't resting; companions don't go to bed in the middle of an order.
+- Companions step round a tree or rock that is in the way of their swing.
+- Companions get encumbered like a player when they carry too much; a strength belt raises their limit.
+- Portals follow the game's item rules for companions (General > PortalItems); ore they carry is left in a nearby chest, or they wait.
+- Fixed the summon window not taking clicks for some players.
+- Stone and Ore no longer mine walls or other built pieces.
+- Wood takes fallen logs first, then stumps, then standing trees, finishes the log it split before starting another, and chops a log where it can reach it with nothing in the way.
+- Wood: chops a log from one spot instead of moving along it, and only steps aside when a tree comes down, not when a log breaks.
+- Gathering: a companion whose swings aren't damaging what it's working on (a rock in the way) tries another side, then moves on.
+- Gathering: companions stay where their swings land until the target breaks, wait for a fresh log to stop rolling, and keep track of every piece of a tree they cut.
+- Wood: a log that keeps rolling or is stuck up in the branches is left for a moment instead of chased.
+- Companions jump out of the water at a bank like a player instead of getting stuck.
+- Wood: fixed standing under a log caught in a tree, and picking up and dropping the same log when you walk away.
+- Companions keep clear of the hearth when walking round it, even in a tight room.
+- Companions no longer store things in or take things from world-generated chests.
+- Repairs: companions without a home repair worn gear in a base like at home, and an item they couldn't fix out in the wild is looked at again once they're back.
+
 ## 1.5.6
 - Combat: full combos, parries and blocks by chance (better with skill), spacing and going in on an opening, flanking, finishing blows, stamina kept for blocking.
 - Bows drawn like a player (draw time, partial draws); Ranged stance carries the bow; Balanced takes the bow for enemies melee can't reach.

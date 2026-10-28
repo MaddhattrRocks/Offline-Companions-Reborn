@@ -47,6 +47,9 @@ The basics: what a companion costs, its health, stamina and carrying limits, and
 **CompanionPrice** — Default: 1000 · Range: 0 – 50000  
 The offering in coins to summon another companion at Odin's Shrine (Summon companion), paid from your pack.
 
+**PortalItems** — Default: `Game` · Options: `Game`, `AllowAll`  
+What a following companion may carry through a portal with you. Game: the same rules as you - ore, metals and the like only through a portal that allows everything or with the world's portal setting on Casual, boss items never; it first puts what can't go through in a chest within 15 m of it, otherwise it stays behind and says why. AllowAll: it comes through with anything.
+
 **RecoverUnsummoned** — Default: On  
 An unsummoned (despawned) companion can be brought back at Odin's Shrine (Recover companions) - with its name, looks, skills and settings, but not its gear, which stays in the tombstone where it was unsummoned - until you next load this world. Off: unsummoning is permanent.
 
@@ -481,7 +484,7 @@ Repairing a companion's own weapons, armor and tools at a crafting station.
 A companion takes its gear to a crafting station to repair it when something drops below this share of durability (0.5 = 50%).
 
 **HomeThreshold** — Default: 0.8 · Range: 0.1 – 1  
-At home, where a workbench is close by, gear is repaired a bit sooner: below this share (0.8 = 80%). 1 = at any wear. Away from home DurabilityThreshold applies.
+At home (or, without a home set, inside a base - a workbench's area), gear is repaired a bit sooner: below this share (0.8 = 80%). 1 = at any wear. Away from home DurabilityThreshold applies.
 
 **NoStationWait** — Default: 600 · Range: 30 – 3600  
 When a worn item can't be repaired at any station within reach (say it needs a black forge and there isn't one nearby), or the way to the station failed, that item is left alone for this many seconds before it looks again.

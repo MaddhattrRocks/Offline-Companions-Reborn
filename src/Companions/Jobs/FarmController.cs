@@ -1359,7 +1359,7 @@ public class FarmController : MonoBehaviour
 		{
 			return true;
 		}
-		return inventory.GetTotalWeight() >= ModConfig.HarvestOverweightThreshold.Value;
+		return inventory.GetTotalWeight() >= ModConfig.HarvestOverweightThreshold.Value + CompanionTierData.CarryBonus(this);
 	}
 
 	private bool HasCropOutput()

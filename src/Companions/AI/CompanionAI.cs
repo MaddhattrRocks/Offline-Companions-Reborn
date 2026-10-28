@@ -233,6 +233,10 @@ public class CompanionAI : BaseAI
 
 	internal bool IsRecoveringTombstone => _pendingTombstone != null;
 
+	// 1.5.63: carrying out one of your orders (hive, boarding, move, cart, deposit, tombstone) - bedtime waits for it
+	// (log 4122afdf: auto-sleep took it back to bed in the middle of the beehive order)
+	internal bool HasOrder => MHR_Hive.Active(this) || MHR_Board.Active(this) || PendingMoveTarget.HasValue || PendingCartAttach != null || PendingDepositContainer != null || _pendingTombstone != null;
+
 
 	internal void SetPatrolPointAt(Vector3 point)
 	{
@@ -1786,7 +1790,7 @@ public class CompanionAI : BaseAI
 					continue;
 				}
 				float num2 = inventory.GetTotalWeight() + component.m_itemData.GetWeight();
-				if (!(num2 > CompanionTierData.MaxCarryWeight))
+				if (!(num2 > CompanionTierData.CarryLimit(this)))
 				{
 					float num3 = Vector3.Distance(component.transform.position, vector);
 					if (num3 < 0.3f)

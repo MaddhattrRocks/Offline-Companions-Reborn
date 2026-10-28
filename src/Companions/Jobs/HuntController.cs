@@ -648,7 +648,7 @@ public class HuntController : MonoBehaviour
 			return false;
 		}
 		float full = ModConfig.HuntBagFull?.Value ?? 0.9f;
-		return inventory.GetEmptySlots() == 0 || inventory.GetTotalWeight() >= CompanionTierData.MaxCarryWeight * full;
+		return inventory.GetEmptySlots() == 0 || inventory.GetTotalWeight() >= CompanionTierData.CarryLimit(this) * full;
 	}
 
 	private void Skip(Character c, float seconds)

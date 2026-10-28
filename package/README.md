@@ -10,13 +10,13 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 
 > **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down. You can also report it in the [Bugs tab on Nexus Mods](https://www.nexusmods.com/valheim/mods/4047?tab=bugs) or start a thread on [Hexium](https://valheim.hexium.gg/mods/Maddhattr/Offline_Companions_Reborn#fn-threads).
 
-## Recent Highlights (v1.5.6)
-- **Fights like a player.** Companions swing full combos, block or parry by chance (better with skill), keep just out of an enemy's reach and go in on an opening, work round behind an enemy busy with you, and keep stamina back for blocking. Ticks latched on are fought first.
-- **Bows like a player.** Companions draw before each shot (quicker, weaker draws up close), Ranged stance carries the bow, and Balanced takes the bow for enemies its sword can't reach - out in deep water, a level up or down.
-- **Smarter about where they fight.** Only enemies they can see; no doors opened mid-fight; defensive in dungeons; no swimming out after enemies; back to you if a fight drifts more than 35 m away; and they follow you through dungeon doors even mid-fight.
-- **Ships.** Companions get aboard like a player - jumping on from the dock, or swimming and wading to the ladder - walk to a seat (or the one you point at), and get off with you when you go ashore. No more teleporting on and off.
-- **Odin's Shrine.** Summon more companions for an offering of coins, and recover lost ones - or one you unsummoned by mistake - from the shrine's menu.
-- **Beehives.** Point the command key at a beehive and a companion empties it and keeps the honey.
+## Recent Highlights (v1.5.7)
+- **Summon window fixed.** The summon and starter windows take clicks again for players where the buttons weren't responding.
+- **Stone and Ore leave your buildings alone.** Companions no longer mine stone walls or other built pieces.
+- **Wood:** fallen logs first, then stumps, then standing trees. Companions chop a log from one spot where their swings land, finish every piece of a tree they cut, wait for a fresh log to stop rolling, and leave logs stuck up in the branches alone.
+- **Encumbrance.** Companions get weighed down like a player when they carry too much; a strength belt raises their limit.
+- **Portals by the game's rules.** Ore and other items that can't go through a portal are left in a nearby chest, or the companion waits (General > PortalItems).
+- **Safer around the house.** Companions keep clear of the hearth's flames even in a tight room, step round trees and rocks in the way of their swing, and jump out of the water at a bank instead of getting stuck.
 
 See `CHANGELOG.md` for the version-by-version detail.
 
@@ -242,6 +242,9 @@ Later:
 - A cart review.
 - Outposts: a way for companions to treat a second base like home.
 - Smarter chest organisation (ore near the smelter, food near the cooking stations…).
+
+## Thanks
+A big thank you to **Necrustic** for the steady stream of bug reports and feedback - many of the fixes in this mod started with one of them.
 
 ## Source
 

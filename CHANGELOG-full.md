@@ -4,6 +4,37 @@ Every change, version by version. The `CHANGELOG.md` shipped with the mod is a s
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.7
+- The beehive order goes to the nearest companion that isn't resting, sleeping or heading to bed (it went to the first one on the list, even one on its way to bed).
+- A companion carrying out one of your orders (beehive, boarding, move, cart, chest, tombstone) no longer goes to bed in the middle of it.
+- Melee: a tree, log or rock between a companion and its target soaked up its swings; it now steps round to a spot with a clear line first (and swings anyway if there's none).
+- Encumbrance: a companion carrying more than it can is encumbered like a player - walking pace, no running, jumping or dodging, the loaded-down walk, 10 stamina a second while moving, and standing still when that runs out. It says so, and its status line reads "carrying too much - walking slowly". Its limit is General > MaxCarryWeight plus what its gear adds (a strength belt +150), times the world's carry weight setting; pickups, the weight bar and the jobs' "pack full" checks use the same limit.
+- Portals: a following companion follows the game's item rules (new setting General > PortalItems, Game by default): ore, metals and the like only through a portal that lets everything through or with the world's portal setting on Casual, boss items never. Carrying something that can't go through, it leaves it in a chest within 15 m (stacking with the same item where it can) and comes through; with no chest that has room it stays behind and says why. AllowAll brings companions through with anything, as before. Dungeon entrances and map teleports aren't checked, as for the player.
+- Fixed the summon window's buttons not taking clicks (and showing "Missing requirement" when hovered) after you had opened your inventory somewhere you couldn't craft - they were copies of the game's Craft button, greyed out at that moment.
+- Stone and Ore leave buildings alone: built pieces (yours or part of a location) and walls are no longer mined for stone.
+- Wood works through fallen logs first, then stumps, and only then fells a standing tree (logs and stumps were taken nearest first, together).
+- Wood: a log lying on a slope or across something is chopped at the part near the ground it can reach, instead of walking under its middle (it got stuck there, gave up on the log and came back to it). The spot has to have a clear line to the log - a rock in between doesn't count.
+- Wood: after splitting a log or felling a tree, the pieces that come out of it are finished first (within 6 m, for 30 s), instead of the nearest other log.
+- Wood: a companion keeps to the spot it picked to chop a log (it re-picked the nearest spot every 2 s and kept moving along the log), and only steps aside when a standing tree comes down - breaking a log no longer sends it 4 m away before it comes back for the wood.
+- Gathering: a companion checks its swings land - three swings that don't lower the target's health and it tries another side of a log, then leaves it for a while (it chopped 17 times at a rock under a log).
+- Gathering: the game now tells a companion when one of its swings lands on a tree, log, stump or rock (a hit register). Once a swing lands it stays on that spot until the target breaks - no re-approaching or shuffling along the log - and only moves after 2 swings in a row that didn't land (another side first, then it leaves the target).
+- Wood: a log that has just fallen or split is left alone until it stops rolling (up to 3 s) before the companion picks where to stand.
+- Wood: the logs a tree or log breaks into are remembered and finished first wherever they roll (within 30 m, for 60 s), even outside the Follow range; logs that were already lying there don't count.
+- Wood: a companion waits up to 8 s for a log to stop rolling or sliding; one that keeps moving is left for 15 s instead of chased down the slope.
+- Wood: a log hung up in the branches with no part in reach from the ground is left for 15 s (it may fall) - no more swinging at it from underneath.
+- Wood: no swing at a log that's further away than the axe reaches; it steps closer first.
+- Quieter log: the food check's "no food found" line is written once until the inventory or food changes.
+- Water: a swimming companion stuck at a bank jumps out toward where it's going, like a player (the game lets a swimmer that touches the ground jump). Its get-unstuck steps are no longer cancelled by the deep water round it (it stood still in a pool by a stake wall for 7 minutes).
+- Wood: a log caught in a standing tree no longer counts as reachable from the tree's trunk; a companion right under a log above its reach leaves it for 15 s instead of walking in place for minutes.
+- Wood: when you walk off and the companion leaves its log to catch up, it doesn't pick the same log straight back up (it did, over and over, swapping axe and sword each time); it looks for work again after 3 s.
+- Repairs: a companion without a home set uses the home threshold (GearRepair > HomeThreshold, 80%) inside a base (a workbench's area), not only below 50%.
+- Repairs: an item set aside because no station nearby could fix it is looked at again once the companion is 20 m from where that happened (it waited 10 minutes even after you got home).
+- Fires: the way round a hearth or campfire is sized by the hearth stone itself and every stretch of it is checked for flames, pushed further out until it's clear; a companion that steps out of a fire plans its route again from outside (it cut across the hearth stone into the flames 7 times while sorting chests). Applies to all movement - following, jobs, chores, combat.
+- Fires: every fire check now also covers a lit fire's damage zone (the game keeps it separate from the flames the checks looked at); when the simple way round a fire doesn't fit, a companion looks for a chain of clear spots round it; it never hops up a step (the hearth stone) toward a fire; and a job that can only get somewhere through a fire skips that errand instead of walking through it (following you, it still steers round step by step).
+- Chests: companions only use chests a player built - not the chests of huts, camps and dungeons the world generated (one carried its wood to a hut's chest). Pointing a companion at a chest yourself still works on any chest.
+- Debug log: a companion that shoots up faster and steeper than it can climb (over 1 m in a quarter second, no jump or ladder) is logged with where it was, what it was doing and the building pieces it touched (one ended up on a roof with no way up).
+- Fixed an error when Repair and Restock opened a chest just before your character had spawned.
+
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.
 - Boarding through shallow water: a companion that lands in the shallows wades straight to the ship's ladder and uses it from there (or swims once it's deep), instead of running back round the dock to dive in again.

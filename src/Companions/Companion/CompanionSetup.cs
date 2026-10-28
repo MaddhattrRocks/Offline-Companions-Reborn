@@ -83,6 +83,8 @@ public class CompanionSetup : MonoBehaviour
 
 	private static readonly HashSet<VisEquipment> _companionVisEquips = new HashSet<VisEquipment>();
 
+	private bool _wasHeavy;
+
 	internal const int ModeFollow = 0;
 
 	internal const int ModeGatherWood = 1;
@@ -671,6 +673,7 @@ public class CompanionSetup : MonoBehaviour
 		}
 		MHR_StampOwnerDeathRule();
 		MHR_MarkNoDestroy();
+		MHR_RiseWatch.Tick(this);
 		if (!_mhrHasId && !string.IsNullOrEmpty(MHR_EnsureCompanionId()))
 		{
 			_mhrHasId = true;
@@ -720,14 +723,30 @@ public class CompanionSetup : MonoBehaviour
 			SEMan sEMan = _humanoid.GetSEMan();
 			if (inventory != null && sEMan != null)
 			{
-				if (inventory.GetTotalWeight() > CompanionTierData.MaxCarryWeight)
+				// 1.5.62: encumbered like a player (Patches/CompanionEncumbrance makes the game treat it so: walking pace, no
+				// running or jumping, 10 stamina a second while moving, stuck when out of stamina) - user: "The NPC cannot become
+				// encumbered currently"
+				bool heavy = inventory.GetTotalWeight() > CompanionTierData.CarryLimit(_humanoid);
+				if (heavy)
 				{
 					sEMan.AddStatusEffect(SEMan.s_statusEffectEncumbered, resetTime: false, 0, 0f, -1);
+					CompanionStatus.Doing(this, "hc_doing_encumbered");
+					if (!_wasHeavy)
+					{
+						GetComponent<CompanionTalk>()?.SayProblem("encumbered", ModLocalization.Loc("hc_say_encumbered"));
+						CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is encumbered - {inventory.GetTotalWeight():F0}/{CompanionTierData.CarryLimit(_humanoid):F0}");
+					}
 				}
 				else
 				{
 					sEMan.RemoveStatusEffect(SEMan.s_statusEffectEncumbered);
+					if (_wasHeavy)
+					{
+						CompanionStatus.DoingClear(this);
+						CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is no longer encumbered");
+					}
 				}
+				_wasHeavy = heavy;
 			}
 		}
 		if (!(_ai != null) || !(_ai.GetFollowTarget() == null) || !(Player.m_localPlayer != null))
