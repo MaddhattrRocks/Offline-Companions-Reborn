@@ -1,9 +1,10 @@
 using System.Collections.Generic;
+using HarmonyLib;
 using UnityEngine;
 
 namespace Companions;
 
-// 1.5.70: diagnostic - a companion that rises more than 2 m in under 2 s without a jump or a ladder (log 31cb468a: from
+// 1.5.70: diagnostic - a companion that shoots up faster and steeper than it can climb, without a jump or a ladder (log 31cb468a: from
 // the front door at floor level to 4.4 m above the room within 3 s, no jump/ladder/warp line, then 6 minutes up there -
 // user: "There is no way onto the roof"). Logs where it was and where it ended up, what it was doing and the building
 // pieces round both spots, to see whether the physics pushed it up out of a piece.
@@ -24,13 +25,14 @@ internal static class MHR_RiseWatch
 
 	private const float Window = 2f;
 
-	private const float Rise = 2f;
-
 	private static readonly Dictionary<int, List<Sample>> s_samples = new Dictionary<int, List<Sample>>();
 
 	private static readonly Dictionary<int, float> s_next = new Dictionary<int, float>();
 
 	private static readonly Dictionary<int, float> s_quietUntil = new Dictionary<int, float>();
+
+	// the game's own jump clock (Character.Jump sets it to 0)
+	private static readonly AccessTools.FieldRef<Character, float> s_jumpTimer = AccessTools.FieldRefAccess<Character, float>("m_jumpTimer");
 
 	internal static void Tick(CompanionSetup cs)
 	{
@@ -60,7 +62,9 @@ internal static class MHR_RiseWatch
 				s_samples[id] = list;
 			}
 			Vector3 pos = cs.transform.position;
-			bool jumped = !c.IsOnGround() && c.GetVelocity().y > 1f || (ai != null && MHR_Mover.Climbing(ai));
+			bool jumped = s_jumpTimer(c) < 1.2f || (ai != null && MHR_Mover.Climbing(ai));
+			Sample prev = list.Count > 0 ? list[list.Count - 1] : default(Sample);
+			bool hasPrev = list.Count > 0;
 			list.Add(new Sample { At = now, Pos = pos, Doing = CompanionStatus.Describe(cs), Jumped = jumped });
 			while (list.Count > 0 && now - list[0].At > Window)
 			{
@@ -70,34 +74,21 @@ internal static class MHR_RiseWatch
 			{
 				return;
 			}
-			Sample low = list[0];
-			for (int i = 1; i < list.Count; i++)
-			{
-				if (list[i].Pos.y < low.Pos.y)
-				{
-					low = list[i];
-				}
-			}
-			float rise = pos.y - low.Pos.y;
-			float across = new Vector2(pos.x - low.Pos.x, pos.z - low.Pos.z).magnitude;
-			if (rise < Rise || across > 8f)
+			// 1.5.70 (log c6fee971): only faster and steeper than anyone can climb - more than 1 m up in one sample (0.25 s),
+			// steeper than a walkable slope, no jump or ladder - not walking up the stairs to the door (2.7 m over 5 m)
+			if (!hasPrev || now - prev.At > 0.45f || jumped || prev.Jumped)
 			{
 				return;
 			}
-			bool anyJump = false;
-			foreach (Sample s in list)
-			{
-				if (s.At >= low.At && s.Jumped)
-				{
-					anyJump = true;
-				}
-			}
-			if (anyJump && rise < 3f)
+			Sample low = prev;
+			float rise = pos.y - low.Pos.y;
+			float across = new Vector2(pos.x - low.Pos.x, pos.z - low.Pos.z).magnitude;
+			if (rise < 1f || rise < across * 1.5f)
 			{
 				return;
 			}
 			s_quietUntil[id] = now + 5f;
-			CompanionsPlugin.Log.LogWarning($"[Diag] \"{c.m_name}\" rose {rise:F1} m in {now - low.At:F1} s from {low.Pos:F1} to {pos:F1} ({across:F1} m across){(anyJump ? ", jumping" : ", no jump or ladder")}; doing: {low.Doing ?? "?"} -> {CompanionStatus.Describe(cs) ?? "?"}; pieces at the start: {PiecesNear(low.Pos)}; at the end: {PiecesNear(pos)}");
+			CompanionsPlugin.Log.LogWarning($"[Diag] \"{c.m_name}\" rose {rise:F1} m in {now - low.At:F1} s from {low.Pos:F1} to {pos:F1} ({across:F1} m across), no jump or ladder; doing: {low.Doing ?? "?"} -> {CompanionStatus.Describe(cs) ?? "?"}; pieces at the start: {PiecesNear(low.Pos)}; at the end: {PiecesNear(pos)}");
 		}
 		catch
 		{
@@ -107,7 +98,8 @@ internal static class MHR_RiseWatch
 	private static string PiecesNear(Vector3 p)
 	{
 		HashSet<string> names = new HashSet<string>();
-		foreach (Collider col in Physics.OverlapSphere(p + Vector3.up * 0.9f, 1.2f))
+		// solid colliders only - a bed's, fire's or portal's base zone is a big trigger (log c6fee971 listed the portal 16 m off)
+		foreach (Collider col in Physics.OverlapSphere(p + Vector3.up * 0.9f, 1.2f, -1, QueryTriggerInteraction.Ignore))
 		{
 			Piece piece = col != null ? col.GetComponentInParent<Piece>() : null;
 			if (piece != null)

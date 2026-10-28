@@ -32,7 +32,8 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Fires: the way round a hearth or campfire is sized by the hearth stone itself and every stretch of it is checked for flames, pushed further out until it's clear; a companion that steps out of a fire plans its route again from outside (it cut across the hearth stone into the flames 7 times while sorting chests). Applies to all movement - following, jobs, chores, combat.
 - Fires: every fire check now also covers a lit fire's damage zone (the game keeps it separate from the flames the checks looked at); when the simple way round a fire doesn't fit, a companion looks for a chain of clear spots round it; it never hops up a step (the hearth stone) toward a fire; and a job that can only get somewhere through a fire skips that errand instead of walking through it (following you, it still steers round step by step).
 - Chests: companions only use chests a player built - not the chests of huts, camps and dungeons the world generated (one carried its wood to a hut's chest). Pointing a companion at a chest yourself still works on any chest.
-- Debug log: a companion that rises more than 2 m in under 2 s without a jump or ladder is logged with where it was, what it was doing and the building pieces round it (one ended up on a roof with no way up).
+- Debug log: a companion that shoots up faster and steeper than it can climb (over 1 m in a quarter second, no jump or ladder) is logged with where it was, what it was doing and the building pieces it touched (one ended up on a roof with no way up).
+- Fixed an error when Repair and Restock opened a chest just before your character had spawned.
 
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.

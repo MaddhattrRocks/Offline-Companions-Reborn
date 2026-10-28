@@ -1045,6 +1045,11 @@ namespace Companions
         public static bool Open(Container c)
         {
             if (c == null || InUse(c)) return false;
+            // 1.5.70: not before you've spawned - the game's SetInUse looks you up for the lid's effects (log c6fee971: an
+            // NRE sorting a chest a second after loading in)
+            if (Player.m_localPlayer == null) return false;
+            ZNetView nv = c.GetComponent<ZNetView>();
+            if (nv == null || !nv.IsValid()) return false;
             Claim(c);
             c.SetInUse(true);
             return true;
@@ -1052,7 +1057,10 @@ namespace Companions
 
         public static void Close(Container c)
         {
-            if (c != null) c.SetInUse(false);
+            if (c == null || Player.m_localPlayer == null) return;
+            ZNetView nv = c.GetComponent<ZNetView>();
+            if (nv == null || !nv.IsValid()) return;
+            c.SetInUse(false);
         }
 
         // 1.4.152: near home, the chests around home count too (HomeTripRange) - Smelt and Cook only saw the chests within
