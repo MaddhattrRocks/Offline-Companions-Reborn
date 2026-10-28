@@ -42,6 +42,11 @@ public class ConfigPanel : MonoBehaviour
 
 	private readonly List<Action> _entryResetActions = new List<Action>();
 
+	// 1.5.72: per row - the controller's A starts a controller bind capture, X clears a bind
+	private readonly Dictionary<ConfigEntryBase, Action> _entryActivate = new Dictionary<ConfigEntryBase, Action>();
+
+	private readonly Dictionary<ConfigEntryBase, Action> _entryClear = new Dictionary<ConfigEntryBase, Action>();
+
 	private int _selectedRowIndex = -1;
 
 	private float _dpadRepeatTimer;
@@ -345,7 +350,7 @@ public class ConfigPanel : MonoBehaviour
 		{
 			return;
 		}
-		if (Input.GetKeyDown(ModConfig.ConfigPanelKey.Value))
+		if (Input.GetKeyDown(ModConfig.ConfigPanelKey.Value) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadSettings, ModConfig.PadSettingsModifier)))
 		{
 			if (_visible)
 			{
@@ -467,6 +472,14 @@ public class ConfigPanel : MonoBehaviour
 				{
 					AdjustSelectedValue(1);
 				}
+				else if (_entryActivate.TryGetValue(configEntryBase, out var activate))
+				{
+					activate();
+				}
+			}
+			if (ZInput.GetButtonDown("JoyButtonX") && _selectedRowIndex < _entryData.Count && _entryClear.TryGetValue(_entryData[_selectedRowIndex], out var clear))
+			{
+				clear();
 			}
 			if (ZInput.GetButtonDown("JoyButtonY") && _selectedRowIndex < _entryResetActions.Count)
 			{
@@ -607,6 +620,8 @@ public class ConfigPanel : MonoBehaviour
 		_entryData.Clear();
 		_entrySliders.Clear();
 		_entryResetActions.Clear();
+		_entryActivate.Clear();
+		_entryClear.Clear();
 		if (!ModConfig.Categories.TryGetValue(_activeCategory, out var value))
 		{
 			return;
@@ -919,7 +934,119 @@ public class ConfigPanel : MonoBehaviour
 		{
 			return BuildKeyCodeRow(entry, yPos);
 		}
+		if (entry.SettingType == typeof(string) && entry.Definition.Section == "Controller")
+		{
+			return BuildPadRow(entry, yPos);
+		}
 		return null;
+	}
+
+	// 1.5.72: a controller bind - press the button you want, Clear (or X on the controller) = None
+	private GameObject BuildPadRow(ConfigEntryBase entry, float yPos)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		GameObject row = CreateRowContainer("Row_" + entry.Definition.Key, yPos);
+		GameObject name = CreateLabel(row.transform, entry.Definition.Key, 12f, Color.white);
+		RectTransform nrt = name.GetComponent<RectTransform>();
+		nrt.anchorMin = new Vector2(0f, 0f);
+		nrt.anchorMax = new Vector2(0.5f, 1f);
+		nrt.offsetMin = new Vector2(8f, 0f);
+		nrt.offsetMax = Vector2.zero;
+		name.GetComponent<TMP_Text>().alignment = TextAlignmentOptions.MidlineLeft;
+		GameObject btn = BindButton(row.transform, new Vector2(0.5f, 0.1f), new Vector2(0.71f, 0.9f), PadBindListener.Label(typed.Value), out TMP_Text label);
+		PadBindListener listener = btn.AddComponent<PadBindListener>();
+		listener.Init(typed, label);
+		btn.GetComponent<Button>().onClick.AddListener(listener.Begin);
+		Action clear = delegate
+		{
+			typed.Value = "None";
+			label.text = PadBindListener.Label(typed.Value);
+		};
+		ClearButton(row.transform, clear);
+		CreateDefaultButton(row.transform, entry, delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = PadBindListener.Label(typed.Value);
+		});
+		_entryData.Add(entry);
+		_entrySliders.Add(null);
+		_entryResetActions.Add(delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = PadBindListener.Label(typed.Value);
+		});
+		_entryActivate[entry] = listener.Begin;
+		_entryClear[entry] = clear;
+		return row;
+	}
+
+	private GameObject BindButton(Transform parent, Vector2 min, Vector2 max, string text, out TMP_Text label)
+	{
+		GameObject go = new GameObject("KeyBind", typeof(RectTransform), typeof(Image), typeof(Button));
+		go.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = min;
+		rt.anchorMax = max;
+		rt.offsetMin = Vector2.zero;
+		rt.offsetMax = Vector2.zero;
+		Image img = go.GetComponent<Image>();
+		Sprite sprite = GetBtnBgSprite();
+		if (sprite != null)
+		{
+			img.sprite = sprite;
+			img.type = Image.Type.Simple;
+			img.color = Color.white;
+		}
+		else
+		{
+			img.color = new Color(0.15f, 0.15f, 0.18f, 0.9f);
+		}
+		GameObject l = CreateLabel(go.transform, text, 11f, GoldTextColor);
+		RectTransform lrt = l.GetComponent<RectTransform>();
+		lrt.anchorMin = Vector2.zero;
+		lrt.anchorMax = Vector2.one;
+		lrt.offsetMin = Vector2.zero;
+		lrt.offsetMax = Vector2.zero;
+		label = l.GetComponent<TMP_Text>();
+		label.alignment = TextAlignmentOptions.Center;
+		return go;
+	}
+
+	// 1.5.72: unbind (user: "These need to be able to be unmapped if a player wants")
+	private void ClearButton(Transform parent, Action onClear)
+	{
+		GameObject go = new GameObject("ClearBtn", typeof(RectTransform), typeof(Image), typeof(Button));
+		go.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0.72f, 0.1f);
+		rt.anchorMax = new Vector2(0.84f, 0.9f);
+		rt.offsetMin = Vector2.zero;
+		rt.offsetMax = Vector2.zero;
+		Image img = go.GetComponent<Image>();
+		Sprite sprite = GetCatBgSprite();
+		if (sprite != null)
+		{
+			img.sprite = sprite;
+			img.type = Image.Type.Simple;
+			img.color = TabInactive;
+		}
+		else
+		{
+			img.color = DefaultBtnColor;
+		}
+		GameObject l = CreateLabel(go.transform, "Clear", 9f, Color.white);
+		RectTransform lrt = l.GetComponent<RectTransform>();
+		lrt.anchorMin = Vector2.zero;
+		lrt.anchorMax = Vector2.one;
+		lrt.offsetMin = Vector2.zero;
+		lrt.offsetMax = Vector2.zero;
+		TMP_Text t = l.GetComponent<TMP_Text>();
+		t.alignment = TextAlignmentOptions.Center;
+		t.raycastTarget = false;
+		go.GetComponent<Button>().onClick.AddListener(delegate
+		{
+			onClear();
+		});
 	}
 
 	private GameObject BuildFloatRow(ConfigEntryBase entry, float yPos)
@@ -1107,7 +1234,7 @@ public class ConfigPanel : MonoBehaviour
 		gameObject3.transform.SetParent(gameObject.transform, worldPositionStays: false);
 		RectTransform component2 = gameObject3.GetComponent<RectTransform>();
 		component2.anchorMin = new Vector2(0.5f, 0.1f);
-		component2.anchorMax = new Vector2(0.83f, 0.9f);
+		component2.anchorMax = new Vector2(0.71f, 0.9f);
 		component2.offsetMin = Vector2.zero;
 		component2.offsetMax = Vector2.zero;
 		Image component3 = gameObject3.GetComponent<Image>();
@@ -1141,6 +1268,15 @@ public class ConfigPanel : MonoBehaviour
 			}
 		});
 		gameObject3.GetComponent<Button>().onClick.AddListener(keyBindListener.Begin);
+		Action clearKey = delegate
+		{
+			typed.Value = KeyCode.None;
+			btnTMP.text = typed.Value.ToString();
+			btnTMP.color = GoldTextColor;
+			CompanionsPlugin.Log.LogInfo("[Config] " + entry.Definition.Key + " cleared");
+		};
+		ClearButton(gameObject.transform, clearKey);
+		_entryClear[entry] = clearKey;
 		CreateDefaultButton(gameObject.transform, entry, delegate
 		{
 			typed.Value = (KeyCode)entry.DefaultValue;

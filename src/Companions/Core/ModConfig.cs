@@ -591,6 +591,9 @@ internal static class ModConfig
 
 	internal static ConfigEntry<KeyCode> FarmZoneModifier;
 
+	// 1.5.72: controller binds - a button and a modifier held with it (MHR_Pad.Choices)
+	internal static ConfigEntry<string> PadCommand, PadCommandModifier, PadWheel, PadWheelModifier, PadSettings, PadSettingsModifier, PadFarmZone, PadFarmZoneModifier, PadPassive, PadPassiveModifier, PadBalanced, PadBalancedModifier, PadRanged, PadRangedModifier, PadMelee, PadMeleeModifier;
+
 	internal static void Init(ConfigFile cfg)
 	{
 		// [General]
@@ -629,6 +632,25 @@ internal static class ModConfig
 		BalancedKey = Bind(cfg, "Controls", "BalancedKey", KeyCode.None, "Sets the Balanced stance, like PassiveKey.");
 		RangedKey = Bind(cfg, "Controls", "RangedKey", KeyCode.None, "Sets the Ranged stance, like PassiveKey.");
 		MeleeKey = Bind(cfg, "Controls", "MeleeKey", KeyCode.None, "Sets the Melee stance, like PassiveKey.");
+		// 1.5.72 (user: "These need to be able to be unmapped ... I also think we need to be able use modifiers for the controller.
+		// For example hold left trigger and a to activate the command button.")
+		AcceptableValueList<string> pad = new AcceptableValueList<string>(MHR_Pad.Choices);
+		PadCommand = Bind(cfg, "Controller", "Command", "Y", "Controller command button: tap while looking at something to send your companions to it, hold to call them to you. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadCommandModifier = Bind(cfg, "Controller", "CommandModifier", "Alt", "Held with Command. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadWheel = Bind(cfg, "Controller", "Wheel", "X", "Controller button for a companion's command wheel, while looking at it. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadWheelModifier = Bind(cfg, "Controller", "WheelModifier", "Alt", "Held with Wheel. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadSettings = Bind(cfg, "Controller", "Settings", "None", "Controller button for this settings panel. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadSettingsModifier = Bind(cfg, "Controller", "SettingsModifier", "None", "Held with Settings. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadFarmZone = Bind(cfg, "Controller", "FarmZone", "None", "Controller button for the farm zone editor. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadFarmZoneModifier = Bind(cfg, "Controller", "FarmZoneModifier", "None", "Held with FarmZone. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadPassive = Bind(cfg, "Controller", "Passive", "None", "Controller button for the Passive stance (like PassiveKey). None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadPassiveModifier = Bind(cfg, "Controller", "PassiveModifier", "None", "Held with Passive. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadBalanced = Bind(cfg, "Controller", "Balanced", "None", "Controller button for the Balanced stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadBalancedModifier = Bind(cfg, "Controller", "BalancedModifier", "None", "Held with Balanced. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadRanged = Bind(cfg, "Controller", "Ranged", "None", "Controller button for the Ranged stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadRangedModifier = Bind(cfg, "Controller", "RangedModifier", "None", "Held with Ranged. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
+		PadMelee = Bind(cfg, "Controller", "Melee", "None", "Controller button for the Melee stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.", pad);
+		PadMeleeModifier = Bind(cfg, "Controller", "MeleeModifier", "None", "Held with Melee. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.", pad);
 		// [Follow]
 		FollowMaxDistance = Bind(cfg, "Follow", "MaxDistance", 10f, "How far a following companion lets you get before it moves to keep up. It picks its own spot within this range (beside, behind, sometimes ahead) and changes it now and then.", new AcceptableValueRange<float>(4f, 30f));
 		FollowAutoBoard = Bind(cfg, "Follow", "AutoBoard", defaultValue: true, "When you're aboard a ship close by, a following companion gets on too, the way you would: it jumps aboard from a dock or the shore, uses the ship's ladder (swimming to it if it has the stamina), or follows your own steps aboard. If it can't, it waits on the shore. A companion that took a seat gets up again when you go ashore.");

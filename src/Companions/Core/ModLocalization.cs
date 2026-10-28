@@ -430,7 +430,7 @@ public static class ModLocalization
 			{ "hc_farmzone_title", "Select Crop" },
 			{ "hc_farmzone_any", "Any Crop" },
 			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [Esc] Exit" },
-			{ "hc_farmzone_hint_gamepad", "[A] Place  [X] Remove  [Bumpers] Resize  [D-Pad] Rotate  [Start] Exit" },
+			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{5}] Exit" },
 			{ "hc_farmzone_full", "Maximum zones reached (4)" }
 		};
 	}

@@ -18,19 +18,19 @@ internal static class MHR_StanceKeys
 			return;
 		}
 		int stance = -1;
-		if (Pressed(ModConfig.PassiveKey))
+		if ((Pressed(ModConfig.PassiveKey) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadPassive, ModConfig.PadPassiveModifier))))
 		{
 			stance = CompanionSetup.StancePassive;
 		}
-		else if (Pressed(ModConfig.BalancedKey))
+		else if ((Pressed(ModConfig.BalancedKey) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadBalanced, ModConfig.PadBalancedModifier))))
 		{
 			stance = CompanionSetup.StanceBalanced;
 		}
-		else if (Pressed(ModConfig.RangedKey))
+		else if ((Pressed(ModConfig.RangedKey) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadRanged, ModConfig.PadRangedModifier))))
 		{
 			stance = CompanionSetup.StanceRanged;
 		}
-		else if (Pressed(ModConfig.MeleeKey))
+		else if ((Pressed(ModConfig.MeleeKey) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadMelee, ModConfig.PadMeleeModifier))))
 		{
 			stance = CompanionSetup.StanceMelee;
 		}

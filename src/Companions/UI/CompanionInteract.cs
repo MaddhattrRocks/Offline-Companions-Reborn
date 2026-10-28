@@ -674,9 +674,11 @@ public class CompanionInteract : MonoBehaviour
 		float deltaTime = Time.deltaTime;
 		_cmdCooldown -= deltaTime;
 		bool flag = ZInput.IsGamepadActive();
-		bool flag2 = (flag ? ZInput.GetButtonDown("JoyUse") : Input.GetKeyDown(ModConfig.DirectTargetKey.Value));
-		bool flag3 = (flag ? ZInput.GetButton("JoyUse") : Input.GetKey(ModConfig.DirectTargetKey.Value));
-		if (flag && (flag2 || flag3))
+		// 1.5.72: the controller command is its own bind (Controller > Command + CommandModifier, Alt + Y by default)
+		bool flag2 = (flag ? MHR_Pad.Down(ModConfig.PadCommand, ModConfig.PadCommandModifier) : Input.GetKeyDown(ModConfig.DirectTargetKey.Value));
+		bool flag3 = (flag ? MHR_Pad.Held(ModConfig.PadCommand, ModConfig.PadCommandModifier) : Input.GetKey(ModConfig.DirectTargetKey.Value));
+		// on the plain Use button (the old way) it leaves things you look at to the game's own Use
+		if (flag && MHR_Pad.Plain(ModConfig.PadCommand, ModConfig.PadCommandModifier, "Use") && (flag2 || flag3))
 		{
 			GameObject hoverObject = localPlayer.GetHoverObject();
 			if (hoverObject != null || Hud.InRadial())
@@ -851,12 +853,59 @@ public class CompanionInteract : MonoBehaviour
 		}
 	}
 
+	// 1.5.72: the wheel on its own controller bind (Alt + X by default) - Use on a companion opens its bag straight away
+	private void HandleGamepadCombo(Player localPlayer)
+	{
+		GameObject hovered = _playerHoveringField?.GetValue(localPlayer) as GameObject;
+		CompanionSetup aimed = (hovered != null) ? hovered.GetComponentInParent<CompanionSetup>() : null;
+		CompanionSetup me = GetComponent<CompanionSetup>();
+		if (aimed == null || aimed != me || (CompanionRadialMenu.Instance != null && CompanionRadialMenu.Instance.IsVisible) || InventoryGui.IsVisible())
+		{
+			return;
+		}
+		bool wheel = MHR_Pad.Down(ModConfig.PadWheel, ModConfig.PadWheelModifier);
+		bool use = !wheel && ZInput.GetButtonDown("JoyUse");
+		if (!wheel && !use)
+		{
+			return;
+		}
+		ZNetView nv = aimed.GetComponent<ZNetView>();
+		string owner = nv?.GetZDO()?.GetString(CompanionSetup.OwnerHash) ?? "";
+		if (owner.Length > 0 && owner != localPlayer.GetPlayerID().ToString())
+		{
+			localPlayer.Message(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_not_yours"));
+			return;
+		}
+		if (wheel)
+		{
+			CompanionsPlugin.Log.LogInfo("[Interact] Controller wheel bind on \"" + aimed.name + "\" - opening the command wheel");
+			CompanionRadialMenu.EnsureInstance();
+			if (CompanionRadialMenu.Instance != null && !CompanionRadialMenu.Instance.IsVisible)
+			{
+				CompanionRadialMenu.Instance.Show(aimed);
+			}
+			return;
+		}
+		Container box = aimed.GetComponent<Container>();
+		if (box != null)
+		{
+			CompanionsPlugin.Log.LogInfo("[Interact] Controller Use on \"" + aimed.name + "\" - opening its inventory");
+			OpenCompanionInventory(aimed, box, localPlayer);
+		}
+	}
+
 	private void HandleGamepadHold()
 	{
 		Player localPlayer = Player.m_localPlayer;
 		if (localPlayer == null)
 		{
 			ResetGamepadHold();
+			return;
+		}
+		if (!MHR_Pad.Plain(ModConfig.PadWheel, ModConfig.PadWheelModifier, "Use"))
+		{
+			ResetGamepadHold();
+			HandleGamepadCombo(localPlayer);
 			return;
 		}
 		GameObject gameObject = _playerHoveringField?.GetValue(localPlayer) as GameObject;
@@ -2022,6 +2071,12 @@ public class CompanionInteract : MonoBehaviour
 		string text = ModLocalization.Loc("hc_hover_inventory");
 		string text2 = ModLocalization.Loc("hc_hover_commands");
 		string text3 = ((!ZInput.IsGamepadActive()) ? ZInput.instance.GetBoundKeyString("Use") : ZInput.instance.GetBoundKeyString("JoyUse"));
+		// 1.5.72: the controller wheel bind as set (the game's own button icons), or no line when it's unbound
+		if (ZInput.IsGamepadActive() && !MHR_Pad.Plain(ModConfig.PadWheel, ModConfig.PadWheelModifier, "Use"))
+		{
+			string wheel = MHR_Pad.Show(ModConfig.PadWheel, ModConfig.PadWheelModifier);
+			return companionName + "\n[<color=yellow><b>" + text3 + "</b></color>] " + text + (wheel != null ? "\n[<color=yellow><b>" + wheel + "</b></color>] " + text2 : "");
+		}
 		if (IsRadialKeyUse)
 		{
 			return companionName + "\n[<color=yellow><b>" + text3 + "</b></color>] " + text + "\n[<color=yellow>" + ModLocalization.Loc("hc_hover_hold") + " <b>" + text3 + "</b></color>] " + text2;

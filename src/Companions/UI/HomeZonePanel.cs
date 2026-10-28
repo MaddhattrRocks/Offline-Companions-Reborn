@@ -172,7 +172,7 @@ public class HomeZonePanel : MonoBehaviour
 	{
 		if (!(_hintLabel == null))
 		{
-			_hintLabel.text = (ZInput.IsGamepadActive() ? "[D-Pad] Adjust   [A] Confirm   [B] Close" : "Drag slider  •  Esc to close");
+			_hintLabel.text = (ZInput.IsGamepadActive() ? ("[" + MHR_Pad.GlyphOf("JoyDPadLeft") + "/" + MHR_Pad.GlyphOf("JoyDPadRight") + "] Adjust   [" + MHR_Pad.GlyphOf("JoyButtonA") + "] Confirm   [" + MHR_Pad.GlyphOf("JoyButtonB") + "] Close") : "Drag slider  •  Esc to close");
 		}
 	}
 

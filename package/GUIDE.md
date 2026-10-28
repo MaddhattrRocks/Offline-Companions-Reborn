@@ -29,7 +29,8 @@ Most numbers below are the defaults and can be changed in the settings (see `CON
 14. [Getting around](#getting-around)
 15. [Skills](#skills)
 16. [Multiplayer](#multiplayer)
-17. [Troubleshooting](#troubleshooting)
+17. [Controller](#controller)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -58,6 +59,8 @@ Drag items in and out like a chest. Anything you give it counts as its own: it k
 
 **Hold** the interact key (`E`) while looking at a companion to open its **command wheel**. Move the mouse (or stick) to a slice and click.
 
+On a controller: hold the block button and press **X** while looking at a companion (Controller > Wheel / WheelModifier). The game's Use button on a companion opens its panel.
+
 | Slice | What it does |
 |:---|:---|
 | **Follow** | Turn following you on or off |
@@ -82,7 +85,7 @@ Picking a job again, or picking **Follow**, turns the job off. The **inner ring*
 
 ## Pointing and commanding
 
-Look at something and press the **command key** (`Z`). Your nearby companions do what makes sense for what you're pointing at:
+Look at something and press the **command key** (`Z`; on a controller hold the block button and press **Y** - Controller > Command / CommandModifier). Your nearby companions do what makes sense for what you're pointing at:
 
 | Point at… | They… |
 |:---|:---|
@@ -203,9 +206,9 @@ The farmer **plants** in farm zones you mark, and **harvests** ripe crops nearby
    |:---|:---|:---|
    | Left-click | A | Place the zone |
    | Right-click on a zone | X | Remove it |
-   | Mouse wheel | Bumpers | Make it bigger or smaller (4 m to 30 m across) |
-   | Hold right-click + mouse wheel | D-pad | Rotate it |
-   | Esc (or `Left Alt` + `Z` again) | Start | Close the editor |
+   | Mouse wheel | LT / RT | Make it bigger or smaller (4 m to 30 m across) |
+   | Hold right-click + mouse wheel | D-pad up / down | Rotate it |
+   | Esc (or `Left Alt` + `Z` again) | Start (or your Controller > FarmZone bind) | Close the editor |
 
 4. After placing a zone, pick the **crop** for it, or **Any Crop**.
 5. Each companion can have up to **4 zones**. Then set the companion to the **Farm** job.
@@ -328,7 +331,7 @@ A companion can carry 300 weight, the same as a player, plus what its gear adds 
 | **Ranged** | Carries its bow and keeps its distance; the melee weapon and shield only come out when an enemy gets close (Combat > RangedMeleeRange) |
 | **Melee** | Sticks to melee weapons |
 
-**Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
+**Stance keys:** you can bind a key to each stance (Controls > PassiveKey, BalancedKey, RangedKey, MeleeKey; none by default), and a controller button with an optional modifier (Controller > Passive, Balanced, Ranged, Melee). Looking at one of your companions, the key sets just that one; otherwise every companion within RecallRange that has Command on. A message top left says who changed - handy to pull someone out of a fight that's going badly.
 
 **When they fight**
 - They attack a creature once it has noticed you or them. With the `EngageOnNotice` setting off, they wait until it's actually coming for you.
@@ -439,6 +442,23 @@ Companions get better at what they do, like a player. Fighting raises their weap
 - **Shared chests are safe.** Items a companion moves are saved properly, with no losses or duplicates. It won't use a chest another player has open.
 - **Credit goes to the owner.** Crops it plants and piles it builds count as built by its owner.
 - **Everyone needs the mod, including the server.** On a dedicated server, install the mod on the server as well as on every player's game. A server (or a host) without the mod deletes any companion it loads. You can bring a deleted companion back from the roster (see [Recovering a lost companion](#recovering-a-lost-companion)), but it's better not to lose it in the first place. A dedicated server always keeps the area around the middle of the world loaded, so companions near the world spawn are at risk even while everyone is online. Players without the mod simply can't see companions.
+
+## Controller
+
+Every controller bind is a button plus an optional **modifier** you hold with it (the `Controller` section of the settings, `F8`):
+
+| Bind | Default | What it does |
+|:---|:---|:---|
+| Command | hold block + Y | Point and command; hold to recall |
+| Wheel | hold block + X | The command wheel, looking at a companion |
+| Settings | none | This settings panel |
+| FarmZone | none | The farm zone editor |
+| Passive / Balanced / Ranged / Melee | none | Set a stance |
+
+- **Alt** is the game's own modifier - your block button (LT, or LB in the Alternative 1 layout) - and **Use** is the game's Use button; both follow your controller layout. The rest are fixed buttons.
+- While a combo's modifier is held, that combo's button is for the companions only: block + Y doesn't open your inventory, block + X doesn't sit or use. On their own, Y and X work as normal, and holding block always blocks (block + jump still dodges).
+- In the settings, press **A** on a bind and then the button you want; **X** (or the Clear button) unbinds it, **Y** puts the default back. Keyboard keys have a Clear button too.
+- The hint when you look at a companion shows your actual binds with the game's own button icons.
 
 ## Troubleshooting
 

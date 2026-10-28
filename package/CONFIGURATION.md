@@ -20,6 +20,7 @@ Every setting in the mod, what it does and what it starts at.
 
 - [General](#general)
 - [Controls](#controls)
+- [Controller](#controller)
 - [Follow](#follow)
 - [Movement](#movement)
 - [Combat](#combat)
@@ -135,6 +136,58 @@ Sets the Ranged stance, like PassiveKey.
 
 **MeleeKey** — Default: `None`  
 Sets the Melee stance, like PassiveKey.
+
+## Controller
+
+
+
+**Command** — Default: `Y`  
+Controller command button: tap while looking at something to send your companions to it, hold to call them to you. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**CommandModifier** — Default: `Alt`  
+Held with Command. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Wheel** — Default: `X`  
+Controller button for a companion's command wheel, while looking at it. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**WheelModifier** — Default: `Alt`  
+Held with Wheel. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Settings** — Default: `None`  
+Controller button for this settings panel. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**SettingsModifier** — Default: `None`  
+Held with Settings. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**FarmZone** — Default: `None`  
+Controller button for the farm zone editor. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**FarmZoneModifier** — Default: `None`  
+Held with FarmZone. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Passive** — Default: `None`  
+Controller button for the Passive stance (like PassiveKey). None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**PassiveModifier** — Default: `None`  
+Held with Passive. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Balanced** — Default: `None`  
+Controller button for the Balanced stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**BalancedModifier** — Default: `None`  
+Held with Balanced. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Ranged** — Default: `None`  
+Controller button for the Ranged stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**RangedModifier** — Default: `None`  
+Held with Ranged. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
+
+**Melee** — Default: `None`  
+Controller button for the Melee stance. None = off. Use and Alt follow the game's controller layout (Alt is the game's own modifier - your block button); the rest are fixed buttons.
+
+**MeleeModifier** — Default: `None`  
+Held with Melee. Held while pressing the button. While it's held, that button's press is for the companions only (the game doesn't see it); on its own the button works as normal. None = the button alone.
 
 ## Follow
 
