@@ -1009,6 +1009,9 @@ namespace Companions
             if (c.GetComponent<TombStone>() != null) return false;
             if (c.GetComponent<Vagon>() != null || c.GetComponentInParent<Ship>() != null) return false;
             if (c.GetComponent<Piece>() == null) return false;
+            // 1.5.70: only chests a player built - not the loot chests of huts, camps and dungeons (user report: "The
+            // companion uses neutral chests, so it can stash its loot on the way home")
+            if (!c.GetComponent<Piece>().IsPlacedByPlayer()) return false;
             ZNetView nv = c.GetComponent<ZNetView>();
             if (nv == null || !nv.IsValid()) return false;
             if (InUse(c)) return false;

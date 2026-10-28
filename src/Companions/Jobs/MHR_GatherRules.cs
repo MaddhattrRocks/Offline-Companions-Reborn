@@ -492,6 +492,9 @@ namespace Companions
                     if (c == null || c.GetInventory() == null || !c.GetInventory().HaveEmptySlot()) continue;
                     if (c.GetComponent<TombStone>() != null || c.GetComponentInParent<TombStone>() != null) continue;
                     if (c.GetComponentInParent<Character>() != null) continue;
+                    // 1.5.70: a chest, cart or ship a player built - not a world chest in a hut or camp
+                    Piece built = c.GetComponentInParent<Piece>();
+                    if (built == null || !built.IsPlacedByPlayer()) continue;
                     bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
                     if (mobile && atHome) continue;                   // at home, chests only
                     if (MHR_Chests.InUse(c)) continue;   // 1.4.153: also open on another player's game

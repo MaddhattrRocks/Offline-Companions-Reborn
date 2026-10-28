@@ -30,6 +30,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Repairs: a companion without a home set uses the home threshold (GearRepair > HomeThreshold, 80%) inside a base (a workbench's area), not only below 50%.
 - Repairs: an item set aside because no station nearby could fix it is looked at again once the companion is 20 m from where that happened (it waited 10 minutes even after you got home).
 - Fires: the way round a hearth or campfire is sized by the hearth stone itself and every stretch of it is checked for flames, pushed further out until it's clear; a companion that steps out of a fire plans its route again from outside (it cut across the hearth stone into the flames 7 times while sorting chests). Applies to all movement - following, jobs, chores, combat.
+- Chests: companions only use chests a player built - not the chests of huts, camps and dungeons the world generated (one carried its wood to a hut's chest). Pointing a companion at a chest yourself still works on any chest.
 - Debug log: a companion that rises more than 2 m in under 2 s without a jump or ladder is logged with where it was, what it was doing and the building pieces round it (one ended up on a roof with no way up).
 
 ## 1.5.6
