@@ -27,6 +27,9 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Water: a swimming companion stuck at a bank jumps out toward where it's going, like a player (the game lets a swimmer that touches the ground jump). Its get-unstuck steps are no longer cancelled by the deep water round it (it stood still in a pool by a stake wall for 7 minutes).
 - Wood: a log caught in a standing tree no longer counts as reachable from the tree's trunk; a companion right under a log above its reach leaves it for 15 s instead of walking in place for minutes.
 - Wood: when you walk off and the companion leaves its log to catch up, it doesn't pick the same log straight back up (it did, over and over, swapping axe and sword each time); it looks for work again after 3 s.
+- Repairs: a companion without a home set uses the home threshold (GearRepair > HomeThreshold, 80%) inside a base (a workbench's area), not only below 50%.
+- Repairs: an item set aside because no station nearby could fix it is looked at again once the companion is 20 m from where that happened (it waited 10 minutes even after you got home).
+- Debug log: a companion that rises more than 2 m in under 2 s without a jump or ladder is logged with where it was, what it was doing and the building pieces round it (one ended up on a roof with no way up).
 
 ## 1.5.6
 - Boarding: a companion jumps straight onto the deck when it can - from where you jumped aboard, or the nearest dock or bank spot in jump reach - and only dives in for the ladder when there's no such spot.

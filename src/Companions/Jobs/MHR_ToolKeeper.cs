@@ -1377,7 +1377,14 @@ namespace Companions
             // HomeTripRange (60 m) he set off to repair a 99% sword while out with the player (1.4.77 test).
             // 1.4.133: [Repair] HomeThreshold (80%) - at any wear it went off to the workbench every time the hammer dropped to
             // 99% during Repair and Restock (user: "the NPC seems to repair a lot")
-            if (cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) return ModConfig.RepairHomeThreshold != null ? Mathf.Max(cfg, ModConfig.RepairHomeThreshold.Value) : 0.8f;
+            // 1.5.70: or in a base (a workbench's base area) without a home set (log 31cb468a: Gunter, no home, at the forge with
+            // gear at 80-94% - user: "Can you check if the NPC should have fixed up their gear when we were home?")
+            bool inBase = false;
+            if (cs != null && !cs.HasHomePosition())
+            {
+                try { inBase = EffectArea.IsPointInsideArea(cs.transform.position, EffectArea.Type.PlayerBase, 0f) != null; } catch { }
+            }
+            if (cs != null && ((cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs)) || inBase)) return ModConfig.RepairHomeThreshold != null ? Mathf.Max(cfg, ModConfig.RepairHomeThreshold.Value) : 0.8f;
             return cfg;
         }
 

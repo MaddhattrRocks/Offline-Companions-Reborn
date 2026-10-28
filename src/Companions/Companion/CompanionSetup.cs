@@ -673,6 +673,7 @@ public class CompanionSetup : MonoBehaviour
 		}
 		MHR_StampOwnerDeathRule();
 		MHR_MarkNoDestroy();
+		MHR_RiseWatch.Tick(this);
 		if (!_mhrHasId && !string.IsNullOrEmpty(MHR_EnsureCompanionId()))
 		{
 			_mhrHasId = true;

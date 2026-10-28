@@ -739,7 +739,7 @@ internal static class ModConfig
 		AutoPickupRange = Bind(cfg, "Looting", "AutoPickupRange", 2f, "With Auto Pickup on in the wheel, a companion picks up items within this many meters of itself as it goes, like a player's auto-pickup.", new AcceptableValueRange<float>(0.5f, 10f));
 		// [GearRepair]
 		RepairDurabilityThreshold = Bind(cfg, "GearRepair", "DurabilityThreshold", 0.5f, "A companion takes its gear to a crafting station to repair it when something drops below this share of durability (0.5 = 50%).", new AcceptableValueRange<float>(0.1f, 0.9f));
-		RepairHomeThreshold = Bind(cfg, "GearRepair", "HomeThreshold", 0.8f, "At home, where a workbench is close by, gear is repaired a bit sooner: below this share (0.8 = 80%). 1 = at any wear. Away from home DurabilityThreshold applies.", new AcceptableValueRange<float>(0.1f, 1f));
+		RepairHomeThreshold = Bind(cfg, "GearRepair", "HomeThreshold", 0.8f, "At home (or, without a home set, inside a base - a workbench's area), gear is repaired a bit sooner: below this share (0.8 = 80%). 1 = at any wear. Away from home DurabilityThreshold applies.", new AcceptableValueRange<float>(0.1f, 1f));
 		RepairNoStationWait = Bind(cfg, "GearRepair", "NoStationWait", 600f, "When a worn item can't be repaired at any station within reach (say it needs a black forge and there isn't one nearby), or the way to the station failed, that item is left alone for this many seconds before it looks again.", new AcceptableValueRange<float>(30f, 3600f));
 		RepairScanRadius = Bind(cfg, "GearRepair", "StationRange", 20f, "How far (meters) a companion looks for a crafting station to repair at. Near home, any station near home counts.", new AcceptableValueRange<float>(5f, 60f));
 		// [Gathering]
