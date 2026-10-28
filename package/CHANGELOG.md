@@ -16,6 +16,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - Wood: a log that keeps rolling or is stuck up in the branches is left for a moment instead of chased.
 - Companions jump out of the water at a bank like a player instead of getting stuck.
 - Wood: fixed standing under a log caught in a tree, and picking up and dropping the same log when you walk away.
+- Companions keep clear of the hearth's flames when walking round it.
 - Repairs: companions without a home repair worn gear in a base like at home, and an item they couldn't fix out in the wild is looked at again once they're back.
 
 ## 1.5.6

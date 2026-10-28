@@ -15,6 +15,7 @@ namespace Companions
         {
             public Vector3 Goal, Dest; public float Dist; public string Tag = "";
             public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
+            public bool FireReplan;   // 1.5.70: stepped out of a fire - plan again from outside it
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
@@ -227,7 +228,9 @@ namespace Companions
             }
 
             // 1.4.88: never stand in a fire
-            if (EscapeFire(ai)) return false;
+            // 1.5.70: plan again once out - the old route led into it (log 188ac60a: out, then straight back in, 7 times)
+            if (EscapeFire(ai)) { s.FireReplan = true; return false; }
+            if (s.FireReplan) { s.FireReplan = false; s.HasDetour = false; s.NextPlan = 0f; }
 
             // waiting on the bank until there's stamina for the swim
             if (s.WaitStamina)
@@ -668,7 +671,7 @@ namespace Companions
         // clear (ground, out of the flames, in sight of the corner before). Not when the goal itself is in the fire.
         static void AvoidFire(S s, Vector3 pos, Vector3 goal, float now)
         {
-            if (s.Path.Count == 0 || InFire(goal)) return;
+            if (s.Path.Count == 0 || InFire(goal) || InFire(pos)) return;
             try
             {
                 Vector3 prev = pos;
@@ -686,7 +689,7 @@ namespace Companions
                             EffectArea fire = FireArea(p, 0.5f);
                             if (fire == null) continue;
                             Vector3 a, b;
-                            if (!FireBypass(fire, prev, dir, out a, out b))
+                            if (!FireBypass(fire, prev, dir, next, out a, out b))
                             {
                                 // no clear way round: leave the route (the per-step fire check steers round it)
                                 if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
@@ -703,27 +706,59 @@ namespace Companions
             catch { }
         }
 
-        static bool FireBypass(EffectArea fire, Vector3 from, Vector3 dir, out Vector3 a, out Vector3 b)
+        // 1.5.70: sized by the fire piece itself (the hearth stone, not just its flames), every leg of the way round checked
+        // for flames (from -> a -> b -> the next corner), pushed out half a metre at a time until it's clear (log 188ac60a:
+        // the two corners were clear but the walk between them cut across the hearth stone into the fire, 7 times)
+        static bool FireBypass(EffectArea fire, Vector3 from, Vector3 dir, Vector3 next, out Vector3 a, out Vector3 b)
         {
             a = b = Vector3.zero;
             Collider col = fire.GetComponent<Collider>();
             Vector3 c = col != null ? col.bounds.center : fire.transform.position;
             float r = col != null ? Mathf.Max(col.bounds.extents.x, col.bounds.extents.z) : 2f;
-            r += 0.8f;
-            Vector3 side = new Vector3(-dir.z, 0f, dir.x);
-            float best = float.MaxValue; bool found = false;
-            for (int k = -1; k <= 1; k += 2)
+            Piece piece = fire.GetComponentInParent<Piece>();
+            if (piece != null)
             {
-                Vector3 pa = c + side * (k * r) - dir * r * 0.75f;
-                Vector3 pb = c + side * (k * r) + dir * r * 0.75f;
-                Vector3 ga, gb;
-                if (!GroundAt(pa, from.y, out ga) || !GroundAt(pb, from.y, out gb)) continue;
-                if (NearFire(ga, 0.5f) || NearFire(gb, 0.5f)) continue;
-                if (!CanSee(from, ga) || !CanSee(ga, gb)) continue;
-                float d = Vector3.Distance(from, ga);
-                if (d < best) { best = d; a = ga; b = gb; found = true; }
+                foreach (Collider pc in piece.GetComponentsInChildren<Collider>())
+                {
+                    if (pc == null || pc.isTrigger) continue;
+                    Vector3 off = pc.bounds.center - c; off.y = 0f;
+                    r = Mathf.Max(r, off.magnitude + Mathf.Max(pc.bounds.extents.x, pc.bounds.extents.z));
+                }
             }
-            return found;
+            Vector3 side = new Vector3(-dir.z, 0f, dir.x);
+            for (float extra = 0.8f; extra <= 3.3f; extra += 0.5f)
+            {
+                float rr = r + extra;
+                float best = float.MaxValue; bool found = false;
+                for (int k = -1; k <= 1; k += 2)
+                {
+                    Vector3 pa = c + side * (k * rr) - dir * rr * 0.75f;
+                    Vector3 pb = c + side * (k * rr) + dir * rr * 0.75f;
+                    Vector3 ga, gb;
+                    if (!GroundAt(pa, from.y, out ga) || !GroundAt(pb, from.y, out gb)) continue;
+                    if (NearFire(ga, 0.5f) || NearFire(gb, 0.5f)) continue;
+                    if (!CanSee(from, ga) || !CanSee(ga, gb)) continue;
+                    if (!LegClearOfFire(from, ga) || !LegClearOfFire(ga, gb) || !LegClearOfFire(gb, next)) continue;
+                    float d = Vector3.Distance(from, ga);
+                    if (d < best) { best = d; a = ga; b = gb; found = true; }
+                }
+                if (found) return true;
+            }
+            return false;
+        }
+
+        static bool LegClearOfFire(Vector3 p0, Vector3 p1)
+        {
+            Vector3 leg = p1 - p0; leg.y = 0f;
+            float len = leg.magnitude;
+            if (len < 0.05f) return FireArea(p0, 0.5f) == null;
+            Vector3 dir = leg / len;
+            for (float t = 0.2f; t < len; t += 0.4f)
+            {
+                Vector3 p = p0 + dir * t; p.y = Mathf.Lerp(p0.y, p1.y, t / len);
+                if (FireArea(p, 0.5f) != null) return false;
+            }
+            return FireArea(p1, 0.5f) == null;
         }
 
         static bool GroundAt(Vector3 p, float nearY, out Vector3 ground)
