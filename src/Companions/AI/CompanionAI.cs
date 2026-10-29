@@ -476,7 +476,11 @@ public class CompanionAI : BaseAI
 		}
 		_torchCheckTimer = 1f;
 		bool fighting = _combatAI != null && _combatAI.IsEngaged;
-		bool want = !fighting && IsDarkHere() && !LitBaseNear() && !YouHoldTorchNear();
+		// 1.5.73: a fight puts the torch away only when it needs that hand - in the left hand next to a one-handed weapon it
+		// stays lit (user: "If they have no shield and its night why are they putting away the torch during a fight?"); a
+		// shield, bow or two-hander the combat code takes pushes it out by itself, and it isn't lit again until the fight ends
+		bool inLeft = right != null && right == leftItem;
+		bool want = (!fighting || inLeft) && IsDarkHere() && !LitBaseNear() && !YouHoldTorchNear();
 		_torchWanted = want;
 		if (TorchOpener.IsActive(humanoid) || humanoid.InAttack())
 		{
@@ -484,7 +488,7 @@ public class CompanionAI : BaseAI
 		}
 		// a job's tool in hand comes first; the torch comes back when the job puts it away
 		bool jobHands = _setup != null && _setup.SuppressAutoEquip;
-		if (want && !jobHands && !IsTorch(right) && !m_character.IsSwimming())
+		if (want && !fighting && !jobHands && !IsTorch(right) && !m_character.IsSwimming())
 		{
 			ItemDrop.ItemData best = null;
 			Inventory inv = humanoid.GetInventory();
