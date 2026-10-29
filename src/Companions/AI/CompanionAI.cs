@@ -441,7 +441,11 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		float now = Time.time;
-		ItemDrop.ItemData right = ReflectionHelper.GetRightItem(humanoid);
+		// 1.5.73: in either hand - with a one-handed weapon and no shield the game puts the torch in the left hand (Humanoid.
+		// EquipItem), and only the right hand was looked at (log 702b4b9c: "lit a torch" every 3 s, never put away)
+		ItemDrop.ItemData rightItem = ReflectionHelper.GetRightItem(humanoid);
+		ItemDrop.ItemData leftItem = ReflectionHelper.GetLeftItem(humanoid);
+		ItemDrop.ItemData right = IsTorch(rightItem) ? rightItem : (IsTorch(leftItem) ? leftItem : null);
 		// burns down like a player's (the game drains held items for players only - Humanoid.UpdateEquipment)
 		if (IsTorch(right) && right.m_shared.m_useDurability && (ModConfig.TorchBurnsDown?.Value ?? true))
 		{
@@ -470,7 +474,7 @@ public class CompanionAI : BaseAI
 		{
 			return;
 		}
-		_torchCheckTimer = 3f;
+		_torchCheckTimer = 1f;
 		bool fighting = _combatAI != null && _combatAI.IsEngaged;
 		bool want = !fighting && IsDarkHere() && !LitBaseNear() && !YouHoldTorchNear();
 		_torchWanted = want;
@@ -529,14 +533,14 @@ public class CompanionAI : BaseAI
 			return true;
 		}
 		float light = RenderSettings.ambientLight.grayscale;
-		float threshold = ModConfig.TorchDarkThreshold?.Value ?? 0.15f;
+		float threshold = ModConfig.TorchDarkThreshold?.Value ?? 0.4f;
 		bool dark = light < threshold;
 		string env = EnvMan.instance?.GetCurrentEnvironment()?.m_name ?? "?";
 		string key = env + (dark ? "/dark" : "/lit");
 		if (key != _lightLogKey)
 		{
 			_lightLogKey = key;
-			CompanionsPlugin.Log.LogInfo($"[Torch] \"{m_character.m_name}\" in {env}, light {light:F2} ({(dark ? "dark" : "light enough")}, DarkThreshold {threshold:F2})");
+			CompanionsPlugin.Log.LogInfo($"[Torch] \"{m_character.m_name}\" in {env}, light {light:F2} ({(dark ? "dark" : "light enough")}, DarkLevel {threshold:F2})");
 		}
 		return dark;
 	}

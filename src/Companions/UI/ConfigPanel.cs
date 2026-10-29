@@ -71,7 +71,8 @@ public class ConfigPanel : MonoBehaviour
 
 	private static readonly Color RowBg = new Color(0.08f, 0.08f, 0.1f, 0.6f);
 
-	private static readonly Color RowBgSelected = new Color(0.18f, 0.15f, 0.08f, 0.8f);
+	// 1.5.73: brighter, with a gold edge (user: "it was hard to tell even what was highlighted")
+	private static readonly Color RowBgSelected = new Color(0.42f, 0.32f, 0.12f, 0.9f);
 
 	private static readonly Color DefaultBtnColor = new Color(0.35f, 0.35f, 0.38f, 1f);
 
@@ -251,6 +252,7 @@ public class ConfigPanel : MonoBehaviour
 		BuildCloseButton(_root.transform);
 		BuildTabColumn(_root.transform);
 		BuildContentArea(_root.transform);
+		BuildPadHint(_root.transform);
 		if (ModConfig.CategoryOrder.Count > 0)
 		{
 			SelectCategory(ModConfig.CategoryOrder[0]);
@@ -376,6 +378,7 @@ public class ConfigPanel : MonoBehaviour
 
 	private void UpdateControllerInput()
 	{
+		UpdatePadHint();
 		if (!ZInput.IsGamepadActive())
 		{
 			return;
@@ -399,7 +402,8 @@ public class ConfigPanel : MonoBehaviour
 			}
 			SelectCategory(ModConfig.CategoryOrder[num2]);
 		}
-		float num3 = MHR_Stick.LY();
+		// 1.5.73: the game's stick Y is down-positive (ZInput.GetJoyLeftStickY = -y) - up went down (user)
+		float num3 = 0f - MHR_Stick.LY();
 		bool buttonDown = ZInput.GetButtonDown("JoyDPadUp");
 		bool buttonDown2 = ZInput.GetButtonDown("JoyDPadDown");
 		bool flag = buttonDown || num3 > 0.5f;
@@ -486,7 +490,7 @@ public class ConfigPanel : MonoBehaviour
 				_entryResetActions[_selectedRowIndex]?.Invoke();
 			}
 		}
-		float num9 = MHR_Stick.RY();
+		float num9 = 0f - MHR_Stick.RY();
 		if (Mathf.Abs(num9) > 0.1f && _scrollRect != null)
 		{
 			_scrollRect.verticalNormalizedPosition = Mathf.Clamp01(_scrollRect.verticalNormalizedPosition + num9 * unscaledDeltaTime * 2f);
@@ -548,6 +552,11 @@ public class ConfigPanel : MonoBehaviour
 			{
 				component.color = RowBg;
 			}
+			Outline was = _entryRows[_selectedRowIndex].GetComponent<Outline>();
+			if (was != null)
+			{
+				was.enabled = false;
+			}
 		}
 		_selectedRowIndex = index;
 		if (_selectedRowIndex >= 0 && _selectedRowIndex < _entryRows.Count)
@@ -557,6 +566,10 @@ public class ConfigPanel : MonoBehaviour
 			{
 				component2.color = RowBgSelected;
 			}
+			Outline edge = _entryRows[_selectedRowIndex].GetComponent<Outline>() ?? _entryRows[_selectedRowIndex].AddComponent<Outline>();
+			edge.effectColor = GoldTextColor;
+			edge.effectDistance = new Vector2(2f, -2f);
+			edge.enabled = true;
 			ScrollToRow(_selectedRowIndex);
 		}
 	}
@@ -852,6 +865,38 @@ public class ConfigPanel : MonoBehaviour
 		_tabScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
 	}
 
+	// 1.5.73: what the controller buttons do, in the game's own icons (shown while a controller is in use)
+	private TMP_Text _padHint;
+
+	private void BuildPadHint(Transform parent)
+	{
+		GameObject go = CreateLabel(parent, "", 11f, GoldTextColor);
+		go.name = "PadHint";
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0f, 0f);
+		rt.anchorMax = new Vector2(1f, 0f);
+		rt.pivot = new Vector2(0.5f, 0f);
+		rt.offsetMin = new Vector2(166f, 6f);
+		rt.offsetMax = new Vector2(-8f, 28f);
+		_padHint = go.GetComponent<TMP_Text>();
+		_padHint.alignment = TextAlignmentOptions.Center;
+		_padHint.raycastTarget = false;
+	}
+
+	private void UpdatePadHint()
+	{
+		if (_padHint == null)
+		{
+			return;
+		}
+		bool pad = ZInput.IsGamepadActive();
+		_padHint.gameObject.SetActive(pad);
+		if (pad)
+		{
+			_padHint.text = "[" + MHR_Pad.GlyphOf("JoyButtonA") + "] Change   [" + MHR_Pad.GlyphOf("JoyButtonX") + "] Clear   [" + MHR_Pad.GlyphOf("JoyButtonY") + "] Default   [" + MHR_Pad.GlyphOf("JoyTabLeft") + "] [" + MHR_Pad.GlyphOf("JoyTabRight") + "] Tabs   [" + MHR_Pad.GlyphOf("JoyButtonB") + "] Close";
+		}
+	}
+
 	private void BuildContentArea(Transform parent)
 	{
 		float x = 166f;
@@ -863,7 +908,7 @@ public class ConfigPanel : MonoBehaviour
 		RectTransform component2 = gameObject.GetComponent<RectTransform>();
 		component2.anchorMin = new Vector2(0f, 0f);
 		component2.anchorMax = new Vector2(1f, 1f);
-		component2.offsetMin = new Vector2(x, 8f);
+		component2.offsetMin = new Vector2(x, 32f);
 		component2.offsetMax = new Vector2(-8f, -36f);
 		GameObject gameObject2 = new GameObject("Content", typeof(RectTransform));
 		gameObject2.transform.SetParent(gameObject.transform, worldPositionStays: false);

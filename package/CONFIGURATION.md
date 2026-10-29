@@ -412,7 +412,7 @@ No torch opener on enemies with less maximum health than this - not worth it.
 **BurnsDown** — Default: On  
 A torch in a companion's hand burns down like yours and is gone at 0 durability. Off: companions' torches last forever (the game itself only burns down players' torches).
 
-**DarkThreshold** — Default: 0.15 · Range: 0 – 1  
+**DarkLevel** — Default: 0.4 · Range: 0 – 1  
 In a dungeon or cave, a companion lights a torch when the light there is below this (0 = pitch black, 1 = bright day). The log shows the light level each time you go into one ([Torch] lines), to tune this. Outdoors it's simply night.
 
 ## Food

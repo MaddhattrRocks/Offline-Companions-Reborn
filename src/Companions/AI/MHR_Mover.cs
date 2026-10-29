@@ -327,7 +327,9 @@ namespace Companions
                 Door leaf = OpenLeafAhead(pos, target);
                 // 1.4.138: held up for a second right by an open door - close it now rather than waiting for the 3 s stuck check
                 if (leaf == null && now - s.AnchorTime > 1.0f) leaf = OpenDoorNear(pos, 2.0f);
-                if (leaf != null) { CloseDoor(ai, c, leaf, tag); s.NextDoorPeek = now + 0.15f; Halt(ai, c, s); return false; }
+                // 1.5.73: not in a fight - it can't open it again then (log 702b4b9c: Gunter shut the burial chamber door behind you
+                // and stayed outside: "behind a closed door - not opening it in a fight")
+                if (leaf != null && tag != CombatTag) { CloseDoor(ai, c, leaf, tag); s.NextDoorPeek = now + 0.15f; Halt(ai, c, s); return false; }
             }
 
             Vector3 dir = target - pos; dir.y = 0f;
@@ -936,7 +938,7 @@ namespace Companions
                         // 1.4.137: any open door right next to us when we're stuck (1.4.136 test: the leaf wasn't on the line to
                         // the next corner, so the look-ahead missed it and he stood there, then hopped round it)
                         Door leaf = OpenLeafAhead(pos, target) ?? OpenDoorNear(pos, 2.5f);
-                        if (leaf != null) { CloseDoor(ai, c, leaf, tag); s.NextPlan = now + 0.6f; return; }
+                        if (leaf != null && tag != CombatTag) { CloseDoor(ai, c, leaf, tag); s.NextPlan = now + 0.6f; return; }
                         Sidestep(ai, c, s, pos, dir, now, tag, why, true);
                         return;
                     }
@@ -3113,10 +3115,22 @@ namespace Companions
             catch { return false; }
         }
 
+        static bool YouWentThrough(CompanionAI ai, Door d)
+        {
+            Player p = Player.m_localPlayer;
+            if (p == null || d == null || Vector3.Distance(p.transform.position, d.transform.position) > 25f) return false;
+            Vector3 n = d.transform.forward; n.y = 0f;
+            if (n.sqrMagnitude < 0.01f) return false;
+            float me = Vector3.Dot(ai.transform.position - d.transform.position, n);
+            float you = Vector3.Dot(p.transform.position - d.transform.position, n);
+            return Mathf.Abs(you) > 0.5f && Mathf.Sign(me) != Mathf.Sign(you);
+        }
+
         static void OpenDoor(CompanionAI ai, Character c, Door d, string tag)
         {
             if (d == null || !DoorClosed(d)) return;
-            if (tag == CombatTag)
+            // 1.5.73: a fight may open a door you've gone through (you're on the far side, close by) - that's following you in
+            if (tag == CombatTag && !YouWentThrough(ai, d))
             {
                 S st = Get(ai);
                 if (!st.DoorBlocked) Dbg("[Move|" + tag + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");

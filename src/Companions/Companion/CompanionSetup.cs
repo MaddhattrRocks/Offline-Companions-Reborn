@@ -967,8 +967,9 @@ public class CompanionSetup : MonoBehaviour
 			float armor = item.GetArmor();
 			switch (itemType)
 			{
+			// 1.5.73: a torch isn't a weapon here - fists rather than a torch (user: "The whole point of hitting with the torch is
+			// to light the enemy on fire so they burn ... I would rather they use their fists"); the fire opener still uses it
 			case ItemDrop.ItemData.ItemType.OneHandedWeapon:
-			case ItemDrop.ItemData.ItemType.Torch:
 				if (num11 > num)
 				{
 					itemData = item;
@@ -1117,7 +1118,9 @@ public class CompanionSetup : MonoBehaviour
 		bool flag5 = itemData10 != null && IsTwoHandedWeapon(itemData10);
 		// 1.5.53: not mid-fight - the combat code picks the shield then (ShieldLogic: the tower shield with 3+ enemies);
 		// this put the parry shield straight back (user: "brought out the tower shield for a moment then put it away")
-		if (!flag2 && !flag4 && !flag5 && itemData4 != null)
+		// 1.5.73: nor push a wanted torch out of the left hand for the shield
+		bool torchLeft = itemData10 != null && itemData10.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch && _ai != null && _ai.WantsTorch;
+		if (!flag2 && !flag4 && !flag5 && !torchLeft && itemData4 != null)
 		{
 			if (itemData10 != itemData4)
 			{
