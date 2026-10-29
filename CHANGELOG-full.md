@@ -5,6 +5,8 @@ Every change, version by version. The `CHANGELOG.md` shipped with the mod is a s
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.8
+- Door command: it only ever opened doors - on an open door the companion answered ("Door's open!") and did nothing. Now it opens a shut door and closes an open one, the nearest companion goes (both used to), and a locked door gets "It's locked." New lines hc_cmd_doorclose_1-3 and hc_cmd_door_locked.
+- Controller: Use on a companion opened its bag while the pause menu (or another menu or panel) was open. It now waits for the game to take input, the same check the game uses for the player.
 - Torches used up another way: blocking with a torch takes the blocked damage off it and the game leaves it at 0 (it only removes a torch that burns out in the hand), and swinging it (the fire opener) wears it like a weapon - such a torch stayed in the bag at 0% and was never lit again. A used-up torch is now removed, as for a player ("[Torch] ... the torch was used up"), and weapon wear removes any item the game destroys on breaking.
 - Blocking with a torch: when a torch is all it would block with (it stopped 3 of 24 damage, then 0 of 16, and the companion died), a companion steps out of the swing instead, or takes it.
 - After coming back from death a companion puts its weapon on before it lights a torch (the torch went into the empty weapon hand first).
