@@ -832,9 +832,10 @@ namespace Companions
                     {
                         float stay = ModConfig.FollowSitStayRange != null ? ModConfig.FollowSitStayRange.Value : 10f;
                         if (Vector3.Distance(f.transform.position, ai.transform.position) > stay) why = "player moved off";
-                        // 1.5.8: the 10 m is straight through walls - in the next room it stayed down (user: "Companion sat on
-                        // the floor until I came back and opened their inventory"); out of sight for 2 s gets it up too
-                        else if (!Los(ai.transform.position, f.transform.position))
+                        // 1.5.8: in a dungeon the 10 m is straight through walls - in the next room it stayed down (user:
+                        // "Companion sat on the floor until I came back and opened their inventory"); out of sight for 2 s gets
+                        // it up too. Not at home: there it sits and waits while you go about a bigger base (user)
+                        else if (Character.InInterior(ai.transform.position) && !Los(ai.transform.position, f.transform.position))
                         {
                             if (s.OutOfSightSince <= 0f) s.OutOfSightSince = Time.time;
                             else if (Time.time - s.OutOfSightSince > 2f) why = "player out of sight";
