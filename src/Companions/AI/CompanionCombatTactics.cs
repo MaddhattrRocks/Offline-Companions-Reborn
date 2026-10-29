@@ -844,9 +844,9 @@ public partial class CompanionCombatAI
 
 	// a swing at it it can get out of the way of, rather than block (UpdateBlocking calls this once per swing, at the
 	// moment it reacts)
-	private bool TryEvade(Character swinger)
+	private bool TryEvade(Character swinger, bool always = false)
 	{
-		float chance = ModConfig.StepAwayChance?.Value ?? 0.3f;
+		float chance = always ? 1f : (ModConfig.StepAwayChance?.Value ?? 0.3f);
 		if (StaminaShare() < Reserve)
 		{
 			chance = Mathf.Min(1f, chance * 2f);   // blocking costs stamina it doesn't have
@@ -860,7 +860,7 @@ public partial class CompanionCombatAI
 				chance = Mathf.Max(chance, ModConfig.CombatSpacingStepChance?.Value ?? 0.6f);
 			}
 		}
-		if (Random.value >= chance)
+		if (!always && Random.value >= chance)
 		{
 			return false;
 		}

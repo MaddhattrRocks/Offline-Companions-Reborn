@@ -23,7 +23,7 @@ namespace Companions
             public bool Regrouped; public float AimLog;
             public float SettleDelay; public bool UnloadAsked; public float UnloadAskedAt;
             public Chair Chair; public bool GoingToChair; public float ChairUntil, ChairFailUntil, NextChairLook;
-            public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim;
+            public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim; public float OutOfSightSince;
             public Collider[] ChairCols;
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
@@ -660,7 +660,7 @@ namespace Companions
         {
             MHR_Mover.Release(ai);
             ai.StopMoving();
-            s.GoingToChair = false; s.SitChair = true; s.SitPlayerPos = pp; s.ChairAnim = ch.m_attachAnimation;
+            s.GoingToChair = false; s.SitChair = true; s.SitPlayerPos = pp; s.ChairAnim = ch.m_attachAnimation; s.OutOfSightSince = 0f;
             // pass through the chair itself (like ship seats) so physics doesn't push the companion off it
             Piece piece = ch.GetComponentInParent<Piece>();
             s.ChairCols = piece != null ? piece.GetComponentsInChildren<Collider>() : ch.GetComponentsInChildren<Collider>();
@@ -696,7 +696,7 @@ namespace Companions
             ai.StopMoving();
             Vector3 d = pp - ai.transform.position; d.y = 0f;
             if (d.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(d.normalized);
-            s.SitFloor = true; s.SitPlayerPos = pp;
+            s.SitFloor = true; s.SitPlayerPos = pp; s.OutOfSightSince = 0f;
             ZSyncAnimation za = ai.GetComponent<ZSyncAnimation>();
             if (za != null) { za.SetTrigger("emote_sit"); za.SetBool("emote_sit", true); }
             SetResting(ai, true);
@@ -832,6 +832,14 @@ namespace Companions
                     {
                         float stay = ModConfig.FollowSitStayRange != null ? ModConfig.FollowSitStayRange.Value : 10f;
                         if (Vector3.Distance(f.transform.position, ai.transform.position) > stay) why = "player moved off";
+                        // 1.5.8: the 10 m is straight through walls - in the next room it stayed down (user: "Companion sat on
+                        // the floor until I came back and opened their inventory"); out of sight for 2 s gets it up too
+                        else if (!Los(ai.transform.position, f.transform.position))
+                        {
+                            if (s.OutOfSightSince <= 0f) s.OutOfSightSince = Time.time;
+                            else if (Time.time - s.OutOfSightSince > 2f) why = "player out of sight";
+                        }
+                        else s.OutOfSightSince = 0f;
                     }
                     else if (moved > 1f) why = "player moved";
                 }

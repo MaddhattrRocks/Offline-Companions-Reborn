@@ -1170,6 +1170,13 @@ public partial class CompanionCombatAI : MonoBehaviour
 		return best;
 	}
 
+	// what the game would block with (Humanoid.GetCurrentBlocker: the left hand, else the right) is a torch
+	private bool TorchIsBlocker()
+	{
+		ItemDrop.ItemData blocker = ReflectionHelper.GetLeftItem(_humanoid) ?? ReflectionHelper.GetRightItem(_humanoid);
+		return blocker != null && blocker.m_shared != null && blocker.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch;
+	}
+
 	private void UpdateBlocking(float dt)
 	{
 		// 1.5.76: a tick latched on - the shield only soaks its bites (and the stamina) while it keeps feeding; guard down
@@ -1216,6 +1223,26 @@ public partial class CompanionCombatAI : MonoBehaviour
 			}
 			_ai.LookAtPoint(swinger.GetTopPoint());
 			_enemySwingTimer += dt;
+			// 1.5.8: a torch is all it would block with - it stops next to nothing (log f632af6e: 24 blocked, 21 got through,
+			// then 16 of 16) and the blocks used the torch up - step out of the swing instead, or take it
+			if (_enemySwingTimer >= _reactionTime && TorchIsBlocker())
+			{
+				if (!_blockRaised)
+				{
+					_blockRaised = true;
+					if (TryEvade(swinger, always: true))
+					{
+						_evading = true;
+						return;
+					}
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Block] Only a torch to block " + swinger.m_name + " with and no room to step out - not blocking");
+				}
+				if (ReflectionHelper.GetBlocking(_character))
+				{
+					ReflectionHelper.TrySetBlocking(_character, value: false);
+				}
+				return;
+			}
 			if (_enemySwingTimer >= _reactionTime)
 			{
 				// 1.5.52: sometimes a step out of reach instead of a block

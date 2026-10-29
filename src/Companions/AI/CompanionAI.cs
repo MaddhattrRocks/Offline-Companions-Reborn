@@ -475,6 +475,34 @@ public class CompanionAI : BaseAI
 			return;
 		}
 		_torchCheckTimer = 1f;
+		// 1.5.8: a torch used up some other way - blocking with it (the game takes the blocked damage off it but leaves it at
+		// 0) or swinging it - is gone, as for a player (log f632af6e: a 0% torch stayed in the bag and was never lit again)
+		Inventory bag = humanoid.GetInventory();
+		if (bag != null)
+		{
+			List<ItemDrop.ItemData> usedUp = null;
+			foreach (ItemDrop.ItemData it in bag.GetAllItems())
+			{
+				if (IsTorch(it) && it.m_shared.m_useDurability && it.m_shared.m_destroyBroken && it.m_durability <= 0f)
+				{
+					(usedUp ?? (usedUp = new List<ItemDrop.ItemData>())).Add(it);
+				}
+			}
+			if (usedUp != null)
+			{
+				foreach (ItemDrop.ItemData it in usedUp)
+				{
+					if (it == right)
+					{
+						right = null;
+					}
+					humanoid.UnequipItem(it, triggerEquipEffects: false);
+					bag.RemoveItem(it);
+				}
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Torch] \"" + m_character.m_name + "\": the torch was used up");
+				_torchBurnedOut = true;
+			}
+		}
 		bool fighting = _combatAI != null && _combatAI.IsEngaged;
 		// 1.5.73: a fight puts the torch away only when it needs that hand - in the left hand next to a one-handed weapon it
 		// stays lit (user: "If they have no shield and its night why are they putting away the torch during a fight?"); a
@@ -502,8 +530,15 @@ public class CompanionAI : BaseAI
 					}
 				}
 			}
+			// 1.5.8: the weapon first - after coming back from death the torch went into the empty weapon hand before the spear
+			// was put back on, and the spear had to push it out (log f632af6e)
+			bool weaponToCome = rightItem == null && inv != null && inv.GetAllItems().Exists(it => it.m_shared != null && (it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.OneHandedWeapon || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.TwoHandedWeapon || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.TwoHandedWeaponLeft || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) && (!it.m_shared.m_useDurability || it.m_durability > 0f));
 			if (best != null)
 			{
+				if (weaponToCome)
+				{
+					return;
+				}
 				humanoid.EquipItem(best);
 				_torchBurnedOut = false;
 				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" lit a torch (" + (best.m_shared.m_useDurability ? (best.m_durability / Mathf.Max(1f, best.GetMaxDurability()) * 100f).ToString("F0") + "% left" : "no wear") + ")");

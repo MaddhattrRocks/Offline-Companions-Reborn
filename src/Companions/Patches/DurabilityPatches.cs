@@ -29,6 +29,11 @@ public static class DurabilityPatches
 				{
 					itemData.m_durability = 0f;
 					__instance.UnequipItem(itemData, triggerEquipEffects: false);
+					// 1.5.8: items the game destroys when they break (torches) go, as for a player (Humanoid.DrainEquipedItemDurability)
+					if (itemData.m_shared.m_destroyBroken)
+					{
+						__instance.GetInventory()?.RemoveItem(itemData);
+					}
 					MHR_Equip.OnToolBroke(__instance);
 					CompanionsPlugin.Log.LogWarning("[Durability] Weapon BROKEN — \"" + itemData.m_shared.m_name + "\" unequipped, companion=\"" + __instance.m_name + "\"");
 				}
