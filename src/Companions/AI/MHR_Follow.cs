@@ -20,7 +20,7 @@ namespace Companions
             public Vector3 Spot;
             public bool Moving; public float LastUpdate;
             public bool HasIdle, IdleMoving; public Vector3 IdleAnchor, IdleGoal; public float NextIdle;
-            public bool Regrouped;
+            public bool Regrouped; public float AimLog;
             public float SettleDelay; public bool UnloadAsked; public float UnloadAskedAt;
             public Chair Chair; public bool GoingToChair; public float ChairUntil, ChairFailUntil, NextChairLook;
             public bool SitChair, SitFloor; public Vector3 SitPlayerPos; public string ChairAnim;
@@ -52,6 +52,26 @@ namespace Companions
             if (t.Indoors) return ModConfig.FollowIndoorDistance != null ? ModConfig.FollowIndoorDistance.Value : 4f;
             return ModConfig.FollowMaxDistance != null ? ModConfig.FollowMaxDistance.Value : 10f;
         }
+        // 1.5.75: the centre of your screen points at the companion (a little leeway, about its body width plus 3 degrees),
+        // within 10 m and with nothing in between
+        static bool YouAimAt(Player player, Character c, float distP)
+        {
+            try
+            {
+                if (player == null || player != Player.m_localPlayer || distP > 10f) return false;
+                Camera cam = Utils.GetMainCamera();
+                if (cam == null) return false;
+                Vector3 eye = cam.transform.position;
+                Vector3 to = c.GetCenterPoint() - eye;
+                float d = to.magnitude;
+                if (d < 0.1f || d > 14f) return false;
+                float leeway = Mathf.Atan2(0.6f, d) * Mathf.Rad2Deg + 3f;
+                if (Vector3.Angle(cam.transform.forward, to) > leeway) return false;
+                return !Physics.Linecast(eye, c.GetCenterPoint(), LosMask());
+            }
+            catch { return false; }
+        }
+
         static S Get(Component c)
         {
             S s; int id = c.gameObject.GetInstanceID();
@@ -192,6 +212,13 @@ namespace Companions
                 // walk up and open the inventory or the command wheel. Only from standing - never once it's moving.
                 // 1.4.82: and while the player stands within 2.5 m of it (doesn't start it moving, never stops it)
                 bool hold = now - t.MovingSince < 1.5f || (distP < 2.5f && !c.IsSwimming());
+                // 1.5.75: and up to 2 s longer while your crosshair is on it within 10 m (user: walking up with a controller
+                // it set off before they got there)
+                if (!hold && now - t.MovingSince < 3.5f && !s.Moving && !c.IsSwimming() && YouAimAt(player, c, distP))
+                {
+                    hold = true;
+                    if (now - s.AimLog > 5f) { s.AimLog = now; if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " stays put - your crosshair is on it"); }
+                }
                 if (!s.Moving && ((!hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming() || offLevel)) || climbing)) s.Moving = true;
                 if (s.Moving)
                 {
