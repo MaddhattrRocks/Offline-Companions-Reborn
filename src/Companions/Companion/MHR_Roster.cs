@@ -148,7 +148,7 @@ internal static class MHR_Roster
 		if (dropped > 0)
 		{
 			Save(toDisk: false);
-			CompanionsPlugin.Log.LogInfo($"[Roster] Dropped {dropped} companion(s) unsummoned in an earlier session");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Roster] Dropped {dropped} companion(s) unsummoned in an earlier session");
 		}
 		return true;
 	}
@@ -452,7 +452,7 @@ internal static class MHR_Roster
 				Id = id
 			};
 			s_entries.Add(entry);
-			CompanionsPlugin.Log.LogInfo(string.Format("[Roster] Added \"{0}\" to your companion roster for this world ({1} item(s))", zdo.GetString(CompanionSetup.NameHash, "Companion"), c.GetComponent<Humanoid>()?.GetInventory()?.NrOfItems() ?? 0));
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo(string.Format("[Roster] Added \"{0}\" to your companion roster for this world ({1} item(s))", zdo.GetString(CompanionSetup.NameHash, "Companion"), c.GetComponent<Humanoid>()?.GetInventory()?.NrOfItems() ?? 0));
 		}
 		entry.Gen = zdo.GetInt(GenHash);
 		entry.Name = zdo.GetString(CompanionSetup.NameHash, "Companion");
@@ -524,12 +524,12 @@ internal static class MHR_Roster
 				entry.Gen++;
 				s_sessionUnsummoned.Add(entry.Id);
 				Save(toDisk: true);
-				CompanionsPlugin.Log.LogInfo("[Roster] \"" + entry.Name + "\" was unsummoned - Odin's Shrine can bring it back (without gear) until you next load this world");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] \"" + entry.Name + "\" was unsummoned - Odin's Shrine can bring it back (without gear) until you next load this world");
 				return;
 			}
 			s_entries.Remove(entry);
 			Save(toDisk: true);
-			CompanionsPlugin.Log.LogInfo("[Roster] \"" + entry.Name + "\" was despawned - removed from your companion roster");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] \"" + entry.Name + "\" was despawned - removed from your companion roster");
 		}
 	}
 
@@ -662,7 +662,7 @@ internal static class MHR_Roster
 		s_goneCache[id] = new KeyValuePair<bool, float>(flag, Time.unscaledTime);
 		if (flag && s_goneLogged.Add(id))
 		{
-			CompanionsPlugin.Log.LogInfo("[Rest] A bed is claimed by a companion that no longer exists (ID " + id + ") - the claim is ignored");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Rest] A bed is claimed by a companion that no longer exists (ID " + id + ") - the claim is ignored");
 		}
 		return flag;
 	}
@@ -699,7 +699,7 @@ internal static class MHR_Roster
 		if (s_entries.Count == 0)
 		{
 			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, "No companions on your roster in this world yet.");
-			CompanionsPlugin.Log.LogInfo("[Roster] No companions on the roster for this character in this world yet");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] No companions on the roster for this character in this world yet");
 			return;
 		}
 		Dictionary<string, Status> statuses = GetStatuses();
@@ -708,7 +708,7 @@ internal static class MHR_Roster
 		{
 			string text = Describe(s_entry, statuses[s_entry.Id]);
 			stringBuilder.Append(text).Append('\n');
-			CompanionsPlugin.Log.LogInfo("[Roster] " + text);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] " + text);
 		}
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, stringBuilder.ToString().TrimEnd('\n'));
 	}
@@ -743,7 +743,7 @@ internal static class MHR_Roster
 						s_confirmUntil = Time.unscaledTime + ConfirmSeconds;
 						string text = $"{s_entry2.Name}'s status is Unknown - it may still be alive somewhere that isn't loaded. Turn RecoverLostCompanion on again within {ConfirmSeconds:F0} s to recover it anyway. If the old {s_entry2.Name} turns up later, it will be removed.";
 						MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, text);
-						CompanionsPlugin.Log.LogInfo("[Roster] " + text);
+						if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] " + text);
 						return;
 					}
 					entry = s_entry2;
@@ -760,7 +760,7 @@ internal static class MHR_Roster
 				text2 = text2 + "\n" + Describe(s_entry3, statuses[s_entry3.Id]);
 			}
 			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, text2);
-			CompanionsPlugin.Log.LogInfo("[Roster] Recover: nothing to recover");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Roster] Recover: nothing to recover");
 			return;
 		}
 		Recover(entry, statuses[entry.Id]);
@@ -895,6 +895,6 @@ internal static class MHR_Roster
 		Save(toDisk: true);
 		CompanionTombstoneResurrect.PlayResurrectEffects(vector);
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, e.Name + " has been recovered!");
-		CompanionsPlugin.Log.LogInfo($"[Roster] Recovered \"{e.Name}\" ({status}) at {vector:F1} as copy {num}, with {num2} item(s) from the last roster save");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Roster] Recovered \"{e.Name}\" ({status}) at {vector:F1} as copy {num}, with {num2} item(s) from the last roster save");
 	}
 }

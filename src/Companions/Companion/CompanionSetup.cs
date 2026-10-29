@@ -233,12 +233,12 @@ public class CompanionSetup : MonoBehaviour
 			if (string.IsNullOrEmpty(text))
 			{
 				zDO.Set(OwnerHash, text2);
-				CompanionsPlugin.Log.LogDebug("[Setup] RestoreFollow — claimed orphan, set owner to " + text2);
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] RestoreFollow — claimed orphan, set owner to " + text2);
 				text = text2;
 			}
 			if (text != text2)
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] RestoreFollow — owner mismatch: zdo=\"" + text + "\" local=\"" + text2 + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] RestoreFollow — owner mismatch: zdo=\"" + text + "\" local=\"" + text2 + "\"");
 			}
 			else
 			{
@@ -416,7 +416,7 @@ public class CompanionSetup : MonoBehaviour
 	{
 		if (!(_humanoid == null) && !(_nview == null) && _nview.IsOwner())
 		{
-			CompanionsPlugin.Log.LogDebug($"[Setup] SyncEquipmentToInventory — SuppressAutoEquip={SuppressAutoEquip}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] SyncEquipmentToInventory — SuppressAutoEquip={SuppressAutoEquip}");
 			UnequipMissingEquippedItems();
 			AutoEquipBest(armorOnly: SuppressAutoEquip);
 		}
@@ -453,7 +453,7 @@ public class CompanionSetup : MonoBehaviour
 					}
 					text = Guid.NewGuid().ToString("N");
 					zDO.Set(MHR_CompanionIdHash, text);
-					CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Companion \"{0}\" was given its permanent ID {1}", zDO.GetString(NameHash, "Companion"), text));
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Companion \"{0}\" was given its permanent ID {1}", zDO.GetString(NameHash, "Companion"), text));
 				}
 				return text;
 			}
@@ -513,7 +513,7 @@ public class CompanionSetup : MonoBehaviour
 		_smeltCached = GetComponent<SmeltController>();
 		_huntCached = GetComponent<HuntController>();
 		_combatAI = GetComponent<CompanionCombatAI>();
-		CompanionsPlugin.Log.LogInfo($"[Setup] Awake — nview={_nview != null} visEquip={_visEquip != null} " + $"ai={_ai != null} humanoid={_humanoid != null} name=\"{base.gameObject.name}\"");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Awake — nview={_nview != null} visEquip={_visEquip != null} " + $"ai={_ai != null} humanoid={_humanoid != null} name=\"{base.gameObject.name}\"");
 		if (_visEquip != null)
 		{
 			_companionVisEquips.Add(_visEquip);
@@ -592,7 +592,7 @@ public class CompanionSetup : MonoBehaviour
 			{
 				prefabName = gameObject.name;
 			}
-			CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} — prefab={prefabName}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} — prefab={prefabName}");
 			// 1.5.42: tell its player, wherever they are (user: "an announcement, if an NPC dies or is lost or something far away")
 			try
 			{
@@ -624,7 +624,7 @@ public class CompanionSetup : MonoBehaviour
 			long tombstoneId = (flag ? DateTime.UtcNow.Ticks : num2);
 			if (!flag && num2 != 0L)
 			{
-				CompanionsPlugin.Log.LogInfo($"[Setup] No items — preserving existing tombstoneId={num2} " + "so respawned companion can find previous tombstone");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] No items — preserving existing tombstoneId={num2} " + "so respawned companion can find previous tombstone");
 			}
 			bool flag2 = HasHomePosition();
 			Vector3 homePos = (flag2 ? GetHomePosition() : Vector3.zero);
@@ -650,7 +650,7 @@ public class CompanionSetup : MonoBehaviour
 			RegisterInventoryCallback();
 			AddStarterGear(zDO);
 			int num = zDO.GetInt(ActionModeHash);
-			CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Initialized — mode={0} appearance={1} ", num, string.IsNullOrEmpty(text) ? "default" : "saved") + $"pos={base.transform.position:F1}");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo(string.Format("[Setup] Initialized — mode={0} appearance={1} ", num, string.IsNullOrEmpty(text) ? "default" : "saved") + $"pos={base.transform.position:F1}");
 			_instantEquipUntil = Time.time + 10f;
 			_initialized = true;
 		}
@@ -690,7 +690,7 @@ public class CompanionSetup : MonoBehaviour
 			_uiFrozen = false;
 			if (_ai != null && _ai.IsRecoveringTombstone)
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] UI closed during tombstone recovery — skipping follow restore");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] UI closed during tombstone recovery — skipping follow restore");
 			}
 			else
 			{
@@ -710,7 +710,7 @@ public class CompanionSetup : MonoBehaviour
 				_autoEquipPending = false;
 				if (_humanoid != null && _nview != null && _nview.IsOwner())
 				{
-					CompanionsPlugin.Log.LogDebug("[Setup] Deferred auto-equip firing now" + (SuppressAutoEquip ? " (armour only - a job holds the hands)" : ""));
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Deferred auto-equip firing now" + (SuppressAutoEquip ? " (armour only - a job holds the hands)" : ""));
 					AutoEquipBest(armorOnly: SuppressAutoEquip);
 				}
 			}
@@ -734,7 +734,7 @@ public class CompanionSetup : MonoBehaviour
 					if (!_wasHeavy)
 					{
 						GetComponent<CompanionTalk>()?.SayProblem("encumbered", ModLocalization.Loc("hc_say_encumbered"));
-						CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is encumbered - {inventory.GetTotalWeight():F0}/{CompanionTierData.CarryLimit(_humanoid):F0}");
+						if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is encumbered - {inventory.GetTotalWeight():F0}/{CompanionTierData.CarryLimit(_humanoid):F0}");
 					}
 				}
 				else
@@ -743,7 +743,7 @@ public class CompanionSetup : MonoBehaviour
 					if (_wasHeavy)
 					{
 						CompanionStatus.DoingClear(this);
-						CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is no longer encumbered");
+						if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Carry] {_humanoid.m_name} is no longer encumbered");
 					}
 				}
 				_wasHeavy = heavy;
@@ -768,7 +768,7 @@ public class CompanionSetup : MonoBehaviour
 		if (string.IsNullOrEmpty(text))
 		{
 			zDO2.Set(OwnerHash, text2);
-			CompanionsPlugin.Log.LogDebug("[Setup] Claimed orphan companion — set owner to " + text2);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Claimed orphan companion — set owner to " + text2);
 			text = text2;
 		}
 		// 1.4.152: another player's companion run by this game follows its own player (when they're loaded here)
@@ -777,7 +777,7 @@ public class CompanionSetup : MonoBehaviour
 			if (!_ownerMismatchLogged)
 			{
 				_ownerMismatchLogged = true;
-				CompanionsPlugin.Log.LogDebug("[Setup] Another player's companion, its player isn't here — follow target not restored");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Another player's companion, its player isn't here — follow target not restored");
 			}
 		}
 		else
@@ -786,7 +786,7 @@ public class CompanionSetup : MonoBehaviour
 			if ((!(_harvestCached != null) || !_harvestCached.IsActive) && (!(_smeltCached != null) || !_smeltCached.IsActive) && (!(_huntCached != null) || !_huntCached.IsActive) && (!(_restCached != null) || (!_restCached.IsNavigating && !_restCached.IsResting)) && !(_ai.PendingCartAttach != null) && !_ai.PendingMoveTarget.HasValue && !(_ai.PendingDepositContainer != null) && !MHR_ToolKeeper.IsBusy(this) && !_ai.IsRecoveringTombstone && GetFollow() && num != 4)
 			{
 				_ai.SetFollowTarget(MHR_Owner.Go(this));
-				CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to its player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Follow target was null — restored to its player " + $"(mode={num} harvestActive={_harvestCached?.IsActive ?? false})");
 			}
 		}
 	}
@@ -826,19 +826,19 @@ public class CompanionSetup : MonoBehaviour
 			return;
 		}
 		bool follow = GetFollow();
-		CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} follow={follow} force={force}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] ApplyFollowMode — mode={mode} follow={follow} force={force}");
 		switch (mode)
 		{
 		case 0:
 			if (follow && MHR_Owner.Of(this) != null)
 			{
 				_ai.SetFollowTarget(MHR_Owner.Go(this));
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
 			}
 			else
 			{
 				_ai.SetFollowTarget(null);
-				CompanionsPlugin.Log.LogDebug("[Setup]   → Follow OFF, no StayHome — idle");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup]   → Follow OFF, no StayHome — idle");
 			}
 			break;
 		case 1:
@@ -854,65 +854,65 @@ public class CompanionSetup : MonoBehaviour
 				HarvestController component = GetComponent<HarvestController>();
 				if (component != null && component.IsActive)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Setup]   → Gather mode={mode}, harvest active — skipping follow override");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Gather mode={mode}, harvest active — skipping follow override");
 					break;
 				}
 				SmeltController component2 = GetComponent<SmeltController>();
 				if (component2 != null && component2.IsActive)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Setup]   → Smelt mode={mode}, smelt active — skipping follow override");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Smelt mode={mode}, smelt active — skipping follow override");
 					break;
 				}
 				FarmController component3 = GetComponent<FarmController>();
 				if (component3 != null && component3.IsActive)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Setup]   → Farm mode={mode}, farm active — skipping follow override");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Farm mode={mode}, farm active — skipping follow override");
 					break;
 				}
 				HuntController component4 = GetComponent<HuntController>();
 				if (component4 != null && component4.IsActive)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Setup]   → Hunt mode={mode}, hunt active — skipping follow override");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Hunt mode={mode}, hunt active — skipping follow override");
 					break;
 				}
 				CookController component5 = GetComponent<CookController>();
 				if (component5 != null && component5.IsActive)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Setup]   → Cook mode={mode}, cook active — skipping follow override");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Cook mode={mode}, cook active — skipping follow override");
 					break;
 				}
 			}
 			if (follow && MHR_Owner.Of(this) != null)
 			{
 				_ai.SetFollowTarget(MHR_Owner.Go(this));
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (mode={mode})");
 			}
 			else
 			{
 				_ai.SetFollowTarget(null);
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow OFF, gather mode={mode} — idle");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow OFF, gather mode={mode} — idle");
 			}
 			break;
 		case 9:
 			_ai.SetFollowTarget(null);
 			_ai.SetPatrolPoint();
-			CompanionsPlugin.Log.LogDebug("[Setup]   → Fish mode — stationary, patrol at current pos");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup]   → Fish mode — stationary, patrol at current pos");
 			break;
 		case 4:
 			_ai.SetFollowTarget(null);
 			_ai.SetPatrolPoint();
-			CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {base.transform.position:F1}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Stay/patrol at {base.transform.position:F1}");
 			break;
 		default:
 			if (follow && MHR_Owner.Of(this) != null)
 			{
 				_ai.SetFollowTarget(MHR_Owner.Go(this));
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (default fallback, mode={mode})");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow player (default fallback, mode={mode})");
 			}
 			else
 			{
 				_ai.SetFollowTarget(null);
-				CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow OFF (default fallback, mode={mode})");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup]   → Follow OFF (default fallback, mode={mode})");
 			}
 			break;
 		}
@@ -967,8 +967,9 @@ public class CompanionSetup : MonoBehaviour
 			float armor = item.GetArmor();
 			switch (itemType)
 			{
+			// 1.5.73: a torch isn't a weapon here - fists rather than a torch (user: "The whole point of hitting with the torch is
+			// to light the enemy on fire so they burn ... I would rather they use their fists"); the fire opener still uses it
 			case ItemDrop.ItemData.ItemType.OneHandedWeapon:
-			case ItemDrop.ItemData.ItemType.Torch:
 				if (num11 > num)
 				{
 					itemData = item;
@@ -1057,7 +1058,7 @@ public class CompanionSetup : MonoBehaviour
 			}
 		}
 		EquipDiag.OnScan(allItems, itemData);
-		CompanionsPlugin.Log.LogDebug(string.Format("[Setup] AutoEquipBest — 1H=\"{0}\"({1:F0}) ", itemData?.m_shared?.m_name ?? "none", num) + string.Format("2H=\"{0}\"({1:F0}) ", itemData2?.m_shared?.m_name ?? "none", num2) + string.Format("shield=\"{0}\"(block={1:F0}) ", itemData4?.m_shared?.m_name ?? "none", num4) + "helm=\"" + (itemData7?.m_shared?.m_name ?? "none") + "\" chest=\"" + (itemData5?.m_shared?.m_name ?? "none") + "\" legs=\"" + (itemData6?.m_shared?.m_name ?? "none") + "\" trinket=\"" + (itemData8?.m_shared?.m_name ?? "none") + "\"");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug(string.Format("[Setup] AutoEquipBest — 1H=\"{0}\"({1:F0}) ", itemData?.m_shared?.m_name ?? "none", num) + string.Format("2H=\"{0}\"({1:F0}) ", itemData2?.m_shared?.m_name ?? "none", num2) + string.Format("shield=\"{0}\"(block={1:F0}) ", itemData4?.m_shared?.m_name ?? "none", num4) + "helm=\"" + (itemData7?.m_shared?.m_name ?? "none") + "\" chest=\"" + (itemData5?.m_shared?.m_name ?? "none") + "\" legs=\"" + (itemData6?.m_shared?.m_name ?? "none") + "\" trinket=\"" + (itemData8?.m_shared?.m_name ?? "none") + "\"");
 		if (armorOnly)
 		{
 			EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
@@ -1083,7 +1084,7 @@ public class CompanionSetup : MonoBehaviour
 						_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
 					}
 					QueueEquip(bow);
-					CompanionsPlugin.Log.LogDebug("[Setup] Ranged stance - queued the bow: \"" + (bow.m_shared?.m_name ?? "?") + "\"");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Ranged stance - queued the bow: \"" + (bow.m_shared?.m_name ?? "?") + "\"");
 				}
 				EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
 				return;
@@ -1091,46 +1092,50 @@ public class CompanionSetup : MonoBehaviour
 		}
 		bool flag = itemData2 != null && (itemData == null || num2 >= num);
 		ItemDrop.ItemData itemData11 = (flag ? itemData2 : itemData);
-		CompanionsPlugin.Log.LogDebug($"[Setup] Weapon decision: use2H={flag} " + "desired=\"" + (itemData11?.m_shared?.m_name ?? "none") + "\" current=\"" + (itemData9?.m_shared?.m_name ?? "none") + "\" " + $"needsSwap={itemData11 != null && itemData9 != itemData11}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Weapon decision: use2H={flag} " + "desired=\"" + (itemData11?.m_shared?.m_name ?? "none") + "\" current=\"" + (itemData9?.m_shared?.m_name ?? "none") + "\" " + $"needsSwap={itemData11 != null && itemData9 != itemData11}");
 		bool flag2 = _combatAI != null && _combatAI.IsEngaged;
 		bool flag3 = (itemData9 != null && itemData9.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow) || (itemData10 != null && itemData10.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow);
-		if (!flag2 && (!flag3 || GetCombatStance() != 2) && itemData11 != null && itemData9 != itemData11)
+		// 1.5.71: not the torch it's carrying in the dark
+		bool torchLit = itemData9 != null && itemData9.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch && _ai != null && _ai.WantsTorch;
+		if (!flag2 && !torchLit && (!flag3 || GetCombatStance() != 2) && itemData11 != null && itemData9 != itemData11)
 		{
 			if (itemData9 != null)
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] Unequip right: \"" + (itemData9.m_shared?.m_name ?? "?") + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Unequip right: \"" + (itemData9.m_shared?.m_name ?? "?") + "\"");
 				_humanoid.UnequipItem(itemData9, triggerEquipEffects: false);
 			}
 			if (IsTwoHandedWeapon(itemData11) && itemData10 != null)
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] Unequip left for 2H: \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Unequip left for 2H: \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
 				_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
 				itemData10 = null;
 			}
 			QueueEquip(itemData11);
-			CompanionsPlugin.Log.LogDebug("[Setup] Queued right: \"" + (itemData11.m_shared?.m_name ?? "?") + "\"");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Queued right: \"" + (itemData11.m_shared?.m_name ?? "?") + "\"");
 			itemData9 = itemData11;
 		}
 		bool flag4 = itemData9 != null && IsTwoHandedWeapon(itemData9);
 		bool flag5 = itemData10 != null && IsTwoHandedWeapon(itemData10);
 		// 1.5.53: not mid-fight - the combat code picks the shield then (ShieldLogic: the tower shield with 3+ enemies);
 		// this put the parry shield straight back (user: "brought out the tower shield for a moment then put it away")
-		if (!flag2 && !flag4 && !flag5 && itemData4 != null)
+		// 1.5.73: nor push a wanted torch out of the left hand for the shield
+		bool torchLeft = itemData10 != null && itemData10.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Torch && _ai != null && _ai.WantsTorch;
+		if (!flag2 && !flag4 && !flag5 && !torchLeft && itemData4 != null)
 		{
 			if (itemData10 != itemData4)
 			{
 				if (itemData10 != null)
 				{
-					CompanionsPlugin.Log.LogDebug("[Setup] Unequip left for shield swap: \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Unequip left for shield swap: \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
 					_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
 				}
 				QueueEquip(itemData4);
-				CompanionsPlugin.Log.LogDebug("[Setup] Queued shield: \"" + (itemData4.m_shared?.m_name ?? "?") + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Queued shield: \"" + (itemData4.m_shared?.m_name ?? "?") + "\"");
 			}
 		}
 		else if (flag4 && itemData10 != null)
 		{
-			CompanionsPlugin.Log.LogDebug("[Setup] Unequip left (2H in right): \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Unequip left (2H in right): \"" + (itemData10.m_shared?.m_name ?? "?") + "\"");
 			_humanoid.UnequipItem(itemData10, triggerEquipEffects: false);
 		}
 		EquipBestArmor(itemData5, itemData6, itemData7, bestItem, bestItem2, itemData8);
@@ -1143,7 +1148,7 @@ public class CompanionSetup : MonoBehaviour
 		int removed = _equipQueue.RemoveAll((ItemDrop.ItemData it) => it?.m_shared != null && IsHandItem(it));
 		if (removed > 0)
 		{
-			CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: dropped {removed} weapon/shield item(s) - a job holds the hands");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: dropped {removed} weapon/shield item(s) - a job holds the hands");
 		}
 	}
 
@@ -1195,7 +1200,7 @@ public class CompanionSetup : MonoBehaviour
 		Inventory inventory = _humanoid?.GetInventory();
 		while (_equipQueue.Count > 0 && (inventory == null || !inventory.ContainsItem(_equipQueue[0])))
 		{
-			CompanionsPlugin.Log.LogDebug("[Setup] Equip queue: skipping \"" + (_equipQueue[0]?.m_shared?.m_name ?? "?") + "\" — no longer in inventory");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Equip queue: skipping \"" + (_equipQueue[0]?.m_shared?.m_name ?? "?") + "\" — no longer in inventory");
 			_equipQueue.RemoveAt(0);
 		}
 		if (_equipQueue.Count == 0)
@@ -1211,7 +1216,7 @@ public class CompanionSetup : MonoBehaviour
 			}
 			float equipDuration = _equipQueue[0].m_shared.m_equipDuration;
 			_equipTimer = ((equipDuration > 0f) ? equipDuration : 0.1f);
-			CompanionsPlugin.Log.LogDebug("[Setup] Equip queue: started \"" + _equipQueue[0].m_shared.m_name + "\" " + $"duration={_equipTimer:F1}s ({_equipQueue.Count} items queued)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Equip queue: started \"" + _equipQueue[0].m_shared.m_name + "\" " + $"duration={_equipTimer:F1}s ({_equipQueue.Count} items queued)");
 			return;
 		}
 		_equipTimer -= dt;
@@ -1231,12 +1236,12 @@ public class CompanionSetup : MonoBehaviour
 		{
 			_equipping = false;
 		}
-		CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: equipped \"{itemData.m_shared.m_name}\" ({_equipQueue.Count} remaining)");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: equipped \"{itemData.m_shared.m_name}\" ({_equipQueue.Count} remaining)");
 		if (_equipQueue.Count > 0)
 		{
 			float equipDuration2 = _equipQueue[0].m_shared.m_equipDuration;
 			_equipTimer = ((equipDuration2 > 0f) ? equipDuration2 : 0.1f);
-			CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: next \"{_equipQueue[0].m_shared.m_name}\" duration={_equipTimer:F1}s");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue: next \"{_equipQueue[0].m_shared.m_name}\" duration={_equipTimer:F1}s");
 			return;
 		}
 		if (_zanim != null && CanWearArmor())
@@ -1285,7 +1290,7 @@ public class CompanionSetup : MonoBehaviour
 		{
 			string arg = zDO.GetString(NameHash, "Companion");
 			_minimapPin = Minimap.instance.AddPin(base.transform.position, Minimap.PinType.Player, arg, save: false, isChecked: false, 0L);
-			CompanionsPlugin.Log.LogDebug($"[Minimap] Created pin for \"{arg}\" at {base.transform.position:F1}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Minimap] Created pin for \"{arg}\" at {base.transform.position:F1}");
 		}
 		if (_minimapPin.m_pos != base.transform.position)
 		{
@@ -1297,7 +1302,7 @@ public class CompanionSetup : MonoBehaviour
 	{
 		if (_minimapPin != null && Minimap.instance != null)
 		{
-			CompanionsPlugin.Log.LogDebug("[Minimap] Removed pin for \"" + _minimapPin.m_name + "\"");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Minimap] Removed pin for \"" + _minimapPin.m_name + "\"");
 			Minimap.instance.RemovePin(_minimapPin);
 			_minimapPin = null;
 		}
@@ -1339,18 +1344,18 @@ public class CompanionSetup : MonoBehaviour
 		{
 			zDO.Set(WanderHash, value: true);
 			zDO.Set(WanderFollowMigratedHash, value: true);
-			CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Wander switched on (it now also controls how the companion moves around while following)");
 		}
 		// 1.4.117: Restock is part of Repair and Restock now, and Homestead is retired
 		if (zDO.GetInt(ActionModeHash) == ModeRestock)
 		{
 			zDO.Set(ActionModeHash, ModeRepairBuildings);
-			CompanionsPlugin.Log.LogInfo("[Setup] Restock job moved to Repair and Restock");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Setup] Restock job moved to Repair and Restock");
 		}
 		if (zDO.GetBool(StayHomeHash))
 		{
 			zDO.Set(StayHomeHash, value: false);
-			CompanionsPlugin.Log.LogInfo("[Setup] Homestead is retired - turned off (Wander still lets it move around home)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Setup] Homestead is retired - turned off (Wander still lets it move around home)");
 		}
 		// 1.4.78: a job and Follow can't both be on (saves from before have both)
 		int mode = zDO.GetInt(ActionModeHash);
@@ -1444,11 +1449,11 @@ public class CompanionSetup : MonoBehaviour
 				if (_autoEquipCooldown > 0f)
 				{
 					_autoEquipPending = true;
-					CompanionsPlugin.Log.LogDebug($"[Setup] OnInventoryChanged — deferred (cooldown={_autoEquipCooldown:F2}s)");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] OnInventoryChanged — deferred (cooldown={_autoEquipCooldown:F2}s)");
 				}
 				else
 				{
-					CompanionsPlugin.Log.LogDebug("[Setup] OnInventoryChanged — auto-equip triggered" + (SuppressAutoEquip ? " (armour only)" : ""));
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] OnInventoryChanged — auto-equip triggered" + (SuppressAutoEquip ? " (armour only)" : ""));
 					AutoEquipBest(armorOnly: SuppressAutoEquip);
 					_autoEquipCooldown = 0.5f;
 				}
@@ -1567,18 +1572,18 @@ public class CompanionSetup : MonoBehaviour
 					num2++;
 				}
 			}
-			CompanionsPlugin.Log.LogInfo($"[Setup] Death items (rule={num}): kept {num2}, deleted {num3}, the rest go to the tombstone");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Death items (rule={num}): kept {num2}, deleted {num3}, the rest go to the tombstone");
 			if (inventory2 != null && inventory2.NrOfItems() != 0)
 			{
 				ZPackage zPackage = new ZPackage();
 				inventory2.Save(zPackage);
 				inventorySerialized = zPackage.GetBase64();
-				CompanionsPlugin.Log.LogInfo($"[Setup] Companion keeps {inventory2.NrOfItems()} item(s) through death/respawn");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Companion keeps {inventory2.NrOfItems()} item(s) through death/respawn");
 			}
 		}
 		inventory = _humanoid?.GetInventory();
 		int num5 = inventory?.NrOfItems() ?? 0;
-		CompanionsPlugin.Log.LogInfo($"[Setup] Creating tombstone for \"{companionName}\" — {num5} items, " + $"tombstoneId={tombstoneId}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Creating tombstone for \"{companionName}\" — {num5} items, " + $"tombstoneId={tombstoneId}");
 		if (inventory != null && num5 > 0)
 		{
 			_humanoid.UnequipAllItems();
@@ -1591,10 +1596,10 @@ public class CompanionSetup : MonoBehaviour
 				}
 				allItem.m_equipped = false;
 			}
-			CompanionsPlugin.Log.LogDebug($"[Setup] Unequipped all items for grave transfer (cleared {num6} stale equipped flags)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Unequipped all items for grave transfer (cleared {num6} stale equipped flags)");
 		}
 		GameObject gameObject2 = UnityEngine.Object.Instantiate(gameObject, position, base.transform.rotation);
-		CompanionsPlugin.Log.LogDebug($"[Setup] Tombstone spawned at {position:F1}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Tombstone spawned at {position:F1}");
 		if (inventory != null && num5 > 0)
 		{
 			Container component = gameObject2.GetComponent<Container>();
@@ -1605,7 +1610,7 @@ public class CompanionSetup : MonoBehaviour
 				{
 					inventory3.MoveInventoryToGrave(inventory);
 					int num7 = inventory3.NrOfItems();
-					CompanionsPlugin.Log.LogInfo($"[Setup] Grave transfer complete — {num7} items in tombstone");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Grave transfer complete — {num7} items in tombstone");
 					int width = inventory3.GetWidth();
 					int num8 = 0;
 					foreach (ItemDrop.ItemData allItem2 in inventory3.GetAllItems())
@@ -1620,7 +1625,7 @@ public class CompanionSetup : MonoBehaviour
 		if (component2 != null)
 		{
 			component2.Setup(companionName, tombstoneId);
-			CompanionsPlugin.Log.LogDebug($"[Setup] Tombstone ownership set — name=\"{companionName}\" id={tombstoneId}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Tombstone ownership set — name=\"{companionName}\" id={tombstoneId}");
 		}
 		ZNetView component3 = gameObject2.GetComponent<ZNetView>();
 		if (component3?.GetZDO() != null)
@@ -1648,13 +1653,13 @@ public class CompanionSetup : MonoBehaviour
 			zDO.Set(CompanionTombstoneResurrect.RespawnFarmZonesHash, _nview?.GetZDO()?.GetString(FarmZoneSerializer.FarmZonesHash) ?? "");
 			gameObject2.AddComponent<CompanionTombstoneResurrect>();
 			MHR_RespawnTracker.OnCompanionDied(zDO, ownerId);
-			CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Setup] Tombstone resurrection data written and component attached");
 		}
 		if (Minimap.instance != null)
 		{
 			string text = companionName + " " + ModLocalization.Loc("hc_minimap_grave");
 			Minimap.instance.AddPin(position, Minimap.PinType.Death, text, save: true, isChecked: false, 0L);
-			CompanionsPlugin.Log.LogInfo($"[Setup] Added tombstone minimap pin at {position:F1}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Added tombstone minimap pin at {position:F1}");
 		}
 		SuppressAutoEquip = false;
 	}
@@ -1783,7 +1788,7 @@ public class CompanionSetup : MonoBehaviour
 	{
 		if (_equipQueue.Count > 0)
 		{
-			CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue cleared ({_equipQueue.Count} items dropped)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Setup] Equip queue cleared ({_equipQueue.Count} items dropped)");
 			_equipQueue.Clear();
 		}
 		if (_equipAnimActive)
@@ -1858,12 +1863,12 @@ public class CompanionSetup : MonoBehaviour
 		{
 			if (equipSlot != null)
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] Armor swap " + slotField.Name + ": \"" + (equipSlot.m_shared?.m_name ?? "?") + "\" → \"" + (bestItem.m_shared?.m_name ?? "?") + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Armor swap " + slotField.Name + ": \"" + (equipSlot.m_shared?.m_name ?? "?") + "\" → \"" + (bestItem.m_shared?.m_name ?? "?") + "\"");
 				_humanoid.UnequipItem(equipSlot, triggerEquipEffects: false);
 			}
 			else
 			{
-				CompanionsPlugin.Log.LogDebug("[Setup] Armor queued " + slotField.Name + ": \"" + (bestItem.m_shared?.m_name ?? "?") + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Setup] Armor queued " + slotField.Name + ": \"" + (bestItem.m_shared?.m_name ?? "?") + "\"");
 			}
 			QueueEquip(bestItem);
 		}

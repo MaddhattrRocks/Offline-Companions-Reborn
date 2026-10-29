@@ -42,6 +42,11 @@ public class ConfigPanel : MonoBehaviour
 
 	private readonly List<Action> _entryResetActions = new List<Action>();
 
+	// 1.5.72: per row - the controller's A starts a controller bind capture, X clears a bind
+	private readonly Dictionary<ConfigEntryBase, Action> _entryActivate = new Dictionary<ConfigEntryBase, Action>();
+
+	private readonly Dictionary<ConfigEntryBase, Action> _entryClear = new Dictionary<ConfigEntryBase, Action>();
+
 	private int _selectedRowIndex = -1;
 
 	private float _dpadRepeatTimer;
@@ -66,7 +71,8 @@ public class ConfigPanel : MonoBehaviour
 
 	private static readonly Color RowBg = new Color(0.08f, 0.08f, 0.1f, 0.6f);
 
-	private static readonly Color RowBgSelected = new Color(0.18f, 0.15f, 0.08f, 0.8f);
+	// 1.5.73: brighter, with a gold edge (user: "it was hard to tell even what was highlighted")
+	private static readonly Color RowBgSelected = new Color(0.42f, 0.32f, 0.12f, 0.9f);
 
 	private static readonly Color DefaultBtnColor = new Color(0.35f, 0.35f, 0.38f, 1f);
 
@@ -246,6 +252,7 @@ public class ConfigPanel : MonoBehaviour
 		BuildCloseButton(_root.transform);
 		BuildTabColumn(_root.transform);
 		BuildContentArea(_root.transform);
+		BuildPadHint(_root.transform);
 		if (ModConfig.CategoryOrder.Count > 0)
 		{
 			SelectCategory(ModConfig.CategoryOrder[0]);
@@ -345,7 +352,7 @@ public class ConfigPanel : MonoBehaviour
 		{
 			return;
 		}
-		if (Input.GetKeyDown(ModConfig.ConfigPanelKey.Value))
+		if (Input.GetKeyDown(ModConfig.ConfigPanelKey.Value) || (ZInput.IsGamepadActive() && MHR_Pad.Down(ModConfig.PadSettings, ModConfig.PadSettingsModifier)))
 		{
 			if (_visible)
 			{
@@ -371,6 +378,8 @@ public class ConfigPanel : MonoBehaviour
 
 	private void UpdateControllerInput()
 	{
+		UpdatePadHint();
+		NoUnitySelection();
 		if (!ZInput.IsGamepadActive())
 		{
 			return;
@@ -394,7 +403,8 @@ public class ConfigPanel : MonoBehaviour
 			}
 			SelectCategory(ModConfig.CategoryOrder[num2]);
 		}
-		float num3 = MHR_Stick.LY();
+		// 1.5.73: the game's stick Y is down-positive (ZInput.GetJoyLeftStickY = -y) - up went down (user)
+		float num3 = 0f - MHR_Stick.LY();
 		bool buttonDown = ZInput.GetButtonDown("JoyDPadUp");
 		bool buttonDown2 = ZInput.GetButtonDown("JoyDPadDown");
 		bool flag = buttonDown || num3 > 0.5f;
@@ -467,13 +477,21 @@ public class ConfigPanel : MonoBehaviour
 				{
 					AdjustSelectedValue(1);
 				}
+				else if (_entryActivate.TryGetValue(configEntryBase, out var activate))
+				{
+					activate();
+				}
+			}
+			if (ZInput.GetButtonDown("JoyButtonX") && _selectedRowIndex < _entryData.Count && _entryClear.TryGetValue(_entryData[_selectedRowIndex], out var clear))
+			{
+				clear();
 			}
 			if (ZInput.GetButtonDown("JoyButtonY") && _selectedRowIndex < _entryResetActions.Count)
 			{
 				_entryResetActions[_selectedRowIndex]?.Invoke();
 			}
 		}
-		float num9 = MHR_Stick.RY();
+		float num9 = 0f - MHR_Stick.RY();
 		if (Mathf.Abs(num9) > 0.1f && _scrollRect != null)
 		{
 			_scrollRect.verticalNormalizedPosition = Mathf.Clamp01(_scrollRect.verticalNormalizedPosition + num9 * unscaledDeltaTime * 2f);
@@ -535,6 +553,11 @@ public class ConfigPanel : MonoBehaviour
 			{
 				component.color = RowBg;
 			}
+			Outline was = _entryRows[_selectedRowIndex].GetComponent<Outline>();
+			if (was != null)
+			{
+				was.enabled = false;
+			}
 		}
 		_selectedRowIndex = index;
 		if (_selectedRowIndex >= 0 && _selectedRowIndex < _entryRows.Count)
@@ -544,6 +567,10 @@ public class ConfigPanel : MonoBehaviour
 			{
 				component2.color = RowBgSelected;
 			}
+			Outline edge = _entryRows[_selectedRowIndex].GetComponent<Outline>() ?? _entryRows[_selectedRowIndex].AddComponent<Outline>();
+			edge.effectColor = GoldTextColor;
+			edge.effectDistance = new Vector2(2f, -2f);
+			edge.enabled = true;
 			ScrollToRow(_selectedRowIndex);
 		}
 	}
@@ -595,6 +622,11 @@ public class ConfigPanel : MonoBehaviour
 			configEntry3.Value = !configEntry3.Value;
 			RefreshCategory();
 		}
+		else if (configEntryBase.SettingType == typeof(string) && configEntryBase.Description?.AcceptableValues is AcceptableValueList<string>)
+		{
+			((ConfigEntry<string>)configEntryBase).Value = NextChoice(configEntryBase, direction);
+			RefreshCategory();
+		}
 	}
 
 	private void RefreshCategory()
@@ -607,6 +639,8 @@ public class ConfigPanel : MonoBehaviour
 		_entryData.Clear();
 		_entrySliders.Clear();
 		_entryResetActions.Clear();
+		_entryActivate.Clear();
+		_entryClear.Clear();
 		if (!ModConfig.Categories.TryGetValue(_activeCategory, out var value))
 		{
 			return;
@@ -837,6 +871,63 @@ public class ConfigPanel : MonoBehaviour
 		_tabScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
 	}
 
+	// 1.5.73: what the controller buttons do, in the game's own icons (shown while a controller is in use)
+	private TMP_Text _padHint;
+
+	private void BuildPadHint(Transform parent)
+	{
+		// 1.5.74: black - the light words got lost on the light panel (user)
+		GameObject go = CreateLabel(parent, "", 11f, Color.black);
+		go.name = "PadHint";
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0f, 0f);
+		rt.anchorMax = new Vector2(1f, 0f);
+		rt.pivot = new Vector2(0.5f, 0f);
+		rt.offsetMin = new Vector2(166f, 6f);
+		rt.offsetMax = new Vector2(-8f, 28f);
+		_padHint = go.GetComponent<TMP_Text>();
+		_padHint.alignment = TextAlignmentOptions.Center;
+		_padHint.raycastTarget = false;
+	}
+
+	// 1.5.74: one highlight only - the game's controller input also moved Unity's own button selection round the panel
+	// (user: "When I go to move the thumbstick I end up with 2 gold highights")
+	private void NoUnitySelection()
+	{
+		if (_root == null)
+		{
+			return;
+		}
+		foreach (Selectable sel in _root.GetComponentsInChildren<Selectable>(includeInactive: true))
+		{
+			if (sel != null && sel.navigation.mode != Navigation.Mode.None)
+			{
+				sel.navigation = new Navigation
+				{
+					mode = Navigation.Mode.None
+				};
+			}
+		}
+		if (EventSystem.current != null && EventSystem.current.currentSelectedGameObject != null && EventSystem.current.currentSelectedGameObject.transform.IsChildOf(_root.transform))
+		{
+			EventSystem.current.SetSelectedGameObject(null);
+		}
+	}
+
+	private void UpdatePadHint()
+	{
+		if (_padHint == null)
+		{
+			return;
+		}
+		bool pad = ZInput.IsGamepadActive();
+		_padHint.gameObject.SetActive(pad);
+		if (pad)
+		{
+			_padHint.text = "[" + MHR_Pad.GlyphOf("JoyButtonA") + "] Change   [" + MHR_Pad.GlyphOf("JoyButtonX") + "] Clear   [" + MHR_Pad.GlyphOf("JoyButtonY") + "] Default   [" + MHR_Pad.GlyphOf("JoyTabLeft") + "] [" + MHR_Pad.GlyphOf("JoyTabRight") + "] Tabs   [" + MHR_Pad.GlyphOf("JoyButtonB") + "] Close";
+		}
+	}
+
 	private void BuildContentArea(Transform parent)
 	{
 		float x = 166f;
@@ -848,7 +939,7 @@ public class ConfigPanel : MonoBehaviour
 		RectTransform component2 = gameObject.GetComponent<RectTransform>();
 		component2.anchorMin = new Vector2(0f, 0f);
 		component2.anchorMax = new Vector2(1f, 1f);
-		component2.offsetMin = new Vector2(x, 8f);
+		component2.offsetMin = new Vector2(x, 32f);
 		component2.offsetMax = new Vector2(-8f, -36f);
 		GameObject gameObject2 = new GameObject("Content", typeof(RectTransform));
 		gameObject2.transform.SetParent(gameObject.transform, worldPositionStays: false);
@@ -919,7 +1010,170 @@ public class ConfigPanel : MonoBehaviour
 		{
 			return BuildKeyCodeRow(entry, yPos);
 		}
+		if (entry.SettingType == typeof(string) && entry.Definition.Section == "Controller")
+		{
+			return BuildPadRow(entry, yPos);
+		}
+		if (entry.SettingType == typeof(string) && entry.Description?.AcceptableValues is AcceptableValueList<string>)
+		{
+			return BuildChoiceRow(entry, yPos);
+		}
 		return null;
+	}
+
+	// 1.5.72: a controller bind - press the button you want, Clear (or X on the controller) = None
+	private GameObject BuildPadRow(ConfigEntryBase entry, float yPos)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		GameObject row = CreateRowContainer("Row_" + entry.Definition.Key, yPos);
+		GameObject name = CreateLabel(row.transform, entry.Definition.Key, 12f, Color.white);
+		RectTransform nrt = name.GetComponent<RectTransform>();
+		nrt.anchorMin = new Vector2(0f, 0f);
+		nrt.anchorMax = new Vector2(0.5f, 1f);
+		nrt.offsetMin = new Vector2(8f, 0f);
+		nrt.offsetMax = Vector2.zero;
+		name.GetComponent<TMP_Text>().alignment = TextAlignmentOptions.MidlineLeft;
+		GameObject btn = BindButton(row.transform, new Vector2(0.5f, 0.1f), new Vector2(0.71f, 0.9f), PadBindListener.Label(typed.Value), out TMP_Text label);
+		PadBindListener listener = btn.AddComponent<PadBindListener>();
+		listener.Init(typed, label);
+		btn.GetComponent<Button>().onClick.AddListener(listener.Begin);
+		Action clear = delegate
+		{
+			typed.Value = "None";
+			label.text = PadBindListener.Label(typed.Value);
+		};
+		ClearButton(row.transform, clear);
+		CreateDefaultButton(row.transform, entry, delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = PadBindListener.Label(typed.Value);
+		});
+		_entryData.Add(entry);
+		_entrySliders.Add(null);
+		_entryResetActions.Add(delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = PadBindListener.Label(typed.Value);
+		});
+		_entryActivate[entry] = listener.Begin;
+		_entryClear[entry] = clear;
+		return row;
+	}
+
+	// 1.5.77: a setting with a fixed list of choices (Advanced > LogLevel, General > PortalItems, Death > RespawnStance) -
+	// they weren't shown in F8 at all. The button shows the value; click it (A, or left/right on a controller) for the next one.
+	private static string NextChoice(ConfigEntryBase entry, int direction)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		string[] list = ((AcceptableValueList<string>)entry.Description.AcceptableValues).AcceptableValues;
+		int i = Array.IndexOf(list, typed.Value);
+		i = (i < 0) ? 0 : ((i + direction) % list.Length + list.Length) % list.Length;
+		return list[i];
+	}
+
+	private GameObject BuildChoiceRow(ConfigEntryBase entry, float yPos)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		GameObject row = CreateRowContainer("Row_" + entry.Definition.Key, yPos);
+		GameObject name = CreateLabel(row.transform, entry.Definition.Key, 12f, Color.white);
+		RectTransform nrt = name.GetComponent<RectTransform>();
+		nrt.anchorMin = new Vector2(0f, 0f);
+		nrt.anchorMax = new Vector2(0.55f, 1f);
+		nrt.offsetMin = new Vector2(8f, 0f);
+		nrt.offsetMax = Vector2.zero;
+		name.GetComponent<TMP_Text>().alignment = TextAlignmentOptions.MidlineLeft;
+		BindButton(row.transform, new Vector2(0.56f, 0.1f), new Vector2(0.83f, 0.9f), typed.Value, out TMP_Text label).GetComponent<Button>().onClick.AddListener(delegate
+		{
+			typed.Value = NextChoice(entry, 1);
+			label.text = typed.Value;
+		});
+		CreateDefaultButton(row.transform, entry, delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = typed.Value;
+		});
+		_entryData.Add(entry);
+		_entrySliders.Add(null);
+		_entryResetActions.Add(delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = typed.Value;
+		});
+		_entryActivate[entry] = delegate
+		{
+			typed.Value = NextChoice(entry, 1);
+			label.text = typed.Value;
+		};
+		return row;
+	}
+
+	private GameObject BindButton(Transform parent, Vector2 min, Vector2 max, string text, out TMP_Text label)
+	{
+		GameObject go = new GameObject("KeyBind", typeof(RectTransform), typeof(Image), typeof(Button));
+		go.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = min;
+		rt.anchorMax = max;
+		rt.offsetMin = Vector2.zero;
+		rt.offsetMax = Vector2.zero;
+		Image img = go.GetComponent<Image>();
+		Sprite sprite = GetBtnBgSprite();
+		if (sprite != null)
+		{
+			img.sprite = sprite;
+			img.type = Image.Type.Simple;
+			img.color = Color.white;
+		}
+		else
+		{
+			img.color = new Color(0.15f, 0.15f, 0.18f, 0.9f);
+		}
+		GameObject l = CreateLabel(go.transform, text, 11f, GoldTextColor);
+		RectTransform lrt = l.GetComponent<RectTransform>();
+		lrt.anchorMin = Vector2.zero;
+		lrt.anchorMax = Vector2.one;
+		lrt.offsetMin = Vector2.zero;
+		lrt.offsetMax = Vector2.zero;
+		label = l.GetComponent<TMP_Text>();
+		label.alignment = TextAlignmentOptions.Center;
+		return go;
+	}
+
+	// 1.5.72: unbind (user: "These need to be able to be unmapped if a player wants")
+	private void ClearButton(Transform parent, Action onClear)
+	{
+		GameObject go = new GameObject("ClearBtn", typeof(RectTransform), typeof(Image), typeof(Button));
+		go.transform.SetParent(parent, worldPositionStays: false);
+		RectTransform rt = go.GetComponent<RectTransform>();
+		rt.anchorMin = new Vector2(0.72f, 0.1f);
+		rt.anchorMax = new Vector2(0.84f, 0.9f);
+		rt.offsetMin = Vector2.zero;
+		rt.offsetMax = Vector2.zero;
+		Image img = go.GetComponent<Image>();
+		Sprite sprite = GetCatBgSprite();
+		if (sprite != null)
+		{
+			img.sprite = sprite;
+			img.type = Image.Type.Simple;
+			img.color = TabInactive;
+		}
+		else
+		{
+			img.color = DefaultBtnColor;
+		}
+		GameObject l = CreateLabel(go.transform, "Clear", 9f, Color.white);
+		RectTransform lrt = l.GetComponent<RectTransform>();
+		lrt.anchorMin = Vector2.zero;
+		lrt.anchorMax = Vector2.one;
+		lrt.offsetMin = Vector2.zero;
+		lrt.offsetMax = Vector2.zero;
+		TMP_Text t = l.GetComponent<TMP_Text>();
+		t.alignment = TextAlignmentOptions.Center;
+		t.raycastTarget = false;
+		go.GetComponent<Button>().onClick.AddListener(delegate
+		{
+			onClear();
+		});
 	}
 
 	private GameObject BuildFloatRow(ConfigEntryBase entry, float yPos)
@@ -1107,7 +1361,7 @@ public class ConfigPanel : MonoBehaviour
 		gameObject3.transform.SetParent(gameObject.transform, worldPositionStays: false);
 		RectTransform component2 = gameObject3.GetComponent<RectTransform>();
 		component2.anchorMin = new Vector2(0.5f, 0.1f);
-		component2.anchorMax = new Vector2(0.83f, 0.9f);
+		component2.anchorMax = new Vector2(0.71f, 0.9f);
 		component2.offsetMin = Vector2.zero;
 		component2.offsetMax = Vector2.zero;
 		Image component3 = gameObject3.GetComponent<Image>();
@@ -1141,6 +1395,15 @@ public class ConfigPanel : MonoBehaviour
 			}
 		});
 		gameObject3.GetComponent<Button>().onClick.AddListener(keyBindListener.Begin);
+		Action clearKey = delegate
+		{
+			typed.Value = KeyCode.None;
+			btnTMP.text = typed.Value.ToString();
+			btnTMP.color = GoldTextColor;
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Config] " + entry.Definition.Key + " cleared");
+		};
+		ClearButton(gameObject.transform, clearKey);
+		_entryClear[entry] = clearKey;
 		CreateDefaultButton(gameObject.transform, entry, delegate
 		{
 			typed.Value = (KeyCode)entry.DefaultValue;

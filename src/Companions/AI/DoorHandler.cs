@@ -40,7 +40,7 @@ public class DoorHandler : MonoBehaviour
 		}
 		if (!IsValidClosedDoor(door))
 		{
-			CompanionsPlugin.Log.LogDebug("[Door] \"" + door.m_name + "\" is already open (or locked) - nothing to do");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Door] \"" + door.m_name + "\" is already open (or locked) - nothing to do");
 			return;
 		}
 		_door = door;
@@ -50,7 +50,7 @@ public class DoorHandler : MonoBehaviour
 		{
 			MHR_Mover.Release(_ai);
 		}
-		CompanionsPlugin.Log.LogDebug("[Door] Going to open the " + door.m_name + " at " + MHR_Mover.Fmt(door.transform.position) + " (" + Vector3.Distance(base.transform.position, door.transform.position).ToString("F1") + " m away)");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Door] Going to open the " + door.m_name + " at " + MHR_Mover.Fmt(door.transform.position) + " (" + Vector3.Distance(base.transform.position, door.transform.position).ToString("F1") + " m away)");
 	}
 
 	private void Awake()
@@ -114,7 +114,7 @@ public class DoorHandler : MonoBehaviour
 
 	private void Done(string why)
 	{
-		CompanionsPlugin.Log.LogDebug("[Door] " + (_door != null ? _door.m_name : "Door") + ": " + why);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Door] " + (_door != null ? _door.m_name : "Door") + ": " + why);
 		_door = null;
 		_ai?.StopMoving();
 		if (_ai != null)

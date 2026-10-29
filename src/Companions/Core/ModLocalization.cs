@@ -55,7 +55,7 @@ public static class ModLocalization
 		_initialized = true;
 		if (InstanceField?.GetValue(null) is Localization loc)
 		{
-			CompanionsPlugin.Log.LogInfo("[Localization] Localization already initialized — injecting retroactively");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Localization] Localization already initialized — injecting retroactively");
 			InjectTranslations(loc);
 		}
 	}
@@ -417,6 +417,7 @@ public static class ModLocalization
 			{ "hc_cmd_hive", "I'll fetch the honey." },
 			{ "hc_cmd_hive_empty", "No honey in there yet." },
 			{ "hc_say_encumbered", "This is too heavy - I can barely move." },
+			{ "hc_say_no_torches", "My last torch burned out." },
 			{ "hc_say_portal_stay", "I can't take {0} through the portal - I'll wait here." },
 			{ "hc_say_portal_left", "Left {0} in the chest by the portal." },
 			{ "hc_cmd_tombstone_1", "I'll grab my things." },
@@ -429,7 +430,7 @@ public static class ModLocalization
 			{ "hc_farmzone_title", "Select Crop" },
 			{ "hc_farmzone_any", "Any Crop" },
 			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [Esc] Exit" },
-			{ "hc_farmzone_hint_gamepad", "[A] Place  [X] Remove  [Bumpers] Resize  [D-Pad] Rotate  [Start] Exit" },
+			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{5}] Exit" },
 			{ "hc_farmzone_full", "Maximum zones reached (4)" }
 		};
 	}
@@ -471,7 +472,7 @@ public static class ModLocalization
 				num++;
 			}
 		}
-		CompanionsPlugin.Log.LogInfo($"[Localization] Injected {_englishDefaults?.Count ?? 0} defaults + {num} \"{selectedLanguage}\" overrides");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] Injected {_englishDefaults?.Count ?? 0} defaults + {num} \"{selectedLanguage}\" overrides");
 	}
 
 	public static void EnsureDefaultFile()
@@ -495,7 +496,7 @@ public static class ModLocalization
 				{
 					return;
 				}
-				CompanionsPlugin.Log.LogInfo($"[Localization] English.json is stale ({dictionary?.Count ?? 0} vs {_englishDefaults.Count} keys) — regenerating.");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] English.json is stale ({dictionary?.Count ?? 0} vs {_englishDefaults.Count} keys) — regenerating.");
 			}
 			List<KeyValuePair<string, string>> list = new List<KeyValuePair<string, string>>(_englishDefaults);
 			list.Sort((KeyValuePair<string, string> a, KeyValuePair<string, string> b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
@@ -510,7 +511,7 @@ public static class ModLocalization
 			stringBuilder.AppendLine("    ]");
 			stringBuilder.AppendLine("}");
 			File.WriteAllText(text, stringBuilder.ToString(), Encoding.UTF8);
-			CompanionsPlugin.Log.LogInfo("[Localization] Created default " + text);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Localization] Created default " + text);
 		}
 		catch (Exception ex)
 		{
@@ -579,7 +580,7 @@ public static class ModLocalization
 			{
 				return null;
 			}
-			CompanionsPlugin.Log.LogInfo($"[Localization] Loaded {dictionary.Count} keys from {text}");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] Loaded {dictionary.Count} keys from {text}");
 			return dictionary;
 		}
 		catch (Exception ex)
