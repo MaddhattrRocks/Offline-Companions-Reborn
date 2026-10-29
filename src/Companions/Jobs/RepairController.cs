@@ -539,7 +539,7 @@ public class RepairController : MonoBehaviour
 	private void Log(string msg)
 	{
 		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogDebug("[Repair|" + text + "] " + msg);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Repair|" + text + "] " + msg);
 	}
 
 	internal static bool CanRepairAt(CraftingStation station, ItemDrop.ItemData item)

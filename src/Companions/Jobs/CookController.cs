@@ -2360,7 +2360,7 @@ public partial class CookController : MonoBehaviour
 
 	private void Log(string msg)
 	{
-		CompanionsPlugin.Log.LogInfo("[Cook|" + (_character?.m_name ?? "?") + "] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Cook|" + (_character?.m_name ?? "?") + "] " + msg);
 	}
 
 	internal static string Name(string prefab)
@@ -2478,7 +2478,7 @@ internal static class CookCatalog
 				}
 			}
 			WriteReference();
-			CompanionsPlugin.Log.LogInfo($"[Cook] {Recipes.Count} recipes, {s_convTo.Count} cooking station items, {s_meadOf.Count} mead bases");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Cook] {Recipes.Count} recipes, {s_convTo.Count} cooking station items, {s_meadOf.Count} mead bases");
 		}
 		catch (Exception ex)
 		{
@@ -2630,7 +2630,7 @@ internal static class CookCatalog
 				}
 			}
 		}
-		CompanionsPlugin.Log.LogInfo("[Cook] Mead priority (" + (stage ?? "no entry") + "): " + ((s_focus.Count > 0) ? string.Join(", ", s_focus) : "none"));
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Cook] Mead priority (" + (stage ?? "no entry") + "): " + ((s_focus.Count > 0) ? string.Join(", ", s_focus) : "none"));
 		return s_focus;
 	}
 

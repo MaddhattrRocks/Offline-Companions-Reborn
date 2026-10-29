@@ -1301,12 +1301,12 @@ public class FishController : MonoBehaviour
 
 	private void Log(string msg)
 	{
-		CompanionsPlugin.Log?.LogInfo("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log?.LogInfo("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
 	}
 
 	private void LogDebug(string msg)
 	{
-		CompanionsPlugin.Log?.LogDebug("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log?.LogDebug("[Fish|" + (_character?.m_name ?? "?") + "] " + msg);
 	}
 }
 
@@ -1346,7 +1346,7 @@ internal static class FishCatalog
 				sb.AppendLine("  " + line);
 			}
 			File.WriteAllText(Path.Combine(Paths.ConfigPath, "OfflineCompanionsReborn.Fishing.txt"), sb.ToString());
-			CompanionsPlugin.Log.LogInfo($"[Fish] {s_fish.Count} kinds of fish");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Fish] {s_fish.Count} kinds of fish");
 		}
 		catch (Exception ex)
 		{

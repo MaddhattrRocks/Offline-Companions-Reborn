@@ -36,6 +36,10 @@ internal static class MHR_RiseWatch
 
 	internal static void Tick(CompanionSetup cs)
 	{
+		if (!CompanionsPlugin.LogDetailed)
+		{
+			return;
+		}
 		try
 		{
 			if (cs == null)

@@ -939,7 +939,7 @@ public class SmeltController : MonoBehaviour
 	private void Log(string msg)
 	{
 		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogInfo("[Smelt|" + text + "] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Smelt|" + text + "] " + msg);
 	}
 
 	private static int CountGroundDropsNearSmelter(Smelter smelter)
@@ -969,7 +969,7 @@ public class SmeltController : MonoBehaviour
 	private void LogDebug(string msg)
 	{
 		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogDebug("[Smelt|" + text + "] " + msg);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Smelt|" + text + "] " + msg);
 	}
 
 	private void ClaimSmelter()

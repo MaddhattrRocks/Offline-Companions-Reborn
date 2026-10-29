@@ -48,7 +48,7 @@ internal class PadBindListener : MonoBehaviour
 		_startFrame = Time.frameCount;
 		KeyBindListener.Capturing = true;
 		_label.text = "Press a button...";
-		CompanionsPlugin.Log.LogInfo("[Config] Waiting for a controller button for " + _entry.Definition.Key + " (Esc cancels)");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Config] Waiting for a controller button for " + _entry.Definition.Key + " (Esc cancels)");
 	}
 
 	private void End(string value)
@@ -59,7 +59,7 @@ internal class PadBindListener : MonoBehaviour
 		if (value != null)
 		{
 			_entry.Value = value;
-			CompanionsPlugin.Log.LogInfo("[Config] " + _entry.Definition.Key + " = " + value);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Config] " + _entry.Definition.Key + " = " + value);
 		}
 		_label.text = Label(_entry.Value);
 	}

@@ -45,7 +45,7 @@ namespace Companions
 
         static int GroundMask() { if (s_ground == -1) s_ground = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain", "vehicle"); return s_ground; }
         static int LosMask() { if (s_los == -1) s_los = LayerMask.GetMask("Default", "static_solid", "piece", "terrain"); return s_los; }
-        static void Dbg(string msg) { if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogDebug("[Follow] " + msg); }
+        static void Dbg(string msg) { if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Follow] " + msg); }
         static float Flat(Vector3 a, Vector3 b) { return new Vector2(a.x - b.x, a.z - b.z).magnitude; }
         static float MaxDist(T t)
         {
@@ -217,7 +217,7 @@ namespace Companions
                 if (!hold && now - t.MovingSince < 3.5f && !s.Moving && !c.IsSwimming() && YouAimAt(player, c, distP))
                 {
                     hold = true;
-                    if (now - s.AimLog > 5f) { s.AimLog = now; if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " stays put - your crosshair is on it"); }
+                    if (now - s.AimLog > 5f) { s.AimLog = now; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " stays put - your crosshair is on it"); }
                 }
                 if (!s.Moving && ((!hold && (dSpot > (t.Indoors ? 2.5f : 4f) || distP > maxD || c.IsSwimming() || offLevel)) || climbing)) s.Moving = true;
                 if (s.Moving)
@@ -278,7 +278,7 @@ namespace Companions
                 s.Regrouped = true;
                 PickSpot(ai, s, t, pp, maxD, true, 0f);
                 s.IdleGoal = Goal(ai, s, t, pp, tid); s.IdleAnchor = s.IdleGoal; s.IdleMoving = true;
-                Dbg(c.m_name + " regrouping after " + still.ToString("F0") + "s");
+                if (CompanionsPlugin.LogDetailed) Dbg(c.m_name + " regrouping after " + still.ToString("F0") + "s");
             }
 
             // indoors: sit down (a chair if there's a free one, otherwise the floor)
@@ -350,12 +350,12 @@ namespace Companions
                 }
                 if (best < 0)
                 {
-                    if (now >= s.NextPathLog) { s.NextPathLog = now + 15f; Dbg(c.m_name + " can't follow your path: none of your last " + st.Count + " steps is on its level within 12 m (came by portal, or the path is older than that)"); }
+                    if (now >= s.NextPathLog) { s.NextPathLog = now + 15f; if (CompanionsPlugin.LogDetailed) Dbg(c.m_name + " can't follow your path: none of your last " + st.Count + " steps is on its level within 12 m (came by portal, or the path is older than that)"); }
                     return false;
                 }
                 s.OnPath = true; s.PathIdx = best; s.PathProgressAt = now; s.PathApproach = bd > 1.0f;
                 MHR_Mover.Release(ai);
-                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + Mathf.Abs(pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is " + Mathf.Abs(pp.y - me.y).ToString("F1") + "m " + (pp.y > me.y ? "below" : "above") + " you - following your path (" + (st.Count - best) + " steps, starting " + bd.ToString("F1") + "m away)");
             }
             if (s.PathIdx >= st.Count) s.PathIdx = st.Count - 1;
             // getting to where the player's path starts: the normal planner
@@ -408,7 +408,7 @@ namespace Companions
                 if (!wallTop) c.Jump(false);
                 s.PathJumpAt = now + 1.0f;
             }
-            if (now >= s.NextPathLog) { s.NextPathLog = now + 3f; Dbg(c.m_name + " on your path: step " + s.PathIdx + "/" + (st.Count - 1) + " at " + next.ToString("F1") + ", me " + me.ToString("F1")); }
+            if (now >= s.NextPathLog) { s.NextPathLog = now + 3f; if (CompanionsPlugin.LogDetailed) Dbg(c.m_name + " on your path: step " + s.PathIdx + "/" + (st.Count - 1) + " at " + next.ToString("F1") + ", me " + me.ToString("F1")); }
             return true;
         }
 
@@ -442,7 +442,7 @@ namespace Companions
         static void EndPath(S s, string why)
         {
             s.OnPath = false; s.PathApproach = false;
-            if (why.Length > 0 && CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Follow] stopped following your path: " + why);
+            if (why.Length > 0 && CompanionsPlugin.Log != null) if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] stopped following your path: " + why);
         }
 
         // walk while the player walks, run while they run, a step faster to close a gap, run when far behind
@@ -602,7 +602,7 @@ namespace Companions
                 if (ch != null)
                 {
                     s.Chair = ch; s.GoingToChair = true; s.ChairUntil = now + 15f;
-                    Dbg(c.m_name + " heading for " + ch.m_name + " at " + MHR_Mover.Fmt(ch.m_attachPoint.position));
+                    if (CompanionsPlugin.LogDetailed) Dbg(c.m_name + " heading for " + ch.m_name + " at " + MHR_Mover.Fmt(ch.m_attachPoint.position));
                     return true;
                 }
             }
@@ -669,7 +669,7 @@ namespace Companions
             ZSyncAnimation za = ai.GetComponent<ZSyncAnimation>();
             if (za != null && !string.IsNullOrEmpty(s.ChairAnim)) za.SetBool(s.ChairAnim, true);
             SetResting(ai, true);
-            Dbg(ai.GetComponent<Character>().m_name + " sat down on " + ch.m_name);
+            if (CompanionsPlugin.LogDetailed) Dbg(ai.GetComponent<Character>().m_name + " sat down on " + ch.m_name);
         }
         // keep the seated companion on the seat. Not kinematic: the game sets every character's velocity each physics
         // tick, and on a kinematic body that's a Unity warning every time (1.4.76 test log: thousands of them).
@@ -700,7 +700,7 @@ namespace Companions
             ZSyncAnimation za = ai.GetComponent<ZSyncAnimation>();
             if (za != null) { za.SetTrigger("emote_sit"); za.SetBool("emote_sit", true); }
             SetResting(ai, true);
-            Dbg(ai.GetComponent<Character>().m_name + " sat down on the floor" + (s_noChairWhy != null ? " (" + s_noChairWhy + ")" : ""));
+            if (CompanionsPlugin.LogDetailed) Dbg(ai.GetComponent<Character>().m_name + " sat down on the floor" + (s_noChairWhy != null ? " (" + s_noChairWhy + ")" : ""));
         }
 
         static void SetResting(CompanionAI ai, bool on)
@@ -758,7 +758,7 @@ namespace Companions
             }
             if (s.SitFloor && !keepAnim && za != null) { za.SetTrigger("emote_stop"); za.SetBool("emote_sit", false); }
             if (!keepAnim) SetResting(ai, false);
-            Dbg(ai.GetComponent<Character>().m_name + " got up (" + why + ")");
+            if (CompanionsPlugin.LogDetailed) Dbg(ai.GetComponent<Character>().m_name + " got up (" + why + ")");
             s.SitChair = false; s.SitFloor = false; s.Chair = null; s.GoingToChair = false; s.IdleSeat = false;
             s.UnloadAsked = false; s.HasIdle = false; s.IdleMoving = false; s.SettleDelay = UnityEngine.Random.Range(5f, 10f);
         }

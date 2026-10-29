@@ -459,7 +459,7 @@ public class CompanionAI : BaseAI
 				{
 					humanoid.GetInventory()?.RemoveItem(right);
 				}
-				CompanionsPlugin.Log.LogInfo("[Torch] \"" + m_character.m_name + "\": the torch burned out");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Torch] \"" + m_character.m_name + "\": the torch burned out");
 				_torchBurnedOut = true;
 				_torchCheckTimer = 0f;
 				right = null;
@@ -506,7 +506,7 @@ public class CompanionAI : BaseAI
 			{
 				humanoid.EquipItem(best);
 				_torchBurnedOut = false;
-				CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" lit a torch (" + (best.m_shared.m_useDurability ? (best.m_durability / Mathf.Max(1f, best.GetMaxDurability()) * 100f).ToString("F0") + "% left" : "no wear") + ")");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" lit a torch (" + (best.m_shared.m_useDurability ? (best.m_durability / Mathf.Max(1f, best.GetMaxDurability()) * 100f).ToString("F0") + "% left" : "no wear") + ")");
 			}
 			else if (_torchBurnedOut)
 			{
@@ -517,7 +517,7 @@ public class CompanionAI : BaseAI
 		else if (!want && IsTorch(right))
 		{
 			humanoid.UnequipItem(right, triggerEquipEffects: false);
-			CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" put the torch away");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Torch] \"" + m_character.m_name + "\" put the torch away");
 			_setup?.SyncEquipmentToInventory();
 		}
 	}
@@ -544,7 +544,7 @@ public class CompanionAI : BaseAI
 		if (key != _lightLogKey)
 		{
 			_lightLogKey = key;
-			CompanionsPlugin.Log.LogInfo($"[Torch] \"{m_character.m_name}\" in {env}, light {light:F2} ({(dark ? "dark" : "light enough")}, DarkLevel {threshold:F2})");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Torch] \"{m_character.m_name}\" in {env}, light {light:F2} ({(dark ? "dark" : "light enough")}, DarkLevel {threshold:F2})");
 		}
 		return dark;
 	}
@@ -930,7 +930,7 @@ public class CompanionAI : BaseAI
 				ClearTombstoneId();
 				RestoreFollowOrPatrol();
 				_tombRecoverSnooze = 60f;
-				CompanionsPlugin.Log.LogInfo("[Recovery] Couldn't reach its tombstone in time; will try again in a minute");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Recovery] Couldn't reach its tombstone in time; will try again in a minute");
 				return false;
 			}
 			Vector3 position = _pendingTombstone.transform.position;
@@ -1034,7 +1034,7 @@ public class CompanionAI : BaseAI
 			// 1.5.44: after a revive (RecoverFirst) at any distance - getting its gear back comes first
 			if (num2 <= ModConfig.TombstoneRecoveryRange.Value || MHR_Recover.IsRecovering(this))
 			{
-				CompanionsPlugin.Log.LogInfo($"[Recovery] Found its own tombstone {num2:F0}m away with {component3.GetInventory().NrOfItems()} item(s); going to collect them");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Recovery] Found its own tombstone {num2:F0}m away with {component3.GetInventory().NrOfItems()} item(s); going to collect them");
 				_pendingTombstone = tombStone;
 				_tombstoneNavTimeout = TombstoneNavTimeoutMax;
 				_tombstoneNavStuckTime = 0f;
@@ -1120,7 +1120,7 @@ public class CompanionAI : BaseAI
 			}
 			inventory2.m_onChanged?.Invoke();
 		}
-		CompanionsPlugin.Log.LogInfo($"[Recovery] Collected {num2} item(s) from its tombstone, {inventory.NrOfItems()} left");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Recovery] Collected {num2} item(s) from its tombstone, {inventory.NrOfItems()} left");
 		if (inventory.NrOfItems() == 0)
 		{
 			CompanionTombstoneResurrect.MHR_RemoveGravePinNear(tombstone.transform.position);
@@ -1396,7 +1396,7 @@ public class CompanionAI : BaseAI
 					MHR_Go(dt, PendingMoveTarget.Value, 1f, run, "Command");
 					if (MHR_Mover.GaveUp(this))
 					{
-						CompanionsPlugin.Log.LogInfo($"[Direct] Can't find a way to {PendingMoveTarget.Value:F1} - stopping here");
+						if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Direct] Can't find a way to {PendingMoveTarget.Value:F1} - stopping here");
 						CancelMoveTarget();
 					}
 				}
@@ -1446,7 +1446,7 @@ public class CompanionAI : BaseAI
 				if (num7 < 2f && !_depositChestOpen && !MHR_Chests.Open(PendingDepositContainer))
 				{
 					// 1.4.150: someone has the chest open - drop the deposit order, it's planned again later
-					CompanionsPlugin.Log.LogInfo("[Deposit] Someone has the chest open - trying again later");
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Deposit] Someone has the chest open - trying again later");
 					CancelPendingDeposit();
 				}
 				else if (num7 < 2f)
@@ -1549,7 +1549,7 @@ public class CompanionAI : BaseAI
 			Character followChar = m_follow.GetComponent<Character>();
 			if (followChar != null && !(followChar is Player tp && tp.IsTeleporting()) && followChar.InInterior() != m_character.InInterior() && Vector3.Distance(base.transform.position, m_follow.transform.position) > 30f)
 			{
-				CompanionsPlugin.Log.LogInfo("[Follow] You went " + (followChar.InInterior() ? "into" : "out of") + " the dungeon - following you through");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] You went " + (followChar.InInterior() ? "into" : "out of") + " the dungeon - following you through");
 				_combatAI?.Disengage();
 				TeleportToFollowTarget();
 				return true;

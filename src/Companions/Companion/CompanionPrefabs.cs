@@ -26,7 +26,7 @@ public static class CompanionPrefabs
 		{
 			CreateDvergerPrefab(zNetScene, def);
 		}
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Registered companion prefabs.");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Registered companion prefabs.");
 	}
 
 	private static void CreateCompanionPrefab(ZNetScene zNetScene)
@@ -55,7 +55,7 @@ public static class CompanionPrefabs
 		{
 			CompanionAI.DrownEffects = component.m_drownEffects;
 			int valueOrDefault = (CompanionAI.DrownEffects?.m_effectPrefabs?.Length).GetValueOrDefault();
-			CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs] Cached m_drownEffects from Player ({valueOrDefault} effects)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs] Cached m_drownEffects from Player ({valueOrDefault} effects)");
 		}
 		GameObject gameObject = UnityEngine.Object.Instantiate(prefab, _container.transform, worldPositionStays: false);
 		gameObject.name = companion.PrefabName;
@@ -72,7 +72,7 @@ public static class CompanionPrefabs
 			humanoid.m_equipEffects = component2.m_equipEffects;
 			int valueOrDefault2 = (humanoid.m_consumeItemEffects?.m_effectPrefabs?.Length).GetValueOrDefault();
 			int valueOrDefault3 = (humanoid.m_equipEffects?.m_effectPrefabs?.Length).GetValueOrDefault();
-			CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs]   Copied m_unarmedWeapon + m_consumeItemEffects ({valueOrDefault2} effects)" + $" + m_equipEffects ({valueOrDefault3} effects)");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs]   Copied m_unarmedWeapon + m_consumeItemEffects ({valueOrDefault2} effects)" + $" + m_equipEffects ({valueOrDefault3} effects)");
 		}
 		SetupHumanoid(humanoid, zNetScene, companion);
 		CharacterAnimEvent componentInChildren = gameObject.GetComponentInChildren<CharacterAnimEvent>();
@@ -153,7 +153,7 @@ public static class CompanionPrefabs
 			{
 				text = text + ((gameObject4 != null) ? gameObject4.name : "null") + ", ";
 			}
-			CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs]   {def.PrefabName}: merged {component.m_defaultItems.Length} m_defaultItems: [{text.TrimEnd(',', ' ')}]");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[CompanionPrefabs]   {def.PrefabName}: merged {component.m_defaultItems.Length} m_defaultItems: [{text.TrimEnd(',', ' ')}]");
 			component.m_randomWeapon = Array.Empty<GameObject>();
 			component.m_randomArmor = Array.Empty<GameObject>();
 			component.m_randomShield = Array.Empty<GameObject>();
@@ -162,7 +162,7 @@ public static class CompanionPrefabs
 			if (humanoid != null)
 			{
 				component.m_consumeItemEffects = humanoid.m_consumeItemEffects;
-				CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   Dverger: copied m_consumeItemEffects from Player");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   Dverger: copied m_consumeItemEffects from Player");
 			}
 			SetupHumanoid(component, zNetScene, def);
 			Animator componentInChildren = gameObject.GetComponentInChildren<Animator>();
@@ -170,7 +170,7 @@ public static class CompanionPrefabs
 			{
 				string text2 = ((componentInChildren.runtimeAnimatorController != null) ? componentInChildren.runtimeAnimatorController.name : "NULL");
 				int parameterCount = componentInChildren.parameterCount;
-				CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   " + def.PrefabName + ": Animator controller=\"" + text2 + "\" " + $"params={parameterCount}");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   " + def.PrefabName + ": Animator controller=\"" + text2 + "\" " + $"params={parameterCount}");
 			}
 			else
 			{
@@ -239,7 +239,7 @@ public static class CompanionPrefabs
 
 	private static void SetupCompanionAI(CompanionAI ai)
 	{
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Setting up CompanionAI...");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Setting up CompanionAI...");
 		ai.m_viewRange = ModConfig.ViewRange.Value;
 		ai.m_viewAngle = ModConfig.ViewAngle.Value;
 		ai.m_hearRange = 20f;
@@ -260,7 +260,7 @@ public static class CompanionPrefabs
 		ai.m_afraidOfFire = false;
 		ai.m_avoidWater = false;
 		ai.m_aggravatable = false;
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] CompanionAI configured: pathAgent=Humanoid " + $"moveMinAngle={ai.m_moveMinAngle} smoothMove={ai.m_smoothMovement} " + $"viewRange={ai.m_viewRange} hearRange={ai.m_hearRange} " + $"randomMoveInterval={ai.m_randomMoveInterval} " + $"randomMoveRange={ai.m_randomMoveRange}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] CompanionAI configured: pathAgent=Humanoid " + $"moveMinAngle={ai.m_moveMinAngle} smoothMove={ai.m_smoothMovement} " + $"viewRange={ai.m_viewRange} hearRange={ai.m_hearRange} " + $"randomMoveInterval={ai.m_randomMoveInterval} " + $"randomMoveRange={ai.m_randomMoveRange}");
 	}
 
 	private static void SetupSharedComponents(GameObject go, CompanionTierDef def, ZNetScene zNetScene)
@@ -290,7 +290,7 @@ public static class CompanionPrefabs
 			component4.mass = 50f;
 		}
 		go.AddComponent<CompanionSetup>();
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + CompanionSetup (" + def.PrefabName + ")");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + CompanionSetup (" + def.PrefabName + ")");
 		Container container = go.AddComponent<Container>();
 		container.m_name = def.DisplayName;
 		container.m_width = 8;
@@ -305,7 +305,7 @@ public static class CompanionPrefabs
 		go.AddComponent<CompanionSkills>();
 		go.AddComponent<CompanionCombatAI>();
 		go.AddComponent<HarvestController>();
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + HarvestController (" + def.PrefabName + ")");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + HarvestController (" + def.PrefabName + ")");
 		go.AddComponent<CompanionTalk>();
 		go.AddComponent<CompanionRest>();
 		go.AddComponent<CompanionRestedBuff>();
@@ -314,9 +314,9 @@ public static class CompanionPrefabs
 		go.AddComponent<SmeltController>();
 		go.AddComponent<FarmController>();
 		go.AddComponent<FarmZoneVisual>();
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + FarmController (" + def.PrefabName + ")");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + FarmController (" + def.PrefabName + ")");
 		go.AddComponent<HuntController>();
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + HuntController (" + def.PrefabName + ")");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs]   + HuntController (" + def.PrefabName + ")");
 		go.AddComponent<FishController>();
 		go.AddComponent<UpkeepController>();
 		go.AddComponent<IdleController>();
@@ -331,7 +331,7 @@ public static class CompanionPrefabs
 		{
 			dictionary[stableHashCode] = go;
 		}
-		CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Registered " + go.name);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[CompanionPrefabs] Registered " + go.name);
 	}
 
 	private static void MergeFirstItem(List<GameObject> merged, HashSet<string> seen, GameObject[] items)

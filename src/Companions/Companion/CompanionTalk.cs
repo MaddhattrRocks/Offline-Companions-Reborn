@@ -191,14 +191,14 @@ public class CompanionTalk : MonoBehaviour
 			if (prio == Priority.Problem && (ModConfig.SpeechFarMessages?.Value ?? true) && MessageHud.instance != null)
 			{
 				MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft, Name() + ": " + text);
-				CompanionsPlugin.Log.LogDebug("[Speech] (far away, top left) " + Name() + ": " + text);
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Speech] (far away, top left) " + Name() + ": " + text);
 			}
 			return true;
 		}
 		_lastSayTime = now;
 		_globalLastSpeechTime = now;
 		Chat.instance.SetNpcText(base.gameObject, Vector3.up * 2f, CullDistance, SpeechTTL, "", text, large: false);
-		CompanionsPlugin.Log.LogDebug("[Speech] " + prio + " " + Name() + ": " + text);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Speech] " + prio + " " + Name() + ": " + text);
 		return true;
 	}
 

@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.8
+- New Logging > Level setting (Off / Normal / Detailed): Normal by default, the detailed lines and diagnostics only when you turn them on, and a level that's off costs nothing.
 - A companion stays put a little longer when you set off toward it with your crosshair on it, so you can reach it to talk.
 - Ashlands lava: companions go round it, get off it at once, don't chase enemies or loot onto it.
 - Settings panel with a controller: one highlight only, darker hint text.

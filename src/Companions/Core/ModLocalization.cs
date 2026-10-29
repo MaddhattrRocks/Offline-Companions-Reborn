@@ -55,7 +55,7 @@ public static class ModLocalization
 		_initialized = true;
 		if (InstanceField?.GetValue(null) is Localization loc)
 		{
-			CompanionsPlugin.Log.LogInfo("[Localization] Localization already initialized — injecting retroactively");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Localization] Localization already initialized — injecting retroactively");
 			InjectTranslations(loc);
 		}
 	}
@@ -472,7 +472,7 @@ public static class ModLocalization
 				num++;
 			}
 		}
-		CompanionsPlugin.Log.LogInfo($"[Localization] Injected {_englishDefaults?.Count ?? 0} defaults + {num} \"{selectedLanguage}\" overrides");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] Injected {_englishDefaults?.Count ?? 0} defaults + {num} \"{selectedLanguage}\" overrides");
 	}
 
 	public static void EnsureDefaultFile()
@@ -496,7 +496,7 @@ public static class ModLocalization
 				{
 					return;
 				}
-				CompanionsPlugin.Log.LogInfo($"[Localization] English.json is stale ({dictionary?.Count ?? 0} vs {_englishDefaults.Count} keys) — regenerating.");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] English.json is stale ({dictionary?.Count ?? 0} vs {_englishDefaults.Count} keys) — regenerating.");
 			}
 			List<KeyValuePair<string, string>> list = new List<KeyValuePair<string, string>>(_englishDefaults);
 			list.Sort((KeyValuePair<string, string> a, KeyValuePair<string, string> b) => string.Compare(a.Key, b.Key, StringComparison.Ordinal));
@@ -511,7 +511,7 @@ public static class ModLocalization
 			stringBuilder.AppendLine("    ]");
 			stringBuilder.AppendLine("}");
 			File.WriteAllText(text, stringBuilder.ToString(), Encoding.UTF8);
-			CompanionsPlugin.Log.LogInfo("[Localization] Created default " + text);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Localization] Created default " + text);
 		}
 		catch (Exception ex)
 		{
@@ -580,7 +580,7 @@ public static class ModLocalization
 			{
 				return null;
 			}
-			CompanionsPlugin.Log.LogInfo($"[Localization] Loaded {dictionary.Count} keys from {text}");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Localization] Loaded {dictionary.Count} keys from {text}");
 			return dictionary;
 		}
 		catch (Exception ex)

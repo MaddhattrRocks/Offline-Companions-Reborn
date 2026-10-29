@@ -63,14 +63,14 @@ public class CompanionInteract : MonoBehaviour
 					__result = false;
 					return false;
 				}
-				CompanionsPlugin.Log.LogDebug("[Interact] Prefix — separate key mode, opening inventory");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Interact] Prefix — separate key mode, opening inventory");
 				OpenCompanionInventory(component, __instance, player);
 				__result = true;
 				return false;
 			}
 			if (hold)
 			{
-				CompanionsPlugin.Log.LogInfo("[Interact] Prefix — hold=true arrived, opening radial");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Prefix — hold=true arrived, opening radial");
 				_pendingTapContainer = null;
 				_pendingTapPlayer = null;
 				_loggedPendingStart = false;
@@ -91,11 +91,11 @@ public class CompanionInteract : MonoBehaviour
 				_loggedPendingStart = false;
 				_pendingIsGamepad = false;
 				_gamepadReleaseDetected = false;
-				CompanionsPlugin.Log.LogInfo("[Interact] Prefix — tap deferred, " + $"InputKey={Input.GetKey(ModConfig.RadialMenuKey.Value)} " + $"time={Time.time:F3}");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Prefix — tap deferred, " + $"InputKey={Input.GetKey(ModConfig.RadialMenuKey.Value)} " + $"time={Time.time:F3}");
 			}
 			else
 			{
-				CompanionsPlugin.Log.LogDebug("[Interact] Prefix — already pending, keeping existing timer " + $"(elapsed={Time.time - _pendingTapTime:F3}s)");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Interact] Prefix — already pending, keeping existing timer " + $"(elapsed={Time.time - _pendingTapTime:F3}s)");
 			}
 			__result = false;
 			return false;
@@ -878,7 +878,7 @@ public class CompanionInteract : MonoBehaviour
 		}
 		if (wheel)
 		{
-			CompanionsPlugin.Log.LogInfo("[Interact] Controller wheel bind on \"" + aimed.name + "\" - opening the command wheel");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Controller wheel bind on \"" + aimed.name + "\" - opening the command wheel");
 			CompanionRadialMenu.EnsureInstance();
 			if (CompanionRadialMenu.Instance != null && !CompanionRadialMenu.Instance.IsVisible)
 			{
@@ -889,7 +889,7 @@ public class CompanionInteract : MonoBehaviour
 		Container box = aimed.GetComponent<Container>();
 		if (box != null)
 		{
-			CompanionsPlugin.Log.LogInfo("[Interact] Controller Use on \"" + aimed.name + "\" - opening its inventory");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Controller Use on \"" + aimed.name + "\" - opening its inventory");
 			OpenCompanionInventory(aimed, box, localPlayer);
 		}
 	}
@@ -929,11 +929,11 @@ public class CompanionInteract : MonoBehaviour
 				_gpHoldActive = true;
 				_gpHoldStart = Time.time;
 				_gpHoldTarget = companionSetup;
-				CompanionsPlugin.Log.LogDebug("[Interact] Gamepad independent hold START on \"" + companionSetup.name + "\"");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Interact] Gamepad independent hold START on \"" + companionSetup.name + "\"");
 			}
 			else if (_gpHoldTarget == companionSetup && Time.time - _gpHoldStart >= 0.2f)
 			{
-				CompanionsPlugin.Log.LogInfo("[Interact] Gamepad independent hold → RADIAL " + $"(held {Time.time - _gpHoldStart:F3}s)");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Gamepad independent hold → RADIAL " + $"(held {Time.time - _gpHoldStart:F3}s)");
 				ClearPendingTap();
 				ResetGamepadHold();
 				CompanionRadialMenu.EnsureInstance();
@@ -954,7 +954,7 @@ public class CompanionInteract : MonoBehaviour
 			ResetGamepadHold();
 			if (num >= 0.2f)
 			{
-				CompanionsPlugin.Log.LogInfo("[Interact] Gamepad hold → RADIAL on release " + $"(held {num:F3}s, threshold={0.2f}s)");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Gamepad hold → RADIAL on release " + $"(held {num:F3}s, threshold={0.2f}s)");
 				CompanionRadialMenu.EnsureInstance();
 				if (CompanionRadialMenu.Instance != null && !CompanionRadialMenu.Instance.IsVisible)
 				{
@@ -963,7 +963,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 			else
 			{
-				CompanionsPlugin.Log.LogInfo("[Interact] Gamepad hold → TAP " + $"(released after {num:F3}s), opening inventory");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Gamepad hold → TAP " + $"(released after {num:F3}s), opening inventory");
 				Container component2 = companionSetup.GetComponent<Container>();
 				if (component2 != null)
 				{
@@ -1005,7 +1005,7 @@ public class CompanionInteract : MonoBehaviour
 			localPlayer.Message(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_not_yours"));
 			return;
 		}
-		CompanionsPlugin.Log.LogInfo($"[Interact] Separate key ({ModConfig.RadialMenuKey.Value}) — opening radial");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Interact] Separate key ({ModConfig.RadialMenuKey.Value}) — opening radial");
 		CompanionRadialMenu.EnsureInstance();
 		if (CompanionRadialMenu.Instance != null && !CompanionRadialMenu.Instance.IsVisible)
 		{
@@ -1023,17 +1023,17 @@ public class CompanionInteract : MonoBehaviour
 		if (_pendingIsGamepad && !_gamepadReleaseDetected && ZInput.GetButtonUp("JoyUse"))
 		{
 			_gamepadReleaseDetected = true;
-			CompanionsPlugin.Log.LogInfo($"[Interact] Gamepad ButtonUp detected at {num:F3}s");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Interact] Gamepad ButtonUp detected at {num:F3}s");
 		}
 		bool flag = ((!_pendingIsGamepad) ? Input.GetKey(ModConfig.RadialMenuKey.Value) : (!_gamepadReleaseDetected));
 		if (!_loggedPendingStart)
 		{
 			_loggedPendingStart = true;
-			CompanionsPlugin.Log.LogInfo("[Interact] Update — processing pending tap: " + $"useHeld={flag} gamepad={_pendingIsGamepad} " + $"key={ModConfig.RadialMenuKey.Value} " + $"elapsed={num:F3}s");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Update — processing pending tap: " + $"useHeld={flag} gamepad={_pendingIsGamepad} " + $"key={ModConfig.RadialMenuKey.Value} " + $"elapsed={num:F3}s");
 		}
 		if (!flag)
 		{
-			CompanionsPlugin.Log.LogInfo($"[Interact] Update — RELEASED after {num:F3}s " + $"(gamepad={_pendingIsGamepad}), opening inventory");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Interact] Update — RELEASED after {num:F3}s " + $"(gamepad={_pendingIsGamepad}), opening inventory");
 			Container pendingTapContainer = _pendingTapContainer;
 			Player pendingTapPlayer = _pendingTapPlayer;
 			CompanionSetup companionSetup = pendingTapContainer?.GetComponent<CompanionSetup>();
@@ -1052,7 +1052,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				return;
 			}
-			CompanionsPlugin.Log.LogInfo($"[Interact] Update — hold threshold reached ({num:F3}s), " + $"gamepad={_pendingIsGamepad}, opening radial");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Interact] Update — hold threshold reached ({num:F3}s), " + $"gamepad={_pendingIsGamepad}, opening radial");
 			CompanionSetup component = _pendingTapContainer.GetComponent<CompanionSetup>();
 			_pendingTapContainer = null;
 			_pendingTapPlayer = null;
@@ -1064,7 +1064,7 @@ public class CompanionInteract : MonoBehaviour
 				if (CompanionRadialMenu.Instance != null && !CompanionRadialMenu.Instance.IsVisible)
 				{
 					CompanionRadialMenu.Instance.Show(component);
-					CompanionsPlugin.Log.LogInfo("[Interact] Radial menu Show() called");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[Interact] Radial menu Show() called");
 				}
 			}
 		}
@@ -1126,7 +1126,7 @@ public class CompanionInteract : MonoBehaviour
 				if (!item.GetFollow())
 				{
 					item.SetFollow(v: true);
-					CompanionsPlugin.Log.LogDebug("[Direct] Come-to-me: forced Follow ON for \"" + (item.GetComponent<Character>()?.m_name ?? "?") + "\"");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] Come-to-me: forced Follow ON for \"" + (item.GetComponent<Character>()?.m_name ?? "?") + "\"");
 				}
 				CompanionAI component = item.GetComponent<CompanionAI>();
 				if (component != null && Player.m_localPlayer != null)
@@ -1143,7 +1143,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, ComeHereLines);
-		CompanionsPlugin.Log.LogDebug("[Direct] Come-to-me triggered");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] Come-to-me triggered");
 	}
 
 	internal static void MHR_FireSuperRecall(Player player)
@@ -1158,7 +1158,7 @@ public class CompanionInteract : MonoBehaviour
 			_mhrSuperRecall = false;
 		}
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, "Recalling all companions");
-		CompanionsPlugin.Log.LogInfo("[Direct] Super recall: all companions, any distance, Command toggle ignored");
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Direct] Super recall: all companions, any distance, Command toggle ignored");
 	}
 
 	private static void DirectAttack(IReadOnlyList<CompanionSetup> setups, string localId, Character enemy)
@@ -1184,7 +1184,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, AttackLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → attack \"{enemy.m_name}\"");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → attack \"{enemy.m_name}\"");
 	}
 
 	private static void DirectCart(IReadOnlyList<CompanionSetup> setups, string localId, Vagon vagon)
@@ -1210,7 +1210,7 @@ public class CompanionInteract : MonoBehaviour
 					component3.SetFollowTarget(Player.m_localPlayer.gameObject);
 				}
 				SayRandom(setup.GetComponent<CompanionTalk>(), CartReleasedLines);
-				CompanionsPlugin.Log.LogDebug("[Direct] Companion → detach from cart");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] Companion → detach from cart");
 			}
 			return;
 		}
@@ -1266,7 +1266,7 @@ public class CompanionInteract : MonoBehaviour
 			component5.SetPendingCart(vagon, component4);
 		}
 		SayRandom(companionSetup.GetComponent<CompanionTalk>(), CartPullLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] Companion → cart attach (dist={num:F1}m)");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] Companion → cart attach (dist={num:F1}m)");
 	}
 
 	private static void DirectDoor(IReadOnlyList<CompanionSetup> setups, string localId, Door door)
@@ -1292,7 +1292,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, DoorLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → open door \"{door.m_name}\"");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → open door \"{door.m_name}\"");
 	}
 
 	private static void DirectSit(IReadOnlyList<CompanionSetup> setups, string localId, Fireplace fire)
@@ -1322,7 +1322,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, SitLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → sit near fire");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → sit near fire");
 	}
 
 	private static void DirectSleep(IReadOnlyList<CompanionSetup> setups, string localId, Bed bed)
@@ -1374,7 +1374,7 @@ public class CompanionInteract : MonoBehaviour
 		{
 			SayRandom(companionTalk, CancelLines);
 		}
-		CompanionsPlugin.Log.LogDebug($"[Direct] Sleep — started={num}, wokeUp={num2}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] Sleep — started={num}, wokeUp={num2}");
 	}
 
 	private static void DirectRepair(IReadOnlyList<CompanionSetup> setups, string localId, CraftingStation station)
@@ -1409,7 +1409,7 @@ public class CompanionInteract : MonoBehaviour
 		{
 			SayRandom(companionTalk, RepairNothingLines);
 		}
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → repair at \"{station.m_name}\"");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → repair at \"{station.m_name}\"");
 	}
 
 	// 1.5.90: one companion empties the hive and keeps the honey
@@ -1441,7 +1441,7 @@ public class CompanionInteract : MonoBehaviour
 			if (hive.m_honeyItem == null || MHR_Hive.HoneyIn(hive) <= 0)
 			{
 				SayRandom(talk, new string[1] { ModLocalization.Loc("hc_cmd_hive_empty") });
-				CompanionsPlugin.Log.LogDebug("[Direct] beehive is empty - nothing to collect");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] beehive is empty - nothing to collect");
 				return;
 			}
 			if (!PrivateArea.CheckAccess(hive.transform.position, 0f, flash: true))
@@ -1451,7 +1451,7 @@ public class CompanionInteract : MonoBehaviour
 			CancelExistingActions(setup);
 			ai.SetHiveOrder(hive);
 			SayRandom(talk, new string[1] { ModLocalization.Loc("hc_cmd_hive") });
-			CompanionsPlugin.Log.LogDebug("[Direct] 1 companion(s) → collect honey");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] 1 companion(s) → collect honey");
 			return;
 		}
 	}
@@ -1481,7 +1481,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, SmeltLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → smelt mode");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → smelt mode");
 	}
 
 	private static void DirectBoard(IReadOnlyList<CompanionSetup> setups, string localId, Ship ship, Chair pointed = null)
@@ -1534,7 +1534,7 @@ public class CompanionInteract : MonoBehaviour
 				if (component.IsOnShip)
 				{
 					component.DetachFromShip();
-					CompanionsPlugin.Log.LogInfo("[Board] " + setup.GetComponent<Character>()?.m_name + " getting up for the seat you pointed at");
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Board] " + setup.GetComponent<Character>()?.m_name + " getting up for the seat you pointed at");
 				}
 				else
 				{
@@ -1576,7 +1576,7 @@ public class CompanionInteract : MonoBehaviour
 			num++;
 		}
 		SayRandom(companionTalk, BoardLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → board ship");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → board ship");
 	}
 
 	private static void DirectTombstoneRecovery(IReadOnlyList<CompanionSetup> setups, string localId, TombStone tombstone)
@@ -1603,7 +1603,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				component.SetDirectedTombstoneRecovery(tombstone);
 				SayRandom(companionSetup.GetComponent<CompanionTalk>(), TombstoneLines);
-				CompanionsPlugin.Log.LogDebug("[Direct] Companion → recover tombstone");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] Companion → recover tombstone");
 			}
 		}
 	}
@@ -1665,7 +1665,7 @@ public class CompanionInteract : MonoBehaviour
 		{
 			SayRandom(companionTalk, DepositEmptyLines);
 		}
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → deposit");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → deposit");
 	}
 
 	private static GameObject GetHarvestable(Collider col)
@@ -1739,7 +1739,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, HarvestLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num2} companion(s) → gather mode {num}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num2} companion(s) → gather mode {num}");
 	}
 
 	private static void DirectGround(IReadOnlyList<CompanionSetup> setups, string localId, Vector3 point)
@@ -1779,7 +1779,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, MoveLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → move to {point:F1}");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → move to {point:F1}");
 		if (num == 0)
 		{
 			MHR_WhyNotCommanded(setups, localId);
@@ -1851,7 +1851,7 @@ public class CompanionInteract : MonoBehaviour
 			setup.GetComponent<UpkeepController>()?.NotifyActionModeChanged();
 		}
 		SayRandom(companionTalk, CancelLines);
-		CompanionsPlugin.Log.LogDebug("[Direct] Cancelled all directed commands");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Direct] Cancelled all directed commands");
 	}
 
 	private static bool IsOwned(CompanionSetup setup, string localId)
@@ -1897,7 +1897,7 @@ public class CompanionInteract : MonoBehaviour
 			{
 				why = "unknown";
 			}
-			CompanionsPlugin.Log.LogInfo("[Direct] \"" + name + "\" didn't take the command: " + why);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Direct] \"" + name + "\" didn't take the command: " + why);
 			if (shown != null && (ModConfig.SpeechFarMessages?.Value ?? true) && MessageHud.instance != null)
 			{
 				MessageHud.instance.ShowMessage(MessageHud.MessageType.TopLeft, shown);
@@ -2016,7 +2016,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 		}
 		SayRandom(companionTalk, CancelLines);
-		CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) exited gather mode → follow");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) exited gather mode → follow");
 	}
 
 	private static void ResetGamepadHold()
@@ -2029,7 +2029,7 @@ public class CompanionInteract : MonoBehaviour
 	{
 		if (_pendingTapContainer != null)
 		{
-			CompanionsPlugin.Log.LogDebug("[Interact] ClearPendingTap called while pending");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Interact] ClearPendingTap called while pending");
 		}
 		_pendingTapContainer = null;
 		_pendingTapPlayer = null;
@@ -2045,7 +2045,7 @@ public class CompanionInteract : MonoBehaviour
 			if (component != null && !component.IsOwner())
 			{
 				component.ClaimOwnership();
-				CompanionsPlugin.Log.LogInfo("[Companion] Requesting container access - interact again in a moment");
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Companion] Requesting container access - interact again in a moment");
 			}
 			else
 			{

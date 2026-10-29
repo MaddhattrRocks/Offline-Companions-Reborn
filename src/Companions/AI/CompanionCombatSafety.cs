@@ -105,7 +105,7 @@ public partial class CompanionCombatAI
 		if (Time.time >= _nextUnsafeLog)
 		{
 			_nextUnsafeLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Combat] " + msg);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Combat] " + msg);
 		}
 	}
 }

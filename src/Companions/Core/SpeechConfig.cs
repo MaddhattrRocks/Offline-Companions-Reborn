@@ -115,7 +115,7 @@ public class SpeechConfig
 		try
 		{
 			File.WriteAllText(path, JsonUtility.ToJson(_instance, prettyPrint: true));
-			CompanionsPlugin.Log.LogInfo("[Speech] " + what + " " + path);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Speech] " + what + " " + path);
 		}
 		catch (Exception ex)
 		{
@@ -159,7 +159,7 @@ public class SpeechConfig
 			{
 				Write(path, "Added missing speech lines to");
 			}
-			CompanionsPlugin.Log.LogInfo("[Speech] Loaded " + path);
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Speech] Loaded " + path);
 			return true;
 		}
 		catch (Exception ex)

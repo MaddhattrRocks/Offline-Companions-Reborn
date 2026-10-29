@@ -86,7 +86,7 @@ public partial class CompanionCombatAI
 		{
 			_lastTacticLog = s;
 			_nextTacticLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Tactics] " + s);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Tactics] " + s);
 		}
 	}
 

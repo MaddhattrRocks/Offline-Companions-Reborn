@@ -67,7 +67,7 @@ public partial class CompanionCombatAI
 		float secs = ModConfig.CombatOrderHoldTime?.Value ?? 10f;
 		if (_engaged)
 		{
-			CompanionsPlugin.Log.LogDebug($"[Combat] {what} - leaving {(_targetCreature != null ? _targetCreature.m_name : "the fight")}, no new fights for {secs:F0} s");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {what} - leaving {(_targetCreature != null ? _targetCreature.m_name : "the fight")}, no new fights for {secs:F0} s");
 			Disengage();
 		}
 		_ordered = null;
@@ -237,12 +237,12 @@ public partial class CompanionCombatAI
 			{
 				if (_latched != null)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Combat] {_latched.m_name} latched on to {_character.m_name}");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {_latched.m_name} latched on to {_character.m_name}");
 				}
 				// 1.5.77: also when it died and is already gone (Unity null) - the name was kept
 				if (hadOne)
 				{
-					CompanionsPlugin.Log.LogDebug($"[Combat] {wasName} let go of {_character.m_name}" + (was == null || was.IsDead() ? " (dead)" : ""));
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {wasName} let go of {_character.m_name}" + (was == null || was.IsDead() ? " (dead)" : ""));
 				}
 			}
 		}
@@ -430,7 +430,7 @@ public partial class CompanionCombatAI
 		}
 		_ignoreUntil.Remove(c);
 		_letGoUnreachable.Remove(c);
-		CompanionsPlugin.Log.LogDebug($"[Combat] {c.m_name} {(attacking ? "is attacking " + (after == _character ? "it" : "you") : "came within reach")} - back on it");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {c.m_name} {(attacking ? "is attacking " + (after == _character ? "it" : "you") : "came within reach")} - back on it");
 		return true;
 	}
 
@@ -467,7 +467,7 @@ public partial class CompanionCombatAI
 		{
 			return false;
 		}
-		CompanionsPlugin.Log.LogDebug($"[Combat] Can't get at {c.m_name} ({why}) and not a hit on it for {limit:F0} s - letting it go");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] Can't get at {c.m_name} ({why}) and not a hit on it for {limit:F0} s - letting it go");
 		LetGo(c, 20f);
 		_letGoUnreachable.Add(c);
 		return true;
@@ -491,7 +491,7 @@ public partial class CompanionCombatAI
 		if (Time.time >= _nextTargetLog)
 		{
 			_nextTargetLog = Time.time + 1f;
-			CompanionsPlugin.Log.LogDebug(msg);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug(msg);
 		}
 	}
 }

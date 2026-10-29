@@ -1344,7 +1344,7 @@ public class ConfigPanel : MonoBehaviour
 			typed.Value = KeyCode.None;
 			btnTMP.text = typed.Value.ToString();
 			btnTMP.color = GoldTextColor;
-			CompanionsPlugin.Log.LogInfo("[Config] " + entry.Definition.Key + " cleared");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Config] " + entry.Definition.Key + " cleared");
 		};
 		ClearButton(gameObject.transform, clearKey);
 		_entryClear[entry] = clearKey;

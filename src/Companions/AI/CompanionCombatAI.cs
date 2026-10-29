@@ -137,7 +137,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (Time.time >= _nextStalkLog)
 		{
 			_nextStalkLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : far ? "Too far off to sneak yet - walking towards " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Hunt] " + (stalk ? "Sneaking up on " : far ? "Too far off to sneak yet - walking towards " : "Stopped sneaking - spotted by ") + _targetCreature?.m_name);
 		}
 	}
 
@@ -190,7 +190,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		_swingTarget = target;
 		_swingKind = kind;
 		_swingName = target != null ? target.m_name : "?";
-		CompanionsPlugin.Log.LogDebug("[Attack] " + kind + " at " + (target != null ? target.m_name : "?") + ": " + detail);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Attack] " + kind + " at " + (target != null ? target.m_name : "?") + ": " + detail);
 	}
 
 	internal void NoteHit(Character target, HitData hit)
@@ -198,10 +198,10 @@ public partial class CompanionCombatAI : MonoBehaviour
 		NoteOwnHit(target);
 		if (_swingAt < 0f)
 		{
-			CompanionsPlugin.Log.LogDebug($"[Attack] hit {target.m_name} for {hit.GetTotalDamage():F1}");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Attack] hit {target.m_name} for {hit.GetTotalDamage():F1}");
 			return;
 		}
-		CompanionsPlugin.Log.LogDebug($"[Attack] {_swingKind} hit {target.m_name}{(target != _swingTarget ? " (not the one aimed at)" : "")} for {hit.GetTotalDamage():F1} after {Time.time - _swingAt:F2} s");
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Attack] {_swingKind} hit {target.m_name}{(target != _swingTarget ? " (not the one aimed at)" : "")} for {hit.GetTotalDamage():F1} after {Time.time - _swingAt:F2} s");
 		if (target == _swingTarget)
 		{
 			_swingAt = -1f;
@@ -224,7 +224,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		{
 			where = " (it's gone - killed by something else or out of range)";
 		}
-		CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + _swingName + where);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Attack] " + _swingKind + " missed " + _swingName + where);
 		_swingAt = -1f;
 	}
 
@@ -296,12 +296,12 @@ public partial class CompanionCombatAI : MonoBehaviour
 			if (!_sneakRest && share < restBelow)
 			{
 				_sneakRest = true;
-				CompanionsPlugin.Log.LogDebug($"[Hunt] Out of breath sneaking up on {_targetCreature.m_name} - resting crouched ({share:P0} stamina)");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Hunt] Out of breath sneaking up on {_targetCreature.m_name} - resting crouched ({share:P0} stamina)");
 			}
 			else if (_sneakRest && share >= resumeAt)
 			{
 				_sneakRest = false;
-				CompanionsPlugin.Log.LogDebug($"[Hunt] Got its breath back ({share:P0}) - sneaking on");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Hunt] Got its breath back ({share:P0}) - sneaking on");
 			}
 			if (_sneakRest)
 			{
@@ -356,7 +356,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (Time.time >= _nextHuntMoveLog)
 		{
 			_nextHuntMoveLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogDebug("[Hunt] Leaving " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - " + why);
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Hunt] Leaving " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - " + why);
 		}
 		MHR_Mover.Release(_ai);
 		Disengage();
@@ -493,7 +493,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 				{
 					_engageLogged = target;
 					_engageLoggedAt = Time.time;
-					CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] Engage -> target=\"{target.m_name}\" stance={_stance} dist={Vector3.Distance(base.transform.position, target.transform.position):F1}m its target=\"{(after != null ? after.m_name : "none")}\" alerted={target.GetBaseAI()?.IsAlerted() ?? false}");
 				}
 				_ai.SetAlerted(alert: true);
 			}
@@ -537,7 +537,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		// walks to where it landed once out of combat)
 		if (HuntMode && MHR_SpearThrow.UnarmedAfterThrow(_ai, _humanoid))
 		{
-			CompanionsPlugin.Log.LogDebug("[Hunt] Threw its only weapon at " + _targetCreature?.m_name + " - going to pick the spear up first");
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Hunt] Threw its only weapon at " + _targetCreature?.m_name + " - going to pick the spear up first");
 			StopStalk();
 			Disengage();
 			return false;
@@ -552,7 +552,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (latchedNow && healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && Time.time >= _nextFleeLog)
 		{
 			_nextFleeLog = Time.time + 5f;
-			CompanionsPlugin.Log.LogInfo($"[Flee] hp={healthPercentage:P0} but {Latched().m_name} is latched on - running won't shake it, fighting it");
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Flee] hp={healthPercentage:P0} but {Latched().m_name} is latched on - running won't shake it, fighting it");
 		}
 		if (!latchedNow && healthPercentage < (ModConfig.FleeHealthPct?.Value ?? 0.15f) && _targetCreature != null)
 		{
@@ -561,14 +561,14 @@ public partial class CompanionCombatAI : MonoBehaviour
 			{
 				// 1.5.3: once every 5 s, not every tick (user log: ~70 lines in a few seconds while cornered)
 				bool fleeLog = Time.time >= _nextFleeLog;
-				if (fleeLog) { _nextFleeLog = Time.time + 5f; CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\""); }
+				if (fleeLog) { _nextFleeLog = Time.time + 5f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Flee] triggered -> hp={healthPercentage:P0} (below flee threshold) target=\"{_targetCreature.m_name}\""); }
 				TryEquipShield();
 				// 1.5.52: to the owner when the enemy isn't in the way, through the mover (edges, water); else away from it
 				if (FleeToOwner(dt) || SafeFlee(dt, _targetCreature.transform.position))
 				{
 					return true;
 				}
-				if (fleeLog) CompanionsPlugin.Log.LogInfo("[Flee] could not create distance (blocked/cornered) -> defending itself, will keep trying to flee");
+				if (fleeLog) if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Flee] could not create distance (blocked/cornered) -> defending itself, will keep trying to flee");
 			}
 		}
 		_logTimer += dt;
@@ -703,7 +703,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 							if (Time.time >= _nextBlockedShotLog)
 							{
 								_nextBlockedShotLog = Time.time + 5f;
-								CompanionsPlugin.Log.LogDebug($"[Bow] Something is in the way of a shot at {_targetCreature.m_name} ({num3:F1} m) - moving closer");
+								if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Bow] Something is in the way of a shot at {_targetCreature.m_name} ({num3:F1} m) - moving closer");
 							}
 							ChaseMove(dt, _targetCreature.transform.position, Mathf.Max(5f, num3 - 4f), run: false);
 						}
@@ -773,7 +773,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 							if (Time.time >= _nextCloseLog)
 							{
 								_nextCloseLog = Time.time + 5f;
-								CompanionsPlugin.Log.LogDebug($"[Combat] Too close to swing at {_targetCreature.m_name} ({num3:F1} m) - stepping back");
+								if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] Too close to swing at {_targetCreature.m_name} ({num3:F1} m) - stepping back");
 							}
 						}
 						else
@@ -883,7 +883,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 			{
 				if (HuntMode && attacker != _targetCreature)
 				{
-					CompanionsPlugin.Log.LogDebug("[Combat] " + attacker.m_name + " attacked while hunting " + _targetCreature.m_name + " - fighting it first");
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Combat] " + attacker.m_name + " attacked while hunting " + _targetCreature.m_name + " - fighting it first");
 				}
 				_targetCreature = attacker;
 				_lastKnownTargetPos = attacker.transform.position;
@@ -972,7 +972,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		Character latched = HuntMode ? null : Latched();
 		if (latched != null && latched != _targetCreature && !latched.IsDead())
 		{
-			CompanionsPlugin.Log.LogDebug($"[Combat] {latched.m_name} is latched on - turning on it" + (_targetCreature != null ? $" (was fighting {_targetCreature.m_name})" : ""));
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {latched.m_name} is latched on - turning on it" + (_targetCreature != null ? $" (was fighting {_targetCreature.m_name})" : ""));
 			_targetCreature = latched;
 			_noSightSince = -1f;
 		}
@@ -1065,13 +1065,13 @@ public partial class CompanionCombatAI : MonoBehaviour
 			{
 				// 1.4.78: don't chase something across the map (1.4.77 log: a dolphin 141 m out kept him "in combat",
 				// so his job never started)
-				CompanionsPlugin.Log.LogDebug($"[Combat] {_targetCreature.m_name} is over {CombatLeash:F0} m away - letting it go");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {_targetCreature.m_name} is over {CombatLeash:F0} m away - letting it go");
 				_targetCreature = null;
 			}
 			else if (!HuntMode && IsPassiveAnimal(_targetCreature) && _targetCreature.GetBaseAI()?.GetTargetCreature() == null)
 			{
 				// 1.4.78: it's gone back to minding its own business
-				CompanionsPlugin.Log.LogDebug("[Combat] " + _targetCreature.m_name + " isn't a threat - leaving it");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Combat] " + _targetCreature.m_name + " isn't a threat - leaving it");
 				_targetCreature = null;
 			}
 		}
@@ -1098,7 +1098,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 			{
 				if (_targetCreature != null)
 				{
-					CompanionsPlugin.Log.LogDebug("[Combat] Giving up on " + _targetCreature.m_name + (_timeSinceSensedTarget > 30f ? " - lost sight and sound of it for 30 s" : $" - no attack in {num2:F0} s"));
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Combat] Giving up on " + _targetCreature.m_name + (_timeSinceSensedTarget > 30f ? " - lost sight and sound of it for 30 s" : $" - no attack in {num2:F0} s"));
 				}
 				_ai.SetAlerted(alert: false);
 				_targetCreature = null;
@@ -1231,7 +1231,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 					_blockRaised = true;
 					// not a parry: the shield counts as up for a while already (past the game's 0.25 s window)
 					ReflectionHelper.TrySetBlockTimer(_humanoid, _blockParry ? 0f : 0.3f);
-					CompanionsPlugin.Log.LogDebug("[Block] Raising its guard against " + swinger.m_name + (_blockParry ? " - timed for a parry" : " - a plain block"));
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Block] Raising its guard against " + swinger.m_name + (_blockParry ? " - timed for a parry" : " - a plain block"));
 				}
 				else if (_blockParry)
 				{
@@ -1306,7 +1306,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 							_humanoid.EquipBestWeapon(_targetCreature, _targetStatic, hurtFriend0, friend0);
 							TryForceMeleeWeapon();
 							flag = true;
-							CompanionsPlugin.Log.LogDebug($"[Ranged] {_targetCreature?.m_name} is in close - melee weapon out ({_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "none"})");
+							if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Ranged] {_targetCreature?.m_name} is in close - melee weapon out ({_humanoid.GetCurrentWeapon()?.m_shared?.m_name ?? "none"})");
 						}
 					}
 					else if (_stance == 2 || HuntMode)

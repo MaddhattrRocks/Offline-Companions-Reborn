@@ -564,11 +564,11 @@ public class IdleController : MonoBehaviour
 
 	private void Log(string msg)
 	{
-		CompanionsPlugin.Log?.LogInfo("[Idle|" + (_character != null ? _character.m_name : "?") + "] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log?.LogInfo("[Idle|" + (_character != null ? _character.m_name : "?") + "] " + msg);
 	}
 
 	private void LogDebug(string msg)
 	{
-		CompanionsPlugin.Log?.LogDebug("[Idle|" + (_character != null ? _character.m_name : "?") + "] " + msg);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log?.LogDebug("[Idle|" + (_character != null ? _character.m_name : "?") + "] " + msg);
 	}
 }

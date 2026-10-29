@@ -64,7 +64,7 @@ internal static class MHR_StanceKeys
 		string label = ModLocalization.Loc(stance == CompanionSetup.StancePassive ? "hc_radial_passive" : stance == CompanionSetup.StanceRanged ? "hc_radial_ranged" : stance == CompanionSetup.StanceMelee ? "hc_radial_melee" : "hc_radial_balanced");
 		string msg = (s_names.Count > 0) ? ModLocalization.LocFmt("hc_msg_stance_set", string.Join(", ", s_names.ToArray()), label) : ModLocalization.LocFmt("hc_msg_stance_none", label);
 		MessageHud.instance?.ShowMessage(MessageHud.MessageType.TopLeft, msg);
-		CompanionsPlugin.Log.LogInfo("[Stance] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Stance] " + msg);
 	}
 
 	private static bool Pressed(BepInEx.Configuration.ConfigEntry<KeyCode> key)

@@ -679,7 +679,7 @@ public class HarvestController : MonoBehaviour
 	private void Log(string msg)
 	{
 		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogDebug("[Gather|" + text + "] " + msg);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Gather|" + text + "] " + msg);
 	}
 
 	private void OnDestroy()
@@ -2124,7 +2124,7 @@ public class HarvestController : MonoBehaviour
 	private void LogInfo(string msg)
 	{
 		string text = _character?.m_name ?? "?";
-		CompanionsPlugin.Log.LogInfo("[Gather|" + text + "] " + msg);
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Gather|" + text + "] " + msg);
 	}
 
 	private void LogWarn(string msg)
