@@ -10,7 +10,7 @@ All notable changes to this fork of ProfMags' Offline Companions. Versions befor
 - A companion stays put a little longer while your crosshair is on it, so you can walk up and talk to it.
 - Companions no longer shut a door behind you mid-fight and can follow you through it.
 - A torch used up by blocking or swinging it is gone, as for you; companions don't block with only a torch (they step out of the swing).
-- A companion sitting indoors gets up when you go out of sight, not just when you're more than 10 m away.
+- In a dungeon a seated companion gets up when you go out of sight, not just when you're more than 10 m away.
 - New Advanced > LogLevel (Off / Normal / Detailed): far less logging by default, and a level that's off costs nothing.
 
 ## 1.5.7
