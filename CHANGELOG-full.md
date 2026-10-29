@@ -4,6 +4,11 @@ Every change, version by version. The `CHANGELOG.md` shipped with the mod is a s
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.9
+- Respawning by ID: whether a dead companion is "already alive" was decided by its name, so with several companions called "Companion" a dead one was refused for good ("Duplicate blocked") while another of that name lived. Now each is known by its own permanent ID: a companion that really is alive again keeps its tombstone for its gear only (on-screen "... is already alive - its gear stays in the tombstone"); an old tombstone without an ID whose name is taken tries again a minute later instead of giving up.
+- Hold to resurrect at a low frame rate: the 7 s hold reset whenever more than 0.25 s passed between the game's repeats of a held Use (every 0.2 s, later when the frame rate drops) - with many companions out it never finished. Now 0.6 s. A refused resurrect says why on screen.
+- Log: the companion panel's "m_splitSlider not available" note is logged once, on Detailed (it was a warning every time the panel was built).
+
 ## 1.5.8
 - Door command: it only ever opened doors - on an open door the companion answered ("Door's open!") and did nothing. Now it opens a shut door and closes an open one, the nearest companion goes (both used to), and a locked door gets "It's locked." New lines hc_cmd_doorclose_1-3 and hc_cmd_door_locked.
 - Controller: Use on a companion opened its bag while the pause menu (or another menu or panel) was open. It now waits for the game to take input, the same check the game uses for the player.

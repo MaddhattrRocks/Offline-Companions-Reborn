@@ -2,6 +2,9 @@
 
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
+## 1.5.9
+- Several companions with the same name all respawn (each is known by its own ID); hold-to-resurrect works at a low frame rate and says on screen why when it can't.
+
 ## 1.5.8
 - Torches: companions carry one at night and in dark dungeons and caves (Torch > DarkLevel), not in a lit base or next to you holding yours; held in either hand and kept lit in a fight in the off hand; it burns down like yours (Torch > BurnsDown) and is never repaired. Companions fight with their fists rather than a torch.
 - Controller binds for every action, each with an optional modifier (default: hold block + Y to command, hold block + X for the wheel); any bind can be cleared, keyboard keys too; hints show your controller's buttons.

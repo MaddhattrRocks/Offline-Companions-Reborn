@@ -208,7 +208,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			_autoRespawnDone = true;
 			DoResurrect(isAutoRespawn: true);
 		}
-		if (_isHolding && !(_interactingPlayer == null) && Time.time - _lastInteractTime > 0.25f)
+		// 1.5.81: the game repeats a held Use every 0.2 s, later at a low frame rate - 0.25 s reset the 7 s hold over and
+		// over with many companions out (user, log 1772664b: the tombstones did nothing)
+		if (_isHolding && !(_interactingPlayer == null) && Time.time - _lastInteractTime > 0.6f)
 		{
 			CancelHold();
 		}
@@ -287,6 +289,9 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			}
 			return;
 		}
+		// 1.5.81: "already alive?" by the companion's permanent ID - by name, five dead companions all called "Companion"
+		// were refused because other companions called "Companion" were alive (user, log 1772664b). The name is only the
+		// fallback for an old tombstone without an ID.
 		foreach (CompanionSetup allCompanion in CompanionSetup.AllCompanions)
 		{
 			ZDO zDO = allCompanion.GetComponent<ZNetView>()?.GetZDO();
@@ -294,17 +299,46 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			{
 				continue;
 			}
-			string text5 = zDO.GetString(CompanionSetup.OwnerHash);
-			string text6 = zDO.GetString(CompanionSetup.NameHash);
-			if (text5 == text4 && text6 == text2)
+			bool same = !string.IsNullOrEmpty(mhrId) ? zDO.GetString(CompanionSetup.MHR_CompanionIdHash) == mhrId : (zDO.GetString(CompanionSetup.OwnerHash) == text4 && zDO.GetString(CompanionSetup.NameHash) == text2);
+			if (!same)
 			{
-				Character component = allCompanion.GetComponent<Character>();
-				if (component != null && component.GetHealth() > 0f)
+				continue;
+			}
+			Character component = allCompanion.GetComponent<Character>();
+			if (component == null || !(component.GetHealth() > 0f))
+			{
+				continue;
+			}
+			string who = string.IsNullOrEmpty(text2) ? ModLocalization.Loc("hc_tier_companion") : text2;
+			if (!string.IsNullOrEmpty(mhrId))
+			{
+				// this very companion is alive (brought back another way) - the tombstone keeps only its gear
+				CompanionsPlugin.Log.LogWarning("[Resurrect] \"" + who + "\" is already alive - it won't respawn from this tombstone (its items stay in it)");
+				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_tomb_already_alive", who));
+				tombZdo.Set(RespawnOwnerHash, "");
+				tombZdo.Set(RespawnPrefabHash, "");
+				if (!(comp == null))
 				{
-					CompanionsPlugin.Log.LogWarning("[Resurrect] Duplicate blocked — \"" + text2 + "\" already alive");
-					return;
+					Object.Destroy(comp);
+				}
+				return;
+			}
+			// an old tombstone (no ID) and a living companion with its name: try again in a minute (it used to give up)
+			CompanionsPlugin.Log.LogWarning("[Resurrect] A companion called \"" + who + "\" is alive - trying again in 60 s (rename one of them to tell them apart)");
+			if (!isAutoRespawn)
+			{
+				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_tomb_name_taken", who));
+			}
+			else
+			{
+				tombZdo.Set(MHR_RespawnTracker.RespawnAtHash, MHR_RespawnTracker.NowSeconds() + 60);
+				MHR_RespawnTracker.OnCompanionDied(tombZdo, text4);
+				if (!(comp == null))
+				{
+					comp._autoRespawnDone = false;
 				}
 			}
+			return;
 		}
 		GameObject gameObject = ZNetScene.instance?.GetPrefab(text);
 		if (gameObject == null)
