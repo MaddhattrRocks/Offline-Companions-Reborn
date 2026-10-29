@@ -21,13 +21,13 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	public const string PluginName = "Offline Companions Reborn";
 
-	public const string PluginVersion = "1.5.76";
+	public const string PluginVersion = "1.5.77";
 
 	private static Harmony _harmony;
 
 	internal static ManualLogSource Log;
 
-	// 1.5.76: [Logging] Level - every mod log line checks one of these first, so a level that's off costs nothing (the
+	// 1.5.76: Advanced > LogLevel (1.5.77: moved from its own Logging section) - every mod log line checks one of these first, so a level that's off costs nothing (the
 	// text isn't even built). Normal until the config is read.
 	internal static bool LogNormal = true;
 

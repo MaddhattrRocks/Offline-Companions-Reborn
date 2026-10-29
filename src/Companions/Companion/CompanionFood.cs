@@ -53,7 +53,8 @@ public class CompanionFood : MonoBehaviour
 
 	// 1.5.90: the "already active" rejection is logged once per food until it changes (log 32bba563: ~250 lines with honey
 	// as its only food)
-	private string _lastActiveReject;
+	// 1.5.77: per food, not just the last one - two foods took turns and each turn reset it (log b15f00be: 113 lines each)
+	private readonly HashSet<string> _activeRejects = new HashSet<string>();
 
 	// 1.5.68: "no food found" logged once per slot until the inventory or its food changes (log 9aef82b6: 816 lines)
 	private int _noFoodCount = -1;
@@ -300,6 +301,7 @@ public class CompanionFood : MonoBehaviour
 					foodEffect.RemainingTime -= deltaTime;
 					if (foodEffect.RemainingTime <= 0f)
 					{
+						_activeRejects.Clear();
 						if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Food] Slot {i} expired — \"{foodEffect.ItemName}\" " + $"(hp={foodEffect.HealthBonus:F0} stam={foodEffect.StaminaBonus:F0} " + $"eitr={foodEffect.EitrBonus:F0} regen={foodEffect.FoodRegen:F1}) " + "companion=\"" + (_character?.m_name ?? "?") + "\"");
 						_foods[i] = default(FoodEffect);
 						flag = true;
@@ -576,14 +578,12 @@ public class CompanionFood : MonoBehaviour
 		}
 		if (!isRefresh && IsFoodAlreadyActive(item.m_shared.m_name))
 		{
-			if (_lastActiveReject != text)
+			if (_activeRejects.Add(text))
 			{
-				_lastActiveReject = text;
 				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — already active in another slot (logged once)");
 			}
 			return false;
 		}
-		_lastActiveReject = null;
 		if (!CanApplyConsumeStatus(item))
 		{
 			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Food] CanConsume REJECTED \"" + text + "\" — status effect conflict");
@@ -594,6 +594,7 @@ public class CompanionFood : MonoBehaviour
 
 	private bool ConsumeIntoSlot(Inventory inv, ItemDrop.ItemData item, int slot)
 	{
+		_activeRejects.Clear();
 		if (inv == null || item == null || slot < 0 || slot >= MaxFoodSlots)
 		{
 			return false;

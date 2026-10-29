@@ -47,7 +47,7 @@ internal static class ModUiLayers
 				}
 			}
 			list.Sort();
-			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[UiLayers] {panel} opened at order {Base}+ - canvases in the scene: " + string.Join(", ", list));
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[UiLayers] {panel} opened at order {Base}+ - canvases in the scene: " + string.Join(", ", list));
 		}
 		catch (System.Exception ex)
 		{

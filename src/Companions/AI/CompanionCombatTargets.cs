@@ -371,7 +371,7 @@ public partial class CompanionCombatAI
 		Player you = MHR_Owner.Of(_setup);
 		if (you != null && Vector3.Distance(you.transform.position, c.transform.position) > LeashFromYou)
 		{
-			TargetLog($"[Combat] {c.m_name} is more than {LeashFromYou:F0} m from you - letting it go and coming back");
+			if (CompanionsPlugin.LogDetailed) TargetLog($"[Combat] {c.m_name} is more than {LeashFromYou:F0} m from you - letting it go and coming back");
 			LetGo(c, 10f);
 			return;
 		}
@@ -386,7 +386,7 @@ public partial class CompanionCombatAI
 			// 1.5.74: with a bow it keeps shooting from where it stands (ChaseMove doesn't walk it away from you)
 			if (owner != null && Vector3.Distance(owner.transform.position, c.transform.position) > range && !(BowReady() && MHR_BowDraw.ClearShot(_character, c)))
 			{
-				TargetLog($"[Combat] {c.m_name} is more than {range:F0} m from you - fighting defensively, letting it come to us");
+				if (CompanionsPlugin.LogDetailed) TargetLog($"[Combat] {c.m_name} is more than {range:F0} m from you - fighting defensively, letting it come to us");
 				_ignoreUntil[c] = Time.time + 3f;
 				_targetCreature = null;
 				return;
@@ -403,7 +403,7 @@ public partial class CompanionCombatAI
 		}
 		else if (Time.time - _noSightSince > 3f)
 		{
-			TargetLog($"[Combat] Lost sight of {c.m_name} (behind a wall or door) - letting it go");
+			if (CompanionsPlugin.LogDetailed) TargetLog($"[Combat] Lost sight of {c.m_name} (behind a wall or door) - letting it go");
 			_ignoreUntil[c] = Time.time + 8f;
 			_targetCreature = null;
 			_noSightSince = -1f;
@@ -480,7 +480,7 @@ public partial class CompanionCombatAI
 		{
 			return;
 		}
-		TargetLog($"[Combat] {_targetCreature.m_name} is behind a closed door - not opening it in a fight");
+		if (CompanionsPlugin.LogDetailed) TargetLog($"[Combat] {_targetCreature.m_name} is behind a closed door - not opening it in a fight");
 		_ignoreUntil[_targetCreature] = Time.time + 15f;
 		_targetCreature = null;
 		MHR_Mover.Release(_ai);

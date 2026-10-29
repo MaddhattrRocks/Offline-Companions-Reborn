@@ -243,7 +243,7 @@ public partial class CompanionCombatAI : MonoBehaviour
 		if (!_character.IsSwimming() && !IsOrdered(_targetCreature) && MHR_Water.WouldSwim(_character, point))
 		{
 			_ai.StopMoving();
-			UnsafeLog("not swimming out after " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - waiting on the bank");
+			if (CompanionsPlugin.LogDetailed) UnsafeLog("not swimming out after " + (_targetCreature != null ? _targetCreature.m_name : "it") + " - waiting on the bank");
 			return false;
 		}
 		// 1.5.74: fighting defensively, a target beyond DefendRange is only shot at from here, never walked to

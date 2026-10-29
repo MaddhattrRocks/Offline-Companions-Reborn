@@ -1433,7 +1433,7 @@ public class FarmController : MonoBehaviour
 				}
 			}
 		}
-		LogDebug($"Scan: found {_nearbyChests.Count} chests within {ScanRadius}m");
+		if (CompanionsPlugin.LogDetailed) LogDebug($"Scan: found {_nearbyChests.Count} chests within {ScanRadius}m");
 	}
 
 	private Container FindChestWithSpace()

@@ -622,6 +622,11 @@ public class ConfigPanel : MonoBehaviour
 			configEntry3.Value = !configEntry3.Value;
 			RefreshCategory();
 		}
+		else if (configEntryBase.SettingType == typeof(string) && configEntryBase.Description?.AcceptableValues is AcceptableValueList<string>)
+		{
+			((ConfigEntry<string>)configEntryBase).Value = NextChoice(configEntryBase, direction);
+			RefreshCategory();
+		}
 	}
 
 	private void RefreshCategory()
@@ -1009,6 +1014,10 @@ public class ConfigPanel : MonoBehaviour
 		{
 			return BuildPadRow(entry, yPos);
 		}
+		if (entry.SettingType == typeof(string) && entry.Description?.AcceptableValues is AcceptableValueList<string>)
+		{
+			return BuildChoiceRow(entry, yPos);
+		}
 		return null;
 	}
 
@@ -1048,6 +1057,53 @@ public class ConfigPanel : MonoBehaviour
 		});
 		_entryActivate[entry] = listener.Begin;
 		_entryClear[entry] = clear;
+		return row;
+	}
+
+	// 1.5.77: a setting with a fixed list of choices (Advanced > LogLevel, General > PortalItems, Death > RespawnStance) -
+	// they weren't shown in F8 at all. The button shows the value; click it (A, or left/right on a controller) for the next one.
+	private static string NextChoice(ConfigEntryBase entry, int direction)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		string[] list = ((AcceptableValueList<string>)entry.Description.AcceptableValues).AcceptableValues;
+		int i = Array.IndexOf(list, typed.Value);
+		i = (i < 0) ? 0 : ((i + direction) % list.Length + list.Length) % list.Length;
+		return list[i];
+	}
+
+	private GameObject BuildChoiceRow(ConfigEntryBase entry, float yPos)
+	{
+		ConfigEntry<string> typed = (ConfigEntry<string>)entry;
+		GameObject row = CreateRowContainer("Row_" + entry.Definition.Key, yPos);
+		GameObject name = CreateLabel(row.transform, entry.Definition.Key, 12f, Color.white);
+		RectTransform nrt = name.GetComponent<RectTransform>();
+		nrt.anchorMin = new Vector2(0f, 0f);
+		nrt.anchorMax = new Vector2(0.55f, 1f);
+		nrt.offsetMin = new Vector2(8f, 0f);
+		nrt.offsetMax = Vector2.zero;
+		name.GetComponent<TMP_Text>().alignment = TextAlignmentOptions.MidlineLeft;
+		BindButton(row.transform, new Vector2(0.56f, 0.1f), new Vector2(0.83f, 0.9f), typed.Value, out TMP_Text label).GetComponent<Button>().onClick.AddListener(delegate
+		{
+			typed.Value = NextChoice(entry, 1);
+			label.text = typed.Value;
+		});
+		CreateDefaultButton(row.transform, entry, delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = typed.Value;
+		});
+		_entryData.Add(entry);
+		_entrySliders.Add(null);
+		_entryResetActions.Add(delegate
+		{
+			typed.Value = (string)entry.DefaultValue;
+			label.text = typed.Value;
+		});
+		_entryActivate[entry] = delegate
+		{
+			typed.Value = NextChoice(entry, 1);
+			label.text = typed.Value;
+		};
 		return row;
 	}
 

@@ -41,7 +41,6 @@ Every setting in the mod, what it does and what it starts at.
 - [Idle](#idle)
 - [Speech](#speech)
 - [Advanced](#advanced)
-- [Logging](#logging)
 
 ## General
 
@@ -1041,7 +1040,7 @@ Combat: a companion swings a melee weapon only once it is at least this much (me
 Combat: seconds between an enemy starting a swing at a companion and the companion raising its guard.
 
 **LogPlayerCombat** — Default: On  
-Testing, with Logging > Level on Detailed: write your own fighting to the log (lines starting [You]) - swings, guard, blocks and parries, enemy swings at you and how far you were - to help tune how companions fight. Will be removed once combat is tuned.
+Testing, with LogLevel on Detailed: write your own fighting to the log (lines starting [You]) - swings, guard, blocks and parries, enemy swings at you and how far you were - to help tune how companions fight. Will be removed once combat is tuned.
 
 **FoodRegenInterval** — Default: 10 · Range: 1 – 60  
 Food: seconds between health regeneration ticks from food (a player's is 10).
@@ -1052,12 +1051,8 @@ Food: seconds between checks whether a companion should eat or drink.
 **TombstoneScanInterval** — Default: 5 · Range: 1 – 30  
 Death: seconds between looks for its own leftover tombstone nearby.
 
+**LogLevel** — Default: `Normal` · Options: `Off`, `Normal`, `Detailed`  
+How much the mod writes to the BepInEx log. Off: warnings and errors only. Normal: the main events (orders, deaths, portals, jobs starting and stopping, problems). Detailed: everything the companions think and do, plus the diagnostics - turn this on when sending a log with a bug report. Lower levels cost nothing: the lines aren't even put together.
+
 **TombstoneNavTimeout** — Default: 120 · Range: 10 – 600  
 Death: seconds a companion keeps trying to get to its tombstone before giving up.
-
-## Logging
-
-
-
-**Level** — Default: `Normal` · Options: `Off`, `Normal`, `Detailed`  
-How much the mod writes to the BepInEx log. Off: warnings and errors only. Normal: the main events (orders, deaths, portals, jobs starting and stopping, problems). Detailed: everything the companions think and do, plus the diagnostics - turn this on when sending a log with a bug report. Lower levels cost nothing: the lines aren't even put together.

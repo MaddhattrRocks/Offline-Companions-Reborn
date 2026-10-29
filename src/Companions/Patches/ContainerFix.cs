@@ -130,7 +130,7 @@ internal static class ContainerFix
 			if (!_logged)
 			{
 				_logged = true;
-				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log?.LogInfo("[ContainerFix] Skipping redundant Container.Load for the companion (items unchanged; ZDO revision bumped by other data).");
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log?.LogInfo("[ContainerFix] Skipping redundant Container.Load for the companion (items unchanged; ZDO revision bumped by other data).");
 			}
 			return false;
 		}
@@ -218,6 +218,6 @@ internal static class ContainerFix
 
 	private static void Log(string s)
 	{
-		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log?.LogInfo(s);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log?.LogInfo(s);
 	}
 }
