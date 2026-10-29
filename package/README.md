@@ -11,11 +11,11 @@ A Valheim **1.0** update of **[Offline Companions](https://thunderstore.io/c/val
 > **Found a bug?** Please report it on [GitHub Issues](https://github.com/MaddhattrRocks/Offline-Companions-Reborn/issues) with your BepInEx `LogOutput.log` attached (in `BepInEx/` inside your Valheim or mod-manager profile folder) — companions log what they're doing and why, which makes problems much easier to track down. You can also report it in the [Bugs tab on Nexus Mods](https://www.nexusmods.com/valheim/mods/4047?tab=bugs) or start a thread on [Hexium](https://valheim.hexium.gg/mods/Maddhattr/Offline_Companions_Reborn#fn-threads).
 
 ## Recent Highlights (v1.5.8)
-- **Torches.** Companions light a torch at night and in dark dungeons and caves, put it away in a lit base or when you hold yours, keep it lit in the off hand during a fight, and it burns down like yours.
+- **Torches.** Companions light a torch at night and in dark dungeons and caves, and it burns down like yours.
 - **Full controller support.** Every action has its own controller bind with an optional modifier (hold block + Y to command, hold block + X for the wheel by default), any bind can be cleared, and the hints show your controller's buttons. The settings panel (F8) works with a controller too.
-- **Ashlands lava.** Companions go round lava, get straight off it, and don't chase enemies or loot onto it.
+- **Ashlands lava.** Companions go round lava, get straight off it, and don't chase enemies or loot onto it. (This is a minimal fix and not fully tested for edge cases.)
 - **Easier to walk up to.** A companion stays put a little longer while your crosshair is on it.
-- **Logging you can turn down.** Advanced > LogLevel (Off / Normal / Detailed); the detailed lines and diagnostics only run when you turn them on.
+- **Logging you can turn down.** Advanced > LogLevel (Off / Normal / Detailed).
 
 See `CHANGELOG.md` for the version-by-version detail.
 
