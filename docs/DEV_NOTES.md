@@ -1,5 +1,5 @@
 ### 1.5.8 (release)
-- 1.5.71-1.5.77 released as 1.5.8. Default LogLevel stays Normal (user considered Off, not worth it).
+- 1.5.71-1.5.77 released as 1.5.8, plus (log f632af6e): used-up torches removed (UpdateTorch 1 s scan: Torch, m_destroyBroken, durability <= 0; DurabilityPatches removes m_destroyBroken items at 0) - Humanoid.BlockAttack drains the blocker's durability by the blocked damage for everyone and never removes it; no blocking with only a torch (TorchIsBlocker = left ?? right like GetCurrentBlocker -> TryEvade(always) or no block); no torch while a usable weapon waits to go on (right hand empty); MHR_Follow.Tick indoors: out of sight (Los) 2 s -> "player out of sight" stand-up (the 10 m FollowSitStayRange was straight-line through walls). README highlights reworded by the user. Default LogLevel stays Normal (user considered Off, not worth it).
 
 ### 1.5.77
 - LogLevel moved to Advanced (user: no own section; MigrateAndClean drops the old Logging key). F8 had no row for string settings with an AcceptableValueList (LogLevel, PortalItems, RespawnStance never showed): `BuildChoiceRow` (button = value, click/A = next, left/right via AdjustSelectedValue, Default). The F1 window's dropdown position is that tool's own.
