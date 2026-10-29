@@ -379,6 +379,7 @@ public class ConfigPanel : MonoBehaviour
 	private void UpdateControllerInput()
 	{
 		UpdatePadHint();
+		NoUnitySelection();
 		if (!ZInput.IsGamepadActive())
 		{
 			return;
@@ -870,7 +871,8 @@ public class ConfigPanel : MonoBehaviour
 
 	private void BuildPadHint(Transform parent)
 	{
-		GameObject go = CreateLabel(parent, "", 11f, GoldTextColor);
+		// 1.5.74: black - the light words got lost on the light panel (user)
+		GameObject go = CreateLabel(parent, "", 11f, Color.black);
 		go.name = "PadHint";
 		RectTransform rt = go.GetComponent<RectTransform>();
 		rt.anchorMin = new Vector2(0f, 0f);
@@ -881,6 +883,30 @@ public class ConfigPanel : MonoBehaviour
 		_padHint = go.GetComponent<TMP_Text>();
 		_padHint.alignment = TextAlignmentOptions.Center;
 		_padHint.raycastTarget = false;
+	}
+
+	// 1.5.74: one highlight only - the game's controller input also moved Unity's own button selection round the panel
+	// (user: "When I go to move the thumbstick I end up with 2 gold highights")
+	private void NoUnitySelection()
+	{
+		if (_root == null)
+		{
+			return;
+		}
+		foreach (Selectable sel in _root.GetComponentsInChildren<Selectable>(includeInactive: true))
+		{
+			if (sel != null && sel.navigation.mode != Navigation.Mode.None)
+			{
+				sel.navigation = new Navigation
+				{
+					mode = Navigation.Mode.None
+				};
+			}
+		}
+		if (EventSystem.current != null && EventSystem.current.currentSelectedGameObject != null && EventSystem.current.currentSelectedGameObject.transform.IsChildOf(_root.transform))
+		{
+			EventSystem.current.SetSelectedGameObject(null);
+		}
 	}
 
 	private void UpdatePadHint()

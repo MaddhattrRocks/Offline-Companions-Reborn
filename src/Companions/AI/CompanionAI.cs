@@ -1227,6 +1227,12 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "WaterSafety");
 			return true;
 		}
+		// 1.5.74: on lava, getting off it comes before anything else (also standing still, working or fighting)
+		if (MHR_Mover.EscapeLava(this))
+		{
+			AIGateDiag.Report(_setup, "Lava");
+			return true;
+		}
 		UpdateSleep(dt);
 		if (IsSleeping())
 		{
@@ -1793,7 +1799,7 @@ public class CompanionAI : BaseAI
 				float num3 = Mathf.Max(liquidLevel, 30f);
 				// 1.5.72: not the rim of a drop (user: "a tar pit could have a large drop next to it") - the ground just beyond
 				// the spot isn't far below it, and it isn't in a fire or against spikes
-				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
+				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.Lava(new Vector3(vector3.x, solidHeight, vector3.z)) || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
 				if (solidHeight > num3 && !rim)
 				{
 					float num4 = Vector3.Distance(position, vector3);
@@ -2039,7 +2045,7 @@ public class CompanionAI : BaseAI
 					continue;
 				}
 				// 1.5.72: and dry, not in a fire or against spikes
-				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null)
+				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null || MHR_Mover.Lava(hit.point))
 				{
 					continue;
 				}

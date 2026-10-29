@@ -161,6 +161,12 @@ public partial class CompanionCombatAI
 			r.Ok = false;
 			r.Why = "it's out in deep water";
 		}
+		// 1.5.74: not into lava after it (Ashlands creatures stand in it) - the bow, or let it go
+		else if (MHR_Mover.Lava(it))
+		{
+			r.Ok = false;
+			r.Why = "it's standing in lava";
+		}
 		// 1.5.76: only something standing (or flying) above or below - not a tick latched on or one in mid-jump (log fd7b1683:
 		// "bow for $enemy_tick (2.0 m): it's above, out of reach" swapped to the bow mid-fight)
 		else if (d < 3f && (dy > 1.4f || dy < -1.8f) && (c.IsOnGround() || c.IsFlying()) && MHR_Latched.LatchedOn(_character) != c)

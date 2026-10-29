@@ -230,6 +230,7 @@ namespace Companions
             // 1.4.88: never stand in a fire
             // 1.5.70: plan again once out - the old route led into it (log 188ac60a: out, then straight back in, 7 times)
             if (EscapeFire(ai)) { s.FireReplan = true; return false; }
+            if (EscapeLava(ai)) { s.FireReplan = true; return false; }
             if (s.FireReplan) { s.FireReplan = false; s.HasDetour = false; s.NextPlan = 0f; }
 
             // waiting on the bank until there's stamina for the swim
@@ -381,6 +382,20 @@ namespace Companions
                 }
                 Vector3 round;
                 if (FireExit(pos, dir, out round, true)) dir = round;
+            }
+
+            // 1.5.74: lava on the next step (and the goal isn't on it): turn along clear ground, or stop at its edge
+            if (!c.IsSwimming() && WorldGenerator.IsAshlands(pos.x, pos.z) && (Lava(pos + dir * 0.9f) || Lava(pos + dir * 1.6f)) && !Lava(goal))
+            {
+                Vector3 round; float rd;
+                if (LavaExit(pos + dir * 0.0f, dir, out round, out rd) && Vector3.Dot(round, dir) > -0.2f && LegClearOfLava(pos, pos + round * 1.5f, 0.3f)) dir = round;
+                else
+                {
+                    Halt(ai, c, s);
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stopping at the edge of the lava at " + Fmt(pos + dir * 0.9f)); }
+                    if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
+                    return false;
+                }
             }
 
             // 1.5.72: a spike wall (a built piece that hurts what touches it) on the next step: walk along it, a little away
@@ -665,6 +680,103 @@ namespace Companions
                 }
             }
             AvoidFire(s, pos, goal, now);
+            AvoidLava(s, pos, goal, now);
+        }
+
+        // 1.5.74: a route over lava goes round it through clear ground (a ring of spots round where it starts); none -> a job
+        // leaves the errand, following you it keeps to the edge step by step
+        static void AvoidLava(S s, Vector3 pos, Vector3 goal, float now)
+        {
+            if (s.Path.Count == 0 || !WorldGenerator.IsAshlands(pos.x, pos.z) || Lava(goal)) return;
+            try
+            {
+                Vector3 prev = pos;
+                for (int i = 0; i < s.Path.Count && i < 40; i++)
+                {
+                    Vector3 next = s.Path[i];
+                    Vector3 leg = next - prev; leg.y = 0f;
+                    float len = leg.magnitude;
+                    if (len > 0.05f)
+                    {
+                        Vector3 dir = leg / len;
+                        for (float t = 0.3f; t < len; t += 0.5f)
+                        {
+                            Vector3 p = prev + dir * t;
+                            if (!Lava(p)) continue;
+                            List<Vector3> way;
+                            if (LavaRing(p, prev, next, i == 0, out way))
+                            {
+                                s.Path.InsertRange(i, way);
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] going round the lava at " + Fmt(p) + " by " + way.Count + " spots"); }
+                                return;
+                            }
+                            if (s.Tag != FollowTag)
+                            {
+                                s.GaveUp = true; s.GaveUpAt = now;
+                                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is over lava at " + Fmt(p) + " - not going");
+                                return;
+                            }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the route crosses lava at " + Fmt(p) + " and there's no clear way round - keeping to its edge"); }
+                            return;
+                        }
+                    }
+                    prev = next;
+                }
+            }
+            catch { }
+        }
+
+        static bool LavaRing(Vector3 c, Vector3 from, Vector3 next, bool fromIsHere, out List<Vector3> way)
+        {
+            way = null;
+            const int N = 16;
+            float[] rings = { 3f, 6f, 10f };
+            int count = N * rings.Length;
+            Vector3[] pt = new Vector3[count];
+            bool[] ok = new bool[count];
+            for (int ring = 0; ring < rings.Length; ring++)
+                for (int k = 0; k < N; k++)
+                {
+                    float ang = k * Mathf.PI * 2f / N;
+                    Vector3 p = c + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * rings[ring];
+                    Vector3 g;
+                    int idx = ring * N + k;
+                    ok[idx] = GroundAt(p, from.y, out g) && !Lava(g) && MHR_Water.DepthAt(g) < 0.5f;
+                    pt[idx] = g;
+                }
+            int S0 = count, T = count + 1;
+            float[] dist = new float[count + 2];
+            int[] back = new int[count + 2];
+            bool[] done = new bool[count + 2];
+            for (int i = 0; i < dist.Length; i++) { dist[i] = float.MaxValue; back[i] = -1; }
+            dist[S0] = 0f;
+            Vector3 P(int i) { return i == S0 ? from : i == T ? next : pt[i]; }
+            for (int iter = 0; iter < count + 2; iter++)
+            {
+                int u = -1; float best = float.MaxValue;
+                for (int i = 0; i < dist.Length; i++) if (!done[i] && dist[i] < best) { best = dist[i]; u = i; }
+                if (u < 0 || u == T) break;
+                done[u] = true;
+                for (int v = 0; v < count + 2; v++)
+                {
+                    if (done[v] || v == S0 || (v < count && !ok[v])) continue;
+                    if (u < count && v < count)
+                    {
+                        int du = Mathf.Abs((u % N) - (v % N)); du = Mathf.Min(du, N - du);
+                        if (du > 1) continue;
+                    }
+                    if (u == S0 && v == T) continue;
+                    Vector3 a = P(u), b = P(v);
+                    float d = Vector3.Distance(a, b);
+                    if (dist[u] + d >= dist[v]) continue;
+                    if (!CanSee(a, b) || !LegClearOfLava(a, b, u == S0 && fromIsHere ? 0.6f : 0.3f)) continue;
+                    dist[v] = dist[u] + d; back[v] = u;
+                }
+            }
+            if (back[T] < 0) return false;
+            way = new List<Vector3>();
+            for (int i = back[T]; i >= 0 && i != S0; i = back[i]) way.Insert(0, pt[i]);
+            return way.Count > 0;
         }
 
         // 1.5.44: the route goes round a hearth's or campfire's collider, but the flames (the Burning area) reach further, so
@@ -2260,7 +2372,7 @@ namespace Companions
             for (float d = 2f; d <= 4f; d += 1f)
             {
                 Vector3 p = pos + dir * d;
-                if (FireArea(p, 0.5f) != null || SpikeNear(p, 0.7f) != null) return true;
+                if (FireArea(p, 0.5f) != null || SpikeNear(p, 0.7f) != null || Lava(p)) return true;
             }
             return false;
         }
@@ -2274,6 +2386,82 @@ namespace Companions
         // looked 0.3 m above the floor and passed under the hearth's flames; Gunter stepped up onto the hearth stone
         // (0.8 m higher) into them, and the hearth's own fire damaged the hearth (Aoe m_damageSelf, 10 a time - the game
         // does the same when a player stands in it).
+        // 1.5.74: Ashlands lava (user: "the NPC dies to silly things due to lava in the ashlands"). Lava is the ground's paint
+        // (ZoneSystem.IsLava - the heightmap's lava mask), not an object; standing on lava builds heat that burns 10, then 100
+        // a tick (Character.UpdateLava/UpdateHeatDamage). Like the game, standing on something built or a rock above it is safe
+        // (a ray down that hits a collider that isn't the heightmap). The game's route planner doesn't know about it.
+        public static bool Lava(Vector3 p)
+        {
+            try
+            {
+                if (ZoneSystem.instance == null || !WorldGenerator.IsAshlands(p.x, p.z)) return false;
+                if (!ZoneSystem.instance.IsLava(p)) return false;
+                RaycastHit hit;
+                if (Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask()) && hit.collider.GetComponent<Heightmap>() == null) return false;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        static bool LegClearOfLava(Vector3 p0, Vector3 p1, float skipStart = 0.3f)
+        {
+            Vector3 leg = p1 - p0; leg.y = 0f;
+            float len = leg.magnitude;
+            if (len < 0.05f) return !Lava(p0);
+            Vector3 dir = leg / len;
+            for (float t = skipStart; t < len; t += 0.5f)
+            {
+                if (Lava(p0 + dir * t)) return false;
+            }
+            return !Lava(p1);
+        }
+
+        // the nearest way off it: a direction whose whole stretch out is clear of lava
+        static bool LavaExit(Vector3 pos, Vector3 prefer, out Vector3 dir, out float dist)
+        {
+            dir = Vector3.zero; dist = 0f;
+            prefer.y = 0f;
+            if (prefer.sqrMagnitude < 0.01f) prefer = Vector3.forward;
+            prefer.Normalize();
+            for (float r = 1.5f; r <= 8f; r += 1.5f)
+                for (int i = 0; i < 16; i++)
+                {
+                    float ang = (i % 2 == 0 ? 1 : -1) * ((i + 1) / 2) * 22.5f;
+                    Vector3 d = Quaternion.Euler(0f, ang, 0f) * prefer;
+                    if (!Lava(pos + d * r) && !DropAhead(pos, d, 1.0f, 1.2f)) { dir = d; dist = r; return true; }
+                }
+            return false;
+        }
+
+        static readonly Dictionary<int, float> s_lavaSince = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_lavaLog = new Dictionary<int, float>();
+
+        // on lava: get off it at once - walk to the nearest clear ground, jump if that doesn't do it within a second
+        public static bool EscapeLava(CompanionAI ai)
+        {
+            if (ai == null) return false;
+            Character c = ai.GetComponent<Character>();
+            if (c == null || c.IsAttached() || c.IsDead() || c.IsSwimming()) return false;
+            int id = ai.gameObject.GetInstanceID();
+            Vector3 pos = ai.transform.position;
+            if (!WorldGenerator.IsAshlands(pos.x, pos.z) || (!c.InLava() && !Lava(pos))) { s_lavaSince.Remove(id); return false; }
+            if (!c.IsOnGround()) return true;   // mid-jump out
+            float now = Time.time, since;
+            if (!s_lavaSince.TryGetValue(id, out since)) { since = now; s_lavaSince[id] = now; }
+            Vector3 dir; float dist;
+            bool exit = LavaExit(pos, ai.transform.forward, out dir, out dist);
+            float last;
+            if (!s_lavaLog.TryGetValue(id, out last) || now - last > 5f)
+            {
+                s_lavaLog[id] = now;
+                if (CompanionsPlugin.Log != null) CompanionsPlugin.Log.LogInfo("[Move] \"" + c.m_name + "\" standing in lava at " + Fmt(pos) + " - " + (exit ? "getting out toward " + Fmt(pos + dir * dist) : "no clear ground close by"));
+            }
+            if (!exit) return false;
+            if (now - since > 1.0f && MHR_Jump.CanAfford(c)) { s_lavaSince[id] = now; MHR_Jump.Leap(ai, c, dir); return true; }
+            ai.MoveTowards(dir, true);
+            return true;
+        }
+
         internal static EffectArea FireArea(Vector3 p, float radius)
         {
             try
@@ -2379,7 +2567,7 @@ namespace Companions
                     Vector3 p = pos + Quaternion.Euler(0f, i * 30f, 0f) * Vector3.forward * r;
                     RaycastHit hit;
                     if (!Physics.Raycast(p + Vector3.up * 2f, Vector3.down, out hit, 4f, Mask())) continue;
-                    if (Mathf.Abs(hit.point.y - pos.y) > 1.2f || InFire(hit.point) || MHR_Chests.IsFurniture(hit.collider)) continue;
+                    if (Mathf.Abs(hit.point.y - pos.y) > 1.2f || InFire(hit.point) || Lava(hit.point) || MHR_Chests.IsFurniture(hit.collider)) continue;
                     if (MHR_Water.DepthAt(hit.point) > 0.5f) continue;
                     if (Physics.CheckCapsule(hit.point + Vector3.up * 0.5f, hit.point + Vector3.up * 1.6f, 0.3f, Mask())) continue;
                     spot = hit.point; return true;
@@ -2479,7 +2667,7 @@ namespace Companions
             }
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             // 1.5.70: never hop toward a fire (the hearth stone is a step it would hop up onto)
-            if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f) || Lava(pos + dir * 1.5f) || Lava(pos + dir * 3f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             ai.transform.rotation = Quaternion.LookRotation(dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
@@ -2594,6 +2782,7 @@ namespace Companions
                 if (MHR_Water.DepthAt(hit.point) > wade) return false;
                 if (FireArea(hit.point, 0.5f) != null) return false;
                 if (SpikeNear(hit.point, 0.7f) != null) return false;
+                if (Lava(hit.point)) return false;
             }
             return true;
         }
@@ -2607,7 +2796,7 @@ namespace Companions
             RaycastHit hit;
             if (!Physics.Raycast(p + Vector3.up * 1.5f, Vector3.down, out hit, 4f, Mask())) return false;
             if (hit.point.y < pos.y - 1.2f) return false;   // 1.4.82: not over a ledge
-            if (SpikeNear(hit.point, 0.7f) != null || FireArea(hit.point, 0.4f) != null) return false;   // 1.5.72
+            if (SpikeNear(hit.point, 0.7f) != null || FireArea(hit.point, 0.4f) != null || Lava(hit.point)) return false;   // 1.5.72, 1.5.74 lava
             return MHR_Water.DepthAt(hit.point) < 1.0f;
         }
 

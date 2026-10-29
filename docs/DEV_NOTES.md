@@ -1,3 +1,7 @@
+### 1.5.74
+- Lava: `MHR_Mover.Lava(p)` = `WorldGenerator.IsAshlands` + `ZoneSystem.IsLava`, safe when a ray down hits a non-Heightmap collider (the game's own rule in `Character.UpdateLava`). `AvoidLava` after `AvoidFire` on every planned route: `LavaRing` (Dijkstra over 16x3 ring spots, legs checked by `LegClearOfLava`), else a job gives up (`GaveUp`) and Follow keeps going step by step. Per-step: lava 0.9/1.6 m ahead -> turn by `LavaExit` or halt. `EscapeLava` (walk out, jump after 1 s) runs in `Go` and early in `CompanionAI.UpdateAI` (after WaterSafety, gate "Lava"). Lava rejected in `Clear`, landings, `SafeSpot`, water Hop, the CompanionAI placement spots, combat reach (`it's standing in lava`) and `MHR_Loot`. Untested in game (user can't get to the Ashlands yet).
+- F8: `NoUnitySelection()` every controller update sets every Selectable in the panel to `Navigation.Mode.None` and clears the EventSystem selection inside it - the second gold highlight was Unity's selection. Pad hint text black.
+
 > **2026-10-04: the project moved from IL to C#.** The source is now `src/Companions/*.cs`, built with
 > `dotnet build` (see the repo README). It was decompiled from the shipped 1.4.74 `Companions.dll`, and the
 > four `MHR_*.cs` helpers are the original hand-written sources. The rebuilt DLL was checked against 1.4.74

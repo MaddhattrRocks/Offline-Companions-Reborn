@@ -267,6 +267,13 @@ namespace Companions
                     LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is in deep water - leaving it");
                     continue;
                 }
+                // 1.5.74: nor on lava
+                if (MHR_Mover.Lava(d.transform.position))
+                {
+                    k.Skipped.Add(d.GetInstanceID());
+                    LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is on lava - leaving it");
+                    continue;
+                }
                 k.Seen.Add(d.GetInstanceID());
                 if (d.m_itemData == null || !inv.CanAddItem(d.m_itemData, 1)) continue;
                 if (inv.GetTotalWeight() + d.m_itemData.GetWeight() > CompanionTierData.CarryLimit(self)) continue;

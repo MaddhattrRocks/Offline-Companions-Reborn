@@ -3,6 +3,8 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.8
+- Ashlands lava: companions go round it, get off it at once, don't chase enemies or loot onto it.
+- Settings panel with a controller: one highlight only, darker hint text.
 - Torches: held in either hand, kept lit in a fight when it's in the off hand, lit within a second, burial chambers and caves count as dark; companions fight with their fists rather than a torch.
 - Companions no longer shut a door behind you mid-fight and can follow you through it.
 - Settings panel with a controller: sticks the right way round, a clear highlight and button hints.
