@@ -487,4 +487,4 @@ At home, gear is repaired once it drops below 80%. You can change `HomeThreshold
 That chest may be open, private (built by another player), behind a ward, or outside its range.
 
 **Reading the log**
-Companions write what they're doing and why to `BepInEx/LogOutput.log`, for example "Nothing to cook right now" or "No station within 20m can repair…". If something seems wrong, that file is the best thing to include in a bug report.
+Companions write what they're doing and why to `BepInEx/LogOutput.log`, for example "Nothing to cook right now" or "No station within 20m can repair…". If something seems wrong, that file is the best thing to include in a bug report. Set `Advanced > LogLevel` to `Detailed` first (F8) so it has the full detail; `Normal` (the default) keeps only the main events and `Off` only warnings and errors.

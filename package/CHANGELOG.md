@@ -3,16 +3,13 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.8
-- New Advanced > LogLevel setting (Off / Normal / Detailed): Normal by default, the detailed lines and diagnostics only when you turn them on, and a level that's off costs nothing.
-- Settings panel (F8): settings with a list of choices (LogLevel, PortalItems, RespawnStance, Speech Chatter) are shown and can be changed there.
-- A companion stays put a little longer when you set off toward it with your crosshair on it, so you can reach it to talk.
-- Ashlands lava: companions go round it, get off it at once, don't chase enemies or loot onto it.
-- Settings panel with a controller: one highlight only, darker hint text.
-- Torches: held in either hand, kept lit in a fight when it's in the off hand, lit within a second, burial chambers and caves count as dark; companions fight with their fists rather than a torch.
-- Companions no longer shut a door behind you mid-fight and can follow you through it.
-- Settings panel with a controller: sticks the right way round, a clear highlight and button hints.
+- Torches: companions carry one at night and in dark dungeons and caves (Torch > DarkLevel), not in a lit base or next to you holding yours; held in either hand and kept lit in a fight in the off hand; it burns down like yours (Torch > BurnsDown) and is never repaired. Companions fight with their fists rather than a torch.
 - Controller binds for every action, each with an optional modifier (default: hold block + Y to command, hold block + X for the wheel); any bind can be cleared, keyboard keys too; hints show your controller's buttons.
-- Torches: companions carry one at night and in dark dungeons and caves, not in a lit base or next to you holding yours; it burns down like yours (Torch > BurnsDown) and is never repaired.
+- Settings panel (F8) with a controller: sticks the right way round, one clear highlight, readable button hints; settings with a list of choices (LogLevel, PortalItems, RespawnStance, Speech Chatter) are shown there now.
+- Ashlands lava: companions go round it, get off it at once, and don't chase enemies or loot onto it.
+- A companion stays put a little longer while your crosshair is on it, so you can walk up and talk to it.
+- Companions no longer shut a door behind you mid-fight and can follow you through it.
+- New Advanced > LogLevel (Off / Normal / Detailed): far less logging by default, and a level that's off costs nothing.
 
 ## 1.5.7
 - The beehive order goes to the nearest companion that isn't resting; companions don't go to bed in the middle of an order.

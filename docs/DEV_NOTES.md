@@ -1,3 +1,6 @@
+### 1.5.8 (release)
+- 1.5.71-1.5.77 released as 1.5.8. Default LogLevel stays Normal (user considered Off, not worth it).
+
 ### 1.5.77
 - LogLevel moved to Advanced (user: no own section; MigrateAndClean drops the old Logging key). F8 had no row for string settings with an AcceptableValueList (LogLevel, PortalItems, RespawnStance never showed): `BuildChoiceRow` (button = value, click/A = next, left/right via AdjustSelectedValue, Default). The F1 window's dropdown position is that tool's own.
 - Log guards pass 2: instance log helpers (controller Log/LogDebug, combat TLog/TargetLog/UnsafeLog) and partial-class siblings (CookFuel, UpkeepHoney/Piles) now guarded at the call too. [Radial]/[Return]/[UiLayers]/[GridFix]/[ContainerFix] -> Detailed.
