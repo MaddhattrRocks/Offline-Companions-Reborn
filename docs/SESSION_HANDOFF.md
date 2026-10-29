@@ -95,6 +95,7 @@ Paste this into a new session to pick up where we left off. Details per version 
 - (nothing yet)
 
 ## Backlog (talk through with the user before building)
+- **Commands overhaul (user, after the 1.5.8 release test).** Go through every command: what it can be used on (doors, chests, beds, chairs, fires, carts, ground, creatures, resources...), what exactly the companion does with each, and what it should do (e.g. the door command only ever opened doors until 1.5.8). Write the list up with the user first, then rework. Ties in with the command wheel overhaul.
 - **Clean up the Controller and keyboard bind sections in the settings (user, after 1.5.8).** They "look a bit funky" - tidy how the binds are listed and laid out (names, order, button/Clear/Default columns, modifier rows). With the settings cleanup pass and the F8 redo.
 - **(DONE in the 1.5.8 release) Torch worn out by fighting stays in the bag (user, after 1.5.8).** The fire opener swings the torch; DurabilityPatches (weapon wear per swing) only unequips a weapon at 0 and never removes it, even when the item is destroyed on breaking (m_destroyBroken, torches). Burn-down in CompanionAI.UpdateTorch does remove it. Fix: remove m_destroyBroken items at 0 in DurabilityPatches too, and drop any 0% torch found in the bag.
 - **Settings cleanup, 2nd pass (user, after 1.5.77; later, once more of the remaining work is done).** Too many sections with too many options - combine related ones, move rarely used ones to Advanced, organise the sections better. Ties in with the F8 window redo.
