@@ -314,6 +314,13 @@ public class CompanionInteract : MonoBehaviour
 		}
 	}
 
+	private static string[] DoorCloseLines => new string[3]
+	{
+		ModLocalization.Loc("hc_cmd_doorclose_1"),
+		ModLocalization.Loc("hc_cmd_doorclose_2"),
+		ModLocalization.Loc("hc_cmd_doorclose_3")
+	};
+
 	private static string[] SitLines
 	{
 		get
@@ -856,6 +863,12 @@ public class CompanionInteract : MonoBehaviour
 	// 1.5.72: the wheel on its own controller bind (Alt + X by default) - Use on a companion opens its bag straight away
 	private void HandleGamepadCombo(Player localPlayer)
 	{
+		// 1.5.8: not while a menu or panel has the controller (user: A on the pause menu with a companion in the crosshair
+		// opened its bag) - the game's own check, which the mod's panels are part of (TakeInput_BlockForCompanionUI)
+		if (!GameTakesInput(localPlayer))
+		{
+			return;
+		}
 		GameObject hovered = _playerHoveringField?.GetValue(localPlayer) as GameObject;
 		CompanionSetup aimed = (hovered != null) ? hovered.GetComponentInParent<CompanionSetup>() : null;
 		CompanionSetup me = GetComponent<CompanionSetup>();
@@ -894,10 +907,24 @@ public class CompanionInteract : MonoBehaviour
 		}
 	}
 
+	private static readonly System.Reflection.MethodInfo s_takeInput = HarmonyLib.AccessTools.Method(typeof(Player), "TakeInput");
+
+	private static bool GameTakesInput(Player p)
+	{
+		try
+		{
+			return p != null && (s_takeInput == null || (bool)s_takeInput.Invoke(p, null));
+		}
+		catch
+		{
+			return true;
+		}
+	}
+
 	private void HandleGamepadHold()
 	{
 		Player localPlayer = Player.m_localPlayer;
-		if (localPlayer == null)
+		if (localPlayer == null || !GameTakesInput(localPlayer))
 		{
 			ResetGamepadHold();
 			return;
@@ -1269,30 +1296,41 @@ public class CompanionInteract : MonoBehaviour
 		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] Companion → cart attach (dist={num:F1}m)");
 	}
 
+	// 1.5.8: open a shut door, close an open one; only the nearest companion goes (two used to go - one opening it while the
+	// other would shut it again), and a locked door gets a "locked" answer instead of a promise
 	private static void DirectDoor(IReadOnlyList<CompanionSetup> setups, string localId, Door door)
 	{
-		int num = 0;
-		CompanionTalk companionTalk = null;
+		bool close = DoorHandler.IsOpen(door);
+		CompanionSetup nearest = null;
+		float best = float.MaxValue;
 		foreach (CompanionSetup setup in setups)
 		{
-			if (!IsOwned(setup, localId) || !MHR_InScope(setup))
+			if (!IsOwned(setup, localId) || !MHR_InScope(setup) || setup.GetComponent<DoorHandler>() == null)
 			{
 				continue;
 			}
-			CancelExistingActions(setup);
-			DoorHandler component = setup.GetComponent<DoorHandler>();
-			if (!(component == null))
+			float d = Vector3.Distance(setup.transform.position, door.transform.position);
+			if (d < best)
 			{
-				component.DirectOpenDoor(door);
-				if (companionTalk == null)
-				{
-					companionTalk = setup.GetComponent<CompanionTalk>();
-				}
-				num++;
+				best = d;
+				nearest = setup;
 			}
 		}
-		SayRandom(companionTalk, DoorLines);
-		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] {num} companion(s) → open door \"{door.m_name}\"");
+		if (nearest == null)
+		{
+			return;
+		}
+		CompanionTalk talk = nearest.GetComponent<CompanionTalk>();
+		if (!DoorHandler.IsUsableDoor(door))
+		{
+			SayRandom(talk, new string[1] { ModLocalization.Loc("hc_cmd_door_locked") });
+			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] door \"{door.m_name}\" is locked - not going");
+			return;
+		}
+		CancelExistingActions(nearest);
+		nearest.GetComponent<DoorHandler>().DirectUseDoor(door, close);
+		SayRandom(talk, close ? DoorCloseLines : DoorLines);
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Direct] \"{nearest.GetComponent<Character>()?.m_name}\" → {(close ? "close" : "open")} door \"{door.m_name}\" ({best:F1} m away)");
 	}
 
 	private static void DirectSit(IReadOnlyList<CompanionSetup> setups, string localId, Fireplace fire)
