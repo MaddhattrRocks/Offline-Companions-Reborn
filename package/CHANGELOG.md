@@ -3,6 +3,7 @@
 All notable changes to this fork of ProfMags' Offline Companions. Versions before 1.4.0 are the original mod (see [ProfMags' Thunderstore page](https://thunderstore.io/c/valheim/p/ProfMags/Offline_Companions/) for that history) plus the initial batch of Valheim 1.0 API-compatibility fixes that let the mod load and run at all on 1.0.
 
 ## 1.5.9
+- Smelting no longer stutters every few seconds in a big base: piles and chests are looked up far less often and much more cheaply.
 - Companions' blocks, parries and weapon hits no longer shake your screen (Combat > CompanionCameraShake to keep it).
 - Several companions with the same name all respawn (each is known by its own ID); hold-to-resurrect works at a low frame rate and says on screen why when it can't.
 
