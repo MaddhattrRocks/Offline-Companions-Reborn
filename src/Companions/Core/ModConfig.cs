@@ -109,6 +109,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> CombatSpacing;
 
+	internal static ConfigEntry<bool> CompanionCameraShake;
+
 	internal static ConfigEntry<bool> CombatFlank;
 
 	internal static ConfigEntry<float> CombatSpacingMargin;
@@ -687,6 +689,7 @@ internal static class ModConfig
 		// [Combat]
 		EngageOnNotice = Bind(cfg, "Combat", "EngageOnNotice", true, "On: companions attack a creature as soon as it has noticed you or a companion. Off: they wait until it is actually coming for you (alerted). Anything that attacks is always fought back, and Hunt goes after its prey either way.");
 		HealthRetreatPct = Bind(cfg, "Combat", "HealthRetreatPct", 0.3f, "Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.", new AcceptableValueRange<float>(0.05f, 0.9f));
+		CompanionCameraShake = Bind(cfg, "Combat", "CompanionCameraShake", defaultValue: false, "Off: a companion's block, parry and weapon hits don't shake your screen (the game shakes the camera of anyone close to those effects, whoever caused them). The sound and sparks stay. Your own blocks, parries and hits you take shake as normal. On: the game's shake for companions too.");
 		FleeHealthPct = Bind(cfg, "Combat", "FleeHealthPct", 0.15f, "Below this share of its health (0.15 = 15%) a companion runs away from the enemy.", new AcceptableValueRange<float>(0.05f, 0.6f));
 		WeaponSwitchMargin = Bind(cfg, "Combat", "WeaponSwitchMargin", 0.1f, "A different weapon has to be this much better against the current enemy (0.1 = 10%) before a companion switches to it, so it doesn't swap back and forth.", new AcceptableValueRange<float>(0f, 0.5f));
 		ShieldMultiAttackerCount = Bind(cfg, "Combat", "ShieldMultiAttackerCount", 3, "When this many enemies attack a companion at once, it switches to its shield with the best block.", new AcceptableValueRange<int>(1, 10));
