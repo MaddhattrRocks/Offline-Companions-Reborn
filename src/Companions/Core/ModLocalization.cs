@@ -433,8 +433,9 @@ public static class ModLocalization
 			{ "hc_radial_farmzones", "Farm Zones" },
 			{ "hc_farmzone_title", "Select Crop" },
 			{ "hc_farmzone_any", "Any Crop" },
-			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [Esc] Exit" },
-			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{5}] Exit" },
+			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [MMB] Match building  [Esc] Exit" },
+			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{6}] Match building  [{5}] Exit" },
+			{ "hc_farmzone_match_none", "Look at a building piece to copy its angle" },
 			{ "hc_farmzone_full", "Maximum zones reached (4)" }
 		};
 	}
