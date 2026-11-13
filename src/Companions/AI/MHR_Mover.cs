@@ -3005,6 +3005,57 @@ namespace Companions
         }
 
         // ---------- doorways ----------
+        // 1.5.84: a gate with its own frame (the Hexagonal gate, user: "the companion has trouble to go through hexagonal
+        // gates") has the frame's colliders under the Door as well as the leaves. A door set into a wall only has its leaves.
+        // An open door's leaf has swung out of the doorway, so its middle sits well off the doorway's plane; the frame stays
+        // in the plane. Without this the frame of an open gate counted as "an open leaf in the way" and the companion shut
+        // the gate it was walking through, opened it again, and so on.
+        static bool IsLeaf(Door d, Collider col)
+        {
+            if (d == null || col == null) return false;
+            Vector3 f = d.transform.forward; f.y = 0f;
+            if (f.sqrMagnitude < 0.01f) return true;
+            f.Normalize();
+            Vector3 off = col.bounds.center - d.transform.position;
+            return Mathf.Abs(off.x * f.x + off.z * f.z) > 0.3f;
+        }
+
+        // 1.5.84: the doorway's floor and half its width, from the door's colliders (cached - pieces don't move). A wide gate
+        // can be crossed well off its middle (the line-up only looked within 1.3 m of it), and a gate's pivot need not be on
+        // the floor (the line-up gave up more than 2.5 m above or below it).
+        class Doorway { public float Floor, Half; }
+        static readonly Dictionary<int, Doorway> s_doorways = new Dictionary<int, Doorway>();
+        static Doorway DoorwayOf(Door d)
+        {
+            int id = d.GetInstanceID();
+            Doorway w;
+            if (s_doorways.TryGetValue(id, out w)) return w;
+            w = new Doorway { Floor = d.transform.position.y, Half = 1.3f };
+            Vector3 ctr = d.transform.position;
+            Vector3 r = d.transform.right; r.y = 0f;
+            if (r.sqrMagnitude > 0.01f)
+            {
+                r.Normalize();
+                float floor = float.MaxValue, half = 0f;
+                Collider[] cols = d.GetComponentsInChildren<Collider>();
+                for (int i = 0; i < cols.Length; i++)
+                {
+                    Collider col = cols[i];
+                    if (col == null || col.isTrigger || !col.enabled) continue;
+                    Bounds b = col.bounds;
+                    floor = Mathf.Min(floor, b.min.y);
+                    Vector3 c = b.center - ctr;
+                    half = Mathf.Max(half, Mathf.Abs(c.x * r.x + c.z * r.z) + b.extents.x * Mathf.Abs(r.x) + b.extents.z * Mathf.Abs(r.z));
+                }
+                if (floor < float.MaxValue && Mathf.Abs(floor - ctr.y) < 4f) w.Floor = floor;
+                // the frame is part of the width when the gate has one; keep a little off the posts
+                w.Half = Mathf.Clamp(half - 0.3f, 1.3f, 3f);
+            }
+            if (s_doorways.Count > 500) s_doorways.Clear();
+            s_doorways[id] = w;
+            return w;
+        }
+
         // 1.4.140: the route map ignores doors, so a route can cut across a doorway at an angle and clip the leaf of an open
         // door (user: "path around the open door properly"). When the route ahead goes through a doorway, first get onto the
         // line straight out from the middle of the doorway, then walk through along it - the open leaf hangs off to one side
@@ -3028,7 +3079,7 @@ namespace Companions
             Vector3 rel = pos - ctr; rel.y = 0f;
             float along = Vector3.Dot(rel, f) * s.PassSide;           // > 0: still on our side
             float across = Vector3.Dot(rel, new Vector3(f.z, 0f, -f.x));
-            if (along < -0.9f || rel.magnitude > 5f || Mathf.Abs(pos.y - ctr.y) > 2.5f)
+            if (along < -0.9f || rel.magnitude > 5f + DoorwayOf(door).Half - 1.3f || Mathf.Abs(pos.y - DoorwayOf(door).Floor) > 2.5f)
             {
                 // through (or gone elsewhere): a fresh route from here, so it doesn't turn back for a corner it skipped
                 s.PassDoor = null; s.NextDoorwayCheck = now + 1.0f; s.NextPlan = 0f;
@@ -3059,7 +3110,8 @@ namespace Companions
                 Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (d == null || !seen.Add(d.GetInstanceID())) continue;
                 Vector3 ctr = d.transform.position;
-                if (Mathf.Abs(ctr.y - pos.y) > 2.5f) continue;
+                Doorway way = DoorwayOf(d);
+                if (Mathf.Abs(way.Floor - pos.y) > 2.5f) continue;
                 Vector3 f = d.transform.forward; f.y = 0f;
                 if (f.sqrMagnitude < 0.01f) continue;
                 f.Normalize();
@@ -3075,7 +3127,7 @@ namespace Companions
                         float t = Mathf.Abs(da) / Mathf.Max(0.001f, Mathf.Abs(da) + Mathf.Abs(db));
                         Vector3 x = Vector3.Lerp(a, b, t);
                         Vector3 lat = x - ctr; lat.y = 0f;
-                        if (lat.magnitude <= 1.3f && Mathf.Abs(da) > 0.5f)
+                        if (lat.magnitude <= way.Half && Mathf.Abs(da) > 0.5f)
                         {
                             float at = walked + Vector3.Distance(a, x);
                             if (at < bestT) { bestT = at; best = d; side = Mathf.Sign(da); }
@@ -3103,7 +3155,7 @@ namespace Companions
                 RaycastHit hit;
                 if (!Physics.Raycast(pos + Vector3.up * heights[i], dir, out hit, len, LayerMask.GetMask("piece", "Default", "piece_nonsolid"))) continue;
                 Door d = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
-                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null || !IsLeaf(d, hit.collider)) continue;
                 if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
                 float until;
                 if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;   // just did this one
@@ -3121,7 +3173,7 @@ namespace Companions
             {
                 Collider col = s_doorCols[i];
                 Door d = col != null ? col.GetComponentInParent<Door>() : null;
-                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null || !IsLeaf(d, col)) continue;
                 if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
                 float until;
                 if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;
