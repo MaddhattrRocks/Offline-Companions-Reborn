@@ -1,3 +1,6 @@
+### 1.5.90 - today's test builds combined (2026-11-13)
+- One build with PRs #30 (1.5.81 auto-pickup orbit), #31 (1.5.82/1.5.83/1.5.87 farm zones and unreachable Ashvine), #32 (1.5.84/1.5.88 Hexagonal gate and ashwood door on a post), #33 (1.5.85 party panel position), #34 (1.5.86 per-world respawn list) and #35 (1.5.89 cart follow). Only conflicts were the version line and these notes; the code merged without overlap.
+
 ### 1.5.89 - companion pulling a cart (user report, 2026-11-13)
 - Report: "The companion seems to have a hard time with a cart when the player is also using a cart. Also when using a cart the companion should follow the player directly rather than using the wander or picking a location to one side."
 - Cause: hitching set the follow target to the cart itself, so FollowWithFormation followed its own cart (BaseAI.Follow stops within 3 m: it stood at its shafts) until anything calling ApplyFollowMode (door, loot, closing the menu, ToolKeeper) put it back on the player. From then MHR_Follow treated it like any follower: a spot beside, behind-to-one-side or ahead of the player (put its cart across or in front of the player's cart), moved now and then with Wander on, and the idle shuffle dragged the cart about.
