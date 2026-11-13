@@ -291,10 +291,10 @@ namespace Companions
             if (s.RouteDoor != null)
             {
                 if (!DoorClosed(s.RouteDoor)) { s.RouteDoor = null; Plan(ai, c, s, pos, now); }
-                else if (MHR_Nav.DoorDist(pos, s.RouteDoor.transform.position) <= 2.2f)
+                else if (MHR_Nav.DoorDist(pos, DoorCenter(s.RouteDoor)) <= 2.2f)
                 {
                     // open it, then walk through to the far side before asking for a new route
-                    Vector3 dp = s.RouteDoor.transform.position, across = dp - s.RouteDoorSpot; across.y = 0f;
+                    Vector3 dp = DoorCenter(s.RouteDoor), across = dp - s.RouteDoorSpot; across.y = 0f;
                     OpenDoor(ai, c, s.RouteDoor, tag);
                     s.LastRouteDoor = s.RouteDoor; s.LastRouteDoorAt = now;
                     if (across.sqrMagnitude > 0.01f) { s.HasDetour = true; s.Detour = dp + across.normalized * 1.8f; s.DetourUntil = now + 5f; }
@@ -2985,7 +2985,7 @@ namespace Companions
             {
                 Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (!Usable(d)) continue;
-                float dd = MHR_Nav.DoorDist(pos, d.transform.position);
+                float dd = MHR_Nav.DoorDist(pos, DoorCenter(d));
                 if (dd < bd) { bd = dd; best = d; }
             }
             return bd <= range + 0.5f ? best : null;
@@ -3013,48 +3013,97 @@ namespace Companions
         static bool IsLeaf(Door d, Collider col)
         {
             if (d == null || col == null) return false;
-            Vector3 f = d.transform.forward; f.y = 0f;
-            if (f.sqrMagnitude < 0.01f) return true;
-            f.Normalize();
-            Vector3 off = col.bounds.center - d.transform.position;
-            return Mathf.Abs(off.x * f.x + off.z * f.z) > 0.3f;
+            Doorway w = DoorwayOf(d);
+            Vector3 off = col.bounds.center - w.Center;
+            return Mathf.Abs(off.x * w.Fwd.x + off.z * w.Fwd.z) > 0.3f;
         }
 
-        // 1.5.84: the doorway's floor and half its width, from the door's colliders (cached - pieces don't move). A wide gate
-        // can be crossed well off its middle (the line-up only looked within 1.3 m of it), and a gate's pivot need not be on
-        // the floor (the line-up gave up more than 2.5 m above or below it).
-        class Doorway { public float Floor, Half; }
+        // 1.5.84: the doorway's floor and half its width, from the door's colliders. A wide gate can be crossed well off its
+        // middle (the line-up only looked within 1.3 m of it), and a gate's pivot need not be on the floor (the line-up gave
+        // up more than 2.5 m above or below it).
+        // 1.5.88: also the doorway's middle and the way through it, from the shape of the shut door (user: "struggles to pass
+        // through ashwood doors in grausten pillar frames. It seems to walk toward the pillar the door is attached to instead of
+        // the door"). Everything used door.transform as the middle of the doorway and its forward axis as the way through; a
+        // door whose pivot is at its hinge, or whose model is turned, sent the line-up (and the spots to stand at either side)
+        // to the post. The shut leaf (and frame, if any) is wide across the doorway and thin through it: its extents in the
+        // door's own axes give both. Measured only while the door is shut (an open leaf has swung) and kept once measured;
+        // until then the pivot and forward axis stand in, as before.
+        class Doorway { public Vector3 Center, Fwd; public float Floor, Half; }
         static readonly Dictionary<int, Doorway> s_doorways = new Dictionary<int, Doorway>();
+        static readonly Vector3[] s_corners = new Vector3[8];
         static Doorway DoorwayOf(Door d)
         {
             int id = d.GetInstanceID();
             Doorway w;
             if (s_doorways.TryGetValue(id, out w)) return w;
-            w = new Doorway { Floor = d.transform.position.y, Half = 1.3f };
-            Vector3 ctr = d.transform.position;
-            Vector3 r = d.transform.right; r.y = 0f;
-            if (r.sqrMagnitude > 0.01f)
+            Transform t = d.transform;
+            Vector3 fw = t.forward; fw.y = 0f;
+            w = new Doorway { Center = t.position, Fwd = fw.sqrMagnitude > 0.01f ? fw.normalized : Vector3.forward, Floor = t.position.y, Half = 1.3f };
+            if (!DoorClosed(d)) return w;   // not kept: measure it once it's shut
+            Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
+            int used = 0;
+            Collider[] cols = d.GetComponentsInChildren<Collider>();
+            for (int i = 0; i < cols.Length; i++)
             {
-                r.Normalize();
-                float floor = float.MaxValue, half = 0f;
-                Collider[] cols = d.GetComponentsInChildren<Collider>();
-                for (int i = 0; i < cols.Length; i++)
+                Collider col = cols[i];
+                if (col == null || col.isTrigger || !col.enabled) continue;
+                if (!LocalCorners(col)) continue;
+                for (int k = 0; k < 8; k++)
                 {
-                    Collider col = cols[i];
-                    if (col == null || col.isTrigger || !col.enabled) continue;
-                    Bounds b = col.bounds;
-                    floor = Mathf.Min(floor, b.min.y);
-                    Vector3 c = b.center - ctr;
-                    half = Mathf.Max(half, Mathf.Abs(c.x * r.x + c.z * r.z) + b.extents.x * Mathf.Abs(r.x) + b.extents.z * Mathf.Abs(r.z));
+                    Vector3 p = t.InverseTransformPoint(col.transform.TransformPoint(s_corners[k]));
+                    min = Vector3.Min(min, p); max = Vector3.Max(max, p);
                 }
-                if (floor < float.MaxValue && Mathf.Abs(floor - ctr.y) < 4f) w.Floor = floor;
-                // the frame is part of the width when the gate has one; keep a little off the posts
-                w.Half = Mathf.Clamp(half - 0.3f, 1.3f, 3f);
+                used++;
+            }
+            if (used > 0)
+            {
+                Vector3 size = max - min;
+                // thin along local z: forward is the way through (the usual); thin along x: the model is turned, right is
+                Vector3 axis = t.forward, acrossAxis = t.right;
+                float across = size.x, through = size.z;
+                if (size.x * 2f < size.z) { axis = t.right; acrossAxis = t.forward; across = size.z; through = size.x; }
+                axis.y = 0f;
+                if (axis.sqrMagnitude > 0.01f && across > 0.5f)
+                {
+                    Vector3 mid = t.TransformPoint((min + max) * 0.5f);
+                    w.Fwd = axis.normalized;
+                    w.Center = new Vector3(mid.x, t.position.y, mid.z);
+                    float lowest = float.MaxValue;
+                    for (int i = 0; i < cols.Length; i++) if (cols[i] != null && !cols[i].isTrigger && cols[i].enabled) lowest = Mathf.Min(lowest, cols[i].bounds.min.y);
+                    if (lowest < float.MaxValue && Mathf.Abs(lowest - t.position.y) < 4f) w.Floor = lowest;
+                    // the frame is part of the width when the gate has one; keep a little off the posts
+                    w.Half = Mathf.Clamp(across * 0.5f - 0.3f, 1.3f, 3f);
+                    if (CompanionsPlugin.LogDetailed && (Vector3.Distance(new Vector3(mid.x, 0f, mid.z), new Vector3(t.position.x, 0f, t.position.z)) > 0.3f || axis != t.forward))
+                        Dbg("[Move] doorway of the " + d.m_name + " at " + Fmt(t.position) + ": middle " + Fmt(w.Center) + (axis != t.forward ? ", turned model" : "") + ", " + across.ToString("F1") + " m wide");
+                }
             }
             if (s_doorways.Count > 500) s_doorways.Clear();
             s_doorways[id] = w;
             return w;
         }
+        // a collider's box in its own space
+        static bool LocalCorners(Collider col)
+        {
+            Bounds b;
+            if (col is BoxCollider) { BoxCollider bc = (BoxCollider)col; b = new Bounds(bc.center, bc.size); }
+            else if (col is MeshCollider) { MeshCollider mc = (MeshCollider)col; if (mc.sharedMesh == null) return false; b = mc.sharedMesh.bounds; }
+            else if (col is CapsuleCollider)
+            {
+                CapsuleCollider cc = (CapsuleCollider)col;
+                Vector3 sz = Vector3.one * (cc.radius * 2f);
+                sz[Mathf.Clamp(cc.direction, 0, 2)] = Mathf.Max(cc.height, cc.radius * 2f);
+                b = new Bounds(cc.center, sz);
+            }
+            else if (col is SphereCollider) { SphereCollider sc = (SphereCollider)col; b = new Bounds(sc.center, Vector3.one * (sc.radius * 2f)); }
+            else return false;
+            Vector3 c = b.center, e = b.extents;
+            int n = 0;
+            for (int x = -1; x <= 1; x += 2) for (int y = -1; y <= 1; y += 2) for (int z = -1; z <= 1; z += 2)
+                s_corners[n++] = c + new Vector3(e.x * x, e.y * y, e.z * z);
+            return true;
+        }
+        internal static Vector3 DoorCenter(Door d) { return DoorwayOf(d).Center; }
+        static Vector3 DoorFwd(Door d) { return DoorwayOf(d).Fwd; }
 
         // 1.4.140: the route map ignores doors, so a route can cut across a doorway at an angle and clip the leaf of an open
         // door (user: "path around the open door properly"). When the route ahead goes through a doorway, first get onto the
@@ -3072,10 +3121,8 @@ namespace Companions
             Door door = s.PassDoor;
             if (door == null) return target;
             if (!door || door.GetComponent<ZNetView>() == null || !door.GetComponent<ZNetView>().IsValid()) { s.PassDoor = null; return target; }
-            Vector3 ctr = door.transform.position;
-            Vector3 f = door.transform.forward; f.y = 0f;
-            if (f.sqrMagnitude < 0.01f) { s.PassDoor = null; return target; }
-            f.Normalize();
+            Vector3 ctr = DoorCenter(door);
+            Vector3 f = DoorFwd(door);
             Vector3 rel = pos - ctr; rel.y = 0f;
             float along = Vector3.Dot(rel, f) * s.PassSide;           // > 0: still on our side
             float across = Vector3.Dot(rel, new Vector3(f.z, 0f, -f.x));
@@ -3109,12 +3156,10 @@ namespace Companions
             {
                 Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (d == null || !seen.Add(d.GetInstanceID())) continue;
-                Vector3 ctr = d.transform.position;
                 Doorway way = DoorwayOf(d);
+                Vector3 ctr = way.Center;
                 if (Mathf.Abs(way.Floor - pos.y) > 2.5f) continue;
-                Vector3 f = d.transform.forward; f.y = 0f;
-                if (f.sqrMagnitude < 0.01f) continue;
-                f.Normalize();
+                Vector3 f = way.Fwd;
                 // walk the route from here through the next few corners (up to ~6 m) and look for the crossing
                 Vector3 a = pos; float walked = 0f;
                 for (int k = Mathf.Clamp(s.Corner, 0, s.Path.Count - 1); k < s.Path.Count && walked < 6f; k++)
@@ -3188,7 +3233,7 @@ namespace Companions
             if (d == null || DoorClosed(d)) return;
             s_leafClosed[d.GetInstanceID()] = Time.time + 8f;
             if (s_leafClosed.Count > 200) s_leafClosed.Clear();
-            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
+            Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
             if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
             Humanoid h = c as Humanoid;
             bool ok = false;
@@ -3247,7 +3292,7 @@ namespace Companions
                 DoorNode n = queue.Dequeue();
                 if (n.Depth > bestDepth) break;
                 Door d = s_doors[n.Door];
-                Vector3 other = d.transform.position - d.transform.forward * (1.4f * n.Side);
+                Vector3 other = DoorCenter(d) - DoorFwd(d) * (1.4f * n.Side);
                 s_tmp2.Clear(); budget--;
                 if (GetPath(other, goal, s_tmp2, Pathfinding.AgentType.Humanoid, false))
                 {
@@ -3281,8 +3326,8 @@ namespace Companions
         static bool ToDoor(Vector3 from, Door d, int side, out Vector3 end, out float len)
         {
             end = Vector3.zero; len = 0f;
-            Vector3 dp = d.transform.position;
-            Vector3 sp = dp + d.transform.forward * (1.4f * side);
+            Vector3 dp = DoorCenter(d);
+            Vector3 sp = dp + DoorFwd(d) * (1.4f * side);
             s_tmp.Clear();
             if (!GetPath(from, sp, s_tmp, Pathfinding.AgentType.Humanoid, true)) return false;
             end = s_tmp[s_tmp.Count - 1];
@@ -3360,10 +3405,9 @@ namespace Companions
         {
             Player p = Player.m_localPlayer;
             if (p == null || d == null || Vector3.Distance(p.transform.position, d.transform.position) > 25f) return false;
-            Vector3 n = d.transform.forward; n.y = 0f;
-            if (n.sqrMagnitude < 0.01f) return false;
-            float me = Vector3.Dot(ai.transform.position - d.transform.position, n);
-            float you = Vector3.Dot(p.transform.position - d.transform.position, n);
+            Vector3 n = DoorFwd(d), dc = DoorCenter(d);
+            float me = Vector3.Dot(ai.transform.position - dc, n);
+            float you = Vector3.Dot(p.transform.position - dc, n);
             return Mathf.Abs(you) > 0.5f && Mathf.Sign(me) != Mathf.Sign(you);
         }
 
@@ -3378,7 +3422,7 @@ namespace Companions
                 st.DoorBlocked = true; st.GaveUp = true; st.GaveUpAt = Time.time;
                 return;
             }
-            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
+            Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
             if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
             Humanoid h = c as Humanoid;
             bool ok = false;
@@ -3412,7 +3456,7 @@ namespace Companions
                     Opened o = list[i];
                     if (o.Door == null || DoorClosed(o.Door) || Time.time - o.At > 60f) { list.RemoveAt(i); continue; }
                     if (Time.time - o.At < 1.5f) continue;
-                    Vector3 dp = o.Door.transform.position;
+                    Vector3 dp = DoorCenter(o.Door);
                     if (Flat(pos, dp) < 3.5f && Mathf.Abs(pos.y - dp.y) < 3f) continue;
                     // 1.4.75: still stuck near it (working through the stuck ladder or a detour) - leave it open
                     if (s != null && Time.time - s.LastGo < 0.5f && (s.Ladder > 0 || s.HasDetour) && Flat(pos, dp) < 8f) continue;
