@@ -739,6 +739,15 @@ public class CompanionAI : BaseAI
 		_formationSlot = slot;
 	}
 
+	// 1.5.89: once hitched it follows you as before, and MHR_Follow walks it (and the cart) straight behind you. It used to
+	// follow the cart itself - stood at its own shafts until something else (a door, the menu) put it back on you, and then
+	// went to its usual spot beside or ahead of you, cart and all. With Follow off it still stays with the cart.
+	internal void FollowAfterHitch(Vagon cart)
+	{
+		GameObject owner = MHR_Owner.Go(this);
+		SetFollowTarget(owner != null && _setup != null && _setup.GetFollow() ? owner : cart.gameObject);
+	}
+
 	internal void SetPendingCart(Vagon vagon, Humanoid humanoid)
 	{
 		PendingCartAttach = vagon;
@@ -1399,7 +1408,7 @@ public class CompanionAI : BaseAI
 						base.transform.rotation = Quaternion.LookRotation(vector3.normalized);
 					}
 					FreezeTimer = 1f;
-					SetFollowTarget(PendingCartAttach.gameObject);
+					FollowAfterHitch(PendingCartAttach);
 					PendingCartAttach.Interact(PendingCartHumanoid, hold: false, alt: false);
 					PendingCartAttach = null;
 					PendingCartHumanoid = null;
