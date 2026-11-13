@@ -128,6 +128,9 @@ public class CompanionAI : BaseAI
 
 	private const float AutoPickupPullSpeed = 15f;
 
+	// 1.5.81: drops whose pickup just failed, by instance id -> time to try again (no endless pull while it can't go in)
+	private readonly Dictionary<int, float> _autoPickupRetry = new Dictionary<int, float>();
+
 	internal static EffectList DrownEffects;
 
 	private CompanionStamina _companionStamina;
@@ -1953,14 +1956,37 @@ public class CompanionAI : BaseAI
 				float num2 = inventory.GetTotalWeight() + component.m_itemData.GetWeight();
 				if (!(num2 > CompanionTierData.CarryLimit(this)))
 				{
-					float num3 = Vector3.Distance(component.transform.position, vector);
-					if (num3 < 0.3f)
+					int id = component.GetInstanceID();
+					if (_autoPickupRetry.TryGetValue(id, out float retryAt) && Time.time < retryAt)
 					{
-						humanoid.Pickup(component.gameObject, autoequip: false, autoPickupDelay: false);
+						continue;
+					}
+					// 1.5.81: the game pulls a drop to the player 15 m/s every physics step (0.02 s = 0.3 m, the same as its 0.3 m
+					// pickup distance), but the AI ticks every 0.05 s, so each pull moved the drop 0.75 m and it could jump back and
+					// forth across the companion without ever landing within 0.3 m - items circling it (bug report: "the items spin
+					// around them like a protective shield"). Now it's picked up once the next pull would reach the companion.
+					float num3 = Vector3.Distance(component.transform.position, vector);
+					float step = AutoPickupPullSpeed * dt;
+					if (num3 < 0.3f || num3 <= step)
+					{
+						if (humanoid.Pickup(component.gameObject, autoequip: false, autoPickupDelay: false))
+						{
+							_autoPickupRetry.Remove(id);
+						}
+						else
+						{
+							// never keep a drop circling that won't go in: leave it on the ground for 5 s
+							if (_autoPickupRetry.Count > 64)
+							{
+								_autoPickupRetry.Clear();
+							}
+							_autoPickupRetry[id] = Time.time + 5f;
+							if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[AutoPickup] Couldn't pick up \"" + text + "\" x" + component.m_itemData.m_stack + " - leaving it 5 s");
+						}
 						continue;
 					}
 					Vector3 normalized = (vector - component.transform.position).normalized;
-					component.transform.position += normalized * 15f * dt;
+					component.transform.position += normalized * step;
 				}
 			}
 		}

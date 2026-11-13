@@ -133,7 +133,7 @@ public class FarmController : MonoBehaviour
 
 	private int _seedAmountToTake;
 
-	private readonly Collider[] _spacingBuffer = new Collider[64];
+	private readonly Collider[] _spacingBuffer = new Collider[256];   // 1.5.82: was 64 - the wider plant check fills it in a full field
 
 	private readonly Collider[] _dropBuffer = new Collider[64];
 
@@ -150,6 +150,19 @@ public class FarmController : MonoBehaviour
 	private int _itemMask;
 
 	private int _pickableMask;
+
+	// 1.5.87: what a companion can stand on, to tell a crop up a wall from one at its feet
+	private int _standMask;
+
+	private readonly RaycastHit[] _standHits = new RaycastHit[16];
+
+	// how far up or down a companion reaches a crop from where it stands (MHR_Nav.ReachDist measures flat up to this)
+	private const float MaxPickHeight = 2.2f;
+
+	// how long it stands under a crop it can't reach before it gives that crop up
+	private const float OutOfReachGiveUp = 3f;
+
+	private float _underCropTimer;
 
 	private const float MoveTimeout = 10f;
 
@@ -198,6 +211,18 @@ public class FarmController : MonoBehaviour
 
 	private static float PlantSpacing => ModConfig.FarmPlantSpacing.Value;
 
+	// 1.5.82: room for a plant's own collider - the game's grow check (Plant.HaveGrowSpace) is a sphere of m_growRadius that
+	// fails on any healthy plant's collider inside it, and that collider sits a little way out from the plant's centre
+	private const float GrowMargin = 0.25f;
+
+	// the largest m_growRadius of anything a cultivator plants (how far out a neighbour can need room)
+	private static float s_maxGrowRadius = 0.5f;
+
+	private static float CellSize(SeedPlantInfo info)
+	{
+		return Mathf.Max(PlantSpacing, info.GrowRadius + GrowMargin);
+	}
+
 	private static float UseDistance => ModConfig.FarmUseDistance.Value;
 
 	public void NotifyActionModeChanged()
@@ -237,6 +262,7 @@ public class FarmController : MonoBehaviour
 		_roofMask = LayerMask.GetMask("Default", "static_solid", "piece");
 		_itemMask = LayerMask.GetMask("item");
 		_pickableMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+		_standMask = LayerMask.GetMask("Default", "static_solid", "terrain", "piece");
 	}
 
 	private void OnDestroy()
@@ -578,6 +604,24 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetPickable.transform.position);
+		// 1.5.87: standing under it and still out of reach (up a wall): give it up after a moment, for UnreachableSpotMemory
+		Vector3 me = base.transform.position;
+		Vector3 crop = _targetPickable.transform.position;
+		if (new Vector2(me.x - crop.x, me.z - crop.z).magnitude < UseDistance && Mathf.Abs(me.y - crop.y) > MaxPickHeight)
+		{
+			_underCropTimer += dt;
+			if (_underCropTimer > OutOfReachGiveUp)
+			{
+				_underCropTimer = 0f;
+				MarkUnreachable(crop);
+				Abort($"crop out of reach ({crop.y - me.y:F1}m up)");
+				return;
+			}
+		}
+		else
+		{
+			_underCropTimer = 0f;
+		}
 		// 1.4.135: or wherever the movement says it has arrived (it measures flat, up to 1.5 m up/down)
 		if (num < UseDistance || _moveArrived)
 		{
@@ -939,14 +983,30 @@ public class FarmController : MonoBehaviour
 		{
 			return;
 		}
-		s_mappingBuilt = true;
 		s_seedToPlant = new Dictionary<string, SeedPlantInfo>();
 		s_cropOutputNames = new HashSet<string>();
+		s_maxGrowRadius = 0.5f;
 		if (ZNetScene.instance == null)
 		{
-			return;
+			return;   // 1.5.82: try again once the world is loaded (it used to stay empty for the whole session)
 		}
-		foreach (GameObject prefab in ZNetScene.instance.m_prefabs)
+		s_mappingBuilt = true;
+		// 1.5.82: the cultivators' own build lists first (what a player can actually plant, mods' plants included), then
+		// every other plant the game knows
+		List<GameObject> prefabs = new List<GameObject>();
+		if (ObjectDB.instance != null && ObjectDB.instance.m_items != null)
+		{
+			foreach (GameObject item in ObjectDB.instance.m_items)
+			{
+				PieceTable table = item?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_buildPieces;
+				if (table?.m_pieces != null)
+				{
+					prefabs.AddRange(table.m_pieces);
+				}
+			}
+		}
+		prefabs.AddRange(ZNetScene.instance.m_prefabs);
+		foreach (GameObject prefab in prefabs)
 		{
 			if (prefab == null)
 			{
@@ -963,6 +1023,7 @@ public class FarmController : MonoBehaviour
 			{
 				continue;
 			}
+			s_maxGrowRadius = Mathf.Max(s_maxGrowRadius, Mathf.Min(component.m_growRadius, 4f));
 			s_seedToPlant[text] = new SeedPlantInfo
 			{
 				SeedPrefabName = text,
@@ -1279,7 +1340,7 @@ public class FarmController : MonoBehaviour
 				continue;
 			}
 			num4++;
-			if (_ai != null && _ai.IsPositionBlacklisted(pickable2.transform.position))
+			if ((_ai != null && _ai.IsPositionBlacklisted(pickable2.transform.position)) || KnownUnreachable(pickable2.transform.position) || TooHighToPick(pickable2))
 			{
 				blacklisted++;
 				continue;
@@ -1321,6 +1382,38 @@ public class FarmController : MonoBehaviour
 		return true;
 	}
 
+	// 1.5.87: user report - the farmer went for Ashvine berries high up the walls of the base and stood at the wall
+	// trying to pick them instead of farming. A crop more than MaxPickHeight above the first thing under it that can be
+	// stood on (ground, floor, the top of a wall) can't be reached from anywhere a companion walks.
+	private bool TooHighToPick(Pickable pickable)
+	{
+		Vector3 pos = pickable.transform.position;
+		int n = Physics.RaycastNonAlloc(pos + Vector3.up * 0.2f, Vector3.down, _standHits, 60f, _standMask, QueryTriggerInteraction.Ignore);
+		float stand = float.NegativeInfinity;
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = _standHits[i].collider;
+			if (col == null || _standHits[i].point.y <= stand)
+			{
+				continue;
+			}
+			// the crop's own plant (a vine on the wall), other plants and creatures aren't somewhere to stand
+			if (col.GetComponentInParent<Pickable>() != null || col.GetComponentInParent<Plant>() != null || col.GetComponentInParent<Vine>() != null || col.GetComponentInParent<Character>() != null)
+			{
+				continue;
+			}
+			stand = _standHits[i].point.y;
+		}
+		if (float.IsNegativeInfinity(stand))
+		{
+			if (ZoneSystem.instance == null || !ZoneSystem.instance.GetGroundHeight(pos, out stand))
+			{
+				return false;
+			}
+		}
+		return pos.y - stand > MaxPickHeight;
+	}
+
 	private void ClaimPickable()
 	{
 		UnclaimPickable();
@@ -1346,6 +1439,7 @@ public class FarmController : MonoBehaviour
 	{
 		_stuckTimer = 0f;
 		_moveArrived = false;
+		_underCropTimer = 0f;
 	}
 
 	private bool PackNearlyFull()
@@ -1531,7 +1625,7 @@ public class FarmController : MonoBehaviour
 	private bool FindPlantPositionInZone(SeedPlantInfo info, FarmZone zone, out Vector3 result)
 	{
 		result = Vector3.zero;
-		float num = Mathf.Max(PlantSpacing, info.GrowRadius);
+		float num = CellSize(info);
 		float halfSize = zone.HalfSize;
 		float num2 = Mathf.Ceil((0f - halfSize) / num) * num;
 		float num3 = Mathf.Floor(halfSize / num) * num;
@@ -1580,18 +1674,7 @@ public class FarmController : MonoBehaviour
 					num7++;
 					continue;
 				}
-				int num12 = Physics.OverlapSphereNonAlloc(vector, info.GrowRadius * 0.5f, _spacingBuffer, _spaceMask);
-				bool flag2 = false;
-				for (int i = 0; i < num12; i++)
-				{
-					Collider collider = _spacingBuffer[i];
-					if (collider.GetComponent<Plant>() != null || collider.GetComponent<Pickable>() != null || collider.GetComponent<Piece>() != null)
-					{
-						flag2 = true;
-						break;
-					}
-				}
-				if (flag2)
+				if (TooCloseToPlants(vector, info.GrowRadius))
 				{
 					num7++;
 					continue;
@@ -1834,7 +1917,8 @@ public class FarmController : MonoBehaviour
 			if (currentTargetPosition != Vector3.zero && _ai != null)
 			{
 				_ai.BlacklistPosition(currentTargetPosition);
-				if (_phase == FarmPhase.MovingToPlantSpot)
+				// 1.5.87: a crop too - the 30 s blacklist alone had it back at the same wall over and over
+				if (_phase == FarmPhase.MovingToPlantSpot || _phase == FarmPhase.MovingToPickable)
 				{
 					MarkUnreachable(currentTargetPosition);
 				}
@@ -1924,15 +2008,10 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		// 1.4.150: the spot may have been planted since it was picked (two farmers in one zone) - look again
-		int near = Physics.OverlapSphereNonAlloc(pos, info.GrowRadius * 0.5f, _spacingBuffer, _spaceMask);
-		for (int i = 0; i < near; i++)
+		if (TooCloseToPlants(pos, info.GrowRadius))
 		{
-			Collider c = _spacingBuffer[i];
-			if (c != null && (c.GetComponent<Plant>() != null || c.GetComponent<Pickable>() != null || c.GetComponent<Piece>() != null))
-			{
-				Log($"Something was planted at {pos:F1} meanwhile — picking another spot");
-				return;
-			}
+			Log($"Something was planted at {pos:F1} meanwhile — picking another spot");
+			return;
 		}
 		RemoveItemByPrefab(inventory, info.SeedPrefabName, 1);
 		MHR_SeedRules.OnPlanted(this, info.SeedPrefabName);
@@ -2054,6 +2133,48 @@ public class FarmController : MonoBehaviour
 	// 1.5.42: the game won't grow a crop with a roof or overhang above it (Plant.HaveRoof) or with anything solid that isn't
 	// a plant inside its grow radius (Plant.HaveGrowSpace) - a seed planted under the eaves or against a wall just sits
 	// there. A player sees the red "no sun"/"no space" marker; the companion checks the same before picking the spot.
+	// 1.5.82: user report - Barley and Magecap planted too close together. The check only looked half the grow radius out,
+	// and only at the collider's own object - a plant whose collider is on a child object (most crop models) wasn't seen
+	// at all. Now, like the game: no plant, crop or piece inside this plant's grow radius, and this spot not inside a
+	// neighbour plant's own grow radius (its radius can be bigger - a field of mixed crops), each plus GrowMargin for the
+	// other's collider. Measured flat, centre to centre.
+	private bool TooCloseToPlants(Vector3 p, float growRadius)
+	{
+		float mine = Mathf.Max(growRadius, 0.1f);
+		float reach = Mathf.Max(mine, s_maxGrowRadius) + GrowMargin;
+		int n = Physics.OverlapSphereNonAlloc(p, reach, _spacingBuffer, _spaceMask);
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = _spacingBuffer[i];
+			if (col == null)
+			{
+				continue;
+			}
+			Plant plant = col.GetComponentInParent<Plant>();
+			Component other = plant;
+			if (other == null)
+			{
+				other = col.GetComponentInParent<Pickable>();
+			}
+			if (other == null)
+			{
+				other = col.GetComponentInParent<Piece>();
+			}
+			if (other == null)
+			{
+				continue;   // rocks, trees, walls: NoSunOrRoom
+			}
+			float need = ((plant != null) ? Mathf.Max(mine, plant.m_growRadius) : mine) + GrowMargin;
+			Vector3 d = other.transform.position - p;
+			d.y = 0f;
+			if (d.sqrMagnitude < (need - 0.01f) * (need - 0.01f))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private bool NoSunOrRoom(Vector3 p, float growRadius)
 	{
 		if (Physics.Raycast(p + Vector3.up * 0.1f, Vector3.up, 100f, _roofMask))
@@ -2075,7 +2196,7 @@ public class FarmController : MonoBehaviour
 	private bool FindPlantPosition(SeedPlantInfo info, out Vector3 result)
 	{
 		result = Vector3.zero;
-		float num = Mathf.Max(PlantSpacing, info.GrowRadius);
+		float num = CellSize(info);
 		float scanRadius = ScanRadius;
 		Vector3 position = base.transform.position;
 		float num2 = Mathf.Floor(position.x / num) * num;
@@ -2110,18 +2231,7 @@ public class FarmController : MonoBehaviour
 				{
 					continue;
 				}
-				int num11 = Physics.OverlapSphereNonAlloc(vector, info.GrowRadius * 0.5f, _spacingBuffer, _spaceMask);
-				bool flag = false;
-				for (int k = 0; k < num11; k++)
-				{
-					Collider collider = _spacingBuffer[k];
-					if (collider.GetComponent<Plant>() != null || collider.GetComponent<Pickable>() != null || collider.GetComponent<Piece>() != null)
-					{
-						flag = true;
-						break;
-					}
-				}
-				if (flag || NoSunOrRoom(vector, info.GrowRadius) || KnownUnreachable(vector))
+				if (TooCloseToPlants(vector, info.GrowRadius) || NoSunOrRoom(vector, info.GrowRadius) || KnownUnreachable(vector))
 				{
 					continue;
 				}
