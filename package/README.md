@@ -214,6 +214,8 @@ The names you can use are written to `OfflineCompanionsReborn.Cooking.txt`, `.Hu
 
 Updating from an older version? Your changed settings are carried over to their new names automatically the first time you load in.
 
+**Moving the companion status panel** (the health and stamina list under the minimap): open your inventory so you have a mouse cursor, press `F7`, drag the panel where you want it, and press `F7` again to save. Or set **General > MinimapPanelOffsetX / MinimapPanelOffsetY** directly (negative Y = lower, e.g. `-80` to clear a clock or weather display under the minimap). The key is **Controls > MoveUiKey**, and it also moves an open companion panel.
+
 </details>
 
 ## Installation

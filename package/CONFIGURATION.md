@@ -73,6 +73,12 @@ Stops other mods from deleting a companion outright (for example mods that clear
 **ShowMinimapPanel** — Default: On  
 Show the companion status panel under the minimap.
 
+**MinimapPanelOffsetX** — Default: 0 · Range: -4000 – 4000  
+Moves the companion status panel sideways from its spot under the minimap (UI units: negative = left, positive = right). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.
+
+**MinimapPanelOffsetY** — Default: 0 · Range: -4000 – 4000  
+Moves the companion status panel up or down from its spot under the minimap (UI units: negative = down, positive = up; each companion row is about 64). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.
+
 **ShowOverheadBars** — Default: On  
 Show health and stamina bars above each companion's head.
 
@@ -112,6 +118,9 @@ Hold this while looking at a companion to open its command wheel.
 
 **ConfigPanelKey** — Default: `F8`  
 Opens the in-game settings panel, where all of these settings can be changed.
+
+**MoveUiKey** — Default: `F7`  
+Turns reposition mode on and off: drag the companion status panel (under the minimap) or an open companion panel with the mouse, then press it again to save where it is. Open your inventory first to get a mouse cursor for the status panel. None = no key.
 
 **FarmZoneKey** — Default: `Z`  
 Pressed together with FarmZoneModifier: opens the farm zone editor.
