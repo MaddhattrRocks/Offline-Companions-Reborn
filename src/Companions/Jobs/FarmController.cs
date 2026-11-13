@@ -151,6 +151,19 @@ public class FarmController : MonoBehaviour
 
 	private int _pickableMask;
 
+	// 1.5.87: what a companion can stand on, to tell a crop up a wall from one at its feet
+	private int _standMask;
+
+	private readonly RaycastHit[] _standHits = new RaycastHit[16];
+
+	// how far up or down a companion reaches a crop from where it stands (MHR_Nav.ReachDist measures flat up to this)
+	private const float MaxPickHeight = 2.2f;
+
+	// how long it stands under a crop it can't reach before it gives that crop up
+	private const float OutOfReachGiveUp = 3f;
+
+	private float _underCropTimer;
+
 	private const float MoveTimeout = 10f;
 
 	private const float DropPickupDelay = 0.4f;
@@ -249,6 +262,7 @@ public class FarmController : MonoBehaviour
 		_roofMask = LayerMask.GetMask("Default", "static_solid", "piece");
 		_itemMask = LayerMask.GetMask("item");
 		_pickableMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+		_standMask = LayerMask.GetMask("Default", "static_solid", "terrain", "piece");
 	}
 
 	private void OnDestroy()
@@ -590,6 +604,24 @@ public class FarmController : MonoBehaviour
 			return;
 		}
 		float num = MHR_Nav.ReachDist(base.transform.position, _targetPickable.transform.position);
+		// 1.5.87: standing under it and still out of reach (up a wall): give it up after a moment, for UnreachableSpotMemory
+		Vector3 me = base.transform.position;
+		Vector3 crop = _targetPickable.transform.position;
+		if (new Vector2(me.x - crop.x, me.z - crop.z).magnitude < UseDistance && Mathf.Abs(me.y - crop.y) > MaxPickHeight)
+		{
+			_underCropTimer += dt;
+			if (_underCropTimer > OutOfReachGiveUp)
+			{
+				_underCropTimer = 0f;
+				MarkUnreachable(crop);
+				Abort($"crop out of reach ({crop.y - me.y:F1}m up)");
+				return;
+			}
+		}
+		else
+		{
+			_underCropTimer = 0f;
+		}
 		// 1.4.135: or wherever the movement says it has arrived (it measures flat, up to 1.5 m up/down)
 		if (num < UseDistance || _moveArrived)
 		{
@@ -1308,7 +1340,7 @@ public class FarmController : MonoBehaviour
 				continue;
 			}
 			num4++;
-			if (_ai != null && _ai.IsPositionBlacklisted(pickable2.transform.position))
+			if ((_ai != null && _ai.IsPositionBlacklisted(pickable2.transform.position)) || KnownUnreachable(pickable2.transform.position) || TooHighToPick(pickable2))
 			{
 				blacklisted++;
 				continue;
@@ -1350,6 +1382,38 @@ public class FarmController : MonoBehaviour
 		return true;
 	}
 
+	// 1.5.87: user report - the farmer went for Ashvine berries high up the walls of the base and stood at the wall
+	// trying to pick them instead of farming. A crop more than MaxPickHeight above the first thing under it that can be
+	// stood on (ground, floor, the top of a wall) can't be reached from anywhere a companion walks.
+	private bool TooHighToPick(Pickable pickable)
+	{
+		Vector3 pos = pickable.transform.position;
+		int n = Physics.RaycastNonAlloc(pos + Vector3.up * 0.2f, Vector3.down, _standHits, 60f, _standMask, QueryTriggerInteraction.Ignore);
+		float stand = float.NegativeInfinity;
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = _standHits[i].collider;
+			if (col == null || _standHits[i].point.y <= stand)
+			{
+				continue;
+			}
+			// the crop's own plant (a vine on the wall), other plants and creatures aren't somewhere to stand
+			if (col.GetComponentInParent<Pickable>() != null || col.GetComponentInParent<Plant>() != null || col.GetComponentInParent<Vine>() != null || col.GetComponentInParent<Character>() != null)
+			{
+				continue;
+			}
+			stand = _standHits[i].point.y;
+		}
+		if (float.IsNegativeInfinity(stand))
+		{
+			if (ZoneSystem.instance == null || !ZoneSystem.instance.GetGroundHeight(pos, out stand))
+			{
+				return false;
+			}
+		}
+		return pos.y - stand > MaxPickHeight;
+	}
+
 	private void ClaimPickable()
 	{
 		UnclaimPickable();
@@ -1375,6 +1439,7 @@ public class FarmController : MonoBehaviour
 	{
 		_stuckTimer = 0f;
 		_moveArrived = false;
+		_underCropTimer = 0f;
 	}
 
 	private bool PackNearlyFull()
@@ -1852,7 +1917,8 @@ public class FarmController : MonoBehaviour
 			if (currentTargetPosition != Vector3.zero && _ai != null)
 			{
 				_ai.BlacklistPosition(currentTargetPosition);
-				if (_phase == FarmPhase.MovingToPlantSpot)
+				// 1.5.87: a crop too - the 30 s blacklist alone had it back at the same wall over and over
+				if (_phase == FarmPhase.MovingToPlantSpot || _phase == FarmPhase.MovingToPickable)
 				{
 					MarkUnreachable(currentTargetPosition);
 				}
