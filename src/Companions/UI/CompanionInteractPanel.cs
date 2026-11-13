@@ -419,7 +419,7 @@ public class CompanionInteractPanel : MonoBehaviour
 				return;
 			}
 		}
-		if (Input.GetKeyDown(KeyCode.F7) && _root != null)
+		if (ModConfig.MoveUiKey.Value != KeyCode.None && Input.GetKeyDown(ModConfig.MoveUiKey.Value) && _root != null)
 		{
 			_dragMode = !_dragMode;
 			SetDragModeUI(_dragMode);
@@ -453,7 +453,7 @@ public class CompanionInteractPanel : MonoBehaviour
 		if (enabled)
 		{
 			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[UI] F7 â€” drag-to-reposition mode ENABLED");
-			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_reposition_on"));
+			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_reposition_on", ModConfig.MoveUiKey.Value));
 		}
 		else
 		{
