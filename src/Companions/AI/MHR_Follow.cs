@@ -28,6 +28,7 @@ namespace Companions
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
+            public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
         }
         // one per followed player, shared by all companions following them
         class T
@@ -183,6 +184,9 @@ namespace Companions
                 if (s.SitChair) Pin(ai, s);
                 return;
             }
+
+            // 1.5.89: pulling a cart: straight behind the player, no wander, no spot off to one side
+            if (CartFollow(ai, s, t, c, player, me, pp, distP, maxD, tid, now, dt)) return;
 
             // 1.5.2: on another floor and the route planner has no way there: go the way the player went
             if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
@@ -446,6 +450,70 @@ namespace Companions
         }
 
         // walk while the player walks, run while they run, a step faster to close a gap, run when far behind
+        // ---------- 1.5.89: pulling a cart ----------
+        // (user: "The companion seems to have a hard time with a cart when the player is also using a cart. Also when using
+        // a cart the companion should follow the player directly rather than using the wander or picking a location to one
+        // side.") The spots beside / ahead of the player put its cart across the player's cart (or in front of it), and the
+        // idle shuffle dragged the cart about. Now it walks the player's own path, a cart's length behind the player's cart
+        // (or 2.5 m behind the player), further back for each companion pulling a cart ahead of it, and waits there.
+        static bool CartFollow(CompanionAI ai, S s, T t, Character c, Player player, Vector3 me, Vector3 pp, float distP, float maxD, int tid, float now, float dt)
+        {
+            Vagon mine = MHR_Cart.Pulled(c);
+            Vagon theirs = MHR_Cart.Pulled(player);
+            MHR_Cart.Apart(c, mine, player, theirs);
+            if (mine == null)
+            {
+                if (s.Cart) { s.Cart = false; s.HasSpot = false; s.HasIdle = false; Dbg(c.m_name + " let go of the cart - back to its own spot"); }
+                return false;
+            }
+            if (!s.Cart)
+            {
+                s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
+                if (s.GoingToChair) ReleaseChair(s);
+                Dbg(c.m_name + " is pulling a cart - following straight behind" + (theirs != null ? " the player's cart" : " the player"));
+            }
+            s.CartDist = distP;
+            float myReach = MHR_Cart.Reach(mine, me);
+            float gap = theirs != null ? MHR_Cart.Reach(theirs, pp) + 1.5f : 2.5f;
+            gap += CartRank(ai, s, tid, now) * (myReach + 1.5f);
+
+            bool playerMoving = now - t.StillSince < 1.0f;
+            Vector3 goal = TrailPoint(t, pp, gap);
+            float dGoal = Flat(me, goal);
+            // start when it has dropped back from its place; stop when it gets closer to the player than its place (never
+            // up against the player's cart), or once there while the player stands still
+            if (!s.Moving && (distP > gap + 1f || (playerMoving && dGoal > 1.5f && distP > gap - 0.5f) || c.IsSwimming())) s.Moving = true;
+            if (s.Moving && !c.IsSwimming() && (distP < gap - 1f || (!playerMoving && (dGoal < 0.8f || distP < gap)))) s.Moving = false;
+            ai.MHR_SetCrouch(player.IsCrouching());
+            if (!s.Moving) { ai.StopMoving(); return true; }
+
+            // aim a little up the path while the player walks on, so it keeps going instead of arriving and starting again;
+            // a step slower than the player once it's at its place, so it drops back a little rather than running into them
+            Vector3 aim = playerMoving ? TrailPoint(t, pp, Mathf.Max(1f, gap - 1.5f)) : goal;
+            int pace = Pace(player, dGoal, distP, maxD);
+            if (playerMoving && distP < gap + 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+            MHR_Mover.Go(ai, dt, aim, 0.5f, true, MHR_Mover.FollowTag, pace);
+            if (MHR_Mover.GaveUp(ai))
+            {
+                // the game's own follow heads straight for the player - only when far behind, else wait for a new route
+                if (distP > maxD) ai.MHR_FollowFallback(player.gameObject, dt);
+                else ai.StopMoving();
+            }
+            return true;
+        }
+        // companions pulling a cart for the same player, nearer the player than this one
+        static int CartRank(CompanionAI ai, S me, int tid, float now)
+        {
+            int id = ai.gameObject.GetInstanceID(), rank = 0;
+            foreach (KeyValuePair<int, S> kv in s_s)
+            {
+                S o = kv.Value;
+                if (kv.Key == id || !o.Cart || o.TargetId != tid || now - o.LastUpdate > 2f) continue;
+                if (o.CartDist < me.CartDist || (Mathf.Approximately(o.CartDist, me.CartDist) && kv.Key < id)) rank++;
+            }
+            return rank;
+        }
+
         static int Pace(Player p, float dSpot, float distP, float maxD)
         {
             if (distP > maxD + 4f || dSpot > 8f) return MHR_Mover.SpeedRun;
