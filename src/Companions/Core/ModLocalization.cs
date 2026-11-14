@@ -140,6 +140,8 @@ public static class ModLocalization
 			{ "hc_hover_commands", "Commands" },
 			{ "hc_hover_hold", "Hold" },
 			{ "hc_tomb_hold_resurrect", "Hold to resurrect" },
+			{ "hc_tomb_already_alive", "{0} is already alive - its gear stays in the tombstone" },
+			{ "hc_tomb_name_taken", "Another companion is called {0} - rename one of them, then try again" },
 			{ "hc_tomb_resurrecting", "Resurrecting... {0}%" },
 			{ "hc_tier_companion", "Companion" },
 			{ "hc_tier_warrior", "Warrior" },

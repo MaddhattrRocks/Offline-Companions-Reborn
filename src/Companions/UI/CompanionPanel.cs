@@ -11,6 +11,8 @@ namespace Companions;
 
 public class CompanionPanel
 {
+	private static bool s_splitSliderLogged;
+
 	private const float UiScale = 1f;
 
 	private static readonly Vector3 PreviewPos = new Vector3(10030f, 5000f, 10000f);
@@ -774,7 +776,12 @@ public class CompanionPanel
 		}
 		else
 		{
-			CompanionsPlugin.Log.LogWarning("[CompanionPanel] m_splitSlider not available, using fallback slider.");
+			// 1.5.81: once, and only on Detailed - harmless, it was a warning 18 times a session (log 1772664b)
+			if (!s_splitSliderLogged && CompanionsPlugin.LogDetailed)
+			{
+				s_splitSliderLogged = true;
+				CompanionsPlugin.Log.LogDebug("[CompanionPanel] m_splitSlider not available, using fallback slider.");
+			}
 			slider2 = CreateFallbackSlider(parent, name);
 			gameObject = ((slider2 != null) ? slider2.gameObject : null);
 		}

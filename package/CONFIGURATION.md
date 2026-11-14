@@ -303,6 +303,9 @@ On: companions attack a creature as soon as it has noticed you or a companion. O
 **HealthRetreatPct** — Default: 0.3 · Range: 0.05 – 0.9  
 Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.
 
+**CompanionCameraShake** — Default: Off  
+Off: a companion's block, parry and weapon hits don't shake your screen (the game shakes the camera of anyone close to those effects, whoever caused them). The sound and sparks stay. Your own blocks, parries and hits you take shake as normal. On: the game's shake for companions too.
+
 **FleeHealthPct** — Default: 0.15 · Range: 0.05 – 0.6  
 Below this share of its health (0.15 = 15%) a companion runs away from the enemy.
 

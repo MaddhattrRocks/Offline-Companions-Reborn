@@ -162,9 +162,34 @@ public partial class UpkeepController
 		return new List<PileKind>(kinds.Values);
 	}
 
+	// 1.5.83: the answer is kept per piece - it was worked out again (name text, a search through the piece's parts) for
+	// every wall and floor in range on every smelting scan, several times a scan (user report: smelting stutters every few
+	// seconds). Whether a piece is a pile never changes.
+	private static readonly Dictionary<int, bool> s_isPile = new Dictionary<int, bool>();
+
 	internal static bool IsPile(Piece p)
 	{
-		if (p == null || !p.IsPlacedByPlayer() || p.m_resources == null || p.m_resources.Length != 1 || p.m_resources[0].m_resItem == null)
+		if (p == null)
+		{
+			return false;
+		}
+		int id = p.GetInstanceID();
+		if (s_isPile.TryGetValue(id, out bool known))
+		{
+			return known;
+		}
+		if (s_isPile.Count > 50000)
+		{
+			s_isPile.Clear();
+		}
+		bool pile = IsPileUncached(p);
+		s_isPile[id] = pile;
+		return pile;
+	}
+
+	private static bool IsPileUncached(Piece p)
+	{
+		if (!p.IsPlacedByPlayer() || p.m_resources == null || p.m_resources.Length != 1 || p.m_resources[0].m_resItem == null)
 		{
 			return false;
 		}

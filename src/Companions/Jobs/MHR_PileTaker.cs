@@ -51,6 +51,39 @@ internal sealed class MHR_PileTaker
 	}
 
 	// the nearest pile made of this material (top of a stack first) that can be taken down
+	// 1.5.83: the best pile of every material in one pass over the pieces (smelting looked once per ore type per furnace)
+	public static Dictionary<string, Piece> FindAll(Vector3 center, float radius, Vector3 me, Dictionary<int, float> skip)
+	{
+		Dictionary<string, Piece> best = new Dictionary<string, Piece>();
+		Dictionary<string, float> bestScore = new Dictionary<string, float>();
+		List<Piece> pieces = new List<Piece>();
+		Piece.GetAllPiecesInRadius(center, radius, pieces);
+		foreach (Piece p in pieces)
+		{
+			if (!UpkeepController.IsPile(p) || !p.m_canBeRemoved)
+			{
+				continue;
+			}
+			float until;
+			if (skip != null && skip.TryGetValue(p.GetInstanceID(), out until) && Time.time < until)
+			{
+				continue;
+			}
+			if (!PrivateArea.CheckAccess(p.transform.position, 0f, flash: false))
+			{
+				continue;
+			}
+			string item = p.m_resources[0].m_resItem.gameObject.name;
+			float score = Vector3.Distance(me, p.transform.position) - HeightAboveGround(p.transform.position) * 20f;
+			if (!bestScore.TryGetValue(item, out float had) || score < had)
+			{
+				bestScore[item] = score;
+				best[item] = p;
+			}
+		}
+		return best;
+	}
+
 	public static Piece Find(Vector3 center, float radius, string itemPrefab, Vector3 me, Dictionary<int, float> skip)
 	{
 		List<Piece> pieces = new List<Piece>();
