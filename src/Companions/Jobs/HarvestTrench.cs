@@ -57,6 +57,12 @@ public partial class HarvestController
 
 	private const float TUnderReach = 1.6f;
 
+	// W5 (John 2026-11-14): 5 s to get to a stand spot before trying the next
+	private const float TWalkTime = 5f;
+
+	// W2: it swings only once it faces within this of the spot, and gives a spot 1 s to turn
+	private const float TFaceDeg = 10f;
+
 	private int _tPhase;
 
 	private readonly List<TPt> _tPts = new List<TPt>();
@@ -113,6 +119,21 @@ public partial class HarvestController
 
 	private static int s_tSwingMask = -1;
 
+	// the last swing check: its start height above the feet, and rays that hit nothing / the ground / this vein / other
+	private float _tPredOrigin;
+
+	private readonly int[] _tPredRays = new int[4];
+
+	// W3: why each stand spot of the current point failed: hit nothing, ground elsewhere, rock first, other first,
+	// couldn't get there, would have to swim, not facing in time
+	private readonly int[] _tWhy = new int[7];
+
+	private float _tFaceSince = -1f;
+
+	private Vector3[] _tStands;
+
+	private int _tStandsFor = -1;
+
 	private void TReset()
 	{
 		_tPhase = TPhaseTrench;
@@ -140,6 +161,9 @@ public partial class HarvestController
 		_tItemProgAt = Time.time;
 		_vWalkSince = -1f;
 		_tPredAt = -1f;
+		_tFaceSince = -1f;
+		_tStandsFor = -1;
+		System.Array.Clear(_tWhy, 0, _tWhy.Length);
 	}
 
 	private static float Flat(Vector3 a, Vector3 b)
@@ -353,8 +377,12 @@ public partial class HarvestController
 		{
 			joint = Utils.FindChild(_character.GetVisual().transform, a.m_attackOriginJoint);
 		}
-		Vector3 jp = joint != null ? joint.position : base.transform.position + Vector3.up * 1f;
+		// the game's own start point (Attack.GetAttackOrigin): the origin joint on the model when the tool names one, else
+		// the character's own position (its feet); then up by the attack height and sideways by the offset
+		Vector3 jp = joint != null ? joint.position : base.transform.position;
 		Vector3 origin = jp + Vector3.up * a.m_attackHeight + rot * Vector3.right * a.m_attackOffset;
+		_tPredOrigin = origin.y - base.transform.position.y;
+		_tPredRays[0] = _tPredRays[1] = _tPredRays[2] = _tPredRays[3] = 0;
 		float half = a.m_attackAngle / 2f;
 		float range = a.m_attackRange;
 		Heightmap terrain = null;
@@ -377,6 +405,7 @@ public partial class HarvestController
 				? Physics.SphereCastAll(origin, a.m_attackRayWidth, d, Mathf.Max(0f, range - a.m_attackRayWidth), s_tSwingMask, QueryTriggerInteraction.Ignore)
 				: Physics.RaycastAll(origin, d, range, s_tSwingMask, QueryTriggerInteraction.Ignore);
 			System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
+			bool rayHit = false;
 			foreach (RaycastHit h in hits)
 			{
 				if (h.collider == null || h.collider.transform.IsChildOf(base.transform))
@@ -410,6 +439,8 @@ public partial class HarvestController
 				{
 					kind = k;
 				}
+				_tPredRays[k]++;
+				rayHit = true;
 				if (k == 1 && kind == 1 && (terrain == null || terrain == hm))
 				{
 					if (terrain == null)
@@ -426,6 +457,10 @@ public partial class HarvestController
 					}
 				}
 				break;   // the swing stops at the first thing on each ray
+			}
+			if (!rayHit)
+			{
+				_tPredRays[0]++;
 			}
 		}
 		if (kind == 1 && count > 0)
@@ -463,10 +498,10 @@ public partial class HarvestController
 			_vWalkSince = Time.time;
 			_vWalkFor = stand;
 		}
-		if (Time.time - _vWalkSince > VWalkTime)
+		if (Time.time - _vWalkSince > TWalkTime)
 		{
 			_vWalkSince = -1f;
-			if (CompanionsPlugin.LogDetailed) Log($"Couldn't get to {MHR_Mover.Fmt(stand)} in {VWalkTime:F0}s - trying another spot");
+			if (CompanionsPlugin.LogDetailed) Log($"Couldn't get to {MHR_Mover.Fmt(stand)} in {TWalkTime:F0}s - trying another spot");
 			return -1;
 		}
 		bool ok = MHR_Mover.Go(_ai, Time.deltaTime, stand, 0.4f, false, "Vein");
@@ -478,13 +513,23 @@ public partial class HarvestController
 	}
 
 	// dig the dirt at q from one of the stands: walks there, faces q and swings only when the game's swing would meet the
-	// ground first, at a point within maxErr of q and not below minY. False = no stand works (every one tried).
+	// ground first, at a point within maxErr of q and not below minY. False = no stand works (every one tried; _tWhy
+	// says why each failed).
 	private bool TDig(Vector3 q, Vector3[] stands, float minY, float maxErr, long key)
 	{
 		while (_tCand < stands.Length)
 		{
 			Vector3 st = stands[_tCand];
 			st.y = GroundAt(st);
+			// W5: standing in shallow water is fine; a spot where it would have to swim (the game's own swim depth:
+			// Character.m_swimDepth - 0.4) is skipped without walking there
+			if (MHR_Water.DepthAt(st) > Mathf.Max(0f, (_character != null ? _character.m_swimDepth : 2f) - 0.4f))
+			{
+				_tWhy[5]++;
+				if (CompanionsPlugin.LogDetailed) Log($"Stand spot {MHR_Mover.Fmt(st)} is too deep in the water to stand - trying another spot");
+				TNextCand();
+				continue;
+			}
 			int r = TGetTo(st);
 			if (r == 0)
 			{
@@ -492,7 +537,8 @@ public partial class HarvestController
 			}
 			if (r < 0)
 			{
-				_tCand++;
+				_tWhy[4]++;
+				TNextCand();
 				continue;
 			}
 			Vector3 face = q - base.transform.position;
@@ -503,23 +549,46 @@ public partial class HarvestController
 				_tPredCand = _tCand;
 				_tPredQ = q;
 				_tPredOk = false;
-				if (PredictSwing(face, out int kind, out Vector3 dp))
+				int kind = 0;
+				Vector3 dp = Vector3.zero;
+				if (PredictSwing(face, out kind, out dp))
 				{
 					_tPredOk = kind == 1 && Flat(dp, q) <= maxErr && dp.y >= minY - 0.05f && dp.y >= TWater;
-					if (!_tPredOk && CompanionsPlugin.LogDetailed) Log($"From {MHR_Mover.Fmt(base.transform.position)} a swing at {MHR_Mover.Fmt(q)} would {(kind == 1 ? $"dig at {MHR_Mover.Fmt(dp)} instead" : kind == 2 ? "hit the rock first" : kind == 3 ? "hit something else first" : "hit nothing")} - trying another spot");
+					if (!_tPredOk)
+					{
+						_tWhy[kind == 1 ? 1 : kind == 2 ? 2 : kind == 3 ? 3 : 0]++;
+						if (CompanionsPlugin.LogDetailed) Log($"From {MHR_Mover.Fmt(base.transform.position)} a swing at {MHR_Mover.Fmt(q)} would {(kind == 1 ? $"dig at {MHR_Mover.Fmt(dp)} instead" : kind == 2 ? "hit the rock first" : kind == 3 ? "hit something else first" : "hit nothing")} (swing starts {_tPredOrigin:F2} m above its feet; rays: {_tPredRays[1]} dirt, {_tPredRays[2]} rock, {_tPredRays[3]} other, {_tPredRays[0]} nothing) - trying another spot");
+					}
 				}
 				if (!_tPredOk)
 				{
-					_tCand++;
-					_vWalkSince = -1f;
+					TNextCand();
 					continue;
 				}
 			}
 			if (!_tPredOk)
 			{
-				_tCand++;
+				TNextCand();
 				continue;
 			}
+			// W2: turn to it first; the swing goes where it faces
+			if (!TFacing(q))
+			{
+				if (_tFaceSince < 0f)
+				{
+					_tFaceSince = Time.time;
+				}
+				if (Time.time - _tFaceSince > 1f)
+				{
+					_tWhy[6]++;
+					if (CompanionsPlugin.LogDetailed) Log($"Couldn't turn to face {MHR_Mover.Fmt(q)} in 1 s - trying another spot");
+					TNextCand();
+					continue;
+				}
+				VeinFace(q);
+				return true;
+			}
+			_tFaceSince = -1f;
 			_tQ = q;
 			_tQBefore = GroundAt(q);
 			_tDigMinY = Mathf.Max(minY, TWater);
@@ -527,6 +596,43 @@ public partial class HarvestController
 			return true;
 		}
 		return false;
+	}
+
+	private void TNextCand()
+	{
+		_tCand++;
+		_vWalkSince = -1f;
+		_tFaceSince = -1f;
+		_tPredAt = -1f;
+	}
+
+	// W2: facing the spot within 10 degrees (flat)
+	private bool TFacing(Vector3 q)
+	{
+		Vector3 d = q - base.transform.position;
+		d.y = 0f;
+		if (d.sqrMagnitude < 0.0001f)
+		{
+			return true;
+		}
+		Vector3 f = base.transform.forward;
+		f.y = 0f;
+		return Vector3.Angle(f, d) <= TFaceDeg;
+	}
+
+	// W3: the reasons no stand spot worked, for the log
+	private string TWhyText(int stands)
+	{
+		string[] names = { "hit nothing", "would dig somewhere else", "the rock first", "something else first", "couldn't get there", "too deep in the water", "couldn't face it in time" };
+		System.Text.StringBuilder sb = new System.Text.StringBuilder();
+		for (int i = 0; i < names.Length; i++)
+		{
+			if (_tWhy[i] > 0)
+			{
+				sb.Append(sb.Length > 0 ? ", " : "").Append(_tWhy[i]).Append(' ').Append(names[i]);
+			}
+		}
+		return $"no swing from {stands} stand spot(s): " + (sb.Length > 0 ? sb.ToString() : "none tried");
 	}
 
 	// ---------- T2/T3: the trench ----------
@@ -547,7 +653,7 @@ public partial class HarvestController
 		float g = GroundAt(c.P);
 		if (g < TWater)
 		{
-			TPointDone(c, $"down to the water (ground {g:F1}, the water level is 30)");
+			TPointDone(c, $"already at the water line (ground {g:F1}, the water level is 30) - counts as dug down");
 			return;
 		}
 		Vector3 o = c.Edge + c.Out * 1.5f;
@@ -569,25 +675,52 @@ public partial class HarvestController
 			TPointDone(c, "a no-build area");
 			return;
 		}
-		Vector3 tan = Vector3.Cross(Vector3.up, c.Out);
-		Vector3[] stands = new Vector3[4]
+		// the stand spots are worked out once per point (digging moves the ground beside it, which mustn't reshuffle them)
+		if (_tStandsFor != _tCur || _tStands == null)
 		{
-			c.P + c.Out * 1.1f,
-			c.P + c.Out * 0.6f,
-			c.P + tan * 1.1f,
-			c.P - tan * 1.1f
-		};
-		if (!TDig(c.P, stands, TWater, 1.0f, -1L))
-		{
-			TPointDone(c, "the rock is in the way of every swing at it");
+			_tStands = TrenchStands(c, g);
+			_tStandsFor = _tCur;
 		}
+		if (!TDig(c.P, _tStands, TWater, 1.0f, -1L))
+		{
+			TPointDone(c, TWhyText(_tStands.Length));
+		}
+	}
+
+	private Vector3[] TrenchStands(TPt c, float g)
+	{
+		Vector3 tan = Vector3.Cross(Vector3.up, c.Out);
+		// W10: a trench point beside it that is already 0.5 m or more lower (dug, or an existing hole) is stood in first -
+		// it jumps in and digs the side of the hole outward along the trench line, like a player
+		List<Vector3> stands = new List<Vector3>(6);
+		int n = _tPts.Count;
+		if (n > 1)
+		{
+			TPt prev = _tPts[(_tCur - 1 + n) % n], next = _tPts[(_tCur + 1) % n];
+			float gp = GroundAt(prev.P), gn = GroundAt(next.P);
+			TPt lo = gp <= gn ? prev : next, hi = gp <= gn ? next : prev;
+			float glo = Mathf.Min(gp, gn), ghi = Mathf.Max(gp, gn);
+			if (glo <= g - 0.5f)
+			{
+				stands.Add(lo.P);
+			}
+			if (hi != lo && ghi <= g - 0.5f)
+			{
+				stands.Add(hi.P);
+			}
+		}
+		stands.Add(c.P + c.Out * 1.1f);
+		stands.Add(c.P + c.Out * 0.6f);
+		stands.Add(c.P + tan * 1.1f);
+		stands.Add(c.P - tan * 1.1f);
+		return stands.ToArray();
 	}
 
 	private void TPointDone(TPt c, string why)
 	{
 		c.Done = true;
 		_tDoneCount++;
-		if (CompanionsPlugin.LogDetailed) Log($"Trench point {_tCur + 1}/{_tPts.Count} at {MHR_Mover.Fmt(c.P)}: {why}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Trench point {_tCur + 1}/{_tPts.Count} at {MHR_Mover.Fmt(c.P)}: {why}");
 		if (_tCur == _tStart && !_tStairDone && c.Surface - GroundAt(c.P) > TStairDepth)
 		{
 			_tStairDone = true;
@@ -659,7 +792,7 @@ public partial class HarvestController
 		};
 		if (!TDig(sc, stands, target, 0.8f, -1L))
 		{
-			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't cut step {_tStairStep} out of the trench (the swing won't meet the dirt there) - carrying on");
+			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't cut step {_tStairStep} out of the trench ({TWhyText(stands.Length)}) - carrying on");
 			TStairEnd();
 		}
 	}
@@ -737,7 +870,7 @@ public partial class HarvestController
 		};
 		if (!TDig(_tSpot.P, stands, floor, 1.0f, _tSpot.Key))
 		{
-			if (CompanionsPlugin.LogDetailed) Log($"Can't get a swing at the dirt at {MHR_Mover.Fmt(_tSpot.P)} under \"{_tSpot.Part.name}\" from the trench - leaving it");
+			if (CompanionsPlugin.LogDetailed) Log($"Can't get a swing at the dirt at {MHR_Mover.Fmt(_tSpot.P)} under \"{_tSpot.Part.name}\" from the trench ({TWhyText(stands.Length)}) - leaving it");
 			_vStuck.Add(_tSpot.Key);
 			_tHasSpot = false;
 		}
@@ -789,14 +922,22 @@ public partial class HarvestController
 		while (_tCand < _tMineStands.Count)
 		{
 			Vector3 st = _tMineStands[_tCand];
-			int r = _tCand == 0 ? 1 : TGetTo(new Vector3(st.x, GroundAt(st), st.z));
+			st.y = GroundAt(st);
+			if (_tCand > 0 && MHR_Water.DepthAt(st) > Mathf.Max(0f, (_character != null ? _character.m_swimDepth : 2f) - 0.4f))
+			{
+				_tWhy[5]++;
+				TNextCand();
+				continue;
+			}
+			int r = _tCand == 0 ? 1 : TGetTo(st);
 			if (r == 0)
 			{
 				return;
 			}
 			if (r < 0)
 			{
-				_tCand++;
+				_tWhy[4]++;
+				TNextCand();
 				continue;
 			}
 			Vector3 aim = SafeClosestPoint(_vPart, Eye());
@@ -805,19 +946,40 @@ public partial class HarvestController
 			{
 				_tPredAt = Time.time + 0.3f;
 				_tPredCand = _tCand;
-				_tPredOk = PredictSwing(face, out int kind, out _) && kind == 2;
-				if (!_tPredOk && CompanionsPlugin.LogDetailed) Log($"From {MHR_Mover.Fmt(base.transform.position)} the swing wouldn't meet the rock of \"{_vPart.name}\" first - trying another spot");
+				int kind = 0;
+				_tPredOk = PredictSwing(face, out kind, out _) && kind == 2;
+				if (!_tPredOk)
+				{
+					_tWhy[kind == 1 ? 1 : kind == 3 ? 3 : 0]++;
+					if (CompanionsPlugin.LogDetailed) Log($"From {MHR_Mover.Fmt(base.transform.position)} the swing wouldn't meet the rock of \"{_vPart.name}\" first ({(kind == 1 ? "dirt" : kind == 3 ? "something else" : "nothing")} first; swing starts {_tPredOrigin:F2} m above its feet; rays: {_tPredRays[1]} dirt, {_tPredRays[2]} rock, {_tPredRays[3]} other, {_tPredRays[0]} nothing) - trying another spot");
+				}
 			}
 			if (!_tPredOk)
 			{
-				_tCand++;
-				_vWalkSince = -1f;
+				TNextCand();
 				continue;
 			}
+			// W2: turn to it first
+			if (!TFacing(aim))
+			{
+				if (_tFaceSince < 0f)
+				{
+					_tFaceSince = Time.time;
+				}
+				if (Time.time - _tFaceSince > 1f)
+				{
+					_tWhy[6]++;
+					TNextCand();
+					continue;
+				}
+				VeinFace(aim);
+				return;
+			}
+			_tFaceSince = -1f;
 			VeinSwing(aim, dig: false, 0L);
 			return;
 		}
-		VeinPartFail(GiveUpWhy.OutOfReach, "no spot by it or in the trench where the swing meets the rock first");
+		VeinPartFail(GiveUpWhy.OutOfReach, TWhyText(_tMineStands.Count));
 	}
 
 	// ---------- after each swing: what did it do? ----------

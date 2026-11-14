@@ -28,6 +28,7 @@ namespace Companions
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
+            public float HoleSince = -1f;   // 1.5.97 (W9): in a hole with no full route to the player since
             public int FallCount; public float FallAt;   // 1.5.97: falls off the player's path, and when the first of them was
             public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
             public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
@@ -201,6 +202,10 @@ namespace Companions
                 return;
             }
 
+            // 1.5.97 (W9): a follower (Follow mode only, not a job) in a hole - the ground 3 m out at least 1.5 m above its
+            // feet all round - whose route to the player has been partial for 5 s goes straight to the cliff climb
+            if (FollowHole(ai, s, c, me, pp, now)) return;
+
             // 1.5.2: on another floor and the route planner has no way there: go the way the player went
             if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
 
@@ -343,6 +348,32 @@ namespace Companions
         // tight tower of short ladders and small floors, so when the companion is on another floor and the route planner has no
         // way there, it walks the player's recorded steps: same spots, same direction into each ladder (which is what makes a
         // ladder lift you), a jump where the next step is up and walking hasn't lifted it. ----------
+        static bool FollowHole(CompanionAI ai, S s, Character c, Vector3 me, Vector3 pp, float now)
+        {
+            if (MHR_Mover.ForcedClimbing(ai))
+            {
+                s.HoleSince = -1f;
+                MHR_Mover.Go(ai, Time.deltaTime, pp, 1.0f, true, MHR_Mover.FollowTag, MHR_Mover.SpeedJog);   // the climb runs inside Go
+                return true;
+            }
+            ZDO zdo = ai.GetComponent<ZNetView>()?.GetZDO();
+            bool followMode = zdo == null || zdo.GetInt(CompanionSetup.ActionModeHash) == 0;
+            if (!followMode || c.IsSwimming() || !c.IsOnGround() || pp.y < me.y + 1.5f || !MHR_Mover.RoutePartial(ai) || !MHR_Mover.InHole(me))
+            {
+                s.HoleSince = -1f;
+                return false;
+            }
+            if (s.HoleSince < 0f) { s.HoleSince = now; return false; }
+            if (now - s.HoleSince < 5f) return false;
+            s.HoleSince = -1f;
+            if (MHR_Mover.ClimbOutNow(ai, pp, MHR_Mover.FollowTag))
+            {
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is in a hole with no way to you for 5 s - climbing out");
+                return true;
+            }
+            return false;
+        }
+
         static bool WalkPlayerPath(CompanionAI ai, S s, T t, Character c, Vector3 me, Vector3 pp, float now, float dt, bool offLevel)
         {
             List<Vector3> st = t.Steps;

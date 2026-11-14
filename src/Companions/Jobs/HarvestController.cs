@@ -1136,6 +1136,14 @@ public partial class HarvestController : MonoBehaviour
 			bool flag3 = _targetType == "TreeLog" || _targetType == "TreeBase";
 			bool flag4 = _targetType == "Destructible" || _targetType == "MineRock";
 			_ = flag3 || flag4;
+			// 1.5.97 (W8): Ore job, outdoors, in a hole (ground 3 m out at least 1.5 m above its feet all round): get out of
+			// the hole first (the pit exit's 1 m steps) instead of giving up the vein; it scans again once it's out
+			if (GetMode() == 3 && _character != null && _character.IsOnGround() && !InDungeonAt(base.transform.position) && InHole())
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Can't get to \"{_target.name}\" from the hole it's in ({num5:F1}m away) - getting out of the hole first");
+				PitStart();
+				return;
+			}
 			LogWarn($"STUCK timeout ({10f}s) — giving up on \"{_target.name}\" " + $"dist={num5:F1}m vel={vector3.magnitude:F1} " + $"myPos={base.transform.position:F1} targetPos={_target.transform.position:F1} " + $"targetY={_target.transform.position.y:F2} myY={base.transform.position.y:F2} " + $"heightDiff={_target.transform.position.y - base.transform.position.y:F2}");
 			if (RockGiveUp())
 			{

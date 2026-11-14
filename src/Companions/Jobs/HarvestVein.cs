@@ -370,6 +370,7 @@ public partial class HarvestController
 				return;
 			}
 			VeinLogParts();
+			LogToolOnce(ReflectionHelper.GetRightItem(_humanoid));
 			TOutline();
 		}
 		if (_humanoid == null || _character == null || _ai == null)
@@ -688,7 +689,22 @@ public partial class HarvestController
 		}
 		if (a != null)
 		{
-			Log($"Tool \"{tool.m_shared.m_name}\": swing {a.m_attackType}, range {a.m_attackRange:F2}, height {a.m_attackHeight:F2}, angle {a.m_attackAngle:F0}, max up/down {a.m_maxYAngle:F0} deg, ray width {a.m_attackRayWidth:F2}, stamina {a.m_attackStamina:F0}, hits terrain {a.m_hitTerrain}, pickaxe rule {a.m_pickaxeSpecial}; dig: {dig}");
+			// 1.5.97 W1: where the game starts the swing (Attack.GetAttackOrigin): the origin joint, or its feet when none
+			string joint = string.IsNullOrEmpty(a.m_attackOriginJoint) ? "none - its feet" : a.m_attackOriginJoint;
+			float startY = a.m_attackHeight;
+			if (!string.IsNullOrEmpty(a.m_attackOriginJoint) && _character != null && _character.GetVisual() != null)
+			{
+				Transform j = Utils.FindChild(_character.GetVisual().transform, a.m_attackOriginJoint);
+				if (j != null)
+				{
+					startY += j.position.y - base.transform.position.y;
+				}
+				else
+				{
+					joint += " (not found on its model)";
+				}
+			}
+			Log($"Tool \"{tool.m_shared.m_name}\": swing starts at joint {joint}, {startY:F2} m above its feet; swing {a.m_attackType}, range {a.m_attackRange:F2}, height {a.m_attackHeight:F2}, angle {a.m_attackAngle:F0}, max up/down {a.m_maxYAngle:F0} deg, ray width {a.m_attackRayWidth:F2}, stamina {a.m_attackStamina:F0}, hits terrain {a.m_hitTerrain}, pickaxe rule {a.m_pickaxeSpecial}; dig: {dig}");
 		}
 	}
 }

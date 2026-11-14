@@ -478,7 +478,12 @@ namespace Companions
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
             bool keepClimb = s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
             // 1.5.97: and a climb out of a hole that Follow asked for (the player moving about up top moves the goal)
-            bool keepForced = s.ForcedClimb && !s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            // 1.5.97 (W7): any climb out of a pit (FindClimb + Climb), not only one Follow asked for - it used to be dropped
+            // halfway by every reset (log: 9 "climbing out ... try 1", none finished)
+            bool keepForced = !s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            if (!s.ClimbLadder && now < s.ClimbUntil && !keepForced && CompanionsPlugin.LogDetailed)
+                Dbg("[Move|" + s.Tag + "] climb out at " + Fmt(s.ClimbTop) + " dropped: " + (s.Tag != tag ? "a new task (" + tag + ")" : "the new goal " + Fmt(goal) + " isn't above it"));
+            bool wasForced = s.ForcedClimb;
             int cTries = s.ClimbTries; List<Vector3> cTried = keepForced ? new List<Vector3>(s.ClimbTried) : null;
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
@@ -501,7 +506,7 @@ namespace Companions
             if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; s.ClimbBottomY = cBottom; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
             s.ForcedClimb = false;
-            if (keepForced) { s.ForcedClimb = true; s.ClimbTop = cTop; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; s.ClimbTries = cTries; s.ClimbTried.AddRange(cTried); }
+            if (keepForced) { s.ForcedClimb = wasForced; s.ClimbTop = cTop; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; s.ClimbTries = cTries; s.ClimbTried.AddRange(cTried); }
             s.DescendLadder = false; s.DescendUntil = 0f;
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
             if (keepPending) { s.LadderPending = true; s.HasDetour = true; s.Detour = s.DescendLadder ? dsTop : cBase; s.DetourUntil = dUntil; }
@@ -2763,7 +2768,14 @@ namespace Companions
             // 1.5.3: a foot-sized probe, not a line - a stair-like ladder is separate rungs with gaps between (a line slipped
             // between two rungs and read as an edge: "stopping at the edge" in the middle of the user's ruin ladders)
             if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
-            if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask())) { drop = 60f; return true; }
+            if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask()))
+            {
+                // 1.5.97 (W6): the ray started inside the ground - a wall ahead (the bottom of a pit), not a drop. A ray that
+                // starts inside the terrain can't hit it, which read as "60 m down" and stopped it at every wall
+                float gy;
+                if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(p, out gy) && gy > pos.y + 1.0f) return false;
+                drop = 60f; return true;
+            }
             if (MHR_Water.DepthAt(hit.point) >= 1.0f) return false;
             drop = pos.y - hit.point.y;
             return drop > maxDrop;
