@@ -252,11 +252,8 @@ namespace Companions
                 if (h._target != null)
                 {
                     MineRock5 r = h._target.GetComponent<MineRock5>();
-                    if (r != null && r.m_hitAreas != null)
-                    {
-                        popped = true;
-                        foreach (MineRock5.HitArea a in r.m_hitAreas) if (a != null && a.m_health > 0f && a.m_collider != null && a.m_collider.gameObject.activeSelf) { popped = false; break; }
-                    }
+                    bool? left = r != null ? MHR_Vein.AnyLeft(r) : null;
+                    if (left.HasValue) popped = !left.Value;
                 }
                 if (popped) { p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = Time.time + 60f; }
                 p.OreDue = true;

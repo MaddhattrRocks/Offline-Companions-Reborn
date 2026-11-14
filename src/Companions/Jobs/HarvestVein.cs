@@ -67,6 +67,8 @@ public partial class HarvestController
 
 	private MineRock5 _vRock;
 
+	private static readonly List<MHR_Vein.Area> s_vAreas = new List<MHR_Vein.Area>();
+
 	private readonly List<VPart> _vParts = new List<VPart>();
 
 	private readonly List<VSpot> _vSpots = new List<VSpot>();
@@ -198,7 +200,7 @@ public partial class HarvestController
 		_vParts.Clear();
 		_vHealth = 0f;
 		_vDirtCount = 0;
-		if (_vRock == null || _vRock.m_hitAreas == null)
+		if (_vRock == null || !MHR_Vein.Areas(_vRock, s_vAreas, out bool haveBounds))
 		{
 			return;
 		}
@@ -207,40 +209,33 @@ public partial class HarvestController
 			s_vMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
 			s_vTerrain = LayerMask.NameToLayer("terrain");
 		}
-		try
-		{
-			_vRock.LoadHealth();
-		}
-		catch
-		{
-		}
 		Vector3 origin = _vRock.transform.position;
 		bool first = true;
 		_vLowest = float.MaxValue;
-		foreach (MineRock5.HitArea ha in _vRock.m_hitAreas)
+		foreach (MHR_Vein.Area ha in s_vAreas)
 		{
-			if (ha == null || ha.m_health <= 0f || ha.m_collider == null || !ha.m_collider.gameObject.activeSelf)
+			if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)
 			{
 				continue;
 			}
 			VPart p = default(VPart);
-			p.C = ha.m_collider;
-			p.Health = ha.m_health;
-			if (_vRock.m_haveSetupBounds)
+			p.C = ha.Collider;
+			p.Health = ha.Health;
+			if (haveBounds)
 			{
-				p.Center = origin + ha.m_bound.m_pos;
-				p.Half = ha.m_bound.m_size;
+				p.Center = origin + ha.BoundPos;
+				p.Half = ha.BoundSize;
 			}
 			else
 			{
-				p.Center = ha.m_collider.bounds.center;
-				p.Half = ha.m_collider.bounds.size * 0.5f;
+				p.Center = ha.Collider.bounds.center;
+				p.Half = ha.Collider.bounds.size * 0.5f;
 			}
 			int n = Physics.OverlapBoxNonAlloc(p.Center, p.Half, s_vBuf, Quaternion.identity, s_vMask);
 			for (int i = 0; i < n; i++)
 			{
 				Collider c = s_vBuf[i];
-				if (c == null || c == ha.m_collider || c.attachedRigidbody != null || c.isTrigger)
+				if (c == null || c == ha.Collider || c.attachedRigidbody != null || c.isTrigger)
 				{
 					continue;
 				}
