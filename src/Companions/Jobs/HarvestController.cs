@@ -1368,7 +1368,7 @@ public partial class HarvestController : MonoBehaviour
 			}
 			return;
 		}
-		// 1.5.96: the Ore job on a split vein outdoors - dig every side and below, then pop it (HarvestVein.cs)
+		// 1.5.96/1.5.97: the Ore job on a split vein outdoors - trench round it, clear under it, then pop it (HarvestVein.cs, HarvestTrench.cs)
 		if (DigMode())
 		{
 			VeinTick();

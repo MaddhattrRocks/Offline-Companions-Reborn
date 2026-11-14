@@ -80,7 +80,8 @@ public partial class HarvestController
 				return false;
 			}
 			_pitNextCheck = Time.time + 1f;
-			if (!MHR_Mover.GaveUp(_ai) || !_character.IsOnGround() || InDungeonAt(base.transform.position) || !InHole())
+			// 1.5.97: not while it works a vein - it stands in the trench it digs on purpose and has its own stair out
+			if (VeinWorking || !MHR_Mover.GaveUp(_ai) || !_character.IsOnGround() || InDungeonAt(base.transform.position) || !InHole())
 			{
 				return false;
 			}

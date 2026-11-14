@@ -46,6 +46,7 @@ namespace Companions
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
+            public bool ForcedClimb; public float NextClimbWhyLog;   // 1.5.97: a climb out of a hole asked for straight away (MHR_Follow), and the Detailed "no way up" log's throttle
             public bool Direct; public float NextHop, NoDirectUntil;
             public Door PassDoor; public float PassSide, NextDoorwayCheck;
         }
@@ -476,6 +477,9 @@ namespace Companions
             bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
             bool keepClimb = s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            // 1.5.97: and a climb out of a hole that Follow asked for (the player moving about up top moves the goal)
+            bool keepForced = s.ForcedClimb && !s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            int cTries = s.ClimbTries; List<Vector3> cTried = keepForced ? new List<Vector3>(s.ClimbTried) : null;
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             bool keepChain = s.OnChain && s.Tag == tag && (s.ChainDown ? goal.y < pos.y - 1.0f : goal.y > pos.y + 1.0f);
@@ -496,6 +500,8 @@ namespace Companions
             if (!keepPending) s.PendingChain = null;
             if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; s.ClimbBottomY = cBottom; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
+            s.ForcedClimb = false;
+            if (keepForced) { s.ForcedClimb = true; s.ClimbTop = cTop; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; s.ClimbTries = cTries; s.ClimbTried.AddRange(cTried); }
             s.DescendLadder = false; s.DescendUntil = 0f;
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
             if (keepPending) { s.LadderPending = true; s.HasDetour = true; s.Detour = s.DescendLadder ? dsTop : cBase; s.DetourUntil = dUntil; }
@@ -1163,6 +1169,59 @@ namespace Companions
         static readonly int s_terrainLayer = LayerMask.NameToLayer("terrain");
 
         public static bool Climbing(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time < s.ClimbUntil && Time.time - s.LastGo < 0.5f; }
+
+        // 1.5.97: in a hole - the ground 3 m out is at least 1.5 m above its feet all round (8 directions; the Ore job's
+        // own pit test)
+        public static bool InHole(Vector3 p)
+        {
+            for (int k = 0; k < 8; k++)
+            {
+                Vector3 d = Quaternion.Euler(0f, k * 45f, 0f) * Vector3.forward;
+                Vector3 q = p + d * 3f;
+                float g = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(q) : q.y;
+                if (g < p.y + 1.5f) return false;
+            }
+            return true;
+        }
+
+        // 1.5.97: climbing out of a hole that MHR_Follow asked for (it fell off the player's path twice in a hole)
+        public static bool ForcedClimbing(CompanionAI ai) { S s = Peek(ai); return s != null && s.ForcedClimb && Time.time < s.ClimbUntil; }
+
+        // 1.5.97 (plan T8): straight to the cliff climb (FindClimb + Climb, the same as a stuck route's) up toward goal,
+        // without waiting for the route to give up. True = a way up was found and the climb is on.
+        public static bool ClimbOutNow(CompanionAI ai, Vector3 goal, string tag)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null || c.IsSwimming() || !c.IsOnGround()) return false;
+            float now = Time.time;
+            Vector3 pos = ai.transform.position;
+            if (s.Tag != tag || Vector3.Distance(goal, s.Goal) > 4f || now - s.LastGo > 2f) Reset(s, goal, pos, now, tag);
+            if (s.ClimbTries >= ClimbMaxTries) return false;
+            float needY = Mathf.Min(goal.y, pos.y + ClimbMaxRise);
+            if (needY < pos.y + 1.5f) return false;
+            Vector3 top; float steep;
+            System.Text.StringBuilder why = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
+            if (!FindClimb(s, pos, needY, out top, out steep, why))
+            {
+                LogNoClimb(s, tag, pos, needY, why, now);
+                return false;
+            }
+            s.ClimbTries++; s.ClimbTried.Add(top);
+            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+            s.StepUntil = 0f; s.HasDetour = false; s.ClimbLadder = false; s.ForcedClimb = true; s.LastGo = now;
+            s.GaveUp = false; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] in a hole " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            return true;
+        }
+
+        // 1.5.97: Detailed: why FindClimb found no way up, each direction's steepest step and where it stopped (every 10 s at most)
+        static void LogNoClimb(S s, string tag, Vector3 pos, float needY, System.Text.StringBuilder why, float now)
+        {
+            if (why == null || !CompanionsPlugin.LogDetailed || now < s.NextClimbWhyLog) return;
+            s.NextClimbWhyLog = now + 10f;
+            Dbg("[Move|" + tag + "] no way to climb out at " + Fmt(pos) + " up to " + needY.ToString("F1") + ":" + why.ToString());
+        }
 
         // 1.5.2: a built ladder (Valheim's wooden ladders are steep stairs a player hops up - user: "The player kind of hops
         // up them"). The route planner can't use them and climb-out won't try a built rise over 1 m, so a companion stood at
@@ -2060,17 +2119,18 @@ namespace Companions
             if (needY < pos.y + 1.5f) return false;
             needY = Mathf.Min(needY, pos.y + ClimbMaxRise);
             Vector3 top; float steep;
-            if (!FindClimb(s, pos, needY, out top, out steep)) return false;
+            System.Text.StringBuilder whyNot = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
+            if (!FindClimb(s, pos, needY, out top, out steep, whyNot)) { LogNoClimb(s, tag, pos, needY, whyNot, now); return false; }
             s.ClimbTries++; s.ClimbTried.Add(top);
             s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
-            s.StepUntil = 0f; s.HasDetour = false;
+            s.StepUntil = 0f; s.HasDetour = false; s.ForcedClimb = false;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
             return true;
         }
 
         // Ground heights along 16 directions, a meter at a time out to 16 m: the way up whose steepest one-meter step is
         // smallest (shorter ways win ties), skipping ways already tried and anything through deep water.
-        static bool FindClimb(S s, Vector3 pos, float needY, out Vector3 top, out float steep)
+        static bool FindClimb(S s, Vector3 pos, float needY, out Vector3 top, out float steep, System.Text.StringBuilder why = null)
         {
             top = Vector3.zero; steep = 0f;
             float bestScore = float.MaxValue;
@@ -2079,16 +2139,19 @@ namespace Companions
             {
                 Vector3 dir = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
                 float prevY = pos.y, maxStep = 0f;
+                string stop = "nothing up to " + needY.ToString("F1") + " within 16 m";   // 1.5.97: for the Detailed log
+                int at = 16;
                 for (int i = 1; i <= 16; i++)
                 {
                     Vector3 p = pos + dir * i;
                     RaycastHit hit;
-                    if (!Physics.Raycast(new Vector3(p.x, needY + 4f, p.z), Vector3.down, out hit, needY + 4f - (pos.y - 3f), mask)) break;
-                    if (MHR_Water.DepthAt(hit.point) >= 1.0f) break;
+                    at = i;
+                    if (!Physics.Raycast(new Vector3(p.x, needY + 4f, p.z), Vector3.down, out hit, needY + 4f - (pos.y - 3f), mask)) { stop = "no ground"; break; }
+                    if (MHR_Water.DepthAt(hit.point) >= 1.0f) { stop = "deep water"; break; }
                     float rise = hit.point.y - prevY;
-                    if (rise < -1.5f) break;   // dips back down: not a way up
-                    if (rise > 1.0f && hit.collider.gameObject.layer != s_terrainLayer) break;   // a built wall or a roof, not a slope
-                    if (rise > 6f) break;
+                    if (rise < -1.5f) { stop = "dips " + (-rise).ToString("F1") + "m"; break; }   // dips back down: not a way up
+                    if (rise > 1.0f && hit.collider.gameObject.layer != s_terrainLayer) { stop = "a built wall " + rise.ToString("F1") + "m"; break; }   // a built wall or a roof, not a slope
+                    if (rise > 6f) { stop = "a " + rise.ToString("F1") + "m step"; break; }
                     if (rise > maxStep) maxStep = rise;
                     prevY = hit.point.y;
                     if (hit.point.y >= needY - 0.5f)
@@ -2098,9 +2161,11 @@ namespace Companions
                         foreach (Vector3 old in s.ClimbTried) if (Flat(old, t) < 3f) { tried = true; break; }
                         float score = maxStep * 3f + i * 0.1f;
                         if (!tried && score < bestScore) { bestScore = score; top = t; steep = maxStep; }
+                        stop = tried ? "tried already" : "a way up";
                         break;
                     }
                 }
+                if (why != null) why.Append("\n    " + (k * 22.5f).ToString("F0") + " deg: " + stop + " at " + at + " m, steepest step " + maxStep.ToString("F1") + "m");
             }
             return bestScore < float.MaxValue;
         }

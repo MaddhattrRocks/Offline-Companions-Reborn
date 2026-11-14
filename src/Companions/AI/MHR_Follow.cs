@@ -28,6 +28,7 @@ namespace Companions
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
+            public int FallCount; public float FallAt;   // 1.5.97: falls off the player's path, and when the first of them was
             public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
             public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
             public Vagon Loose; public string LooseWhy; public float LooseUntil, LooseSteadySince = -1f, CartLog;   // 1.5.92: came loose, waiting to see if it's safe to take again
@@ -356,6 +357,7 @@ namespace Companions
             if (!s.OnPath)
             {
                 if (now < s.NoPathUntil) return false;
+                if (MHR_Mover.ForcedClimbing(ai)) return false;   // 1.5.97: climbing out of the hole it fell into
                 // only when the planner can't do it (a full route - stairs, a ramp - is better than retracing)
                 if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
                 if (MHR_Mover.OnLadderChain(ai)) return false;   // 1.5.3: already climbing a planned chain of ladders
@@ -399,7 +401,25 @@ namespace Companions
             for (int j = Mathf.Min(s.PathIdx + 10, st.Count - 1); j > s.PathIdx; j--)
                 if (Flat(me, st[j]) < 0.6f && Mathf.Abs(me.y - st[j].y) < 0.8f) { s.PathIdx = j; s.PathProgressAt = now; break; }
             Vector3 next = st[s.PathIdx];
-            if (me.y < next.y - 2.5f && c.IsOnGround()) { EndPath(s, "fell off your path"); s.NoPathUntil = now + 3f; return false; }
+            if (me.y < next.y - 2.5f && c.IsOnGround())
+            {
+                EndPath(s, "fell off your path");
+                s.NoPathUntil = now + 3f;
+                // 1.5.97 (plan T8): the second fall within 30 s, in a hole (the ground 3 m out at least 1.5 m above its feet all
+                // round): straight to the cliff climb rather than your path again
+                if (s.FallCount == 0 || now - s.FallAt > 30f) { s.FallCount = 0; s.FallAt = now; }
+                s.FallCount++;
+                if (s.FallCount >= 2 && MHR_Mover.InHole(me))
+                {
+                    s.FallCount = 0;
+                    if (MHR_Mover.ClimbOutNow(ai, pp, MHR_Mover.FollowTag))
+                    {
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " fell off your path twice in a hole - climbing out instead");
+                    }
+                    else if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " fell off your path twice in a hole and found no way to climb out - trying the usual ways");
+                }
+                return false;
+            }
             if (now - s.PathProgressAt > 6f) { EndPath(s, "stuck on your path at " + next.ToString("F1")); s.NoPathUntil = now + 15f; return false; }
             Vector3 dir = next - me; dir.y = 0f;
             if (dir.sqrMagnitude < 0.04f && s.PathIdx < st.Count - 1) { dir = st[s.PathIdx + 1] - next; dir.y = 0f; }

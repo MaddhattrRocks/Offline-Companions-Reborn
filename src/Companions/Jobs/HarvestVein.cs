@@ -3,22 +3,14 @@ using UnityEngine;
 
 namespace Companions;
 
-// 1.5.96: the Ore job on a split vein outdoors (MineRock5: copper, silver, flametal...), mined like a player (John's
-// approved list, 2026-11-14):
+// 1.5.97: the Ore job on a split vein outdoors (MineRock5: copper, silver, flametal...), mined like a player (John's
+// approved plan T1-T8, 2026-11-14, reviews/1.5.97-vein-trench-plan.md):
 //  - The game pops a vein when a part breaks (MineRock5.CheckSupport): every part whose box (its collider's bounds, set
 //    once) touches no ground, no solid thing that can't be broken, nothing breakable lower than the vein's origin and no
-//    held-up neighbour part, breaks at once and drops its ore. This copies that test (OverlapBox, same layers) to see which
-//    parts the dirt still holds.
-//  - Dig: the dirt inside every held part's box is dug away (the highest dirt first), working from one of 4 sides (N, E,
-//    S, W of the whole vein), standing 1.5 m out from the vein (stepping in toward the dirt, up to 0.3 m from the vein,
-//    when the dirt is out of reach from there). A spot the dig can't lower by 5 cm in 3 tries is left (the game's own
-//    limit); with its feet below the bottom of the vein it stops digging.
-//  - Progress: ground lowered 5 cm or more, health taken off a part, a part freed of dirt, or a part broken. A side
-//    fails after 12 swings or 60 s without progress (whichever first), or 10 s without getting to it, or straight away
-//    inside someone else's ward / a no-build area. It then works the nearest side that hasn't failed.
-//  - Break: when no side has dirt left to dig, it breaks the parts that still hold the rest (nearest first), else the
-//    free part nearest to it - the rest then pops. A part it can't make progress on (12 swings / 60 s) is left; when
-//    every part left is like that it gives up the vein and says why.
+//    held-up neighbour part, breaks at once and drops its ore. VeinScan copies that test (OverlapBox, same layers).
+//  - The trench work (outline of the rock you can see, trench round it to each spot's own base, stair out, undercut, then
+//    mining held parts first) is in HarvestTrench.cs. This file keeps the parts scan, the dirt spots, the swing and the
+//    dig rules the game asks for (AllowDig).
 public partial class HarvestController
 {
 	private struct VPart
@@ -48,7 +40,9 @@ public partial class HarvestController
 
 		public long Key;
 
-		public int Side;
+		public Collider Part;
+
+		public Vector3 PartCenter;
 	}
 
 	private const float VStandOut = 1.5f;
@@ -81,15 +75,9 @@ public partial class HarvestController
 
 	private int _vDirtCount;
 
-	private readonly bool[] _vSideFailed = new bool[4];
-
-	private readonly GiveUpWhy[] _vSideWhy = new GiveUpWhy[4];
-
 	private int _vSide = -1;
 
 	private int _vFirstSide = -1;
-
-	private bool _vBreak;
 
 	private Collider _vPart;
 
@@ -100,8 +88,6 @@ public partial class HarvestController
 	private readonly HashSet<long> _vStuck = new HashSet<long>();
 
 	private float _vProgAt;
-
-	private int _vNoProg;
 
 	private float _vWalkSince = -1f;
 
@@ -130,8 +116,6 @@ public partial class HarvestController
 	private float _vDigGround;
 
 	private float _vDigAimDeg;
-
-	private int _vDigLowered;
 
 	private static readonly Collider[] s_vBuf = new Collider[64];
 
@@ -164,25 +148,18 @@ public partial class HarvestController
 	{
 		_vFor = target;
 		_vRock = target != null ? target.GetComponent<MineRock5>() : null;
-		for (int i = 0; i < 4; i++)
-		{
-			_vSideFailed[i] = false;
-		}
 		_vSide = -1;
 		_vFirstSide = -1;
-		_vBreak = false;
 		_vPart = null;
 		_vPartLeft.Clear();
 		_vSpotTried.Clear();
 		_vStuck.Clear();
 		_vProgAt = Time.time;
-		_vNoProg = 0;
 		_vWalkSince = -1f;
 		_vSwung = false;
 		_vDigPending = false;
-		_vDigLowered = 0;
 		_vSpotsAt = -1f;
-		_vPickAt = -1f;
+		TReset();
 		VeinScan();
 		_vLastHealth = _vHealth;
 		_vLastAlive = _vParts.Count;
@@ -280,8 +257,8 @@ public partial class HarvestController
 		}
 	}
 
-	// the dirt to dig: the ground inside each dirt-held part's box (a 0.5 m grid over its footprint) that is above the
-	// box's bottom, skipping spots that wouldn't go lower
+	// the dirt that holds parts: the ground inside each dirt-held part's box (a 0.5 m grid over its footprint) that is
+	// above the box's bottom, skipping spots that wouldn't go lower
 	private float _vSpotsAt = -1f;
 
 	private float _vScanAt = -1f;
@@ -295,10 +272,6 @@ public partial class HarvestController
 		}
 		_vSpotsAt = Time.time + 0.5f;
 		_vSpots.Clear();
-		if (base.transform.position.y < _vLowest - 0.1f)
-		{
-			return;   // its feet are below the vein: no more digging
-		}
 		HashSet<long> seen = new HashSet<long>();
 		foreach (VPart p in _vParts)
 		{
@@ -330,7 +303,8 @@ public partial class HarvestController
 					{
 						P = q,
 						Key = key,
-						Side = SideOf(q)
+						Part = p.C,
+						PartCenter = p.Center
 					});
 				}
 			}
@@ -344,7 +318,7 @@ public partial class HarvestController
 		return (a << 32) ^ (b & 0xFFFFFFFFL);
 	}
 
-	// 0 N (+z), 1 E (+x), 2 S (-z), 3 W (-x) of the whole vein
+	// 0 N (+z), 1 E (+x), 2 S (-z), 3 W (-x) of the whole vein (the stone toss and the ore spot go by it)
 	private int SideOf(Vector3 p)
 	{
 		Vector3 d = p - _vUnion.center;
@@ -372,39 +346,6 @@ public partial class HarvestController
 		}
 	}
 
-	private static readonly string[] s_sideName = new string[4] { "north", "east", "south", "west" };
-
-	// where it stands on side s to dig at q: 1.5 m out from the vein, level with q along the side; if q is out of reach
-	// from there, stepped in toward it (up to 0.3 m from the vein)
-	private bool StandFor(int s, Vector3 q, float reach, out Vector3 stand)
-	{
-		Vector3 n = SideDir(s);
-		Vector3 edge = _vUnion.center + Vector3.Scale(n, _vUnion.extents);
-		Vector3 baseP;
-		if (s == 0 || s == 2)
-		{
-			baseP = new Vector3(Mathf.Clamp(q.x, _vUnion.min.x, _vUnion.max.x), 0f, edge.z);
-		}
-		else
-		{
-			baseP = new Vector3(edge.x, 0f, Mathf.Clamp(q.z, _vUnion.min.z, _vUnion.max.z));
-		}
-		float eyeH = Mathf.Max(1.2f, Eye().y - base.transform.position.y);
-		for (float out1 = VStandOut; out1 >= 0.3f - 0.001f; out1 -= 0.4f)
-		{
-			Vector3 p = baseP + n * out1;
-			p.y = GroundAt(p);
-			if (Vector3.Distance(p + Vector3.up * eyeH, q) <= reach)
-			{
-				stand = p;
-				return true;
-			}
-		}
-		stand = baseP + n * VStandOut;
-		stand.y = GroundAt(stand);
-		return false;
-	}
-
 	private float Reach()
 	{
 		return GetAttackRange();
@@ -429,6 +370,7 @@ public partial class HarvestController
 				return;
 			}
 			VeinLogParts();
+			TOutline();
 		}
 		if (_humanoid == null || _character == null || _ai == null)
 		{
@@ -439,9 +381,8 @@ public partial class HarvestController
 		if (_vSwung && !busy && Time.time - _vSwungAt > 0.35f)
 		{
 			_vSwung = false;
-			VeinJudge();
+			TJudge();
 			_vSpotsAt = -1f;
-			_vPickAt = -1f;
 			if (_vFor == null || _target == null)
 			{
 				return;
@@ -457,217 +398,25 @@ public partial class HarvestController
 		{
 			return;   // all broken: the next frame sees the target gone and collects the ore
 		}
-		// ---- dig phase ----
-		if (!_vBreak)
+		switch (_tPhase)
 		{
-			VeinSpots();
-			VSpot spot;
-			Vector3 stand;
-			if (VeinPickSpot(out spot, out stand))
-			{
-				if (!VeinGetTo(stand))
-				{
-					return;
-				}
-				if (!PrivateArea.CheckAccess(spot.P, 0f, flash: false))
-				{
-					VeinSideFail(GiveUpWhy.Ward, "someone else's ward covers " + MHR_Mover.Fmt(spot.P));
-					return;
-				}
-				if (Location.IsInsideNoBuildLocation(spot.P))
-				{
-					VeinSideFail(GiveUpWhy.CantDig, "no-build area at " + MHR_Mover.Fmt(spot.P));
-					return;
-				}
-				VeinSwing(spot.P, dig: true, spot.Key);
-				return;
-			}
-			_vBreak = true;
-			_vPart = null;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Dug out \"{_target.name}\" as far as it can ({_vDirtCount} of {_vParts.Count} parts still touch dirt) - breaking it out");
+		case TPhaseTrench:
+			TrenchTick();
+			break;
+		case TPhaseStair:
+			StairTick();
+			break;
+		case TPhaseUnder:
+			UnderTick();
+			break;
+		default:
+			MineTick();
+			break;
 		}
-		// ---- break phase ----
-		VeinSpots();
-		if (_vSpots.Count > 0 && VeinPickSpot(out VSpot again, out _))
-		{
-			_ = again;
-			_vBreak = false;   // a break changed the vein: there's dirt it can get at again
-			return;
-		}
-		if (_vPart == null || !_vPart.gameObject.activeSelf || _vPartLeft.ContainsKey(_vPart))
-		{
-			_vPart = VeinPickPart();
-			_vProgAt = Time.time;
-			_vNoProg = 0;
-			_vWalkSince = -1f;
-			if (_vPart == null)
-			{
-				VeinGiveUp();
-				return;
-			}
-		}
-		Vector3 eye = Eye();
-		Vector3 aim = SafeClosestPoint(_vPart, eye);
-		if (Vector3.Distance(eye, aim) > Reach() * 0.9f)
-		{
-			Vector3 to = aim - base.transform.position;
-			to.y = 0f;
-			Vector3 standP = aim - (to.sqrMagnitude > 0.01f ? to.normalized : Vector3.forward) * (Reach() * 0.6f);
-			standP.y = GroundAt(standP);
-			if (!VeinGetTo(standP, partWalk: true))
-			{
-				return;
-			}
-		}
-		VeinSwing(aim, dig: false, 0L);
 	}
 
-	// the dirt to dig next: on the side it's working, the highest spot it can reach (not behind the rock if it has a
-	// choice); else the nearest side that hasn't failed and has dirt
-	private float _vPickAt = -1f;
-
-	private bool _vPickOk;
-
-	private VSpot _vPickSpot;
-
-	private Vector3 _vPickStand;
-
-	private int _vPickSide = -1;
-
-	private bool VeinPickSpot(out VSpot spot, out Vector3 stand)
-	{
-		// the choice holds for half a second (it checks reach from each spot's standing place) unless a swing landed
-		if (Time.time < _vPickAt && _vPickSide == _vSide && (_vSide < 0 || !_vSideFailed[_vSide]))
-		{
-			spot = _vPickSpot;
-			stand = _vPickStand;
-			return _vPickOk;
-		}
-		_vPickOk = VeinPickSpotNow(out spot, out stand);
-		_vPickSpot = spot;
-		_vPickStand = stand;
-		_vPickSide = _vSide;
-		_vPickAt = Time.time + 0.5f;
-		return _vPickOk;
-	}
-
-	private bool VeinPickSpotNow(out VSpot spot, out Vector3 stand)
-	{
-		spot = default(VSpot);
-		stand = Vector3.zero;
-		float reach = Reach();
-		for (int round = 0; round < 2; round++)
-		{
-			if (_vSide < 0 || _vSideFailed[_vSide] || !SideHasWork(_vSide, reach))
-			{
-				int next = NearestSide(reach);
-				if (next < 0)
-				{
-					return false;
-				}
-				if (_vSide != next && CompanionsPlugin.LogNormal)
-				{
-					LogInfo("Digging out \"" + _target.name + "\" from the " + s_sideName[next] + " side");
-				}
-				_vSide = next;
-				if (_vFirstSide < 0)
-				{
-					_vFirstSide = next;
-				}
-				_vProgAt = Time.time;
-				_vNoProg = 0;
-				_vWalkSince = -1f;
-			}
-			float bestScore = float.MinValue;
-			bool found = false;
-			Vector3 eye = Eye();
-			foreach (VSpot s in _vSpots)
-			{
-				if (s.Side != _vSide)
-				{
-					continue;
-				}
-				if (!StandFor(_vSide, s.P, reach, out Vector3 st))
-				{
-					continue;
-				}
-				float score = s.P.y * 10f - Vector3.Distance(base.transform.position, st);
-				if (Blocked(st + Vector3.up * Mathf.Max(1.2f, eye.y - base.transform.position.y), s.P))
-				{
-					score -= 1000f;
-				}
-				if (score > bestScore)
-				{
-					bestScore = score;
-					spot = s;
-					stand = st;
-					found = true;
-				}
-			}
-			if (found)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private bool SideHasWork(int side, float reach)
-	{
-		foreach (VSpot s in _vSpots)
-		{
-			if (s.Side == side && StandFor(side, s.P, reach, out _))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private int NearestSide(float reach)
-	{
-		int best = -1;
-		float bd = float.MaxValue;
-		for (int side = 0; side < 4; side++)
-		{
-			if (_vSideFailed[side] || !SideHasWork(side, reach))
-			{
-				continue;
-			}
-			Vector3 p = _vUnion.center + Vector3.Scale(SideDir(side), _vUnion.extents + Vector3.one * VStandOut);
-			p.y = base.transform.position.y;
-			float d = Vector3.Distance(base.transform.position, p);
-			if (d < bd)
-			{
-				bd = d;
-				best = side;
-			}
-		}
-		return best;
-	}
-
-	// the rock is between it and the dirt there (the swing would hit the rock first)
-	private bool Blocked(Vector3 from, Vector3 to)
-	{
-		Vector3 d = to - from;
-		float len = d.magnitude;
-		if (len < 0.2f || _target == null)
-		{
-			return false;
-		}
-		var hits = MHR_Phys.Ray(ref MHR_Phys.HarvestController471, from, d / len, len - 0.15f, -1, QueryTriggerInteraction.Ignore);
-		for (int i = 0; i < hits.Length; i++)
-		{
-			if (hits[i].collider != null && hits[i].collider.transform.IsChildOf(_target.transform))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	// break phase: a part that still holds the rest (touching dirt, rock or a building), nearest first; else the free
-	// part nearest to it
+	// mining: a part that still holds the rest (touching dirt, rock or a building), nearest first; else the free part
+	// nearest to it
 	private Collider VeinPickPart()
 	{
 		Collider best = null;
@@ -693,46 +442,6 @@ public partial class HarvestController
 			Log($"Breaking out part \"{best.name}\" ({(bestHolds ? "it holds the rest" : "free - the rest pops with it")}, {bd:F1}m away)");
 		}
 		return best;
-	}
-
-	// walk to a spot (no edge check: it may have to step down into the hole it's digging). False while still walking.
-	private bool VeinGetTo(Vector3 stand, bool partWalk = false)
-	{
-		Vector3 flat = stand - base.transform.position;
-		flat.y = 0f;
-		if (flat.magnitude <= 0.6f)
-		{
-			_ai.StopMoving();
-			_vWalkSince = -1f;
-			return true;
-		}
-		if (_vWalkSince < 0f || Vector3.Distance(_vWalkFor, stand) > 3f)
-		{
-			if (_vWalkSince < 0f)
-			{
-				_vWalkSince = Time.time;
-			}
-			_vWalkFor = stand;
-		}
-		if (Time.time - _vWalkSince > VWalkTime && flat.magnitude > 1.5f)
-		{
-			_vWalkSince = -1f;
-			if (partWalk)
-			{
-				VeinPartFail(GiveUpWhy.OutOfReach, $"couldn't get to it in {VWalkTime:F0}s");
-			}
-			else
-			{
-				VeinSideFail(GiveUpWhy.OutOfReach, $"couldn't get to {MHR_Mover.Fmt(stand)} in {VWalkTime:F0}s");
-			}
-			return false;
-		}
-		bool ok = MHR_Mover.Go(_ai, Time.deltaTime, stand, 0.4f, false, "Vein");
-		if ((!ok || (_character.GetVelocity().magnitude < 0.3f)) && flat.magnitude < 3f && !MHR_Mover.Climbing(_ai))
-		{
-			_ai.MoveTowards(flat.normalized, run: false);
-		}
-		return false;
 	}
 
 	private void VeinFace(Vector3 aim)
@@ -837,90 +546,6 @@ public partial class HarvestController
 		return started;
 	}
 
-	// after a swing: did it take dirt away, take health off a part, free or break a part?
-	private void VeinJudge()
-	{
-		VeinScan();
-		bool prog = false;
-		string what = "";
-		if (_vParts.Count < _vLastAlive)
-		{
-			prog = true;
-			what = (_vLastAlive - _vParts.Count) + " part(s) broke";
-			_vPart = null;
-		}
-		else if (_vHealth < _vLastHealth - 0.01f)
-		{
-			prog = true;
-			what = "hit the rock";
-		}
-		if (_vDirtCount < _vLastDirt)
-		{
-			prog = true;
-			what += (what.Length > 0 ? ", " : "") + (_vLastDirt - _vDirtCount) + " part(s) freed of dirt";
-		}
-		float lowered = 0f;
-		if (_vDigPending)
-		{
-			_vDigPending = false;
-			float now = GroundAt(_vDigAt);
-			lowered = _vDigGround - now;
-			if (CompanionsPlugin.LogDetailed) Log($"Dig at {MHR_Mover.Fmt(_vDigAt)}: ground {_vDigGround:F2} -> {now:F2} ({lowered * 100f:F0} cm), aimed {_vDigAimDeg:F0} deg");
-			if (lowered >= VDigMin)
-			{
-				prog = true;
-				_vDigLowered++;
-				what += (what.Length > 0 ? ", " : "") + "dug " + (lowered * 100f).ToString("F0") + " cm";
-			}
-		}
-		if (_vSwingDig && lowered < VDigMin)
-		{
-			_vSpotTried.TryGetValue(_vSwingKey, out int tries);
-			tries++;
-			_vSpotTried[_vSwingKey] = tries;
-			if (tries >= VSpotTries)
-			{
-				_vStuck.Add(_vSwingKey);
-				if (CompanionsPlugin.LogDetailed) Log($"The dirt at {MHR_Mover.Fmt(_vSwingAim)} won't go lower ({VSpotTries} tries) - leaving that spot");
-			}
-		}
-		if (prog)
-		{
-			_vNoProg = 0;
-			_vProgAt = Time.time;
-			if (CompanionsPlugin.LogDetailed) Log("Vein progress: " + what);
-			return;
-		}
-		_vNoProg++;
-		if (_vNoProg >= VNoProgSwings || Time.time - _vProgAt >= VNoProgTime)
-		{
-			string detail = $"{_vNoProg} swings / {Time.time - _vProgAt:F0}s without progress";
-			if (_vBreak)
-			{
-				VeinPartFail(_vSwingDig || _vDigLowered > 0 ? GiveUpWhy.Buried : GiveUpWhy.OutOfReach, detail);
-			}
-			else
-			{
-				VeinSideFail(GiveUpWhy.Buried, detail);
-			}
-		}
-	}
-
-	private void VeinSideFail(GiveUpWhy why, string detail)
-	{
-		if (_vSide < 0)
-		{
-			return;
-		}
-		_vSideFailed[_vSide] = true;
-		_vSideWhy[_vSide] = why;
-		if (CompanionsPlugin.LogNormal) LogInfo("Can't get further on the " + s_sideName[_vSide] + " side of \"" + _target.name + "\" (" + detail + ") - trying another side");
-		_vSide = -1;
-		_vNoProg = 0;
-		_vProgAt = Time.time;
-		_vWalkSince = -1f;
-	}
-
 	private void VeinPartFail(GiveUpWhy why, string detail)
 	{
 		if (_vPart != null)
@@ -929,43 +554,44 @@ public partial class HarvestController
 			if (CompanionsPlugin.LogNormal) LogInfo("Leaving part \"" + _vPart.name + "\" of \"" + _target.name + "\" (" + detail + ")");
 		}
 		_vPart = null;
-		_vNoProg = 0;
-		_vProgAt = Time.time;
+		_tItemNoProg = 0;
+		_tItemProgAt = Time.time;
 		_vWalkSince = -1f;
+		_tCand = 0;
 	}
 
-	// every part left is one it can't get at: say why and move on
+	// nothing left it can dig or break from the trench: say why and move on
 	private void VeinGiveUp()
 	{
 		GiveUpWhy why = GiveUpWhy.Buried;
-		bool anyWard = false, allReach = true, anyCantDig = false;
-		for (int i = 0; i < 4; i++)
-		{
-			if (!_vSideFailed[i])
-			{
-				continue;
-			}
-			anyWard |= _vSideWhy[i] == GiveUpWhy.Ward;
-			anyCantDig |= _vSideWhy[i] == GiveUpWhy.CantDig;
-			allReach &= _vSideWhy[i] == GiveUpWhy.OutOfReach;
-		}
+		bool allReach = _vPartLeft.Count > 0;
 		foreach (GiveUpWhy w in _vPartLeft.Values)
 		{
 			allReach &= w == GiveUpWhy.OutOfReach;
 		}
-		if (anyWard)
+		// a part still held by dirt it can't dig (below the water, or at the game's 8 m limit): buried too deep
+		bool heldLeft = false;
+		foreach (VPart p in _vParts)
+		{
+			if (p.Dirt)
+			{
+				heldLeft = true;
+				break;
+			}
+		}
+		if (_tAnyWard)
 		{
 			why = GiveUpWhy.Ward;
 		}
-		else if (anyCantDig)
+		else if (_tAnyCantDig)
 		{
 			why = GiveUpWhy.CantDig;
 		}
-		else if (allReach && _vPartLeft.Count > 0)
+		else if (!heldLeft && allReach)
 		{
 			why = GiveUpWhy.OutOfReach;
 		}
-		SayGaveUp(why, $"{_vParts.Count} part(s) left, {_vDirtCount} touching dirt, {_vStuck.Count} dirt spot(s) that won't go lower, lowest part bottom {_vLowest:F1}, its feet {base.transform.position.y:F1}");
+		SayGaveUp(why, $"{_vParts.Count} part(s) left, {_vDirtCount} touching dirt, {_vStuck.Count} dirt spot(s) that won't go lower, {_vPartLeft.Count} part(s) it couldn't get a swing at, its feet {base.transform.position.y:F1}");
 		VeinLeave();
 	}
 
@@ -982,7 +608,8 @@ public partial class HarvestController
 	}
 
 	// SpawnOnHitTerrain asks: may this swing's hit on the ground dig? Over and around the vein it's working (within 2.5 m
-	// of it), and when it digs its way out of a hole (HarvestPit.cs)
+	// of it, not while mining, not below the water level or the depth the swing was meant for), and when it digs its way
+	// out of a hole (HarvestPit.cs)
 	internal bool AllowDig(Vector3 hitPoint)
 	{
 		if (PitDigging && Vector3.Distance(hitPoint, base.transform.position) < 3f)
@@ -992,6 +619,15 @@ public partial class HarvestController
 		if (!VeinWorking || _vParts.Count == 0)
 		{
 			return false;
+		}
+		// 1.5.97: no digging in the mining phase, never into the water level, and never below the depth it meant to dig to
+		if (_tPhase == TPhaseMine || hitPoint.y < TWater || hitPoint.y < _tDigMinY - 0.05f)
+		{
+			return false;
+		}
+		if (_tPhase == TPhaseStair && Flat(hitPoint, TStairPoint()) <= 1.5f)
+		{
+			return true;   // the stair out of the trench can reach past the vein's box
 		}
 		Bounds b = _vUnion;
 		float dx = Mathf.Max(0f, Mathf.Max(b.min.x - hitPoint.x, hitPoint.x - b.max.x));
