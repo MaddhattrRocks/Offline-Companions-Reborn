@@ -30,6 +30,7 @@ namespace Companions
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
             public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
             public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
+            public Vagon Loose; public string LooseWhy; public float LooseUntil;   // 1.5.92: came loose, waiting to see if it's safe to take again
         }
         // one per followed player, shared by all companions following them
         class T
@@ -237,6 +238,9 @@ namespace Companions
                     int pace = Pace(player, dSpot, distP, maxD);
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+                    // 1.5.92: round a cart someone pulls, like a player
+                    Vector3 via;
+                    if (MHR_Cart.AroundCart(c, me, lead, 0.6f, out via)) lead = via;
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
@@ -266,6 +270,8 @@ namespace Companions
                 if (!s.HasSpot || s.Radius > maxD * 0.7f) PickSpot(ai, s, t, pp, maxD, false, maxD * 0.6f);
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
+                Vector3 viaBack;
+                if (MHR_Cart.AroundCart(c, me, goal, 0.6f, out viaBack)) goal = viaBack;   // 1.5.92
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
                 // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
                 if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
@@ -301,7 +307,9 @@ namespace Companions
             }
             if (s.IdleMoving)
             {
-                if (MHR_Mover.Go(ai, dt, s.IdleGoal, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))
+                Vector3 idleAim = s.IdleGoal, viaIdle;
+                if (MHR_Cart.AroundCart(c, me, idleAim, 0.6f, out viaIdle)) idleAim = viaIdle;   // 1.5.92
+                if ((MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) && idleAim == s.IdleGoal) || MHR_Mover.GaveUp(ai))
                 {
                     s.IdleMoving = false; s.NextIdle = now + UnityEngine.Random.Range(6f, 14f);
                     MHR_Mover.Release(ai);
@@ -468,14 +476,30 @@ namespace Companions
                 if (s.Cart)
                 {
                     s.Cart = false; s.HasSpot = false; s.HasIdle = false;
-                    // 1.5.91: came loose without an order: take it again
-                    string why = MHR_Cart.WhyLoose(s.LastCart, c);
-                    Vagon lost = s.LastCart; s.LastCart = null;
-                    if (MHR_Cart.TryRehitch(ai, c, lost, why)) return true;
-                    Dbg(c.m_name + " let go of the cart (" + why + ") - back to its own spot");
+                    s.LooseWhy = MHR_Cart.WhyLoose(s.LastCart, c);
+                    s.Loose = s.LastCart; s.LastCart = null; s.LooseUntil = now + 3f;
+                    Dbg(c.m_name + " let go of the cart (" + s.LooseWhy + ")");
+                }
+                // 1.5.92: came loose without an order: take it again only when it's safe; stand by up to 3 s for the cart to
+                // stop rolling, otherwise leave it and say why
+                if (s.Loose != null)
+                {
+                    bool wait;
+                    string no = MHR_Cart.NotSafeToRehitch(ai, c, s.Loose, out wait);
+                    if (no == null)
+                    {
+                        Vagon v = s.Loose; s.Loose = null;
+                        if (MHR_Cart.Rehitch(ai, c, v, s.LooseWhy)) return true;
+                        return false;
+                    }
+                    if (wait && now < s.LooseUntil) { ai.StopMoving(); return true; }
+                    if (s.LooseWhy != "the cart was used" && CompanionsPlugin.LogNormal)
+                        CompanionsPlugin.Log.LogInfo("[Cart] " + c.m_name + "'s cart came loose (" + s.LooseWhy + ") - leaving it: " + no);
+                    s.Loose = null;
                 }
                 return false;
             }
+            s.Loose = null;
             s.LastCart = mine;
             if (!s.Cart)
             {
