@@ -312,7 +312,8 @@ namespace Companions
             }
 
             // 1.4.140: line up with a doorway on the way and walk straight through it, like a player
-            if (!c.IsSwimming()) target = DoorwayLine(s, pos, target, now, tag);
+            // 1.5.91: not with a cart in tow - stepping across to the doorway's line swings the cart and can pull the shafts loose
+            if (!c.IsSwimming() && !MHR_Cart.Pulling(c)) target = DoorwayLine(s, pos, target, now, tag);
 
             // a closed door right ahead: open it before walking into it
             if (now >= s.NextDoorPeek)
@@ -1029,6 +1030,27 @@ namespace Companions
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
             if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
+            // 1.5.91: pulling a cart: no side-steps, hops, climbs or ladders (each one yanked it off the shafts). Open a door
+            // that's in the way, then try new routes, then wait (CartFollow stands still until the player moves on).
+            if (MHR_Cart.Pulling(c))
+            {
+                int cstep = s.Ladder++;
+                if (cstep == 0)
+                {
+                    Door cd = DoorNear(pos, 2.6f);
+                    if (cd != null) { OpenDoor(ai, c, cd, tag); s.NextPlan = now + 0.6f; return; }
+                }
+                if (cstep < 3)
+                {
+                    s.NextPlan = 0f;
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck with a cart (" + why + ") at " + Fmt(pos) + " - a new route, no side-steps while pulling");
+                    return;
+                }
+                s.GaveUp = true; s.GaveUpAt = now;
+                Halt(ai, c, s);
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck with a cart at " + Fmt(pos) + " - waiting");
+                return;
+            }
             int step = s.Ladder++;
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;

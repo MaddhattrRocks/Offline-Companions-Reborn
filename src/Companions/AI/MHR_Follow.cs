@@ -29,6 +29,7 @@ namespace Companions
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
             public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
+            public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
         }
         // one per followed player, shared by all companions following them
         class T
@@ -206,7 +207,8 @@ namespace Companions
                     else
                     {
                         Vector3 g;
-                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g)) PickSpot(ai, s, t, pp, maxD, false, 0f);
+                        // 1.5.91: and when a cart someone pulls is on it now
+                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g) || MHR_Cart.InCartWay(g, 0.8f)) PickSpot(ai, s, t, pp, maxD, false, 0f);
                         else s.SpotDy = g.y - pp.y;
                     }
                 }
@@ -463,9 +465,18 @@ namespace Companions
             MHR_Cart.Apart(c, mine, player, theirs);
             if (mine == null)
             {
-                if (s.Cart) { s.Cart = false; s.HasSpot = false; s.HasIdle = false; Dbg(c.m_name + " let go of the cart - back to its own spot"); }
+                if (s.Cart)
+                {
+                    s.Cart = false; s.HasSpot = false; s.HasIdle = false;
+                    // 1.5.91: came loose without an order: take it again
+                    string why = MHR_Cart.WhyLoose(s.LastCart, c);
+                    Vagon lost = s.LastCart; s.LastCart = null;
+                    if (MHR_Cart.TryRehitch(ai, c, lost, why)) return true;
+                    Dbg(c.m_name + " let go of the cart (" + why + ") - back to its own spot");
+                }
                 return false;
             }
+            s.LastCart = mine;
             if (!s.Cart)
             {
                 s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
@@ -531,7 +542,15 @@ namespace Companions
         }
         static Vector3 Goal(CompanionAI ai, S s, T t, Vector3 pp, int tid)
         {
-            if (s.Trail) return TrailPoint(t, pp, 2f + Rank(ai, tid) * 1.5f);
+            if (s.Trail)
+            {
+                // 1.5.91: further back along the path while a cart someone pulls is on that point (the player's own cart is
+                // right behind them)
+                float back = 2f + Rank(ai, tid) * 1.5f;
+                Vector3 p = TrailPoint(t, pp, back);
+                for (int k = 0; k < 8 && MHR_Cart.InCartWay(p, 0.8f); k++) { back += 1.5f; p = TrailPoint(t, pp, back); }
+                return p;
+            }
             s.Spot = SpotXZ(s, t, pp);
             return s.Spot;
         }
@@ -561,7 +580,8 @@ namespace Companions
                 float r = UnityEngine.Random.Range(rMin, rMax);
                 Vector3 w = pp + Quaternion.Euler(0f, ang, 0f) * t.Travel * r;
                 Vector3 g;
-                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || !Los(pp, g)) continue;
+                // 1.5.91: never on a cart someone is pulling (the spots behind the player were on top of it)
+                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || MHR_Cart.InCartWay(g, 1f) || !Los(pp, g)) continue;
                 s.Angle = ang; s.Radius = r; s.SpotDy = g.y - pp.y; s.Spot = g;
                 s.HasSpot = true; s.Trail = false;
                 s.NextPick = now + UnityEngine.Random.Range(10f, 25f); s.NextCheck = now + 1f;
@@ -628,7 +648,7 @@ namespace Companions
                 Vector3 w = s.IdleAnchor + new Vector3(r.x, 0f, r.y);
                 if (!Ground(w, pp, out g)) continue;
                 float dp = Flat(g, pp);
-                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || !Los(s.IdleAnchor, g)) continue;
+                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || MHR_Cart.InCartWay(g, 0.8f) || !Los(s.IdleAnchor, g)) continue;
                 return true;
             }
             return false;

@@ -1385,7 +1385,26 @@ public class FarmController : MonoBehaviour
 	// 1.5.87: user report - the farmer went for Ashvine berries high up the walls of the base and stood at the wall
 	// trying to pick them instead of farming. A crop more than MaxPickHeight above the first thing under it that can be
 	// stood on (ground, floor, the top of a wall) can't be reached from anywhere a companion walks.
+	// 1.5.91: the answer is kept a minute per crop (it was a 60 m ray down for every crop on every scan)
+	private readonly Dictionary<int, KeyValuePair<float, bool>> _tooHigh = new Dictionary<int, KeyValuePair<float, bool>>();
+
 	private bool TooHighToPick(Pickable pickable)
+	{
+		int id = pickable.GetInstanceID();
+		if (_tooHigh.TryGetValue(id, out var kept) && Time.time < kept.Key)
+		{
+			return kept.Value;
+		}
+		if (_tooHigh.Count > 2000)
+		{
+			_tooHigh.Clear();
+		}
+		bool high = MeasureTooHigh(pickable);
+		_tooHigh[id] = new KeyValuePair<float, bool>(Time.time + 60f, high);
+		return high;
+	}
+
+	private bool MeasureTooHigh(Pickable pickable)
 	{
 		Vector3 pos = pickable.transform.position;
 		int n = Physics.RaycastNonAlloc(pos + Vector3.up * 0.2f, Vector3.down, _standHits, 60f, _standMask, QueryTriggerInteraction.Ignore);
@@ -1642,6 +1661,7 @@ public class FarmController : MonoBehaviour
 		int numRoof = 0;
 		int numFar = 0;
 		_plantCandidates.Clear();
+		PrepareNear(zone.Center, zone.HalfSize * 1.42f, info.GrowRadius);   // 1.5.91
 		for (float num10 = num2; num10 <= num3; num10 += num)
 		{
 			for (float num11 = num2; num11 <= num3; num11 += num)
@@ -1674,7 +1694,7 @@ public class FarmController : MonoBehaviour
 					num7++;
 					continue;
 				}
-				if (TooCloseToPlants(vector, info.GrowRadius))
+				if (TooCloseCached(vector, info.GrowRadius))
 				{
 					num7++;
 					continue;
@@ -2175,6 +2195,93 @@ public class FarmController : MonoBehaviour
 		return false;
 	}
 
+	// 1.5.91: FPS (user: 70 FPS before, 40 now). TooCloseToPlants looks up to s_maxGrowRadius out (up to 4 m with saplings
+	// that plant mods add) and ran once per spot of the zone - hundreds of physics queries with three component look-ups per
+	// collider on every scan. Now one query for the whole zone (or scan area) gathers the plants, crops and pieces once, and
+	// each spot is checked against that list, the same way as TooCloseToPlants. Kept for this frame only.
+	private struct NearThing
+	{
+		public float X, Y, Z, R;
+	}
+
+	private readonly List<NearThing> _near = new List<NearThing>();
+
+	private readonly HashSet<int> _nearSeen = new HashSet<int>();
+
+	private Collider[] _nearBuffer = new Collider[1024];
+
+	private int _nearFrame = -1;
+
+	private float _nearReach;
+
+	private void PrepareNear(Vector3 center, float radius, float growRadius)
+	{
+		_nearFrame = -1;
+		float reach = Mathf.Max(Mathf.Max(growRadius, 0.1f), s_maxGrowRadius) + GrowMargin;
+		int n = Physics.OverlapSphereNonAlloc(center, radius + reach + 2f, _nearBuffer, _spaceMask);
+		while (n >= _nearBuffer.Length && _nearBuffer.Length < 8192)
+		{
+			_nearBuffer = new Collider[_nearBuffer.Length * 2];
+			n = Physics.OverlapSphereNonAlloc(center, radius + reach + 2f, _nearBuffer, _spaceMask);
+		}
+		if (n >= _nearBuffer.Length)
+		{
+			return;   // too much to list: each spot asks the physics itself
+		}
+		_near.Clear();
+		_nearSeen.Clear();
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = _nearBuffer[i];
+			if (col == null)
+			{
+				continue;
+			}
+			Plant plant = col.GetComponentInParent<Plant>();
+			Component other = plant;
+			if (other == null)
+			{
+				other = col.GetComponentInParent<Pickable>();
+			}
+			if (other == null)
+			{
+				other = col.GetComponentInParent<Piece>();
+			}
+			if (other == null || !_nearSeen.Add(other.GetInstanceID()))
+			{
+				continue;
+			}
+			Vector3 at = other.transform.position;
+			_near.Add(new NearThing { X = at.x, Y = at.y, Z = at.z, R = (plant != null) ? plant.m_growRadius : 0f });
+		}
+		_nearReach = reach;
+		_nearFrame = Time.frameCount;
+	}
+
+	private bool TooCloseCached(Vector3 p, float growRadius)
+	{
+		if (_nearFrame != Time.frameCount)
+		{
+			return TooCloseToPlants(p, growRadius);
+		}
+		float mine = Mathf.Max(growRadius, 0.1f);
+		for (int i = 0; i < _near.Count; i++)
+		{
+			NearThing t = _near[i];
+			if (Mathf.Abs(t.Y - p.y) > _nearReach + 2f)
+			{
+				continue;   // a floor above or below
+			}
+			float need = Mathf.Max(mine, t.R) + GrowMargin;
+			float dx = t.X - p.x, dz = t.Z - p.z;
+			if (dx * dx + dz * dz < (need - 0.01f) * (need - 0.01f))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private bool NoSunOrRoom(Vector3 p, float growRadius)
 	{
 		if (Physics.Raycast(p + Vector3.up * 0.1f, Vector3.up, 100f, _roofMask))
@@ -2204,6 +2311,7 @@ public class FarmController : MonoBehaviour
 		float num4 = float.MaxValue;
 		bool result2 = false;
 		int num5 = Mathf.CeilToInt(scanRadius / num);
+		PrepareNear(position, scanRadius * 1.42f, info.GrowRadius);   // 1.5.91
 		for (int i = -num5; i <= num5; i++)
 		{
 			for (int j = -num5; j <= num5; j++)
@@ -2231,7 +2339,7 @@ public class FarmController : MonoBehaviour
 				{
 					continue;
 				}
-				if (TooCloseToPlants(vector, info.GrowRadius) || NoSunOrRoom(vector, info.GrowRadius) || KnownUnreachable(vector))
+				if (TooCloseCached(vector, info.GrowRadius) || NoSunOrRoom(vector, info.GrowRadius) || KnownUnreachable(vector))
 				{
 					continue;
 				}
