@@ -345,6 +345,7 @@ public class CompanionAI : BaseAI
 			}
 			PendingDepositContainer = null;
 			PendingDepositHumanoid = null;
+			PendingDepositWeightCap = -1f;
 			_depositQueue.Clear();
 			_depositCount = 0;
 			RestoreFollowOrPatrol();
@@ -948,8 +949,13 @@ public class CompanionAI : BaseAI
 	// its stone never goes in a chest (user)
 	internal System.Predicate<ItemDrop.ItemData> PendingDepositFilter;
 
-	internal void SetPendingDeposit(Container chest, Humanoid humanoid, System.Predicate<ItemDrop.ItemData> only = null)
+	// 1.5.96: > 0 = only put in enough to get the bag down to this weight (the Ore job in a dungeon: "only unload enough
+	// to get under their carry capacity" - the rest goes back to base with it)
+	internal float PendingDepositWeightCap = -1f;
+
+	internal void SetPendingDeposit(Container chest, Humanoid humanoid, System.Predicate<ItemDrop.ItemData> only = null, float weightCap = -1f)
 	{
+		PendingDepositWeightCap = weightCap;
 		PendingDepositFilter = only;
 		PendingDepositContainer = chest;
 		PendingDepositHumanoid = humanoid;
@@ -1474,7 +1480,25 @@ public class CompanionAI : BaseAI
 					_depositQueue.RemoveAt(0);
 					Inventory inventory = PendingDepositContainer.GetInventory();
 					Inventory inventory2 = PendingDepositHumanoid?.GetInventory();
-					if (inventory != null && inventory2 != null && inventory2.ContainsItem(item) && inventory.AddItem(item))
+					float over = (PendingDepositWeightCap > 0f && inventory2 != null) ? inventory2.GetTotalWeight() - PendingDepositWeightCap : float.MaxValue;
+					if (over <= 0f)
+					{
+						_depositQueue.Clear();
+					}
+					else if (over != float.MaxValue && inventory != null && inventory2 != null && inventory2.ContainsItem(item) && item.m_stack > 1 && item.m_shared.m_weight > 0f && item.m_shared.m_weight * item.m_stack > over)
+					{
+						// just enough of this stack to get under the cap
+						int n = Mathf.Clamp(Mathf.CeilToInt(over / item.m_shared.m_weight), 1, item.m_stack);
+						ItemDrop.ItemData part = item.Clone();
+						part.m_stack = n;
+						if (inventory.AddItem(part))
+						{
+							inventory2.RemoveItem(item, n);
+							_depositCount++;
+						}
+						_depositQueue.Clear();
+					}
+					else if (inventory != null && inventory2 != null && inventory2.ContainsItem(item) && inventory.AddItem(item))
 					{
 						inventory2.RemoveItem(item);
 						_depositCount++;

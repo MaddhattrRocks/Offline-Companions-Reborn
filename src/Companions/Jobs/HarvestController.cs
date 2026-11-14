@@ -740,8 +740,22 @@ public partial class HarvestController : MonoBehaviour
 			RestoreLoadout();
 			return;
 		}
-		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or the stone spot), so it never gets overloaded
+		// 1.5.96: Ore job - in a dungeon (safe to mine? room left?) and getting out of a hole it dug
+		if (mode == 3 && DungeonGate())
+		{
+			return;
+		}
+		if (mode == 3 && PitTick())
+		{
+			return;
+		}
+		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or tossed), so it never gets overloaded
 		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && (_ai == null || _ai.PendingDepositContainer == null) && MHR_GatherRules.StoneDue(this) && MHR_GatherRules.StartPile(this))
+		{
+			return;
+		}
+		// 1.5.96: the ore after each finished vein (a chest within 20 m, else the ore spot)
+		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && MHR_GatherRules.OreDue(this))
 		{
 			return;
 		}
@@ -943,6 +957,24 @@ public partial class HarvestController : MonoBehaviour
 			loose = ScanForPickable(mode);
 		}
 		GameObject gameObject = (looseOn && noTool) ? null : MHR_GatherRules.Scan(this, mode);
+		// 1.5.96: the Stone job also goes for stone lying on the ground in its work area (tossed by the Ore job or
+		// anyone), and picks it up on purpose
+		if (mode == 2 && !_isDirectedHarvest)
+		{
+			GameObject stoneDrop = FindStoneDrop();
+			if (stoneDrop != null && (gameObject == null || Vector3.Distance(base.transform.position, stoneDrop.transform.position) <= Vector3.Distance(base.transform.position, gameObject.transform.position)))
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Picking up stone lying at {MHR_Mover.Fmt(stoneDrop.transform.position)}");
+				_lastDestroyPos = stoneDrop.transform.position;
+				_stoneDropTry = stoneDrop;
+				_currentDrop = null;
+				_dropTimer = 0f;
+				_dropScanDelayTimer = 0f;
+				_dropsPickedUp = 0;
+				_state = HarvestState.CollectingDrops;
+				return;
+			}
+		}
 		bool pickLoose = false;
 		if (loose != null && (gameObject == null || Vector3.Distance(base.transform.position, loose.transform.position) <= Vector3.Distance(base.transform.position, gameObject.transform.position)))
 		{
@@ -1336,7 +1368,12 @@ public partial class HarvestController : MonoBehaviour
 			}
 			return;
 		}
-		UpdateDigAim();
+		// 1.5.96: the Ore job on a split vein outdoors - dig every side and below, then pop it (HarvestVein.cs)
+		if (DigMode())
+		{
+			VeinTick();
+			return;
+		}
 		FaceTarget();
 		bool flag = IsRockLikeTarget();
 		Vector3 effectiveTargetPosition = GetEffectiveTargetPosition();
@@ -1372,28 +1409,7 @@ public partial class HarvestController : MonoBehaviour
 		// 1.4.79: the distance above is to the spot beside the rock, not the rock itself. On a big rock the surface can be
 		// further than the pickaxe reaches, so every swing missed (1.4.78 log: 10 swings at 1.5 m, no damage). Check the
 		// actual surface and step in until it's in reach (up to 2.5 s, then swing anyway).
-		// 1.5.95: digging - step in until the dirt over the part is in reach (not onto the spot it digs)
-		if (_digAim && _character != null && !_character.InAttack())
-		{
-			Vector3 flatToDig = _digPoint - base.transform.position;
-			flatToDig.y = 0f;
-			float digDist = Vector3.Distance(base.transform.position + Vector3.up * 1.0f, _digPoint);
-			if (digDist > attackRange * 0.9f && flatToDig.magnitude > 1.0f && _closeInTimer < 2.5f)
-			{
-				_closeInTimer += Time.deltaTime;
-				if (!MHR_Mover.HazardAhead(base.transform.position, flatToDig, 0.8f))
-				{
-					_ai.MoveTowards(flatToDig.normalized, run: false);
-				}
-				if (!_closingIn)
-				{
-					_closingIn = true;
-					if (CompanionsPlugin.LogDetailed) Log($"Dirt over the vein is {digDist:F1}m away (reach {attackRange * 0.9f:F1}m) — stepping in");
-				}
-				return;
-			}
-		}
-		if (flag && !_digAim && _character != null && !_character.InAttack())
+		if (flag && _character != null && !_character.InAttack())
 		{
 			Vector3 surface;
 			float surfaceDist;
@@ -1497,14 +1513,6 @@ public partial class HarvestController : MonoBehaviour
 				if (CompanionsPlugin.LogDetailed) Log($"Catching its breath ({_stamina.Stamina:F0}/{max:F0} stamina) before swinging again");
 				return;
 			}
-		}
-		// 1.5.95: digging that takes no dirt away (a ward, no-build area or the game's dig depth limit) - or far too much of it
-		if (_digAim && (DigStalled() || _digCount >= DigMaxPerVein))
-		{
-			SayGaveUp(_digCount >= DigMaxPerVein ? GiveUpWhy.Buried : GiveUpWhy.CantDig, $"{_digCount} digs on this vein, {_digNoProgress} in a row took no dirt away");
-			_blacklist[_target.GetInstanceID()] = Time.time;
-			ResetToIdle();
-			return;
 		}
 		bool flag9 = _humanoid != null && _humanoid.StartAttack(null, flag8);
 		_totalAttempts++;
@@ -1612,7 +1620,7 @@ public partial class HarvestController : MonoBehaviour
 			if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't doing anything to \"" + _target.name + "\" (something in the way) - leaving it for now");
 			if (RockGiveUp())
 			{
-				SayGaveUp(_digAim ? GiveUpWhy.Buried : GiveUpWhy.OutOfReach, $"2 swings in a row landed on nothing, dist={num:F1}m reach={attackRange:F1}m digging={_digAim}");
+				SayGaveUp(GiveUpWhy.OutOfReach, $"2 swings in a row landed on nothing, dist={num:F1}m reach={attackRange:F1}m");
 			}
 			_blacklist[_target.GetInstanceID()] = Time.time;
 			ResetToIdle();
@@ -2226,7 +2234,6 @@ public partial class HarvestController : MonoBehaviour
 		}
 		_lastHitAt = Time.time;
 		_noDamageSwings = 0;
-		_digNoProgress = 0;
 		if (!_hasGoodSpot || Vector3.Distance(_goodSpot, base.transform.position) > 0.7f)
 		{
 			_hasGoodSpot = true;
@@ -2728,10 +2735,6 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		Vector3 vector = ((_state != HarvestState.Attacking || !IsRockLikeTarget()) ? GetEffectiveTargetPosition() : (_attackFaceLocked ? _lockedAttackFaceTarget : GetRockFacePosition()));
-		if (_state == HarvestState.Attacking && _digAim)
-		{
-			vector = _digPoint;
-		}
 		Vector3 vector2 = vector - base.transform.position;
 		vector2.y = 0f;
 		if (vector2.sqrMagnitude < 0.1f)
@@ -2748,16 +2751,6 @@ public partial class HarvestController : MonoBehaviour
 				Quaternion q = Quaternion.LookRotation(vector3.normalized);
 				_character.SetLookDir(vector3.normalized);
 				MHR_Nav.TurnTo(base.transform, q);
-				// 1.5.95: digging - look down at the dirt over the part, so the swing goes into the ground there (the
-				// game aims a melee swing up or down by the look direction)
-				if (_digAim)
-				{
-					Vector3 down = _digPoint - Eye();
-					if (down.sqrMagnitude > 0.01f)
-					{
-						_character.SetLookDir(down.normalized);
-					}
-				}
 			}
 		}
 	}
@@ -2859,8 +2852,25 @@ public partial class HarvestController : MonoBehaviour
 		return num;
 	}
 
+	// 1.5.96: stone on the ground it went for - left alone for a while if it couldn't take any
+	private GameObject _stoneDropTry;
+
 	private void FinishDropCollection()
 	{
+		if (_stoneDropTry != null)
+		{
+			if (_dropsPickedUp == 0)
+			{
+				_blacklist[_stoneDropTry.GetInstanceID()] = Time.time;
+			}
+			_stoneDropTry = null;
+		}
+		// 1.5.96: the Ore job, done with a rock: the ore goes to a chest within 20 m or the ore spot (John: "it should do
+		// both" - when over its limit and after each finished vein)
+		if (GetMode() == 3 && (_targetType == "MineRock5" || _targetType == "MineRock" || _targetType == "Destructible") && !InDungeonAt(base.transform.position))
+		{
+			MHR_GatherRules.AfterVein(this);
+		}
 		_currentDrop = null;
 		_state = HarvestState.Idle;
 		_scanTimer = 0f;
@@ -2928,7 +2938,8 @@ public partial class HarvestController : MonoBehaviour
 				continue;
 			}
 			_scanSeen++;
-			if (!component.m_autoPickup)
+			// 1.5.96: the Stone job takes tossed stone on purpose (MHR_GatherRules.WantDrop)
+			if (!component.m_autoPickup && !(GetMode() == 2 && MHR_GatherRules.DropName(component) == "Stone"))
 			{
 				_scanNoAuto++;
 				continue;
@@ -2972,6 +2983,52 @@ public partial class HarvestController : MonoBehaviour
 			if (CompanionsPlugin.LogDetailed) Log($"Drop scan: {num3} pickable items within {DropScanRadius}m of destroy pos");
 		}
 		return result;
+	}
+
+	private GameObject FindStoneDrop()
+	{
+		if (IsOverweight())
+		{
+			return null;
+		}
+		int n = Physics.OverlapSphereNonAlloc(ScanCenter(), ScanRad(), _scanBuffer, _itemLayerMask);
+		if (n > _scanBuffer.Length)
+		{
+			n = _scanBuffer.Length;
+		}
+		GameObject best = null;
+		float bd = float.MaxValue;
+		Inventory inv = _humanoid?.GetInventory();
+		for (int i = 0; i < n; i++)
+		{
+			Collider c = _scanBuffer[i];
+			if (c == null || c.attachedRigidbody == null)
+			{
+				continue;
+			}
+			ItemDrop d = c.attachedRigidbody.GetComponent<ItemDrop>();
+			if (d == null || MHR_GatherRules.DropName(d) != "Stone" || _blacklist.ContainsKey(d.gameObject.GetInstanceID()))
+			{
+				continue;
+			}
+			ZNetView nv = d.GetComponent<ZNetView>();
+			if (nv == null || !nv.IsValid() || !InWorkArea(d.transform.position) || !MHR_GatherRules.WantDrop(this, d))
+			{
+				continue;
+			}
+			d.Load();
+			if (inv != null && !inv.CanAddItem(d.m_itemData))
+			{
+				continue;
+			}
+			float dist = Vector3.Distance(base.transform.position, d.transform.position);
+			if (dist < bd)
+			{
+				bd = dist;
+				best = d.gameObject;
+			}
+		}
+		return best;
 	}
 
 	private float GetCurrentWeight()

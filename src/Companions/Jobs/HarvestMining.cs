@@ -2,17 +2,11 @@ using UnityEngine;
 
 namespace Companions;
 
-// 1.5.95: mining like a player (user, copper vein reports: "bare-handed mining animation a few times and stop", "a
-// couple of pickaxe swings then stop", "depends on the specific vein"; John: "dig the dirt around the vein first, then
-// hit the vein to pop it").
-//  - Ore job, outdoors, split veins (MineRock5: copper, silver, flametal...): it works on the nearest part of the vein.
-//    When dirt covers that part, it swings down at it and the game's own dig takes the dirt away (Attack.SpawnOnHitTerrain,
-//    allowed only over and around that part of this vein, with the game's ward and no-build checks). Parts left with no
-//    ground under them break together when the next part breaks (MineRock5.CheckSupport, the game's rule).
-//  - Dungeons (muddy scrap piles): no digging, it just mines.
+// 1.5.95/1.5.96: mining like a player - shared helpers. The vein work itself (dig every side and below, then pop) is in
+// HarvestVein.cs, getting out of a pit in HarvestPit.cs, dungeons in HarvestDungeon.cs.
 //  - Stamina: the game's swing already charges the player's cost (attack stamina less 33% at skill 100 of the tool's
 //    skill); the breather check uses the same number.
-//  - When it gives up on a rock it says why (buried, can't dig, out of reach, too hard, no tool).
+//  - When it gives up on a rock it says why (buried, ward, can't dig, out of reach, too hard, no tool, stuck in a hole).
 public partial class HarvestController
 {
 	internal enum GiveUpWhy
@@ -21,28 +15,10 @@ public partial class HarvestController
 		CantDig,
 		OutOfReach,
 		TooHard,
-		NoTool
+		NoTool,
+		Ward,
+		StuckInHole
 	}
-
-	private bool _digAim;
-
-	private Vector3 _digPoint;
-
-	private GameObject _digFor;
-
-	private int _digCount;
-
-	private int _digNoProgress;
-
-	private bool _digPending;
-
-	private Vector3 _digPendingAt;
-
-	private float _digPendingGround;
-
-	private const int DigMaxPerVein = 80;
-
-	private const int DigMaxNoProgress = 4;
 
 	// the player's swing cost (Attack.GetAttackStamina without the player-only gear modifiers): the attack's stamina,
 	// less 33% at skill 100 of the tool's own skill (Pickaxes for a pickaxe, Axes for an axe)
@@ -87,96 +63,9 @@ public partial class HarvestController
 		return _target != null && _targetType == "MineRock5" && GetMode() == 3 && _character != null && !InDungeonAt(base.transform.position);
 	}
 
-	// each frame while attacking: is the part it's working on under the dirt? Then it aims down at it to dig
-	private void UpdateDigAim()
-	{
-		_digAim = false;
-		if (!DigMode())
-		{
-			return;
-		}
-		if (_digFor != _target)
-		{
-			_digFor = _target;
-			_digCount = 0;
-			_digNoProgress = 0;
-			_digPending = false;
-		}
-		GetEffectiveTargetPosition();
-		Collider seg = _rock5CurrentSegment;
-		if (seg == null || !seg.gameObject.activeSelf)
-		{
-			return;
-		}
-		Vector3 eye = Eye();
-		Vector3 pt = SafeClosestPoint(seg, eye);
-		if (pt.y >= GroundAt(pt) - 0.15f)
-		{
-			return;   // its near side is in the open - hit the rock
-		}
-		_digAim = true;
-		_digPoint = pt;
-	}
-
 	private Vector3 Eye()
 	{
 		return (_character != null && _character.m_eye != null) ? _character.m_eye.position : base.transform.position + Vector3.up * 1.6f;
-	}
-
-	// SpawnOnHitTerrain asks: may this swing's hit on the ground dig? Only over and around the part it's digging out
-	internal bool AllowDig(Vector3 hitPoint)
-	{
-		if (_state != HarvestState.Attacking || !_digAim || !DigMode())
-		{
-			return false;
-		}
-		Collider seg = _rock5CurrentSegment;
-		if (seg == null || !seg.gameObject.activeSelf)
-		{
-			return false;
-		}
-		Bounds b = seg.bounds;
-		float dx = Mathf.Max(0f, Mathf.Max(b.min.x - hitPoint.x, hitPoint.x - b.max.x));
-		float dz = Mathf.Max(0f, Mathf.Max(b.min.z - hitPoint.z, hitPoint.z - b.max.z));
-		if (Mathf.Sqrt(dx * dx + dz * dz) > 1.5f)
-		{
-			return false;
-		}
-		return hitPoint.y >= b.min.y - 0.3f;
-	}
-
-	internal void NotifyDig(Vector3 hitPoint)
-	{
-		_lastHitAt = Time.time;   // a dig is a swing that landed
-		_noDamageSwings = 0;
-		_digCount++;
-		// digs don't count toward the 20-hit / 30-try limit for the rock itself
-		_swingCount = Mathf.Max(0, _swingCount - 1);
-		_totalAttempts = Mathf.Max(0, _totalAttempts - 1);
-		_digPending = true;
-		_digPendingAt = hitPoint;
-		_digPendingGround = GroundAt(hitPoint);
-		if (CompanionsPlugin.LogDetailed) Log($"Dug at {hitPoint:F1} (dig {_digCount}/{DigMaxPerVein} on \"{_target?.name}\")");
-	}
-
-	// at each swing while digging: did the last dig take any dirt away? (a ward, a no-build area or the game's dig depth
-	// limit stop it). True = give up.
-	private bool DigStalled()
-	{
-		if (_digPending)
-		{
-			_digPending = false;
-			float now = GroundAt(_digPendingAt);
-			if (_digPendingGround - now < 0.05f)
-			{
-				_digNoProgress++;
-			}
-			else
-			{
-				_digNoProgress = 0;
-			}
-		}
-		return _digNoProgress >= DigMaxNoProgress;
 	}
 
 	// says why it's leaving a rock (Normal log + one spoken line per reason; the numbers only in the Detailed log)
@@ -189,6 +78,8 @@ public partial class HarvestController
 			GiveUpWhy.CantDig => "hc_speech_vein_cant_dig",
 			GiveUpWhy.OutOfReach => "hc_speech_vein_out_of_reach",
 			GiveUpWhy.TooHard => "hc_speech_vein_too_hard",
+			GiveUpWhy.Ward => "hc_speech_vein_ward",
+			GiveUpWhy.StuckInHole => "hc_speech_stuck_in_hole",
 			_ => "hc_speech_no_working_tool"
 		};
 		string what = why switch
@@ -197,6 +88,8 @@ public partial class HarvestController
 			GiveUpWhy.CantDig => "it can't dig here",
 			GiveUpWhy.OutOfReach => "it can't reach it",
 			GiveUpWhy.TooHard => "it needs a better pickaxe",
+			GiveUpWhy.Ward => "someone else's ward covers it",
+			GiveUpWhy.StuckInHole => "it's stuck in the hole it dug",
 			_ => "no working tool left"
 		};
 		if (CompanionsPlugin.LogNormal) LogInfo("Leaving \"" + thing + "\" - " + what);
@@ -205,6 +98,11 @@ public partial class HarvestController
 		{
 			string tool = ModLocalization.Loc(GetMode() == 1 ? "hc_tool_axe" : "hc_tool_pickaxe");
 			_talk?.SayProblem("tool:none:" + GetMode(), string.Format(ModLocalization.Loc(key), tool));
+			return;
+		}
+		if (why == GiveUpWhy.StuckInHole)
+		{
+			_talk?.SayProblem("vein:" + why, ModLocalization.Loc(key));
 			return;
 		}
 		_talk?.SayProblem("vein:" + why, string.Format(ModLocalization.Loc(key), thing));
