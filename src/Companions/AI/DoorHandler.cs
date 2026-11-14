@@ -104,7 +104,7 @@ public class DoorHandler : MonoBehaviour
 		to.y = 0f;
 		if (to.sqrMagnitude > 0.01f)
 		{
-			base.transform.rotation = Quaternion.LookRotation(to.normalized);
+			MHR_Mover.Face(_ai, to);   // 1.5.94: turn like a player, not in one frame
 		}
 		bool ok = false;
 		try

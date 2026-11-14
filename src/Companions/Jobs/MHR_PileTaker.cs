@@ -299,7 +299,7 @@ internal sealed class MHR_PileTaker
 		Vector3 me = ai.transform.position;
 		ItemDrop nearest = null;
 		float nd = float.MaxValue;
-		foreach (Collider c in Physics.OverlapSphere(_at, 4f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.PileTaker302, _at, 4f))
 		{
 			if (c == null)
 			{

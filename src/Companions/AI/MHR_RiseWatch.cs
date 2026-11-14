@@ -104,7 +104,7 @@ internal static class MHR_RiseWatch
 	{
 		HashSet<string> names = new HashSet<string>();
 		// solid colliders only - a bed's, fire's or portal's base zone is a big trigger (log c6fee971 listed the portal 16 m off)
-		foreach (Collider col in Physics.OverlapSphere(p + Vector3.up * 0.9f, 1.2f, -1, QueryTriggerInteraction.Ignore))
+		foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.RiseWatch107, p + Vector3.up * 0.9f, 1.2f, -1, QueryTriggerInteraction.Ignore))
 		{
 			Piece piece = col != null ? col.GetComponentInParent<Piece>() : null;
 			if (piece != null)

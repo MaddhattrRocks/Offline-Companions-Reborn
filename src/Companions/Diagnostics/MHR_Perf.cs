@@ -25,6 +25,8 @@ internal static class MHR_Perf
 		public long Max;
 
 		public int Calls;
+
+		public int Hitches;
 	}
 
 	private static readonly Dictionary<MethodBase, Acc> s_acc = new Dictionary<MethodBase, Acc>();
@@ -55,7 +57,39 @@ internal static class MHR_Perf
 		new string[] { "Companions.FarmController", "FindPlantPositionInZone" },
 		new string[] { "Companions.FarmController", "FindPlantPosition" },
 		new string[] { "Companions.FarmController", "TooHighToPick" },
+		// 1.5.94: the parts of the companion update that weren't timed (user log: one UpdateAI took 11-24 ms every 10 s)
+		new string[] { "Companions.CompanionAI", "UpdateTombstoneRecovery" },
+		new string[] { "Companions.CompanionAI", "UpdateHealBehavior" },
+		new string[] { "Companions.CompanionAI", "UpdateSleep" },
+		new string[] { "Companions.CompanionAI", "UpdateShipAttach" },
+		new string[] { "Companions.CompanionAI", "UpdateHazardRecovery" },
+		new string[] { "Companions.CompanionAI", "UpdateFurnitureUnstuck" },
+		new string[] { "Companions.CompanionAI", "UpdateDrowning" },
+		new string[] { "Companions.CompanionAI", "AutoPickup" },
+		new string[] { "Companions.CompanionAI", "CleanupBlacklist" },
+		new string[] { "Companions.CompanionAI", "FindHurtAlly" },
+		new string[] { "Companions.CompanionAI", "UpdateDebugLog" },
+		new string[] { "Companions.CompanionAI", "TeleportToFollowTarget" },
+		new string[] { "Companions.CompanionAI", "LitBaseNear" },
+		new string[] { "Companions.CompanionRest", "UpdateNavigation" },
+		new string[] { "Companions.CompanionRest", "UpdateSleeping" },
+		new string[] { "Companions.CompanionRest", "UpdateSitting" },
+		new string[] { "Companions.CompanionRest", "TryStartSitting" },
+		new string[] { "Companions.CompanionRest", "TryAutoSleep" },
+		new string[] { "Companions.CompanionRest", "TryClaimBedIfNeeded" },
+		new string[] { "Companions.CompanionRest", "HasEnemyNearby" },
+		new string[] { "Companions.MHR_Follow", "CartFollow" },
+		new string[] { "Companions.MHR_Cart", "InTheWay" },
+		new string[] { "Companions.MHR_Cart", "AroundCart" },
+		new string[] { "Companions.MHR_Mover", "FireZoneAt" },
+		new string[] { "Companions.MHR_World", "Ladders" },
+		new string[] { "Companions.MHR_Diag", "Tick" },
 	};
+
+	// 1.5.94: any single call over this is a hitch (a dropped frame at 60+ FPS) and is listed on its own in the report
+	private const double HitchMs = 8.0;
+
+	private static long s_hitchTicks = long.MaxValue;
 
 	// from CompanionsPlugin.Update: install once Detailed is on, count frames, write the summary every 10 s
 	internal static void Tick(Harmony main)
@@ -94,12 +128,14 @@ internal static class MHR_Perf
 			a.Ticks = 0L;
 			a.Max = 0L;
 			a.Calls = 0;
+			a.Hitches = 0;
 		}
 	}
 
 	private static void Install(Harmony main)
 	{
 		s_installed = true;
+		s_hitchTicks = (long)(HitchMs * Stopwatch.Frequency / 1000.0);
 		try
 		{
 			s_harmony = new Harmony(CompanionsPlugin.PluginGUID + ".perf");
@@ -139,11 +175,18 @@ internal static class MHR_Perf
 			}
 			foreach (string[] step in Steps)
 			{
-				Type t = AccessTools.TypeByName(step[0]);
-				MethodInfo m = t != null ? AccessTools.Method(t, step[1]) : null;
-				if (m != null && Timeable(m))
+				try
 				{
-					targets.Add(m);
+					Type t = AccessTools.TypeByName(step[0]);
+					MethodInfo m = t != null ? AccessTools.Method(t, step[1]) : null;
+					if (m != null && Timeable(m))
+					{
+						targets.Add(m);
+					}
+				}
+				catch (Exception e)
+				{
+					CompanionsPlugin.Log.LogDebug("[Perf] can't find " + step[0] + "." + step[1] + ": " + e.Message);
 				}
 			}
 			// the mod's own patches on the game's code
@@ -230,6 +273,10 @@ internal static class MHR_Perf
 			{
 				a.Max = dt;
 			}
+			if (dt > s_hitchTicks)
+			{
+				a.Hitches++;
+			}
 		}
 	}
 
@@ -264,6 +311,26 @@ internal static class MHR_Perf
 			sb.Append("\n    ").Append(a.Name).Append(": ").Append(perFrame.ToString("F2")).Append(" ms/frame, ")
 				.Append(((float)a.Calls / s_frames).ToString("F1")).Append(" calls/frame, slowest ").Append((a.Max * msPerTick).ToString("F1")).Append(" ms");
 			shown++;
+		}
+		// 1.5.94: every part that took over 8 ms in one go, slowest first; inner parts show which piece of an outer one it was
+		List<Acc> hitches = new List<Acc>();
+		foreach (Acc a in list)
+		{
+			if (a.Hitches > 0)
+			{
+				hitches.Add(a);
+			}
+		}
+		if (hitches.Count > 0)
+		{
+			hitches.Sort((x, y) => y.Max.CompareTo(x.Max));
+			sb.Append("\n  [Perf] hitch (a single call over ").Append(HitchMs.ToString("F0")).Append(" ms):");
+			for (int i = 0; i < hitches.Count && i < 12; i++)
+			{
+				Acc a = hitches[i];
+				sb.Append("\n    ").Append(a.Name).Append(": ").Append(a.Hitches).Append(a.Hitches == 1 ? " time" : " times").Append(", slowest ")
+					.Append((a.Max * msPerTick).ToString("F1")).Append(" ms");
+			}
 		}
 		CompanionsPlugin.Log.LogInfo(sb.ToString());
 	}

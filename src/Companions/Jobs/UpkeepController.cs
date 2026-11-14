@@ -1597,7 +1597,7 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			return true;
 		}
-		foreach (RaycastHit hit in Physics.RaycastAll(eye, d / len, Mathf.Max(0f, len - 0.05f), s_mask))
+		foreach (RaycastHit hit in MHR_Phys.Ray(ref MHR_Phys.UpkeepController1600, eye, d / len, Mathf.Max(0f, len - 0.05f), s_mask))
 		{
 			Collider col = hit.collider;
 			if (col == null || (own != null && col.GetComponentInParent<Piece>() == own) || col.GetComponentInParent<Character>() != null)

@@ -785,7 +785,7 @@ public partial class CompanionCombatAI
 		{
 			return false;
 		}
-		foreach (RaycastHit hit in Physics.SphereCastAll(from, 0.15f, d.normalized, len, s_obstacleMask, QueryTriggerInteraction.Ignore))
+		foreach (RaycastHit hit in MHR_Phys.SphereCast(ref MHR_Phys.CompanionCombatTactics788, from, 0.15f, d.normalized, len, s_obstacleMask, QueryTriggerInteraction.Ignore))
 		{
 			Collider c = hit.collider;
 			if (c == null || c.GetComponentInParent<Character>() != null || c.GetComponentInParent<Piece>() != null)

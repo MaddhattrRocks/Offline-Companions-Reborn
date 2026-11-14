@@ -1079,7 +1079,7 @@ namespace Companions
         public static HashSet<int> DropsNear(Vector3 center, float radius)
         {
             HashSet<int> ids = new HashSet<int>();
-            foreach (Collider c in Physics.OverlapSphere(center, radius))
+            foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.ToolKeeper1082, center, radius))
             {
                 ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
                 if (d != null) ids.Add(d.GetInstanceID());
@@ -1161,7 +1161,7 @@ namespace Companions
             Vector3 b = chest.transform.position + Vector3.up * target;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
-            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            var hits = MHR_Phys.Ray(ref MHR_Phys.ToolKeeper1164, a, d / len, len, Mask());
             for (int i = 0; i < hits.Length; i++)
             {
                 Collider col = hits[i].collider;
@@ -1337,7 +1337,7 @@ namespace Companions
             Vector3 a = from + Vector3.up * 1.0f, b = to + Vector3.up * 0.5f;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
-            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            var hits = MHR_Phys.Ray(ref MHR_Phys.ToolKeeper1340, a, d / len, len, Mask());
             for (int i = 0; i < hits.Length; i++)
             {
                 Collider col = hits[i].collider;

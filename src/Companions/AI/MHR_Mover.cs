@@ -14,6 +14,7 @@ namespace Companions
         class S
         {
             public Vector3 Goal, Dest; public float Dist; public string Tag = "";
+            public int Gait = -1; public float GaitAt;   // 1.5.94: walk 0 / jog 1 / run 2 as last set, and when
             public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
             public bool FireReplan;   // 1.5.70: stepped out of a fire - plan again from outside it
             public readonly List<Vector3> Path = new List<Vector3>();
@@ -373,7 +374,7 @@ namespace Companions
                 if (small && c.IsOnGround() && now >= s.NextHop && !NearFire(pos + dir * 2.5f, 0.3f) && !DropAhead(pos, dir, 2.5f, 1.2f))
                 {
                     s.NextHop = now + 1.0f;
-                    ai.transform.rotation = Quaternion.LookRotation(dir);
+                    Face(ai, dir);
                     c.Jump(false);
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 6f; v.z = dir.z * 6f; rb.linearVelocity = v; }
@@ -441,6 +442,13 @@ namespace Companions
             if (speed == SpeedWalk) { run = false; walk = true; }
             else if (speed == SpeedJog) { run = false; walk = false; }
             else if (speed == SpeedRun) { run = allowRun; walk = false; }
+            // 1.5.94: (user: "They should move like a player") ease off before arriving, as a player lets go of run near
+            // where they're going: a jog for the last 3 m, a walk for the last metre (not in a fight)
+            if (tag != CombatTag && s.Dist < 1.5f)
+            {
+                if (remain < 3f) run = false;
+                if (remain < 1.2f) walk = true;
+            }
             Steer(ai, c, s, dir, run, walk);
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
@@ -448,7 +456,7 @@ namespace Companions
             if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f))
             {
                 s.NextHop = now + 0.6f;
-                ai.transform.rotation = Quaternion.LookRotation(dir);
+                Face(ai, dir);
                 c.Jump(false);
                 Rigidbody rb = ai.GetComponent<Rigidbody>();
                 if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
@@ -505,7 +513,7 @@ namespace Companions
             if (s.UseLadder != null || s.Goal.y < pos.y + 1.5f) return false;
             Ladder best = null; float bestScore = float.MaxValue;
             float here = Vector3.Distance(pos, s.Goal);
-            foreach (Ladder l in UnityEngine.Object.FindObjectsByType<Ladder>(FindObjectsSortMode.None))
+            foreach (Ladder l in MHR_World.Ladders())   // 1.5.94: shared, kept 5 s
             {
                 if (l == null || l.m_targetPos == null || s.LaddersUsed.Contains(l)) continue;
                 Vector3 bottom = l.transform.position, top = l.m_targetPos.position;
@@ -544,12 +552,33 @@ namespace Companions
         {
             ai.StopMoving();
             if (c != null && s.Walking) { c.SetWalk(false); s.Walking = false; }
+            s.Gait = -1;   // 1.5.94: from standing it starts off walking and picks up speed
         }
 
+        // 1.5.94: (user: "They should move like a player") one step of pace at a time - walk, jog, run - at most every
+        // 0.4 s, instead of flipping between run and walk from one tick to the next (it jerked a cart off its shafts).
+        // Not in a fight, and never holding back a slow-down for a drop, fire or ledge (those call Halt).
+        const float GaitStep = 0.4f;
         static void Steer(CompanionAI ai, Character c, S s, Vector3 dir, bool run, bool walk)
         {
-            if (walk != s.Walking) { c.SetWalk(walk); s.Walking = walk; }
-            ai.MoveTowards(dir, run && !walk);
+            int want = walk ? 0 : (run ? 2 : 1);
+            float now = Time.time;
+            if (s.Tag == CombatTag || c.IsSwimming()) { s.Gait = want; s.GaitAt = now; }
+            else if (s.Gait < 0) { s.Gait = Mathf.Min(want, 1); s.GaitAt = now; }
+            else if (want != s.Gait && now - s.GaitAt >= GaitStep) { s.Gait += want > s.Gait ? 1 : -1; s.GaitAt = now; }
+            bool w = s.Gait == 0, r = s.Gait == 2;
+            if (w != s.Walking) { c.SetWalk(w); s.Walking = w; }
+            ai.MoveTowards(dir, r && !w);
+        }
+
+        // 1.5.94: turn to face a way like a player does - the game's own turning (Character.SetLookDir, at its turn speed),
+        // not an instant snap of the body
+        internal static void Face(CompanionAI ai, Vector3 dir)
+        {
+            dir.y = 0f;
+            if (ai == null || dir.sqrMagnitude < 0.0001f) return;
+            Character c = ai.GetComponent<Character>();
+            if (c != null) c.SetLookDir(dir.normalized);
         }
 
         // ---------- path ----------
@@ -1215,7 +1244,7 @@ namespace Companions
                 {
                     float y = dirUp == 0 ? end.max.y : end.min.y;
                     GameObject next = null; Bounds nb = default(Bounds);
-                    foreach (Collider o in Physics.OverlapSphere(new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
+                    foreach (Collider o in MHR_Phys.Sphere(ref MHR_Phys.Mover1247, new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
                     {
                         if (o == null) continue;
                         Piece p;
@@ -1259,7 +1288,7 @@ namespace Companions
             }
             // head room where it stands and on the way in (a jump needs about 2 m clear)
             for (float d = 0f; d <= 0.31f && room; d += 0.3f)
-                foreach (RaycastHit h in Physics.RaycastAll(spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
+                foreach (RaycastHit h in MHR_Phys.Ray(ref MHR_Phys.Mover1291, spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
                 {
                     Piece hp;
                     GameObject hr = LadderRoot(h.collider, out hp);
@@ -1342,7 +1371,7 @@ namespace Companions
                 Vector3 top = new Vector3(cur.center.x, cur.max.y, cur.center.z) + curDir * depth;
                 LadderStep next = null; Bounds nextB = default(Bounds); float bd = float.MaxValue;
                 var seen = new HashSet<int>();
-                foreach (Collider col in Physics.OverlapSphere(top, 5f, Mask()))
+                foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1374, top, 5f, Mask()))
                 {
                     if (col == null || col.isTrigger) continue;
                     Piece piece;
@@ -1375,7 +1404,7 @@ namespace Companions
         // nothing but ladder within `height` above a spot
         static bool HeadRoom(Vector3 spot, float height)
         {
-            foreach (RaycastHit h in Physics.RaycastAll(spot + Vector3.up * 0.3f, Vector3.up, height - 0.3f, Mask(), QueryTriggerInteraction.Ignore))
+            foreach (RaycastHit h in MHR_Phys.Ray(ref MHR_Phys.Mover1407, spot + Vector3.up * 0.3f, Vector3.up, height - 0.3f, Mask(), QueryTriggerInteraction.Ignore))
             {
                 Piece hp; GameObject hr = LadderRoot(h.collider, out hp);
                 if (hr != null && IsLadder(hr, hp, h.collider)) continue;
@@ -1648,7 +1677,7 @@ namespace Companions
                 Vector3 foot = chain[chain.Count - 1].Foot;
                 LadderStep next = null; Bounds nextB = default(Bounds); float bd = float.MaxValue;
                 var seen = new HashSet<int>();
-                foreach (Collider col in Physics.OverlapSphere(foot, 5f, Mask()))
+                foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1680, foot, 5f, Mask()))
                 {
                     if (col == null || col.isTrigger) continue;
                     Piece piece;
@@ -1740,7 +1769,7 @@ namespace Companions
         {
             Vector3 best = s.Goal - pos; best.y = 0f; float bd = float.MaxValue;
             var seen = new HashSet<int>();
-            foreach (Collider col in Physics.OverlapSphere(pos, 3.5f, Mask()))
+            foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1772, pos, 3.5f, Mask()))
             {
                 if (col == null || col.isTrigger) continue;
                 Piece piece;
@@ -1770,7 +1799,7 @@ namespace Companions
             if (needY < pos.y + 1.5f) return false;
             // 1.5.3: a chain of ladders that has worked before, starting by our feet: straight onto it
             if (UseKnownChain(s, pos, needY, now, tag)) return true;
-            Collider[] cols = Physics.OverlapSphere(pos + Vector3.up * 2f, 14f, Mask());
+            var cols = MHR_Phys.Sphere(ref MHR_Phys.Mover1802, pos + Vector3.up * 2f, 14f, Mask());
             GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue; int bestId = 0;
             var seen = new HashSet<int>();
             foreach (Collider col in cols)
@@ -1958,7 +1987,7 @@ namespace Companions
             if (c.IsSwimming() || !c.IsOnGround() || s.DescendLadder || s.LadderPending) return false;
             float below = pos.y - s.Goal.y;
             if (below < 1.5f) return false;
-            Collider[] cols = Physics.OverlapSphere(pos, 14f, Mask());
+            var cols = MHR_Phys.Sphere(ref MHR_Phys.Mover1990, pos, 14f, Mask());
             var seen = new HashSet<int>();
             float bestScore = float.MaxValue; GameObject best = null; int bestId = 0; Vector3 bestTop = Vector3.zero, bestBase = Vector3.zero, bestF = Vector3.zero;
             Bounds bestB = default(Bounds); bool bestLedge = false;
@@ -2019,7 +2048,7 @@ namespace Companions
             Vector3 dir = s.ClimbBase - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.09f) dir = -s.ClimbDir;
             dir.Normalize();
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Face(ai, dir);
             Steer(ai, c, s, dir, false, false);
         }
 
@@ -2195,7 +2224,7 @@ namespace Companions
                 s.ClimbLadder = false;
                 return;
             }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Face(ai, dir);
             Steer(ai, c, s, dir, !s.ClimbLadder, false);   // 1.5.3: walk up ladders, save the stamina
             // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward.
             // 1.5.2: not on a ladder with its own auto-jump - walking into it is all a player does there; only help out
@@ -2510,6 +2539,7 @@ namespace Companions
         // fireplaces with a damaging Aoe, refreshed every 2 s.
         class FireZone { public Fireplace Fp; public EffectArea Area; public Aoe Aoe; public Collider[] Triggers; }
         static readonly List<FireZone> s_zones = new List<FireZone>();
+        static readonly Dictionary<int, FireZone[]> s_fireZones = new Dictionary<int, FireZone[]>();
         static float s_zonesAt = -10f;
 
         static EffectArea FireZoneAt(Vector3 p, float margin)
@@ -2519,17 +2549,29 @@ namespace Companions
             {
                 s_zonesAt = now;
                 s_zones.Clear();
-                foreach (Fireplace fp in UnityEngine.Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+                // 1.5.94: the shared fire list, and each fire's damage zones looked up once (they were searched for again
+                // on every burning fire - every torch - every 2 s)
+                if (s_fireZones.Count > 4000) s_fireZones.Clear();
+                foreach (Fireplace fp in MHR_World.Fires())
                 {
                     if (fp == null || !fp.IsBurning()) continue;
-                    EffectArea area = fp.GetComponentInChildren<EffectArea>();
-                    foreach (Aoe aoe in fp.GetComponentsInChildren<Aoe>(false))
+                    int fid = fp.GetInstanceID();
+                    FireZone[] zs;
+                    if (!s_fireZones.TryGetValue(fid, out zs))
                     {
-                        if (aoe == null || (aoe.m_damage.m_fire <= 0f && aoe.m_damageSelf <= 0f && aoe.m_damage.GetTotalDamage() <= 0f)) continue;
-                        List<Collider> trig = new List<Collider>();
-                        foreach (Collider tc in aoe.GetComponents<Collider>()) if (tc != null && tc.isTrigger) trig.Add(tc);
-                        s_zones.Add(new FireZone { Fp = fp, Area = area, Aoe = aoe, Triggers = trig.ToArray() });
+                        List<FireZone> found = new List<FireZone>();
+                        EffectArea area = fp.GetComponentInChildren<EffectArea>();
+                        foreach (Aoe aoe in fp.GetComponentsInChildren<Aoe>(true))
+                        {
+                            if (aoe == null || (aoe.m_damage.m_fire <= 0f && aoe.m_damageSelf <= 0f && aoe.m_damage.GetTotalDamage() <= 0f)) continue;
+                            List<Collider> trig = new List<Collider>();
+                            foreach (Collider tc in aoe.GetComponents<Collider>()) if (tc != null && tc.isTrigger) trig.Add(tc);
+                            found.Add(new FireZone { Fp = fp, Area = area, Aoe = aoe, Triggers = trig.ToArray() });
+                        }
+                        zs = found.ToArray();
+                        s_fireZones[fid] = zs;
                     }
+                    s_zones.AddRange(zs);
                 }
             }
             for (int i = 0; i < s_zones.Count; i++)
@@ -2679,7 +2721,7 @@ namespace Companions
             // the stake wall, every unstuck step cancelled by the deep water
             if (c.IsSwimming())
             {
-                ai.transform.rotation = Quaternion.LookRotation(dir);
+                Face(ai, dir);
                 c.Jump(false);
                 Rigidbody wrb = ai.GetComponent<Rigidbody>();
                 if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
@@ -2690,7 +2732,7 @@ namespace Companions
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             // 1.5.70: never hop toward a fire (the hearth stone is a step it would hop up onto)
             if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f) || Lava(pos + dir * 1.5f) || Lava(pos + dir * 3f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Face(ai, dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
@@ -2737,7 +2779,7 @@ namespace Companions
                 }
             }
             if (bestDir == Vector3.zero || Mathf.Abs(bestLand.y - goal.y) > below - 1f) return false;   // must get us closer to its level
-            ai.transform.rotation = Quaternion.LookRotation(bestDir);
+            Face(ai, bestDir);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
             s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f;
@@ -3256,7 +3298,7 @@ namespace Companions
             s_leafClosed[d.GetInstanceID()] = Time.time + 8f;
             if (s_leafClosed.Count > 200) s_leafClosed.Clear();
             Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
-            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            if (to.sqrMagnitude > 0.01f) Face(ai, to);
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
@@ -3445,7 +3487,7 @@ namespace Companions
                 return;
             }
             Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
-            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            if (to.sqrMagnitude > 0.01f) Face(ai, to);
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }

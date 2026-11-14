@@ -597,10 +597,10 @@ public class CompanionAI : BaseAI
 			{
 				return false;
 			}
-			foreach (Collider c in Physics.OverlapSphere(pos, 8f))
+			// 1.5.94: the shared fire list (was an 8 m search through every collider around it, once a second per companion)
+			foreach (Fireplace fp in MHR_World.Fires())
 			{
-				Fireplace fp = c != null ? c.GetComponentInParent<Fireplace>() : null;
-				if (fp != null && fp.IsBurning())
+				if (fp != null && (fp.transform.position - pos).sqrMagnitude <= 81f && fp.IsBurning())
 				{
 					return true;
 				}
@@ -1050,7 +1050,7 @@ public class CompanionAI : BaseAI
 		}
 		// 1.5.45: after a revive, look every second (1.5.44 test: "Took the NPC a while to notice the tombstone")
 		_tombstoneScanTimer = MHR_Recover.IsRecovering(this) ? 1f : TombstoneScanInterval;
-		TombStone[] array = UnityEngine.Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None);
+		List<TombStone> array = MHR_World.Tombstones();   // 1.5.94: shared list, not a scene search
 		foreach (TombStone tombStone in array)
 		{
 			if (tombStone == null)

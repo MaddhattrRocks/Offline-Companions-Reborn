@@ -281,6 +281,7 @@ public static class ModLocalization
 			{ "hc_act_fetch_tool", "Fetching {0}." },
 			{ "hc_act_return_tool", "Putting {0} back." },
 			{ "hc_act_bed", "Off to bed." },
+			{ "hc_speech_cart_left", "I've let go of the cart - {0}." },
 			{ "hc_status_farm_harvesting", "harvesting" },
 			{ "hc_status_farm_pickup", "picking up the harvest" },
 			{ "hc_status_farm_seeds", "fetching seeds" },

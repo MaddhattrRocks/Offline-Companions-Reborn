@@ -524,7 +524,7 @@ namespace Companions
             {
                 int mode = Mode(h);
                 GameObject best = null; float bd = float.MaxValue;
-                Collider[] cols = Physics.OverlapSphere(center, 12f);
+                var cols = MHR_Phys.Sphere(ref MHR_Phys.GatherRules527, center, 12f);
                 HashSet<int> seen = new HashSet<int>();
                 for (int i = 0; i < cols.Length; i++)
                 {

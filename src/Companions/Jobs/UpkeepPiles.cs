@@ -496,7 +496,7 @@ public partial class UpkeepController
 	private static bool NearUsedThing(Vector3 mid, Vector3 half)
 	{
 		float r = Mathf.Max(half.x, half.z) + 1.6f;
-		foreach (Collider c in Physics.OverlapSphere(mid, r + 1f, LayerMask.GetMask("Default", "piece", "piece_nonsolid", "static_solid", "vehicle")))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.UpkeepPiles499, mid, r + 1f, LayerMask.GetMask("Default", "piece", "piece_nonsolid", "static_solid", "vehicle")))
 		{
 			if (c == null)
 			{
@@ -642,7 +642,7 @@ public partial class UpkeepController
 		}
 		// a little smaller than the pile and lifted off its base, so the floor or ground it stands on doesn't count
 		Vector3 box = new Vector3(half.x * 0.9f, half.y * 0.8f, half.z * 0.9f);
-		Collider[] hits = Physics.OverlapBox(pos + rot * (center + Vector3.up * half.y * 0.15f), box, rot, BuildMask());
+		var hits = MHR_Phys.Box(ref MHR_Phys.UpkeepPiles645, pos + rot * (center + Vector3.up * half.y * 0.15f), box, rot, BuildMask());
 		foreach (Collider h in hits)
 		{
 			if (h != null && !h.isTrigger)
@@ -890,7 +890,7 @@ public partial class UpkeepController
 		Vector3 me = base.transform.position;
 		ItemDrop nearest = null;
 		float nd = float.MaxValue;
-		foreach (Collider c in Physics.OverlapSphere(_spot, 4f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.UpkeepPiles893, _spot, 4f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
 			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == k.Shared && !_pileDropsBefore.Contains(d.GetInstanceID()) && bag.CanAddItem(d.m_itemData, 1))

@@ -403,7 +403,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return false;
 		}
-		Collider[] cols = Physics.OverlapSphere(_lastTargetPos, 2.5f, -1, QueryTriggerInteraction.Ignore);
+		var cols = MHR_Phys.Sphere(ref MHR_Phys.HarvestController406, _lastTargetPos, 2.5f, -1, QueryTriggerInteraction.Ignore);
 		GameObject found = null;
 		for (int i = 0; i < cols.Length; i++)
 		{
@@ -468,7 +468,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return false;
 		}
-		RaycastHit[] hits = Physics.RaycastAll(from, d / len, len + 0.5f, -1, QueryTriggerInteraction.Ignore);
+		var hits = MHR_Phys.Ray(ref MHR_Phys.HarvestController471, from, d / len, len + 0.5f, -1, QueryTriggerInteraction.Ignore);
 		float best = float.MaxValue;
 		for (int i = 0; i < hits.Length; i++)
 		{
@@ -2227,7 +2227,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return;
 		}
-		foreach (Collider c in Physics.OverlapSphere(_target.transform.position, 15f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.HarvestController2230, _target.transform.position, 15f))
 		{
 			TreeLog l = c != null ? c.GetComponentInParent<TreeLog>() : null;
 			if (l != null && !_ownPieces.Contains(l.gameObject.GetInstanceID()))
@@ -2339,7 +2339,7 @@ public class HarvestController : MonoBehaviour
 		{
 			return true;
 		}
-		foreach (RaycastHit hit in Physics.RaycastAll(from, d.normalized, len, s_lineMask, QueryTriggerInteraction.Ignore))
+		foreach (RaycastHit hit in MHR_Phys.Ray(ref MHR_Phys.HarvestController2342, from, d.normalized, len, s_lineMask, QueryTriggerInteraction.Ignore))
 		{
 			if (hit.collider == null || hit.collider.GetComponentInParent<Character>() != null || hit.collider.transform.IsChildOf(_target.transform))
 			{
@@ -2523,8 +2523,8 @@ public class HarvestController : MonoBehaviour
 			Vector3 vector3 = vector - vector2;
 			if (vector3.sqrMagnitude > 0.01f)
 			{
-				RaycastHit[] array = Physics.RaycastAll(vector2, vector3.normalized, vector3.magnitude + 3f);
-				RaycastHit[] array2 = array;
+				var array = MHR_Phys.Ray(ref MHR_Phys.HarvestController2526, vector2, vector3.normalized, vector3.magnitude + 3f);
+				var array2 = array;
 				for (int j = 0; j < array2.Length; j++)
 				{
 					RaycastHit raycastHit = array2[j];

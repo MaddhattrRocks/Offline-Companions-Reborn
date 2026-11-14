@@ -821,7 +821,7 @@ public class CompanionRest : MonoBehaviour
 		int num2 = 0;
 		int num3 = 0;
 		HashSet<int> hashSet = new HashSet<int>();
-		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Collider[] array = MHR_BedCols(anchor, radius);
 		foreach (Collider collider in array)
 		{
 			Bed bed3 = ((collider != null) ? collider.GetComponentInParent<Bed>() : null);
@@ -839,6 +839,41 @@ public class CompanionRest : MonoBehaviour
 			}
 		}
 		MHR_BedFail((num == 0) ? $"no bed within {radius:F0} m of its {(_setup.HasHomePosition() ? "home" : "position")}" : $"{num} bed(s) within {radius:F0} m, {num2} slept in by a player, {num3} taken by another companion");
+	}
+
+	// 1.5.94: the beds near a point from the shared bed list, as one collider of each (the bed searches used to go through
+	// every collider within 20 m, every 5 s per companion without a bed at night). A bed counts when its middle is within
+	// radius + 1.5 m (about how far a bed's own collider reaches from its middle).
+	private static readonly Dictionary<int, Collider> s_bedCol = new Dictionary<int, Collider>();
+
+	private static readonly List<Collider> s_bedTmp = new List<Collider>();
+
+	private static Collider[] MHR_BedCols(Vector3 anchor, float radius)
+	{
+		s_bedTmp.Clear();
+		float r = radius + 1.5f;
+		foreach (Bed bed in MHR_World.Beds())
+		{
+			if (bed == null || (bed.transform.position - anchor).sqrMagnitude > r * r)
+			{
+				continue;
+			}
+			int id = bed.GetInstanceID();
+			if (!s_bedCol.TryGetValue(id, out var col) || col == null)
+			{
+				col = bed.GetComponentInChildren<Collider>();
+				if (s_bedCol.Count > 1000)
+				{
+					s_bedCol.Clear();
+				}
+				s_bedCol[id] = col;
+			}
+			if (col != null)
+			{
+				s_bedTmp.Add(col);
+			}
+		}
+		return s_bedTmp.ToArray();
 	}
 
 	private void MHR_BedFail(string reason)
@@ -1379,7 +1414,7 @@ public class CompanionRest : MonoBehaviour
 
 	private Bed FindNearbyBed()
 	{
-		Collider[] array = Physics.OverlapSphere(base.transform.position, 20f);
+		Collider[] array = MHR_BedCols(base.transform.position, 20f);
 		Bed result = null;
 		float num = float.MaxValue;
 		HashSet<int> hashSet = new HashSet<int>();
@@ -1411,7 +1446,7 @@ public class CompanionRest : MonoBehaviour
 
 	private Bed FindAnyBedNear(Vector3 anchor, float radius)
 	{
-		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Collider[] array = MHR_BedCols(anchor, radius);
 		Bed result = null;
 		float num = float.MaxValue;
 		foreach (Collider collider in array)
@@ -1436,7 +1471,7 @@ public class CompanionRest : MonoBehaviour
 
 	private Bed FindUnclaimedBedNear(Vector3 anchor, float radius)
 	{
-		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Collider[] array = MHR_BedCols(anchor, radius);
 		Bed result = null;
 		float num = float.MaxValue;
 		int i = 0;
@@ -1548,7 +1583,7 @@ public class CompanionRest : MonoBehaviour
 
 	private bool HasOwnerBedNearby(Vector3 anchor, float radius)
 	{
-		Collider[] array = Physics.OverlapSphere(anchor, radius);
+		Collider[] array = MHR_BedCols(anchor, radius);
 		foreach (Collider collider in array)
 		{
 			if (!(collider == null))

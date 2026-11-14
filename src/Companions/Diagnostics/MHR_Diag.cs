@@ -64,7 +64,8 @@ public static class MHR_Diag
 				s_track[instanceID] = value;
 			}
 			// 1.4.86: standing still in a fight (shooting from where it is) isn't being stuck
-			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f || (companionSetup.GetComponent<CompanionAI>()?.IsInCombat ?? false))
+			// 1.5.94: nor is sleeping, resting or sitting (user log: a companion asleep in bed at night set this off)
+			else if (num <= 10f || Vector3.Distance(position2, value.Anchor) > 1f || (companionSetup.GetComponent<CompanionAI>()?.IsInCombat ?? false) || Resting(companionSetup))
 			{
 				value.Anchor = position2;
 				value.Since = time;
@@ -76,6 +77,17 @@ public static class MHR_Diag
 				Report(companionSetup, component, position2, num, time - value.Since);
 			}
 		}
+	}
+
+	private static bool Resting(CompanionSetup cs)
+	{
+		CompanionRest r = cs.GetComponent<CompanionRest>();
+		if (r != null && (r.IsSleeping || r.IsResting || r.IsNavigating))
+		{
+			return true;
+		}
+		CompanionAI ai = cs.GetComponent<CompanionAI>();
+		return ai != null && MHR_Follow.IdleSeated(ai);
 	}
 
 	private static void Report(CompanionSetup cs, ZNetView nv, Vector3 pos, float dist, float stuckFor)

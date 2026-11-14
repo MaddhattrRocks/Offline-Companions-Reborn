@@ -649,7 +649,7 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 
 	internal static bool MHR_HasFullGraveNear(Vector3 pos)
 	{
-		TombStone[] array = Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None);
+		List<TombStone> array = MHR_World.Tombstones();   // 1.5.94
 		foreach (TombStone tombStone in array)
 		{
 			if (tombStone == null || !(Vector3.Distance(tombStone.transform.position, pos) <= 8f))

@@ -30,7 +30,7 @@ namespace Companions
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
             public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
             public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
-            public Vagon Loose; public string LooseWhy; public float LooseUntil;   // 1.5.92: came loose, waiting to see if it's safe to take again
+            public Vagon Loose; public string LooseWhy; public float LooseUntil, LooseSteadySince = -1f, CartLog;   // 1.5.92: came loose, waiting to see if it's safe to take again
         }
         // one per followed player, shared by all companions following them
         class T
@@ -190,6 +190,16 @@ namespace Companions
             // 1.5.89: pulling a cart: straight behind the player, no wander, no spot off to one side
             if (CartFollow(ai, s, t, c, player, me, pp, distP, maxD, tid, now, dt)) return;
 
+            // 1.5.94: a cart someone pulls is on top of it (or about to be): step out of its way first, moving or standing
+            Vector3 away;
+            if (MHR_Cart.InTheWay(c, me, 1f, out away))
+            {
+                s.HasIdle = false; s.IdleMoving = false; s.Moving = true;
+                if (now - s.CartLog > 3f) { s.CartLog = now; Dbg(c.m_name + " steps out of the way of a cart, to " + away.ToString("F1")); }
+                MHR_Mover.Go(ai, dt, away, 0.3f, true, MHR_Mover.FollowTag, MHR_Mover.SpeedJog);
+                return;
+            }
+
             // 1.5.2: on another floor and the route planner has no way there: go the way the player went
             if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
 
@@ -240,7 +250,7 @@ namespace Companions
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
                     // 1.5.92: round a cart someone pulls, like a player
                     Vector3 via;
-                    if (MHR_Cart.AroundCart(c, me, lead, 0.6f, out via)) lead = via;
+                    if (MHR_Cart.AroundCart(c, me, lead, 0.6f, out via)) { lead = via; CartLogAround(s, c, via, now); }
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
@@ -271,7 +281,7 @@ namespace Companions
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
                 Vector3 viaBack;
-                if (MHR_Cart.AroundCart(c, me, goal, 0.6f, out viaBack)) goal = viaBack;   // 1.5.92
+                if (MHR_Cart.AroundCart(c, me, goal, 0.6f, out viaBack)) { goal = viaBack; CartLogAround(s, c, viaBack, now); }   // 1.5.92
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
                 // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
                 if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
@@ -308,7 +318,7 @@ namespace Companions
             if (s.IdleMoving)
             {
                 Vector3 idleAim = s.IdleGoal, viaIdle;
-                if (MHR_Cart.AroundCart(c, me, idleAim, 0.6f, out viaIdle)) idleAim = viaIdle;   // 1.5.92
+                if (MHR_Cart.AroundCart(c, me, idleAim, 0.6f, out viaIdle)) { idleAim = viaIdle; CartLogAround(s, c, viaIdle, now); }   // 1.5.92
                 if ((MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) && idleAim == s.IdleGoal) || MHR_Mover.GaveUp(ai))
                 {
                     s.IdleMoving = false; s.NextIdle = now + UnityEngine.Random.Range(6f, 14f);
@@ -408,7 +418,7 @@ namespace Companions
                     return false;
                 }
             }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            MHR_Mover.Face(ai, dir);   // 1.5.94: turn like a player, not in one frame
             c.SetWalk(false);
             ai.MoveTowards(dir, false);
             // the next step is up and walking at it hasn't lifted us: jump, as the player would
@@ -470,31 +480,45 @@ namespace Companions
         {
             Vagon mine = MHR_Cart.Pulled(c);
             Vagon theirs = MHR_Cart.Pulled(player);
-            MHR_Cart.Apart(c, mine, player, theirs);
             if (mine == null)
             {
                 if (s.Cart)
                 {
                     s.Cart = false; s.HasSpot = false; s.HasIdle = false;
                     s.LooseWhy = MHR_Cart.WhyLoose(s.LastCart, c);
-                    s.Loose = s.LastCart; s.LastCart = null; s.LooseUntil = now + 3f;
+                    s.Loose = s.LastCart; s.LastCart = null; s.LooseUntil = now + 4f; s.LooseSteadySince = -1f;
                     Dbg(c.m_name + " let go of the cart (" + s.LooseWhy + ")");
                 }
                 // 1.5.92: came loose without an order: take it again only when it's safe; stand by up to 3 s for the cart to
                 // stop rolling, otherwise leave it and say why
+                // 1.5.94: stricter - level, and still for a whole second; not after a second loss within 30 s; and when it
+                // leaves the cart it says so, like a job that stops
                 if (s.Loose != null)
                 {
                     bool wait;
-                    string no = MHR_Cart.NotSafeToRehitch(ai, c, s.Loose, out wait);
+                    string no = MHR_Cart.NotSafeToRehitch(ai, c, s.Loose, out wait) ?? MHR_Cart.TooManyLosses(c);
                     if (no == null)
                     {
-                        Vagon v = s.Loose; s.Loose = null;
-                        if (MHR_Cart.Rehitch(ai, c, v, s.LooseWhy)) return true;
-                        return false;
+                        if (s.LooseSteadySince < 0f) s.LooseSteadySince = now;
+                        if (now - s.LooseSteadySince >= 1f)
+                        {
+                            Vagon v = s.Loose; s.Loose = null;
+                            if (MHR_Cart.Rehitch(ai, c, v, s.LooseWhy)) return true;
+                            return false;
+                        }
+                        if (now < s.LooseUntil) { ai.StopMoving(); return true; }
+                        no = "the cart didn't stay still";
                     }
-                    if (wait && now < s.LooseUntil) { ai.StopMoving(); return true; }
-                    if (s.LooseWhy != "the cart was used" && CompanionsPlugin.LogNormal)
-                        CompanionsPlugin.Log.LogInfo("[Cart] " + c.m_name + "'s cart came loose (" + s.LooseWhy + ") - leaving it: " + no);
+                    else
+                    {
+                        s.LooseSteadySince = -1f;
+                        if (wait && now < s.LooseUntil) { ai.StopMoving(); return true; }
+                    }
+                    if (s.LooseWhy != "the cart was used")
+                    {
+                        if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Cart] " + c.m_name + "'s cart came loose (" + s.LooseWhy + ") - leaving it: " + no);
+                        ai.GetComponent<CompanionTalk>()?.Speak(ModLocalization.LocFmt("hc_speech_cart_left", no), CompanionTalk.Priority.Event, "cart:left");
+                    }
                     s.Loose = null;
                 }
                 return false;
@@ -537,6 +561,11 @@ namespace Companions
             return true;
         }
         // companions pulling a cart for the same player, nearer the player than this one
+        // 1.5.94: Detailed log only, at most every 3 s per companion
+        static void CartLogAround(S s, Character c, Vector3 via, float now)
+        {
+            if (now - s.CartLog > 3f) { s.CartLog = now; Dbg(c.m_name + " walks round a cart, via " + via.ToString("F1")); }
+        }
         static int CartRank(CompanionAI ai, S me, int tid, float now)
         {
             int id = ai.gameObject.GetInstanceID(), rank = 0;

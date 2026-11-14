@@ -9,7 +9,7 @@ namespace Companions
     // ---- 1.5.89: carts. ----
     // A companion pulling a cart follows straight behind the player on the player's own path (MHR_Follow.CartFollow),
     // far enough back to clear the player's cart when the player pulls one too. While both pull a cart the two carts
-    // (and each cart with the other one's puller) don't collide, so they can't snag on each other in a turn.
+    // (1.5.94: no longer pass through each other - they collide, as two players' carts do).
     // 1.5.91/1.5.92: (user: "The npcs run into it all the time. They should not run into the cart. They also seem to stop
     // pulling the cart randomly.") A cart that the player or a companion is pulling is a "party cart" for as long as it's
     // pulled. Companions don't pass through it (user: they should act like a player): their spots keep clear of it
@@ -21,11 +21,9 @@ namespace Companions
     public static class MHR_Cart
     {
         class C { public Vagon Cart; public float NextScan; }
-        class P { public Character Player; public Vagon Mine, Theirs; }
         class A { public Vagon Cart; public float Seen; public Bounds Box; public int BoxFrame = -1; public string By; }
 
         static readonly Dictionary<int, C> s_pulled = new Dictionary<int, C>();
-        static readonly Dictionary<int, P> s_apart = new Dictionary<int, P>();
         static readonly Dictionary<int, Collider[]> s_cols = new Dictionary<int, Collider[]>();
         static readonly Collider[] s_hits = new Collider[32];
         static int s_mask = -1;
@@ -103,35 +101,9 @@ namespace Companions
             return Mathf.Clamp(best, 1.5f, 8f);
         }
 
-        // keep the companion's cart and the player's cart apart in the physics (or put it back once either lets go)
-        public static void Apart(Character comp, Vagon mine, Character player, Vagon theirs)
-        {
-            if (comp == null) return;
-            int id = comp.gameObject.GetInstanceID();
-            P p;
-            s_apart.TryGetValue(id, out p);
-            if (p != null && p.Mine == mine && p.Theirs == theirs && p.Player == player) return;
-            if (p != null) { Ignore(p, false); s_apart.Remove(id); }
-            if (mine == null || theirs == null || player == null || mine == theirs) return;
-            p = new P { Player = player, Mine = mine, Theirs = theirs };
-            Ignore(p, true);
-            s_apart[id] = p;
-            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Cart] " + comp.m_name + " and the player both pull a cart - the carts pass through each other");
-        }
-
-        static void Ignore(P p, bool ignore)
-        {
-            if (p.Mine == null || p.Theirs == null) return;   // a cart was destroyed: its pairs went with it
-            Collider[] a = Cols(p.Mine), b = Cols(p.Theirs);
-            Collider cb = p.Player != null ? p.Player.GetComponent<Collider>() : null;
-            foreach (Collider x in a)
-            {
-                if (x == null) continue;
-                foreach (Collider y in b) if (y != null) Physics.IgnoreCollision(x, y, ignore);
-                if (cb != null) Physics.IgnoreCollision(x, cb, ignore);
-            }
-            // (the companion and the player's cart: both carts are party carts, every companion passes through them)
-        }
+        // 1.5.94: Apart() (1.5.89: the companion's cart and the player's cart, and each with the other's puller, passed
+        // through each other) is gone - in the game two carts pulled by two players collide (user: "They should behave like
+        // multiple players pulling a cart").
 
         // ---------- 1.5.91: party carts ----------
         // a character is pulling this cart (from Pulled, so only while a companion follows someone)
@@ -304,35 +276,77 @@ namespace Companions
             if (UsedLately(v)) return "someone used the cart";
             CompanionSetup setup = ai != null ? ai.GetComponent<CompanionSetup>() : null;
             if (setup == null || !setup.GetFollow()) return "it isn't following";
-            if (v.transform.up.y < 0.7f) return "the cart isn't upright";
+            if (v.transform.up.y < 0.94f) return "the cart isn't level";   // 1.5.94: tilted 20 degrees or more (on a slope it tipped right after)
             Rigidbody body = v.GetComponent<Rigidbody>();
-            if (body != null && body.linearVelocity.magnitude > 0.3f) { wait = true; return "the cart is still moving"; }
+            if (body != null && (body.linearVelocity.magnitude > 0.3f || body.angularVelocity.magnitude > 0.3f)) { wait = true; return "the cart is still moving"; }
             if (ai.IsInCombat) return "it's fighting";
             if (AnyoneAttached(v)) return "someone else is pulling the cart";
             if (FromShafts(v, ch) > 6f) return "it's too far from the cart";
             return null;
         }
 
-        // the cart came loose without an order and SafeToRehitch said yes: walk back to the shafts and take it again
-        // (CompanionAI's cart order), at most 3 times a minute
+        // 1.5.94: a second loss within 30 s of taking it back: not again (the slope or the load keeps pulling it off)
+        public static string TooManyLosses(Character ch)
+        {
+            List<float> tries;
+            if (ch == null || !s_rehitch.TryGetValue(ch.gameObject.GetInstanceID(), out tries)) return null;
+            float now = Time.time;
+            tries.RemoveAll(t => now - t > 30f);
+            return tries.Count >= 1 ? "it came loose again within 30 s" : null;
+        }
+
+        // the cart came loose without an order and NotSafeToRehitch said it's safe: walk back to the shafts and take it
+        // again (CompanionAI's cart order)
         public static bool Rehitch(CompanionAI ai, Character ch, Vagon v, string why)
         {
             Humanoid h = ch as Humanoid;
             if (ai == null || h == null || v == null) return false;
             int id = ch.gameObject.GetInstanceID();
-            float now = Time.time;
             List<float> tries;
             if (!s_rehitch.TryGetValue(id, out tries)) { tries = new List<float>(); s_rehitch[id] = tries; }
-            tries.RemoveAll(t => now - t > 60f);
-            if (tries.Count >= 3)
-            {
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Cart] " + ch.m_name + "'s cart came loose again (" + why + ") - leaving it after 3 tries this minute");
-                return false;
-            }
-            tries.Add(now);
+            tries.Add(Time.time);
             ai.SetPendingCart(v, h);
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Cart] " + ch.m_name + "'s cart came loose (" + why + ") - it's safe, hitching back on");
+            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Cart] " + ch.m_name + "'s cart came loose (" + why + ") - it's safe, hitching back on");
             return true;
+        }
+
+        // 1.5.94: (user: "It was pure chaos when I was trying to pull a cart") standing in (or within pad of) a cart someone
+        // else is pulling: a spot to step to, out of its way - to the side the cart isn't heading for when it rolls, else
+        // straight away from its middle. Like a player stepping aside.
+        public static bool InTheWay(Character self, Vector3 me, float pad, out Vector3 away)
+        {
+            away = me;
+            if (s_active.Count == 0) return false;
+            float now = Time.time;
+            C mine = null;
+            if (self != null) s_pulled.TryGetValue(self.gameObject.GetInstanceID(), out mine);
+            foreach (A a in s_active.Values)
+            {
+                if (a.Cart == null || now - a.Seen > 1.5f) continue;
+                if (mine != null && mine.Cart == a.Cart) continue;
+                Bounds b = Box(a);
+                if (me.y < b.min.y - 2f || me.y > b.max.y + 1f) continue;
+                if (me.x < b.min.x - pad || me.x > b.max.x + pad || me.z < b.min.z - pad || me.z > b.max.z + pad) continue;
+                Vector3 rel = me - b.center; rel.y = 0f;
+                float reach = Mathf.Max(b.extents.x, b.extents.z) + pad + 0.8f;
+                Rigidbody body = a.Cart.GetComponent<Rigidbody>();
+                Vector3 v = body != null ? body.linearVelocity : Vector3.zero; v.y = 0f;
+                if (v.sqrMagnitude > 0.25f)
+                {
+                    Vector3 side = new Vector3(-v.z, 0f, v.x).normalized;
+                    float off = Vector3.Dot(rel, side);
+                    float sign = off >= 0f ? 1f : -1f;
+                    away = me + side * sign * Mathf.Max(1f, reach - Mathf.Abs(off));
+                }
+                else
+                {
+                    Vector3 dir = rel.sqrMagnitude > 0.01f ? rel.normalized : (self != null ? -self.transform.forward : Vector3.forward);
+                    away = new Vector3(b.center.x, me.y, b.center.z) + dir * reach;
+                }
+                away.y = me.y;
+                return true;
+            }
+            return false;
         }
     }
 

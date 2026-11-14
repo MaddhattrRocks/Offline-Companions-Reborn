@@ -112,7 +112,7 @@ namespace Companions
                 k.Body = false;
                 try
                 {
-                    foreach (Ragdoll r in UnityEngine.Object.FindObjectsByType<Ragdoll>(FindObjectsSortMode.None))
+                    foreach (Ragdoll r in MHR_World.Bodies())   // 1.5.94
                     {
                         if (r == null || !r.m_dropItems) continue;
                         Vector3 bp = r.GetAverageBodyPosition();
