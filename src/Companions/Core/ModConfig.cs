@@ -47,6 +47,11 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> ShowMinimapHudPanel;
 
+	// 1.5.85: where the status panel sits, as an offset from its default spot under the minimap
+	internal static ConfigEntry<int> MinimapPanelOffsetX;
+
+	internal static ConfigEntry<int> MinimapPanelOffsetY;
+
 	internal static ConfigEntry<float> HealthRetreatPct;
 
 	internal static ConfigEntry<float> FleeHealthPct;
@@ -589,6 +594,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<KeyCode> ConfigPanelKey;
 
+	internal static ConfigEntry<KeyCode> MoveUiKey;
+
 	internal static ConfigEntry<KeyCode> FarmZoneKey;
 
 	internal static ConfigEntry<KeyCode> FarmZoneModifier;
@@ -613,6 +620,8 @@ internal static class ModConfig
 		RecoverLostCompanion = Bind(cfg, "General", "RecoverLostCompanion", defaultValue: false, "Set to true to bring back a Lost companion next to you, with its gear and settings from the last roster save. An Unknown companion needs it set a second time within 60 s to confirm (it may still be alive somewhere). If the old companion turns up later, it's removed. It turns itself back to false.");
 		ProtectCompanions = Bind(cfg, "General", "ProtectCompanions", defaultValue: true, "Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.");
 		ShowMinimapHudPanel = Bind(cfg, "General", "ShowMinimapPanel", defaultValue: true, "Show the companion status panel under the minimap.");
+		MinimapPanelOffsetX = Bind(cfg, "General", "MinimapPanelOffsetX", 0, "Moves the companion status panel sideways from its spot under the minimap (UI units: negative = left, positive = right). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.", new AcceptableValueRange<int>(-4000, 4000));
+		MinimapPanelOffsetY = Bind(cfg, "General", "MinimapPanelOffsetY", 0, "Moves the companion status panel up or down from its spot under the minimap (UI units: negative = down, positive = up; each companion row is about 64). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.", new AcceptableValueRange<int>(-4000, 4000));
 		ShowOverheadBars = Bind(cfg, "General", "ShowOverheadBars", defaultValue: true, "Show health and stamina bars above each companion's head.");
 		ShowStatus = Bind(cfg, "General", "ShowStatus", defaultValue: true, "When you look at a companion, show what it is doing under its name - and why not, when its job is stuck (e.g. \"Hunt - No game around.\").");
 		MaxCarryWeight = Bind(cfg, "General", "MaxCarryWeight", 300f, "How much weight a companion can carry (a player carries 300). Gathering and hunting companions head home to unload before this.", new AcceptableValueRange<float>(50f, 2000f));
@@ -626,6 +635,7 @@ internal static class ModConfig
 		DirectTargetKey = Bind(cfg, "Controls", "DirectTargetKey", KeyCode.Z, "The command key. Tap it while looking at something to send your companions to it (move there, attack it, open the door, sit by the fire, repair at the station...). Hold it to call them to you.");
 		RadialMenuKey = Bind(cfg, "Controls", "RadialMenuKey", KeyCode.E, "Hold this while looking at a companion to open its command wheel.");
 		ConfigPanelKey = Bind(cfg, "Controls", "ConfigPanelKey", KeyCode.F8, "Opens the in-game settings panel, where all of these settings can be changed.");
+		MoveUiKey = Bind(cfg, "Controls", "MoveUiKey", KeyCode.F7, "Turns reposition mode on and off: drag the companion status panel (under the minimap) or an open companion panel with the mouse, then press it again to save where it is. Open your inventory first to get a mouse cursor for the status panel. None = no key.");
 		FarmZoneKey = Bind(cfg, "Controls", "FarmZoneKey", KeyCode.Z, "Pressed together with FarmZoneModifier: opens the farm zone editor.");
 		FarmZoneModifier = Bind(cfg, "Controls", "FarmZoneModifier", KeyCode.LeftAlt, "Hold this and press FarmZoneKey to open the farm zone editor.");
 		RecallRange = Bind(cfg, "Controls", "RecallRange", 40f, "How close (meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. 0 = no limit.", new AcceptableValueRange<float>(0f, 500f));

@@ -28,6 +28,9 @@ namespace Companions
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
+            public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
+            public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
+            public Vagon Loose; public string LooseWhy; public float LooseUntil;   // 1.5.92: came loose, waiting to see if it's safe to take again
         }
         // one per followed player, shared by all companions following them
         class T
@@ -184,6 +187,9 @@ namespace Companions
                 return;
             }
 
+            // 1.5.89: pulling a cart: straight behind the player, no wander, no spot off to one side
+            if (CartFollow(ai, s, t, c, player, me, pp, distP, maxD, tid, now, dt)) return;
+
             // 1.5.2: on another floor and the route planner has no way there: go the way the player went
             if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
 
@@ -202,7 +208,8 @@ namespace Companions
                     else
                     {
                         Vector3 g;
-                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g)) PickSpot(ai, s, t, pp, maxD, false, 0f);
+                        // 1.5.91: and when a cart someone pulls is on it now
+                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g) || MHR_Cart.InCartWay(g, 0.8f)) PickSpot(ai, s, t, pp, maxD, false, 0f);
                         else s.SpotDy = g.y - pp.y;
                     }
                 }
@@ -231,6 +238,9 @@ namespace Companions
                     int pace = Pace(player, dSpot, distP, maxD);
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+                    // 1.5.92: round a cart someone pulls, like a player
+                    Vector3 via;
+                    if (MHR_Cart.AroundCart(c, me, lead, 0.6f, out via)) lead = via;
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
@@ -260,6 +270,8 @@ namespace Companions
                 if (!s.HasSpot || s.Radius > maxD * 0.7f) PickSpot(ai, s, t, pp, maxD, false, maxD * 0.6f);
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
+                Vector3 viaBack;
+                if (MHR_Cart.AroundCart(c, me, goal, 0.6f, out viaBack)) goal = viaBack;   // 1.5.92
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
                 // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
                 if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
@@ -295,7 +307,9 @@ namespace Companions
             }
             if (s.IdleMoving)
             {
-                if (MHR_Mover.Go(ai, dt, s.IdleGoal, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))
+                Vector3 idleAim = s.IdleGoal, viaIdle;
+                if (MHR_Cart.AroundCart(c, me, idleAim, 0.6f, out viaIdle)) idleAim = viaIdle;   // 1.5.92
+                if ((MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) && idleAim == s.IdleGoal) || MHR_Mover.GaveUp(ai))
                 {
                     s.IdleMoving = false; s.NextIdle = now + UnityEngine.Random.Range(6f, 14f);
                     MHR_Mover.Release(ai);
@@ -446,6 +460,95 @@ namespace Companions
         }
 
         // walk while the player walks, run while they run, a step faster to close a gap, run when far behind
+        // ---------- 1.5.89: pulling a cart ----------
+        // (user: "The companion seems to have a hard time with a cart when the player is also using a cart. Also when using
+        // a cart the companion should follow the player directly rather than using the wander or picking a location to one
+        // side.") The spots beside / ahead of the player put its cart across the player's cart (or in front of it), and the
+        // idle shuffle dragged the cart about. Now it walks the player's own path, a cart's length behind the player's cart
+        // (or 2.5 m behind the player), further back for each companion pulling a cart ahead of it, and waits there.
+        static bool CartFollow(CompanionAI ai, S s, T t, Character c, Player player, Vector3 me, Vector3 pp, float distP, float maxD, int tid, float now, float dt)
+        {
+            Vagon mine = MHR_Cart.Pulled(c);
+            Vagon theirs = MHR_Cart.Pulled(player);
+            MHR_Cart.Apart(c, mine, player, theirs);
+            if (mine == null)
+            {
+                if (s.Cart)
+                {
+                    s.Cart = false; s.HasSpot = false; s.HasIdle = false;
+                    s.LooseWhy = MHR_Cart.WhyLoose(s.LastCart, c);
+                    s.Loose = s.LastCart; s.LastCart = null; s.LooseUntil = now + 3f;
+                    Dbg(c.m_name + " let go of the cart (" + s.LooseWhy + ")");
+                }
+                // 1.5.92: came loose without an order: take it again only when it's safe; stand by up to 3 s for the cart to
+                // stop rolling, otherwise leave it and say why
+                if (s.Loose != null)
+                {
+                    bool wait;
+                    string no = MHR_Cart.NotSafeToRehitch(ai, c, s.Loose, out wait);
+                    if (no == null)
+                    {
+                        Vagon v = s.Loose; s.Loose = null;
+                        if (MHR_Cart.Rehitch(ai, c, v, s.LooseWhy)) return true;
+                        return false;
+                    }
+                    if (wait && now < s.LooseUntil) { ai.StopMoving(); return true; }
+                    if (s.LooseWhy != "the cart was used" && CompanionsPlugin.LogNormal)
+                        CompanionsPlugin.Log.LogInfo("[Cart] " + c.m_name + "'s cart came loose (" + s.LooseWhy + ") - leaving it: " + no);
+                    s.Loose = null;
+                }
+                return false;
+            }
+            s.Loose = null;
+            s.LastCart = mine;
+            if (!s.Cart)
+            {
+                s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
+                if (s.GoingToChair) ReleaseChair(s);
+                Dbg(c.m_name + " is pulling a cart - following straight behind" + (theirs != null ? " the player's cart" : " the player"));
+            }
+            s.CartDist = distP;
+            float myReach = MHR_Cart.Reach(mine, me);
+            float gap = theirs != null ? MHR_Cart.Reach(theirs, pp) + 1.5f : 2.5f;
+            gap += CartRank(ai, s, tid, now) * (myReach + 1.5f);
+
+            bool playerMoving = now - t.StillSince < 1.0f;
+            Vector3 goal = TrailPoint(t, pp, gap);
+            float dGoal = Flat(me, goal);
+            // start when it has dropped back from its place; stop when it gets closer to the player than its place (never
+            // up against the player's cart), or once there while the player stands still
+            if (!s.Moving && (distP > gap + 1f || (playerMoving && dGoal > 1.5f && distP > gap - 0.5f) || c.IsSwimming())) s.Moving = true;
+            if (s.Moving && !c.IsSwimming() && (distP < gap - 1f || (!playerMoving && (dGoal < 0.8f || distP < gap)))) s.Moving = false;
+            ai.MHR_SetCrouch(player.IsCrouching());
+            if (!s.Moving) { ai.StopMoving(); return true; }
+
+            // aim a little up the path while the player walks on, so it keeps going instead of arriving and starting again;
+            // a step slower than the player once it's at its place, so it drops back a little rather than running into them
+            Vector3 aim = playerMoving ? TrailPoint(t, pp, Mathf.Max(1f, gap - 1.5f)) : goal;
+            int pace = Pace(player, dGoal, distP, maxD);
+            if (playerMoving && distP < gap + 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+            MHR_Mover.Go(ai, dt, aim, 0.5f, true, MHR_Mover.FollowTag, pace);
+            if (MHR_Mover.GaveUp(ai))
+            {
+                // the game's own follow heads straight for the player - only when far behind, else wait for a new route
+                if (distP > maxD) ai.MHR_FollowFallback(player.gameObject, dt);
+                else ai.StopMoving();
+            }
+            return true;
+        }
+        // companions pulling a cart for the same player, nearer the player than this one
+        static int CartRank(CompanionAI ai, S me, int tid, float now)
+        {
+            int id = ai.gameObject.GetInstanceID(), rank = 0;
+            foreach (KeyValuePair<int, S> kv in s_s)
+            {
+                S o = kv.Value;
+                if (kv.Key == id || !o.Cart || o.TargetId != tid || now - o.LastUpdate > 2f) continue;
+                if (o.CartDist < me.CartDist || (Mathf.Approximately(o.CartDist, me.CartDist) && kv.Key < id)) rank++;
+            }
+            return rank;
+        }
+
         static int Pace(Player p, float dSpot, float distP, float maxD)
         {
             if (distP > maxD + 4f || dSpot > 8f) return MHR_Mover.SpeedRun;
@@ -463,7 +566,15 @@ namespace Companions
         }
         static Vector3 Goal(CompanionAI ai, S s, T t, Vector3 pp, int tid)
         {
-            if (s.Trail) return TrailPoint(t, pp, 2f + Rank(ai, tid) * 1.5f);
+            if (s.Trail)
+            {
+                // 1.5.91: further back along the path while a cart someone pulls is on that point (the player's own cart is
+                // right behind them)
+                float back = 2f + Rank(ai, tid) * 1.5f;
+                Vector3 p = TrailPoint(t, pp, back);
+                for (int k = 0; k < 8 && MHR_Cart.InCartWay(p, 0.8f); k++) { back += 1.5f; p = TrailPoint(t, pp, back); }
+                return p;
+            }
             s.Spot = SpotXZ(s, t, pp);
             return s.Spot;
         }
@@ -493,7 +604,8 @@ namespace Companions
                 float r = UnityEngine.Random.Range(rMin, rMax);
                 Vector3 w = pp + Quaternion.Euler(0f, ang, 0f) * t.Travel * r;
                 Vector3 g;
-                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || !Los(pp, g)) continue;
+                // 1.5.91: never on a cart someone is pulling (the spots behind the player were on top of it)
+                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || MHR_Cart.InCartWay(g, 1f) || !Los(pp, g)) continue;
                 s.Angle = ang; s.Radius = r; s.SpotDy = g.y - pp.y; s.Spot = g;
                 s.HasSpot = true; s.Trail = false;
                 s.NextPick = now + UnityEngine.Random.Range(10f, 25f); s.NextCheck = now + 1f;
@@ -560,7 +672,7 @@ namespace Companions
                 Vector3 w = s.IdleAnchor + new Vector3(r.x, 0f, r.y);
                 if (!Ground(w, pp, out g)) continue;
                 float dp = Flat(g, pp);
-                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || !Los(s.IdleAnchor, g)) continue;
+                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || MHR_Cart.InCartWay(g, 0.8f) || !Los(s.IdleAnchor, g)) continue;
                 return true;
             }
             return false;

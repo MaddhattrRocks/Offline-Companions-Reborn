@@ -108,16 +108,31 @@ public class FarmZoneCropPicker : MonoBehaviour
 		{
 			foreach (KeyValuePair<string, FarmController.SeedPlantInfo> item2 in FarmController.s_seedToPlant)
 			{
-				if (!IsSeedMultiplicationEntry(item2.Key, item2.Value))
+				// 1.5.82: every plant a cultivator plants is on the list (user report: some seeds were missing). Seed plants
+				// (a carrot planted to grow carrot seeds) were hidden; a zone can be set to them on purpose (PickSeed).
+				CropEntry item = new CropEntry
 				{
-					CropEntry item = new CropEntry
-					{
-						SeedPrefabName = item2.Key,
-						DisplayName = GetCropDisplayName(item2.Value),
-						Icon = GetCropIcon(item2.Key)
-					};
-					list.Add(item);
-				}
+					SeedPrefabName = item2.Key,
+					DisplayName = GetCropDisplayName(item2.Value),
+					Icon = GetCropIcon(item2.Value)
+				};
+				list.Add(item);
+			}
+		}
+		// two plants with the same name: say what each one is planted from
+		Dictionary<string, int> nameCount = new Dictionary<string, int>();
+		foreach (CropEntry e in list)
+		{
+			nameCount.TryGetValue(e.DisplayName, out int c);
+			nameCount[e.DisplayName] = c + 1;
+		}
+		for (int i = 0; i < list.Count; i++)
+		{
+			if (nameCount[list[i].DisplayName] > 1)
+			{
+				CropEntry e = list[i];
+				e.DisplayName = e.DisplayName + " (" + GetItemName(e.SeedPrefabName) + ")";
+				list[i] = e;
 			}
 		}
 		list.Sort((CropEntry a, CropEntry b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
@@ -217,47 +232,6 @@ public class FarmZoneCropPicker : MonoBehaviour
 		return TMP_Settings.defaultFontAsset;
 	}
 
-	private static bool IsSeedMultiplicationEntry(string seedName, FarmController.SeedPlantInfo info)
-	{
-		if (FarmController.s_cropOutputNames == null || !FarmController.s_cropOutputNames.Contains(seedName))
-		{
-			return false;
-		}
-		Plant plant = info.PlantPrefab?.GetComponent<Plant>();
-		if (plant?.m_grownPrefabs != null)
-		{
-			GameObject[] grownPrefabs = plant.m_grownPrefabs;
-			foreach (GameObject gameObject in grownPrefabs)
-			{
-				if (!(gameObject == null))
-				{
-					Pickable component = gameObject.GetComponent<Pickable>();
-					if (component?.m_itemPrefab != null && component.m_itemPrefab.name == seedName)
-					{
-						return false;
-					}
-				}
-			}
-		}
-		if (ZNetScene.instance != null)
-		{
-			GameObject prefab = ZNetScene.instance.GetPrefab(seedName);
-			if (prefab != null)
-			{
-				ItemDrop component2 = prefab.GetComponent<ItemDrop>();
-				if (component2?.m_itemData?.m_shared != null)
-				{
-					ItemDrop.ItemData.SharedData shared = component2.m_itemData.m_shared;
-					if (shared.m_food > 0f || shared.m_foodStamina > 0f)
-					{
-						return true;
-					}
-				}
-			}
-		}
-		return false;
-	}
-
 	private static string GetCropDisplayName(FarmController.SeedPlantInfo info)
 	{
 		if (info.PlantPrefab == null)
@@ -272,7 +246,26 @@ public class FarmZoneCropPicker : MonoBehaviour
 		return info.SeedPrefabName;
 	}
 
-	private static Sprite GetCropIcon(string seedPrefabName)
+	private static string GetItemName(string seedPrefabName)
+	{
+		GameObject prefab = (ZNetScene.instance != null) ? ZNetScene.instance.GetPrefab(seedPrefabName) : null;
+		string name = prefab?.GetComponent<ItemDrop>()?.m_itemData?.m_shared?.m_name;
+		return string.IsNullOrEmpty(name) ? seedPrefabName : Localization.instance.Localize(name);
+	}
+
+	// 1.5.82: the plant's own icon, as on the cultivator (the seed item's icon showed a carrot for "Carrot seeds" and
+	// seeds for "Carrot"); the item's icon if the plant has none
+	private static Sprite GetCropIcon(FarmController.SeedPlantInfo info)
+	{
+		Sprite icon = info.PlantPrefab?.GetComponent<Piece>()?.m_icon;
+		if (icon != null)
+		{
+			return icon;
+		}
+		return GetItemIcon(info.SeedPrefabName);
+	}
+
+	private static Sprite GetItemIcon(string seedPrefabName)
 	{
 		if (ZNetScene.instance == null)
 		{

@@ -165,7 +165,7 @@ public static class ModLocalization
 			{ "hc_msg_rested", "{0} is Rested (Comfort: {1})" },
 			{ "hc_msg_rested_suffix", "Rested" },
 			{ "hc_msg_tools_weak", "{0}'s tools are not strong enough" },
-			{ "hc_msg_reposition_on", "UI Reposition Mode — drag to move, F7 to confirm" },
+			{ "hc_msg_reposition_on", "UI Reposition Mode — drag to move, {0} to save" },
 			{ "hc_msg_reposition_off", "UI position saved" },
 			{ "hc_msg_commanded", "Moving to position." },
 			{ "hc_speech_repair_start", "Time for repairs." },
@@ -433,8 +433,9 @@ public static class ModLocalization
 			{ "hc_radial_farmzones", "Farm Zones" },
 			{ "hc_farmzone_title", "Select Crop" },
 			{ "hc_farmzone_any", "Any Crop" },
-			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [Esc] Exit" },
-			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{5}] Exit" },
+			{ "hc_farmzone_hint", "[LMB] Place  [RMB] Remove  [Scroll] Resize  [RMB+Scroll] Rotate  [MMB] Match building  [Esc] Exit" },
+			{ "hc_farmzone_hint_gamepad", "[{0}] Place  [{1}] Remove  [{2}/{3}] Resize  [{4}] Rotate  [{6}] Match building  [{5}] Exit" },
+			{ "hc_farmzone_match_none", "Look at a building piece to copy its angle" },
 			{ "hc_farmzone_full", "Maximum zones reached (4)" }
 		};
 	}
