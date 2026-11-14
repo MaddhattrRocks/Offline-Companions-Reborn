@@ -112,9 +112,46 @@ public class ConfigPanel : MonoBehaviour
 		}
 	}
 
+	// 1.5.96: the panel is built in small steps in the background after the world has loaded (one step a frame, starting
+	// 10 s after you appear), instead of all at once on the first F8 (177 ms in John's log). If F8 comes first, the
+	// steps left are done right then.
+	private int _buildStep;
+
+	private float _bgBuildAt = -1f;
+
+	private const int BuildSteps = 6;
+
+	private void BackgroundBuild()
+	{
+		if (_buildStep >= BuildSteps || _visible)
+		{
+			return;
+		}
+		if (Player.m_localPlayer == null || InventoryGui.instance == null || Hud.instance == null)
+		{
+			_bgBuildAt = -1f;
+			return;
+		}
+		if (_bgBuildAt < 0f)
+		{
+			_bgBuildAt = Time.time + 10f;
+			return;
+		}
+		if (Time.time < _bgBuildAt)
+		{
+			return;
+		}
+		BuildStep(_buildStep);
+		_buildStep++;
+		if (_buildStep >= BuildSteps && CompanionsPlugin.LogDetailed)
+		{
+			CompanionsPlugin.Log.LogDebug("[UI] F8 panel built in the background");
+		}
+	}
+
 	public void Show()
 	{
-		if (_root == null)
+		if (_root == null || _buildStep < BuildSteps)
 		{
 			Build();
 		}
@@ -212,13 +249,68 @@ public class ConfigPanel : MonoBehaviour
 
 	private void Build()
 	{
-		_canvas = base.gameObject.AddComponent<Canvas>();
+		if (_buildStep >= BuildSteps && _root == null)
+		{
+			_buildStep = 0;   // torn down: start again
+		}
+		while (_buildStep < BuildSteps)
+		{
+			BuildStep(_buildStep);
+			_buildStep++;
+		}
+	}
+
+	private void BuildStep(int step)
+	{
+		switch (step)
+		{
+		case 0:
+			BuildFrame();
+			break;
+		case 1:
+			BuildTitle(_root.transform);
+			BuildCloseButton(_root.transform);
+			break;
+		case 2:
+			BuildTabColumn(_root.transform);
+			break;
+		case 3:
+			BuildContentArea(_root.transform);
+			break;
+		case 4:
+			BuildPadHint(_root.transform);
+			break;
+		default:
+			if (ModConfig.CategoryOrder.Count > 0)
+			{
+				SelectCategory(ModConfig.CategoryOrder[0]);
+			}
+			_backdrop.SetActive(value: false);
+			_root.SetActive(value: false);
+			break;
+		}
+	}
+
+	private void BuildFrame()
+	{
+		_canvas = base.gameObject.GetComponent<Canvas>();
+		if (_canvas == null)
+		{
+			_canvas = base.gameObject.AddComponent<Canvas>();
+		}
 		_canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 		_canvas.sortingOrder = ModUiLayers.ConfigPanel;
-		CanvasScaler canvasScaler = base.gameObject.AddComponent<CanvasScaler>();
+		CanvasScaler canvasScaler = base.gameObject.GetComponent<CanvasScaler>();
+		if (canvasScaler == null)
+		{
+			canvasScaler = base.gameObject.AddComponent<CanvasScaler>();
+		}
 		canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
 		canvasScaler.referenceResolution = new Vector2(1920f, 1080f);
-		base.gameObject.AddComponent<GraphicRaycaster>();
+		if (base.gameObject.GetComponent<GraphicRaycaster>() == null)
+		{
+			base.gameObject.AddComponent<GraphicRaycaster>();
+		}
 		_font = ResolveFont();
 		_backdrop = new GameObject("Backdrop", typeof(RectTransform), typeof(Image));
 		_backdrop.transform.SetParent(base.transform, worldPositionStays: false);
@@ -248,15 +340,7 @@ public class ConfigPanel : MonoBehaviour
 			component3.color = new Color(0.05f, 0.05f, 0.08f, 0.95f);
 		}
 		component3.raycastTarget = true;
-		BuildTitle(_root.transform);
-		BuildCloseButton(_root.transform);
-		BuildTabColumn(_root.transform);
-		BuildContentArea(_root.transform);
-		BuildPadHint(_root.transform);
-		if (ModConfig.CategoryOrder.Count > 0)
-		{
-			SelectCategory(ModConfig.CategoryOrder[0]);
-		}
+		// hidden while it's being built in the background
 		_backdrop.SetActive(value: false);
 		_root.SetActive(value: false);
 	}
@@ -348,6 +432,7 @@ public class ConfigPanel : MonoBehaviour
 
 	private void Update()
 	{
+		BackgroundBuild();
 		if (KeyBindListener.Capturing || KeyBindListener.CaptureEndFrame == Time.frameCount)
 		{
 			return;
