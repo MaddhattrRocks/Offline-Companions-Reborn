@@ -164,7 +164,7 @@ public static class CombatPatches
 			HarvestController component = attacker.GetComponent<HarvestController>();
 			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
 			{
-				component.TryApplyRockAoe();
+				component.TryApplyRockAoe(hit);
 				return false;
 			}
 			return true;
@@ -188,7 +188,7 @@ public static class CombatPatches
 			HarvestController component = attacker.GetComponent<HarvestController>();
 			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
 			{
-				component.TryApplyRockAoe();
+				component.TryApplyRockAoe(hit);
 				return false;
 			}
 			return true;
@@ -212,7 +212,7 @@ public static class CombatPatches
 			HarvestController component = attacker.GetComponent<HarvestController>();
 			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
 			{
-				component.TryApplyRockAoe();
+				component.TryApplyRockAoe(hit);
 				return false;
 			}
 			return true;
@@ -270,14 +270,22 @@ public static class CombatPatches
 	[HarmonyPatch(typeof(Attack), "SpawnOnHitTerrain")]
 	private static class SpawnOnHitTerrain_NoNpcTerrain
 	{
-		private static bool Prefix(Character character)
+		private static bool Prefix(Vector3 hitPoint, Character character)
 		{
 			// 1.4.150: companions only - it blocked every creature's ground effects (and Aoe.OnHit uses the result)
 			if (character == null || character.IsPlayer() || character.GetComponent<CompanionSetup>() == null)
 			{
 				return true;
 			}
-			character.GetComponent<HarvestController>()?.NotifyTerrainHit();
+			HarvestController hc = character.GetComponent<HarvestController>();
+			// 1.5.95: the Ore job digs like a player - only the dirt over and around the vein it's mining (the game's own
+			// dig, with its ward and no-build checks)
+			if (hc != null && hc.AllowDig(hitPoint))
+			{
+				hc.NotifyDig(hitPoint);
+				return true;
+			}
+			hc?.NotifyTerrainHit();
 			return false;
 		}
 	}

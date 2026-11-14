@@ -510,7 +510,7 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> RefuelOther;
 
-	internal static ConfigEntry<float> UpkeepFuelBelow;
+	internal static ConfigEntry<int> UpkeepFuelAtOrBelow;
 
 	internal static ConfigEntry<bool> UpkeepSort;
 
@@ -874,7 +874,7 @@ internal static class ModConfig
 		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 0.75f, "Repair pieces below this much health (0.75 = 75% or less; 1 = any damage at all). Each repair is one swing that fixes the piece fully, like a player's.", new AcceptableValueRange<float>(0.1f, 1f));
 		UpkeepReach = Bind(cfg, "RepairAndRestock", "Reach", 4.5f, "How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.", new AcceptableValueRange<float>(2f, 6f));
 		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.");
-		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepFuelAtOrBelow = Bind(cfg, "RepairAndRestock", "FuelAtOrBelow", 3, "Top up a fire, torch, brazier or hot tub only once its fuel is down to this many pieces or less (as a player tops up a fire that's getting low). It's then filled all the way up. Replaces the old FuelBelow share.", new AcceptableValueRange<int>(0, 50));
 		RefuelFires = Bind(cfg, "RepairAndRestock", "RefuelFires", true, "Restock: campfires, fire pits and bonfires.");
 		RefuelHearths = Bind(cfg, "RepairAndRestock", "RefuelHearths", true, "Restock: hearths.");
 		RefuelBraziers = Bind(cfg, "RepairAndRestock", "RefuelBraziers", true, "Restock: braziers (standing and hanging).");

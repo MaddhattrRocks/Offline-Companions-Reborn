@@ -944,8 +944,13 @@ public class CompanionAI : BaseAI
 		SetFollowTarget(null);
 	}
 
-	internal void SetPendingDeposit(Container chest, Humanoid humanoid)
+	// 1.5.95: what a deposit may put in the chest (null = everything it doesn't keep). The Ore job only puts ore away -
+	// its stone never goes in a chest (user)
+	internal System.Predicate<ItemDrop.ItemData> PendingDepositFilter;
+
+	internal void SetPendingDeposit(Container chest, Humanoid humanoid, System.Predicate<ItemDrop.ItemData> only = null)
 	{
+		PendingDepositFilter = only;
 		PendingDepositContainer = chest;
 		PendingDepositHumanoid = humanoid;
 		_pendingDepositTimeout = 20f;
@@ -1512,7 +1517,7 @@ public class CompanionAI : BaseAI
 						{
 							foreach (ItemDrop.ItemData allItem in inventory3.GetAllItems())
 							{
-								if (!CompanionInteract.ShouldKeep(allItem, pendingDepositHumanoid))
+								if (!CompanionInteract.ShouldKeep(allItem, pendingDepositHumanoid) && (PendingDepositFilter == null || PendingDepositFilter(allItem)))
 								{
 									_depositQueue.Add(allItem);
 								}

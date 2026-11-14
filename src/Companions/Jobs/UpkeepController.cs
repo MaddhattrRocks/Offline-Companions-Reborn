@@ -816,7 +816,8 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			return false;
 		}
-		float below = ModConfig.UpkeepFuelBelow?.Value ?? 0.8f;
+		// 1.5.95: only once it's down to [RepairAndRestock] FuelAtOrBelow pieces (user: "only when at 3 fuel or less, then filled")
+		int atOrBelow = ModConfig.UpkeepFuelAtOrBelow?.Value ?? 3;
 		Inventory bag = _humanoid.GetInventory();
 		Vector3 me = base.transform.position;
 		s_pieces.Clear();
@@ -834,7 +835,7 @@ public partial class UpkeepController : MonoBehaviour
 				continue;
 			}
 			ZNetView nv = f.GetComponent<ZNetView>();
-			if (nv == null || !nv.IsValid() || Fuel(f) / f.m_maxFuel >= below)
+			if (nv == null || !nv.IsValid() || Fuel(f) > atOrBelow + 0.001f)
 			{
 				continue;
 			}

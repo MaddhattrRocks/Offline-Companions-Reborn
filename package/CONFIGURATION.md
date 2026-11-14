@@ -880,8 +880,8 @@ How far (meters, from the eyes) the companion can reach a piece to repair it. A 
 **Restock** — Default: On  
 Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.
 
-**FuelBelow** — Default: 0.8 · Range: 0.1 – 1  
-Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.
+**FuelAtOrBelow** — Default: 3 · Range: 0 – 50  
+Top up a fire, torch, brazier or hot tub only once its fuel is down to this many pieces or less (as a player tops up a fire that's getting low). It's then filled all the way up. Replaces the old FuelBelow share.
 
 **RefuelFires** — Default: On  
 Restock: campfires, fire pits and bonfires.

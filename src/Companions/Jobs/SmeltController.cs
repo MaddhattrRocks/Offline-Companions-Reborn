@@ -261,6 +261,7 @@ public class SmeltController : MonoBehaviour
 		_carryingItemPrefab = null;
 		_carryingAmount = 0;
 		_collectTriggered = false;
+		_dropCollect = false;
 		_wasMonitoring = false;
 		_allDoneNotified = false;
 		_phase = SmeltPhase.Idle;
@@ -332,17 +333,20 @@ public class SmeltController : MonoBehaviour
 					ClaimSmelter();
 					ClearFollowForMovement();
 					ResetStuck();
+					_dropCollect = false;
 					_phase = SmeltPhase.CollectingOutput;
 					if (CompanionsPlugin.LogNormal) Log($"→ Collecting queued output from \"{nearbySmelter.m_name}\" ({num3} items)");
 					CompanionStatus.Doing(this, "hc_doing_smelt_collect", SName(nearbySmelter));
 					return false;
 				}
-				if (num4 > 0)
+				if (num4 > 0 && !DropSkipped(nearbySmelter))
 				{
 					_targetSmelter = nearbySmelter;
 					ClaimSmelter();
 					ClearFollowForMovement();
 					ResetStuck();
+					_dropCollect = true;
+					_dropCollectStart = Time.time;
 					_collectTriggered = true;
 					_actionTimer = 0f;
 					_phase = SmeltPhase.CollectingOutput;
@@ -796,6 +800,13 @@ public class SmeltController : MonoBehaviour
 		Vector3 goal = SlotGoal(_targetSmelter, OutputSlotPosition(_targetSmelter), smelterOutputPoint, "out");
 		if (num > UseDistance && !AtSpot(num))
 		{
+			if (_dropCollect && Time.time - _dropCollectStart > DropReachTime)
+			{
+				SkipDrops(_targetSmelter, "couldn't get to them in " + DropReachTime.ToString("F0") + " s (" + num.ToString("F1") + " m away)");
+				_dropCollect = false;
+				Abort("ground drops out of reach");
+				return;
+			}
 			_shouldRun = num > 8f;
 			bool flag = MHR_Nav.MoveSmelt(_ai, Time.deltaTime, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
@@ -834,6 +845,11 @@ public class SmeltController : MonoBehaviour
 		if (!(_actionTimer > 0f))
 		{
 			PickUpNearbyDrops();
+			if (_dropCollect && CountGroundDropsNearSmelter(_targetSmelter) > 0)
+			{
+				SkipDrops(_targetSmelter, "some are still lying there after picking up (out of reach)");
+			}
+			_dropCollect = false;
 			_collectTriggered = false;
 			ScanNearbyChests();
 			_outputChest = FindChestWithSpace();
@@ -976,6 +992,12 @@ public class SmeltController : MonoBehaviour
 				continue;
 			}
 			Smelter component = Cached(s_pieceSmelter, tempPiece, inChildren: false);
+			// 1.5.95: the hot tub isn't a smelter (user: a companion kept trying to "empty" it) - it's fuelled by Repair and
+			// Restock
+			if (component != null && IsHotTub(component))
+			{
+				continue;
+			}
 			if (!(component == null))
 			{
 				ZNetView component2 = component.GetComponent<ZNetView>();
@@ -986,6 +1008,49 @@ public class SmeltController : MonoBehaviour
 			}
 		}
 		if (CompanionsPlugin.LogDetailed) LogDebug($"Scan: found {_nearbySmelters.Count} smelters");
+	}
+
+	internal static bool IsHotTub(Component c)
+	{
+		if (c == null)
+		{
+			return false;
+		}
+		string n = Utils.GetPrefabName(c.gameObject).ToLowerInvariant();
+		if (n.Contains("bathtub") || n.Contains("hottub"))
+		{
+			return true;
+		}
+		Piece p = c.GetComponentInParent<Piece>();
+		return p != null && p.m_name == "$piece_bathtub";
+	}
+
+	// 1.5.95: ground drops by a smelter it couldn't get to are left alone for a while (it stalled 9-10 m away and kept
+	// coming back for one item)
+	private readonly Dictionary<int, float> _dropSkip = new Dictionary<int, float>();
+
+	private bool _dropCollect;
+
+	private float _dropCollectStart;
+
+	private const float DropReachTime = 8f;
+
+	private const float DropSkipTime = 120f;
+
+	private bool DropSkipped(Smelter s)
+	{
+		float until;
+		return s != null && _dropSkip.TryGetValue(s.GetInstanceID(), out until) && Time.time < until;
+	}
+
+	private void SkipDrops(Smelter s, string why)
+	{
+		if (s == null)
+		{
+			return;
+		}
+		_dropSkip[s.GetInstanceID()] = Time.time + DropSkipTime;
+		if (CompanionsPlugin.LogNormal) Log("Leaving the ground drops by \"" + s.m_name + "\" for " + DropSkipTime.ToString("F0") + " s - " + why);
 	}
 
 	private void Log(string msg)

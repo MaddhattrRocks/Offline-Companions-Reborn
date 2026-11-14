@@ -5,7 +5,7 @@ using UnityEngine.AI;
 
 namespace Companions;
 
-public class HarvestController : MonoBehaviour
+public partial class HarvestController : MonoBehaviour
 {
 	private enum HarvestState
 	{
@@ -487,14 +487,14 @@ public class HarvestController : MonoBehaviour
 		return true;
 	}
 
-	internal void TryApplyRockAoe()
+	internal void TryApplyRockAoe(HitData hit = null)
 	{
 		if (_state == HarvestState.Attacking && IsRockLikeTarget() && _lastAoeSwing != _swingCount)
 		{
 			_lastAoeSwing = _swingCount;
 			if (_targetType == "MineRock5")
 			{
-				ApplyDirectRock5Damage();
+				ApplyDirectRock5Damage(hit?.m_hitCollider);
 			}
 			else
 			{
@@ -738,6 +738,11 @@ public class HarvestController : MonoBehaviour
 		if (_ai != null && _ai.IsInCombat)
 		{
 			RestoreLoadout();
+			return;
+		}
+		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or the stone spot), so it never gets overloaded
+		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && (_ai == null || _ai.PendingDepositContainer == null) && MHR_GatherRules.StoneDue(this) && MHR_GatherRules.StartPile(this))
+		{
 			return;
 		}
 		if (IsOverweight())
@@ -985,6 +990,7 @@ public class HarvestController : MonoBehaviour
 			{
 				LogWarn($"No tool in inventory for mode {mode} — cannot harvest! " + "(need " + ((mode == 1) ? "axe (chop dmg)" : "pickaxe (pickaxe dmg)") + ")");
 				LogInventoryContents();
+				SayGaveUp(GiveUpWhy.NoTool, null);
 				return;
 			}
 			float num2 = Vector3.Distance(base.transform.position, gameObject.transform.position);
@@ -1099,6 +1105,10 @@ public class HarvestController : MonoBehaviour
 			bool flag4 = _targetType == "Destructible" || _targetType == "MineRock";
 			_ = flag3 || flag4;
 			LogWarn($"STUCK timeout ({10f}s) — giving up on \"{_target.name}\" " + $"dist={num5:F1}m vel={vector3.magnitude:F1} " + $"myPos={base.transform.position:F1} targetPos={_target.transform.position:F1} " + $"targetY={_target.transform.position.y:F2} myY={base.transform.position.y:F2} " + $"heightDiff={_target.transform.position.y - base.transform.position.y:F2}");
+			if (RockGiveUp())
+			{
+				SayGaveUp(GiveUpWhy.OutOfReach, $"no way there in {10f}s, {num5:F1}m away, height difference {_target.transform.position.y - base.transform.position.y:F1}m");
+			}
 			_blacklist[_target.GetInstanceID()] = Time.time;
 			if (CompanionsPlugin.LogDetailed) Log($"Blacklisted \"{_target.name}\" (id={_target.GetInstanceID()}) for {BlacklistDuration}s");
 			ResetToIdle();
@@ -1326,6 +1336,7 @@ public class HarvestController : MonoBehaviour
 			}
 			return;
 		}
+		UpdateDigAim();
 		FaceTarget();
 		bool flag = IsRockLikeTarget();
 		Vector3 effectiveTargetPosition = GetEffectiveTargetPosition();
@@ -1361,7 +1372,28 @@ public class HarvestController : MonoBehaviour
 		// 1.4.79: the distance above is to the spot beside the rock, not the rock itself. On a big rock the surface can be
 		// further than the pickaxe reaches, so every swing missed (1.4.78 log: 10 swings at 1.5 m, no damage). Check the
 		// actual surface and step in until it's in reach (up to 2.5 s, then swing anyway).
-		if (flag && _character != null && !_character.InAttack())
+		// 1.5.95: digging - step in until the dirt over the part is in reach (not onto the spot it digs)
+		if (_digAim && _character != null && !_character.InAttack())
+		{
+			Vector3 flatToDig = _digPoint - base.transform.position;
+			flatToDig.y = 0f;
+			float digDist = Vector3.Distance(base.transform.position + Vector3.up * 1.0f, _digPoint);
+			if (digDist > attackRange * 0.9f && flatToDig.magnitude > 1.0f && _closeInTimer < 2.5f)
+			{
+				_closeInTimer += Time.deltaTime;
+				if (!MHR_Mover.HazardAhead(base.transform.position, flatToDig, 0.8f))
+				{
+					_ai.MoveTowards(flatToDig.normalized, run: false);
+				}
+				if (!_closingIn)
+				{
+					_closingIn = true;
+					if (CompanionsPlugin.LogDetailed) Log($"Dirt over the vein is {digDist:F1}m away (reach {attackRange * 0.9f:F1}m) — stepping in");
+				}
+				return;
+			}
+		}
+		if (flag && !_digAim && _character != null && !_character.InAttack())
 		{
 			Vector3 surface;
 			float surfaceDist;
@@ -1399,6 +1431,8 @@ public class HarvestController : MonoBehaviour
 		{
 			HitData.DamageTypes damage = rightItem.GetDamage();
 			flag3 = ((mode2 != 1) ? (damage.m_pickaxe <= 0f) : (damage.m_chop <= 0f));
+			// 1.5.95: a worn-out tool in hand is swapped too (its swings did nothing)
+			flag3 = flag3 || Worn(rightItem);
 		}
 		if (flag3)
 		{
@@ -1406,6 +1440,7 @@ public class HarvestController : MonoBehaviour
 			ItemDrop.ItemData itemData = FindBestTool(mode2);
 			if (itemData == null)
 			{
+				SayGaveUp(GiveUpWhy.NoTool, "in hand: " + (rightItem?.m_shared?.m_name ?? "nothing") + (Worn(rightItem) ? " (worn out)" : ""));
 				RestoreLoadout();
 				ResetToIdle();
 				return;
@@ -1438,7 +1473,7 @@ public class HarvestController : MonoBehaviour
 		// stump as it swings down rather than across. Occasionally I will use it if a log is below me and I cannot hit the
 		// log with a regular swing.") - it used to be every swing from the 4th on
 		bool flag8 = WantsPowerChop(rightItem);
-		float attackStamina = (flag8 ? rightItem.m_shared.m_secondaryAttack.m_attackStamina : rightItem.m_shared.m_attack.m_attackStamina);
+		float attackStamina = SwingStamina(rightItem, flag8);
 		if (_stamina != null && attackStamina > 0f)
 		{
 			// 1.5.61: chops until it's nearly out of breath, then stops and gets it back before chopping on, like a player
@@ -1463,6 +1498,14 @@ public class HarvestController : MonoBehaviour
 				return;
 			}
 		}
+		// 1.5.95: digging that takes no dirt away (a ward, no-build area or the game's dig depth limit) - or far too much of it
+		if (_digAim && (DigStalled() || _digCount >= DigMaxPerVein))
+		{
+			SayGaveUp(_digCount >= DigMaxPerVein ? GiveUpWhy.Buried : GiveUpWhy.CantDig, $"{_digCount} digs on this vein, {_digNoProgress} in a row took no dirt away");
+			_blacklist[_target.GetInstanceID()] = Time.time;
+			ResetToIdle();
+			return;
+		}
 		bool flag9 = _humanoid != null && _humanoid.StartAttack(null, flag8);
 		_totalAttempts++;
 		_chopChain = flag9 && !flag8;
@@ -1479,8 +1522,9 @@ public class HarvestController : MonoBehaviour
 					int num5 = CountActiveRock5Sections();
 					if (num5 < _rock5ActiveSections)
 					{
-						if (CountExposedRock5Sections() == 0 && num5 > 0)
+						if (!DigMode() && CountExposedRock5Sections() == 0 && num5 > 0)
 						{
+							SayGaveUp(GiveUpWhy.Buried, $"{num5} parts left, all more than 1 m under the ground");
 							MHR_GatherRules.BlacklistTarget(this);
 							ResetToIdle();
 							return;
@@ -1566,6 +1610,10 @@ public class HarvestController : MonoBehaviour
 				return;
 			}
 			if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't doing anything to \"" + _target.name + "\" (something in the way) - leaving it for now");
+			if (RockGiveUp())
+			{
+				SayGaveUp(_digAim ? GiveUpWhy.Buried : GiveUpWhy.OutOfReach, $"2 swings in a row landed on nothing, dist={num:F1}m reach={attackRange:F1}m digging={_digAim}");
+			}
 			_blacklist[_target.GetInstanceID()] = Time.time;
 			ResetToIdle();
 			return;
@@ -1582,6 +1630,10 @@ public class HarvestController : MonoBehaviour
 		else if (_swingCount >= 20 || _totalAttempts >= 30)
 		{
 			LogWarn($"Bailout — {_swingCount} hits, {_totalAttempts} attempts on \"{_target.name}\" " + $"dist={num:F1}m without destruction. Abandoning target.");
+			if (RockGiveUp())
+			{
+				SayGaveUp(GiveUpWhy.TooHard, $"{_swingCount} hits / {_totalAttempts} tries without breaking it, tool tier {ReflectionHelper.GetRightItem(_humanoid)?.m_shared?.m_toolTier ?? -1}, rock needs {GetMinToolTier(_target)}");
+			}
 			_blacklist[_target.GetInstanceID()] = Time.time;
 			if (CompanionsPlugin.LogDetailed) Log($"Blacklisted \"{_target.name}\" (id={_target.GetInstanceID()}) for {BlacklistDuration}s");
 			ResetToIdle();
@@ -1709,7 +1761,7 @@ public class HarvestController : MonoBehaviour
 		return true;
 	}
 
-	private void ApplyDirectRock5Damage()
+	private void ApplyDirectRock5Damage(Collider swingHit = null)
 	{
 		if (_target == null)
 		{
@@ -1727,20 +1779,28 @@ public class HarvestController : MonoBehaviour
 		}
 		Collider collider = null;
 		float num = float.MaxValue;
-		foreach (Transform item in _target.transform)
+		// 1.5.95: the part the swing actually hit, as for a player (it used to be the nearest part above the ground)
+		if (swingHit != null && swingHit.gameObject.activeSelf && swingHit.transform.IsChildOf(_target.transform))
 		{
-			if (!item.gameObject.activeSelf)
+			collider = swingHit;
+		}
+		for (int pass = 0; pass < 2 && collider == null; pass++)
+		{
+			foreach (Transform item in _target.transform)
 			{
-				continue;
-			}
-			Collider component2 = item.GetComponent<Collider>();
-			if (!(component2 == null) && IsSegmentExposed(component2))
-			{
-				float num2 = Vector3.Distance(base.transform.position, component2.bounds.center);
-				if (num2 < num)
+				if (!item.gameObject.activeSelf)
 				{
-					num = num2;
-					collider = component2;
+					continue;
+				}
+				Collider component2 = item.GetComponent<Collider>();
+				if (!(component2 == null) && (pass == 1 || IsSegmentExposed(component2)))
+				{
+					float num2 = Vector3.Distance(base.transform.position, component2.bounds.center);
+					if (num2 < num)
+					{
+						num = num2;
+						collider = component2;
+					}
 				}
 			}
 		}
@@ -1762,14 +1822,8 @@ public class HarvestController : MonoBehaviour
 		{
 			hitData.m_damage.Modify(randomSkillFactor);
 		}
-		if (_stamina != null)
-		{
-			float attackStamina = rightItem.m_shared.m_attack.m_attackStamina;
-			if (attackStamina > 0f)
-			{
-				_stamina.UseStamina(attackStamina);
-			}
-		}
+		// 1.5.95: no stamina here - the game's own swing already took it (Attack.Update -> UseStamina, by the weapon skill
+		// like a player's); this charged it a second time (user: "catching its breath every 2-3 swings")
 		IsApplyingAoeDamage = true;
 		component.Damage(hitData);
 		IsApplyingAoeDamage = false;
@@ -1829,14 +1883,8 @@ public class HarvestController : MonoBehaviour
 		{
 			hitData.m_damage.Modify(randomSkillFactor);
 		}
-		if (_stamina != null)
-		{
-			float attackStamina = rightItem.m_shared.m_attack.m_attackStamina;
-			if (attackStamina > 0f)
-			{
-				_stamina.UseStamina(attackStamina);
-			}
-		}
+		// 1.5.95: no stamina here - the game's own swing already took it (Attack.Update -> UseStamina, by the weapon skill
+		// like a player's); this charged it a second time (user: "catching its breath every 2-3 swings")
 		IsApplyingAoeDamage = true;
 		component.Damage(hitData);
 		IsApplyingAoeDamage = false;
@@ -2014,7 +2062,9 @@ public class HarvestController : MonoBehaviour
 			{
 				num2++;
 				if (CompanionsPlugin.LogDetailed) Log("  Tool candidate: \"" + allItem.m_shared.m_name + "\" " + $"type={allItem.m_shared.m_itemType} " + $"chop={damage.m_chop:F0} pick={damage.m_pickaxe:F0} " + $"relevantDmg={num3:F0} " + $"equipped={_humanoid.IsItemEquiped(allItem)}");
-				if (num3 > num)
+				// 1.5.95: a pickaxe by tier first, then damage (Ore/Stone) - the best tier is what the targets were picked by
+				bool better = itemData == null || (mode != 1 ? (allItem.m_shared.m_toolTier > itemData.m_shared.m_toolTier || (allItem.m_shared.m_toolTier == itemData.m_shared.m_toolTier && num3 > num)) : num3 > num);
+				if (better)
 				{
 					itemData = allItem;
 					num = num3;
@@ -2059,7 +2109,7 @@ public class HarvestController : MonoBehaviour
 			_toolEquipped = true;
 			return;
 		}
-		bool flag3 = rightItem != null && rightItem.m_shared?.m_name == tool.m_shared?.m_name;
+		bool flag3 = rightItem != null && rightItem.m_shared?.m_name == tool.m_shared?.m_name && !Worn(rightItem);
 		if (CompanionsPlugin.LogDetailed) Log("EquipTool: equipping \"" + tool.m_shared.m_name + "\" (right=\"" + (rightItem?.m_shared?.m_name ?? "none") + "\" left=\"" + (leftItem?.m_shared?.m_name ?? "none") + "\") " + $"sameNameInHand={flag3} " + $"rightHash={rightItem?.GetHashCode() ?? 0} toolHash={tool.GetHashCode()} " + "SuppressAutoEquip=true");
 		if (flag3)
 		{
@@ -2176,6 +2226,7 @@ public class HarvestController : MonoBehaviour
 		}
 		_lastHitAt = Time.time;
 		_noDamageSwings = 0;
+		_digNoProgress = 0;
 		if (!_hasGoodSpot || Vector3.Distance(_goodSpot, base.transform.position) > 0.7f)
 		{
 			_hasGoodSpot = true;
@@ -2462,6 +2513,8 @@ public class HarvestController : MonoBehaviour
 		{
 			Collider collider = null;
 			float num = float.MaxValue;
+			// 1.5.95: digging (Ore job, outdoors) - the nearest part, buried or not; it digs to it like a player
+			bool dig = DigMode();
 			foreach (Transform item in _target.transform)
 			{
 				if (!item.gameObject.activeSelf)
@@ -2469,7 +2522,7 @@ public class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
-				if (!(component == null) && IsSegmentExposed(component))
+				if (!(component == null) && (dig || IsSegmentExposed(component)))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component.bounds.center);
 					if (num2 < num)
@@ -2504,6 +2557,12 @@ public class HarvestController : MonoBehaviour
 				_rock5CurrentSegment = collider;
 				Vector3 center = collider.bounds.center;
 				float y = ((ZoneSystem.instance != null) ? ZoneSystem.instance.GetGroundHeight(center) : center.y);
+				// 1.5.95: in a dungeon the outdoor ground is far below (it walked at a point under the crypt) - the floor
+				// under the rock instead
+				if (InDungeonAt(center))
+				{
+					y = collider.bounds.min.y;
+				}
 				return new Vector3(center.x, y, center.z);
 			}
 		}
@@ -2669,6 +2728,10 @@ public class HarvestController : MonoBehaviour
 			return;
 		}
 		Vector3 vector = ((_state != HarvestState.Attacking || !IsRockLikeTarget()) ? GetEffectiveTargetPosition() : (_attackFaceLocked ? _lockedAttackFaceTarget : GetRockFacePosition()));
+		if (_state == HarvestState.Attacking && _digAim)
+		{
+			vector = _digPoint;
+		}
 		Vector3 vector2 = vector - base.transform.position;
 		vector2.y = 0f;
 		if (vector2.sqrMagnitude < 0.1f)
@@ -2685,6 +2748,16 @@ public class HarvestController : MonoBehaviour
 				Quaternion q = Quaternion.LookRotation(vector3.normalized);
 				_character.SetLookDir(vector3.normalized);
 				MHR_Nav.TurnTo(base.transform, q);
+				// 1.5.95: digging - look down at the dirt over the part, so the swing goes into the ground there (the
+				// game aims a melee swing up or down by the look direction)
+				if (_digAim)
+				{
+					Vector3 down = _digPoint - Eye();
+					if (down.sqrMagnitude > 0.01f)
+					{
+						_character.SetLookDir(down.normalized);
+					}
+				}
 			}
 		}
 	}
