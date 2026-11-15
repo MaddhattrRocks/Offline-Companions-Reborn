@@ -473,6 +473,31 @@ namespace Companions
             return name.IndexOf("Ore", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Scrap", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Obsidian", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Flametal", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("BlackMetal", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        // 1.5.97 (fix 4): where it goes next after a vein - what "in a hole" is measured against. A chest within 20 m if
+        // there is one; else, with ore, the ore spot; else you (Follow on) or where the job started.
+        internal static bool AfterVeinGoal(HarvestController h, out Vector3 goal, out string what)
+        {
+            goal = h.transform.position; what = null;
+            try
+            {
+                Humanoid hum = h.GetComponent<Humanoid>();
+                if (hum == null || hum.GetInventory() == null) return false;
+                Container c = DropOff(h, h.transform.position, 20f);
+                if (c != null) { goal = c.transform.position; what = "the chest \"" + c.m_name + "\""; return true; }
+                bool any = false;
+                foreach (ItemDrop.ItemData it in hum.GetInventory().GetAllItems()) if (IsOreItem(it)) { any = true; break; }
+                if (any)
+                {
+                    Per p = P(h);
+                    EnsureOreSpot(h, p);
+                    goal = p.OreSpot; what = "the ore spot";
+                    return true;
+                }
+                return h.AfterVeinFallback(out goal, out what);
+            }
+            catch (Exception e) { Warn("AfterVeinGoal: " + e.Message); return false; }
+        }
+
         // all the ore into a chest within 20 m, else all of it on the ore spot. False = no ore to unload.
         static bool OreLoad(HarvestController h, Per p, CompanionAI ai, Humanoid hum, bool afterVein = false)
         {

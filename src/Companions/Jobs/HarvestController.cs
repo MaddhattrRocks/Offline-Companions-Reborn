@@ -286,6 +286,67 @@ public partial class HarvestController : MonoBehaviour
 		return Vector3.Distance(_anchor, p) <= AreaRange;
 	}
 
+	// 1.5.97 (fix 5): a vein is big (this one 29 m across) - its range is measured to its nearest part, not its middle.
+	// The point the range is measured from: you with Follow on, else where the job started.
+	private Vector3 AreaRef()
+	{
+		if (Following || _isDirectedHarvest || !_hasAnchor)
+		{
+			Player owner = MHR_Owner.Of(this);
+			return owner != null ? owner.transform.position : base.transform.position;
+		}
+		return _anchor;
+	}
+
+	private Vector3 NearestOfVein(GameObject vein, Vector3 from)
+	{
+		Collider[] cols = vein.GetComponentsInChildren<Collider>();
+		Bounds b = default(Bounds);
+		bool any = false;
+		foreach (Collider c in cols)
+		{
+			if (c == null || !c.enabled || c.isTrigger)
+			{
+				continue;
+			}
+			if (!any)
+			{
+				b = c.bounds;
+				any = true;
+			}
+			else
+			{
+				b.Encapsulate(c.bounds);
+			}
+		}
+		return any ? b.ClosestPoint(from) : vein.transform.position;
+	}
+
+	// 1.5.97 (fix 4): after a vein with no chest near and no ore: toward you with Follow on, else where the job started
+	internal bool AfterVeinFallback(out Vector3 goal, out string what)
+	{
+		goal = base.transform.position;
+		what = null;
+		if (Following)
+		{
+			Player owner = MHR_Owner.Of(this);
+			if (owner == null)
+			{
+				return false;
+			}
+			goal = owner.transform.position;
+			what = "you";
+			return true;
+		}
+		if (_hasAnchor)
+		{
+			goal = new Vector3(_anchor.x, GroundAt(_anchor), _anchor.z);
+			what = "where the job started";
+			return true;
+		}
+		return false;
+	}
+
 	private Vector3 ScanCenter()
 	{
 		return (!Following && !_isDirectedHarvest && _hasAnchor) ? _anchor : base.transform.position;
@@ -3132,9 +3193,15 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				bool own = !TooFarFromYou() && IsOwnPiece(harvestCandidateWithType, type);
-				if (!own && !InWorkArea(harvestCandidateWithType.transform.position, type))
+				Vector3 areaPt = type == "MineRock5" ? NearestOfVein(harvestCandidateWithType, AreaRef()) : harvestCandidateWithType.transform.position;
+				if (!own && !InWorkArea(areaPt, type))
 				{
 					outOfRange++;
+					if (outOfRange == 1 && mode != 1 && CompanionsPlugin.LogDetailed)
+					{
+						Vector3 from = AreaRef();
+						Log($"  Out of range: \"{harvestCandidateWithType.name}\" - its nearest part is {Vector3.Distance(from, areaPt):F1} m from {(Following ? "you" : "where the job started")} (its middle {Vector3.Distance(from, harvestCandidateWithType.transform.position):F1} m), the limit is {(Following || _isDirectedHarvest || !_hasAnchor ? PlayerRange() : AreaRange):F0} m");
+					}
 					continue;
 				}
 				num3++;

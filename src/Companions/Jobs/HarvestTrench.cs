@@ -49,6 +49,8 @@ public partial class HarvestController
 
 		public bool DoorTried;
 
+		public bool ExitTried;
+
 		public bool Jumped;
 	}
 
@@ -135,6 +137,9 @@ public partial class HarvestController
 	private const int TMaxChops = 10;
 
 	private const float THead = 2.2f;
+
+	// in a hole: the place it's heading for is this much or more above its feet
+	private const float TExitDepth = 1.5f;
 
 	private static readonly float[] s_tOffsets = { 0f, 15f, -15f, 30f, -30f, 45f, -45f, 60f, -60f };
 
@@ -293,7 +298,12 @@ public partial class HarvestController
 
 	private bool _xPendingAfter;
 
-	private Vector3 _xCenter;
+	// the swing check's last answer: what the swing would meet first, and where the last chosen facing expected dirt
+	private GameObject _tPredGo;
+
+	private Collider _tPredCol;
+
+	private Vector3 _tPredPt;
 
 	// S9 (L4): give-ups per vein with nothing broken in between
 	private readonly Dictionary<int, int> _vGiveUps = new Dictionary<int, int>();
@@ -443,7 +453,6 @@ public partial class HarvestController
 		}
 		_tCenter = n > 0 ? sum / n : _vUnion.center;
 		_tCenter.y = GroundAt(_tCenter);
-		_xCenter = _tCenter;
 		if (!any)
 		{
 			vb = _vUnion;
@@ -838,6 +847,8 @@ public partial class HarvestController
 	private TFirst TPredict(Vector3 feet, Vector3 fwd, out Vector3 point)
 	{
 		point = Vector3.zero;
+		_tPredGo = null;
+		_tPredCol = null;
 		ItemDrop.ItemData tool = ReflectionHelper.GetRightItem(_humanoid);
 		Attack a = tool?.m_shared?.m_attack;
 		if (a == null)
@@ -927,6 +938,8 @@ public partial class HarvestController
 			return TFirst.None;
 		}
 		point = sums[0] / Mathf.Max(1, counts[0]);
+		_tPredGo = gos[0];
+		_tPredCol = cols[0];
 		if (gos[0].GetComponent<Heightmap>() != null)
 		{
 			return TFirst.Dirt;
@@ -940,7 +953,7 @@ public partial class HarvestController
 
 	// which way to face for a swing that meets dirt first, near `want` (within `near` flat) and above `minY`: straight at
 	// baseDir first, then 15, 30, 45, 60 degrees either side. With the check off (3 misses), straight at baseDir.
-	private bool TPickFacing(Vector3 baseDir, Vector3 want, float near, float minY, out Vector3 facing)
+	private bool TPickFacing(Vector3 baseDir, Vector3 want, float near, float minY, out Vector3 facing, bool overRock = false)
 	{
 		baseDir = FlatNorm(baseDir, base.transform.forward);
 		facing = baseDir;
@@ -963,13 +976,14 @@ public partial class HarvestController
 				continue;
 			}
 			float g = GroundAt(pt);
-			if (Flat(pt, want) <= near && g > minY + 0.05f && g >= TWater && !GRockAt(pt))
+			if (Flat(pt, want) <= near && g > minY + 0.05f && g >= TWater && (overRock || !GRockAt(pt)))
 			{
 				facing = d;
 				_tFaceDir = d;
 				_tFaceWant = want;
 				_tFaceFrom = me;
 				_tFaceUntil = Time.time + 0.5f;
+				_tPredPt = pt;
 				if (CompanionsPlugin.LogDetailed && off != 0f) Log($"Facing {off:F0} deg off straight so the swing meets dirt first (at {MHR_Mover.Fmt(pt)})");
 				return true;
 			}
@@ -1118,11 +1132,13 @@ public partial class HarvestController
 			return;
 		}
 		// below the rim of its own trench: get out first, then walk there
-		if (!_tStartExited && me.y < g - 1.5f && Flat(me, q.P) > 1.5f)
+		if (!_tStartExited && me.y <= g - TExitDepth && Flat(me, q.P) > 1.5f)
 		{
 			_tStartExited = true;
-			XBegin("to walk to the next start");
-			return;
+			if (XBegin("to walk to the next start", new Vector3(q.P.x, g, q.P.z)))
+			{
+				return;
+			}
 		}
 		if (TRest())
 		{
@@ -1165,8 +1181,7 @@ public partial class HarvestController
 		if (n == null)
 		{
 			if (CompanionsPlugin.LogNormal) LogInfo($"Line {_tLine + 1} done this way - the next start");
-			_tSub = TSubPick;
-			XBegin("for the next start");
+			_tSub = TSubPick;   // S2 gets out toward the start it picks
 			return;
 		}
 		_tQ = n;
@@ -1197,15 +1212,8 @@ public partial class HarvestController
 			TNextSpot();
 			return;
 		}
-		// F1: a level ray at the floor + 0.3 m toward the visible rock finds none: the base of the visible rock here
-		Vector3 o = q.P + q.Out * 0.75f;
-		o.y = g + 0.3f;
-		if (!RayParts(o, -q.Out, 3f, _tVisible, out _, out _))
-		{
-			TSpotDone(q, $"down to the base of the visible rock here, {g:F1} ({q.Surface - g:F1} m down)");
-			TNextSpot();
-			return;
-		}
+		// (fix 1: the depth comes from the plan only - the level-ray "base of the visible rock" test closed spots on
+		// untouched ground where the ground beside the vein is higher than the rock, or the rock is set back)
 		if (!PrivateArea.CheckAccess(q.P, 0f, flash: false))
 		{
 			_tAnyWard = true;
@@ -1228,6 +1236,15 @@ public partial class HarvestController
 		}
 		if (Flat(me, q.P) > TReach)
 		{
+			// fix 3: the spot is up above it (it's down in a pit or its own trench): get out toward the spot first, once
+			if (!q.ExitTried && g >= me.y + TExitDepth)
+			{
+				q.ExitTried = true;
+				if (XBegin("to reach the next spot", new Vector3(q.P.x, g, q.P.z)))
+				{
+					return;
+				}
+			}
 			if (TRest())
 			{
 				return;
@@ -1453,7 +1470,20 @@ public partial class HarvestController
 				TBlockCleared($"jumped the {rise:F1} m step");
 				return;
 			}
-			TDigSwing(_bDir, ahead, TFor.BlockDirt);
+			// fix 2: the real swing check here too (the same 9 facings as a dig): dirt higher than its feet, near the way ahead
+			if (!TPickFacing(_bDir, ahead, 1.5f, me.y, out Vector3 face, overRock: true))
+			{
+				// no facing meets dirt first: what the straight swing meets first is what's in the way
+				TFirst first = TPredict(me, _bDir, out Vector3 fp);
+				if (first == TFirst.Vein && _tPredGo != null && _tPredCol != null)
+				{
+					TBlockBegin(TBlock.Rock, _tPredGo, fp, _bDir, "rock, not dirt (no swing from here meets dirt first; a straight one meets " + _tPredCol.name + ")", _tPredCol);
+					return;
+				}
+				TBlockUnknown(q, "dirt in front, but no swing from here meets dirt first" + (first == TFirst.Other && _tPredGo != null ? " (a straight one meets " + _tPredGo.name + ")" : ""));
+				return;
+			}
+			TDigSwing(face, ahead, TFor.BlockDirt);
 			return;
 		}
 		case TBlock.Rock:
@@ -1581,8 +1611,7 @@ public partial class HarvestController
 			return;
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"A new start ({_tNewStarts} of {TMaxNewStarts}): {why}");
-		_tSub = TSubPick;
-		XBegin("for a new start");
+		_tSub = TSubPick;   // S2 gets out toward the start it picks
 	}
 
 	private void TTrenchDone(string why)
@@ -2056,7 +2085,7 @@ public partial class HarvestController
 		{
 			_tPredTerrain = false;
 			bool agree = terrain && !rock;
-			if (CompanionsPlugin.LogDetailed) Log($"Swing check said dirt first; the game {(rock ? "hit the rock" : terrain ? "hit the ground" : "hit nothing it reported")}{(agree ? "" : " - a miss")}");
+			if (CompanionsPlugin.LogDetailed) Log($"Swing check said dirt first; the game {(rock ? "hit the rock" : terrain ? "hit the ground" : "hit nothing it reported")}{(agree ? "" : $" - a miss (the check expected dirt at {MHR_Mover.Fmt(_tPredPt)}; it stood at {MHR_Mover.Fmt(base.transform.position)} facing {base.transform.eulerAngles.y:F0} deg{(broke ? ", a part broke" : "")})")}");
 			if (agree)
 			{
 				_tPredMiss = 0;
@@ -2161,8 +2190,6 @@ public partial class HarvestController
 	}
 
 	// ---------- S6: getting out ----------
-	private const int XWalk = 0;
-
 	private const int XRestFull = 1;
 
 	private const int XClimbTry = 2;
@@ -2177,28 +2204,61 @@ public partial class HarvestController
 
 	private const string XTag = "VeinOut";
 
-	// out: its feet within 0.5 m of the ground 2.5 m outward (away from the vein's middle)
-	private void XBegin(string why)
+	// fix 4: the height it has to get up to. The place it's heading for, but never above the highest ground in the first
+	// 16 m toward it (16 m is how far the general climb looks): a chest or a person up a hill beyond the pit's edge
+	// doesn't make the pit look deeper than it is.
+	private float XTargetY(Vector3 me, Vector3 dest)
+	{
+		Vector3 d = dest - me;
+		d.y = 0f;
+		float dist = d.magnitude;
+		if (dist < 1f)
+		{
+			return dest.y;
+		}
+		d /= dist;
+		float top = dist <= 16f ? dest.y : float.MinValue;
+		for (float t = 1f; t <= Mathf.Min(dist, 16f); t += 1f)
+		{
+			top = Mathf.Max(top, GroundAt(me + d * t));
+		}
+		return Mathf.Min(dest.y, top);
+	}
+
+	// the highest ground in the first 16 m along dir
+	private float XRiseAlong(Vector3 me, Vector3 dir)
+	{
+		float top = float.MinValue;
+		for (float t = 1f; t <= 16f; t += 1f)
+		{
+			top = Mathf.Max(top, GroundAt(me + dir * t));
+		}
+		return top;
+	}
+
+	// S6. In a hole = the place it's heading for (dest) is 1.5 m or more above its feet. Out = its feet within 0.5 m of the
+	// target height. True = getting out has started; false = not in a hole (plain walking).
+	private bool XBegin(string why, Vector3 dest)
 	{
 		Vector3 me = base.transform.position;
-		_xOut = FlatNorm(me - _xCenter, base.transform.forward);
-		_xRim = me + _xOut * 2.5f;
-		_xRimY = GroundAt(_xRim);
-		_xRim.y = _xRimY;
+		_xOut = FlatNorm(dest - me, base.transform.forward);
+		_xRimY = XTargetY(me, dest);
+		_xRim = new Vector3(dest.x, _xRimY, dest.z);
 		float depth = _xRimY - me.y;
-		if (depth < 0.5f)
+		if (depth < TExitDepth)
 		{
 			_xActive = false;
-			return;
+			return false;
 		}
 		_xActive = true;
 		_xTries = 0;
 		_xMineTried = false;
 		_xEquipTries = 0;
 		_xSince = _tClock;
-		_xStage = depth < 1.5f ? XWalk : XRestFull;
+		_xStage = XRestFull;
 		_ai.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Getting out of the trench {why}: {depth:F1} m deep at {MHR_Mover.Fmt(me)}, the rim at {MHR_Mover.Fmt(_xRim)} - {(depth < 1.5f ? "walking out" : "resting to full, then the climb")}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Getting out {why}: at {MHR_Mover.Fmt(me)}, {depth:F1} m below where it has to get up to (height {_xRimY:F1}, heading for {MHR_Mover.Fmt(dest)}) - resting to full, then the climb");
+		return true;
 	}
 
 	private void XTick()
@@ -2207,24 +2267,12 @@ public partial class HarvestController
 		if (me.y >= _xRimY - 0.5f && _xStage != XStepsRunning)
 		{
 			_xActive = false;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Out of the trench at {MHR_Mover.Fmt(me)}");
+			_tWalkSince = _tClock;   // the walk to the spot starts its time again
+			if (CompanionsPlugin.LogNormal) LogInfo($"Out at {MHR_Mover.Fmt(me)} (the height to reach was {_xRimY:F1})");
 			return;
 		}
 		switch (_xStage)
 		{
-		case XWalk:
-			if (TRest())
-			{
-				return;
-			}
-			if (_tClock - _xSince > 3f)
-			{
-				_xStage = XRestFull;
-				if (CompanionsPlugin.LogDetailed) Log("Couldn't walk out in 3 s - resting to full, then the climb");
-				return;
-			}
-			MHR_Mover.Go(_ai, Time.deltaTime, _xRim, 0.8f, false, XTag);
-			return;
 		case XRestFull:
 			_ai.StopMoving();
 			if (_stamina == null || _stamina.Stamina >= 0.99f * Mathf.Max(1f, _stamina.MaxStamina))
@@ -2266,6 +2314,7 @@ public partial class HarvestController
 			if (!_pitActive)
 			{
 				_xActive = false;   // out (PitStep said so), or stuck and waiting (PitStuck)
+				_tWalkSince = _tClock;
 			}
 			return;
 		default:
@@ -2292,15 +2341,13 @@ public partial class HarvestController
 			EquipTool(pick);
 			return;
 		}
-		Vector3 best = Vector3.zero;
-		float bestG = float.MaxValue;
+		// fix 4: the directions nearest the place it's heading for first. A direction is a way out when the ground along
+		// it (16 m) gets up to the height it needs; if none does, the one whose ground gets highest (1.5 m up at least).
+		Vector3 best = Vector3.zero, bestLow = Vector3.zero;
+		float bestDot = float.MinValue, bestTop = float.MinValue, bestRim = _xRimY;
 		for (int k = 0; k < 16; k++)
 		{
 			Vector3 d = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
-			if (Vector3.Dot(d, _xOut) <= 0f)
-			{
-				continue;
-			}
 			Vector3 p1 = me + d, p2 = me + d * 2f;
 			p1.y = GroundAt(p1);
 			p2.y = GroundAt(p2);
@@ -2312,16 +2359,32 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			if (p2.y < bestG)
+			float top = XRiseAlong(me, d);
+			float dot = Vector3.Dot(d, _xOut);
+			if (top >= _xRimY - 0.5f)
 			{
-				bestG = p2.y;
-				best = d;
+				if (dot > bestDot)
+				{
+					bestDot = dot;
+					best = d;
+				}
 			}
+			else if (top >= me.y + TExitDepth && top > bestTop)
+			{
+				bestTop = top;
+				bestLow = d;
+			}
+		}
+		if (best == Vector3.zero && bestLow != Vector3.zero)
+		{
+			best = bestLow;
+			bestRim = bestTop;
+			if (CompanionsPlugin.LogNormal) LogInfo($"No way up to {_xRimY:F1} that's dirt with room overhead - taking the highest there is, up to {bestTop:F1}");
 		}
 		if (best != Vector3.zero)
 		{
 			_xStage = XStepsRunning;
-			PitBegin(best, vein: true, _xRimY);
+			PitBegin(best, vein: true, Mathf.Min(bestRim, _xRimY));
 			return;
 		}
 		if (!_xMineTried)
@@ -2379,8 +2442,8 @@ public partial class HarvestController
 		if (!_xActive)
 		{
 			_xPendingAfter = false;
-			XBegin("after the vein");
-			if (!_xActive)
+			// fix 4: measured against where it goes next: a chest, the ore spot, you (Follow), or where the job started
+			if (!MHR_GatherRules.AfterVeinGoal(this, out Vector3 dest, out string what) || !XBegin("after the vein, heading for " + what, dest))
 			{
 				return false;
 			}
