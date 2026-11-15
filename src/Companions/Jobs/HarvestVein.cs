@@ -17,6 +17,9 @@ public partial class HarvestController
 	{
 		public Collider C;
 
+		// its place in the game's list of the vein's parts
+		public int Idx;
+
 		public Vector3 Center;
 
 		public Vector3 Half;
@@ -144,6 +147,8 @@ public partial class HarvestController
 
 	private void VeinReset(GameObject target)
 	{
+		VPlanLeave();
+		_vp = null;
 		_vFor = target;
 		_vRock = target != null ? target.GetComponent<MineRock5>() : null;
 		_vSide = -1;
@@ -186,14 +191,17 @@ public partial class HarvestController
 		Vector3 origin = _vRock.transform.position;
 		bool first = true;
 		_vLowest = float.MaxValue;
+		int areaIdx = -1;
 		foreach (MHR_Vein.Area ha in s_vAreas)
 		{
+			areaIdx++;
 			if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)
 			{
 				continue;
 			}
 			VPart p = default(VPart);
 			p.C = ha.Collider;
+			p.Idx = areaIdx;
 			p.Health = ha.Health;
 			if (haveBounds)
 			{
@@ -368,7 +376,7 @@ public partial class HarvestController
 			}
 			VeinLogParts();
 			LogToolOnce(ReflectionHelper.GetRightItem(_humanoid));
-			TPlanBegin();
+			TPlanEnter();
 		}
 		if (_humanoid == null || _character == null || _ai == null)
 		{
@@ -433,6 +441,7 @@ public partial class HarvestController
 		VeinScan(force: false);
 		if (_vParts.Count == 0)
 		{
+			VPlanDrop();   // the vein is gone: its plan with it
 			_xPendingAfter = true;   // out of the trench once the ore is picked up (VeinExitTick)
 			return;   // all broken: the next frame sees the target gone and collects the ore
 		}
@@ -639,6 +648,7 @@ public partial class HarvestController
 		}
 		_xPendingAfter = true;
 		_tChopping = false;
+		VPlanLeave();
 		_vFor = null;
 		_vRock = null;
 		MHR_GatherRules.AfterVein(this);

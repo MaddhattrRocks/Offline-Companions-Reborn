@@ -3151,6 +3151,7 @@ public partial class HarvestController : MonoBehaviour
 		int num7 = 0;
 		int num8 = 0;
 		int outOfRange = 0;
+		int claimedSkips = 0;
 		for (int i = 0; i < num; i++)
 		{
 			Collider collider = _scanBuffer[i];
@@ -3188,8 +3189,12 @@ public partial class HarvestController : MonoBehaviour
 			}
 			else
 			{
-				if (s_claimedTargets.Contains(harvestCandidateWithType.GetInstanceID()))
+				// 1.5.97 (item B): a vein outdoors in the Ore job can be worked by several companions (one shared plan);
+				// every other target keeps the one-companion rule
+				if (s_claimedTargets.Contains(harvestCandidateWithType.GetInstanceID()) && !(type == "MineRock5" && mode == 3 && !InDungeonAt(base.transform.position)))
 				{
+					claimedSkips++;
+					if (claimedSkips == 1 && CompanionsPlugin.LogDetailed) Log($"  Skipping \"{harvestCandidateWithType.name}\" - another companion has it");
 					continue;
 				}
 				bool own = !TooFarFromYou() && IsOwnPiece(harvestCandidateWithType, type);

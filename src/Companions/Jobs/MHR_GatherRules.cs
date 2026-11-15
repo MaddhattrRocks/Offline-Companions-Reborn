@@ -25,7 +25,7 @@ namespace Companions
             // 1.5.96: the hole a popped vein left (stone piles go in it), ore due after a vein, the next toss
             public bool VoidHas; public Vector3 VoidAt; public float VoidUntil; public bool OreDue; public float NextToss;
             // 1.5.97: what the pile or toss is of (Stone or Wood), or the other junk (item G)
-            public string PileItem = "Stone"; public bool TossJunk;
+            public string PileItem = "Stone"; public bool TossJunk; public float NoJunkUntil;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();

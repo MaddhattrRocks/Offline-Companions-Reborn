@@ -174,7 +174,9 @@ namespace Companions
                         p.NextNoBuildLog = Time.time + 120f;
                         if (CompanionsPlugin.LogNormal) Info("Can't build a " + PileWord(item) + " pile here (" + why + ") - tossing the " + PileWord(item) + " instead");
                     }
-                    return StartToss(h, p, item);
+                    // stone: tossed, as before. Wood with no place for a pile: only when it's too heavy.
+                    if (item == "Stone" || h.IsOverweight()) return StartToss(h, p, item);
+                    continue;
                 }
                 if (h.IsOverweight()) return StartToss(h, p, item);
             }
@@ -208,7 +210,7 @@ namespace Companions
         static bool StartJunkToss(HarvestController h, Per p, Humanoid hum)
         {
             if (ModConfig.JunkCleanup == null || !ModConfig.JunkCleanup.Value) return false;
-            if (hum == null || hum.GetInventory() == null || HeaviestJunk(hum) == null) return false;
+            if (Time.time < p.NoJunkUntil || hum == null || hum.GetInventory() == null || HeaviestJunk(hum) == null) return false;
             p.Trip = YardTrip.Toss; p.TossJunk = true;
             p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
             p.PilePoint = h.transform.position;
@@ -275,6 +277,12 @@ namespace Companions
             {
                 if (p.TossJunk) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " (junk) to get under its weight limit"); }
                 else if (CompanionsPlugin.LogDetailed) Debug("Tossed " + n + " " + tossed + " toward " + MHR_Mover.Fmt(h.transform.position + dir * 3f));
+            }
+            else if (p.TossJunk)
+            {
+                // the game refused the drop: no more junk tossing for a minute, so it can't go round on one stack
+                p.NoJunkUntil = Time.time + 60f;
+                return false;
             }
             p.NextToss = Time.time + 0.5f;
             return true;

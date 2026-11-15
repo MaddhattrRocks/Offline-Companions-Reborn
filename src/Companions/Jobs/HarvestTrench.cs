@@ -5,11 +5,15 @@ namespace Companions;
 
 // 1.5.97 (plan v3, approved by John 2026-11-15 02:09, reviews/1.5.97-player-way-mining-plan-v3.md): a split vein outdoors
 // mined the way a player does, built on the mod's own walking, climbing, door, water and fight handling.
-//  S1  The plan, before the first swing: a grid over the visible rock (+3 m) - rock squares where a visible part stands
-//      above the ground, the trench line the squares 2 out from the rock (about 0.75 m outside its edge), traced round
-//      whatever shape it has. Buildings, water it would swim in, wards and no-build areas are left out of the line (it
-//      splits there); trees on it are marked. Each spot's depth: the bottom of the visible rock beside it, not below 31 m.
-//  S2  A start: the nearest spot not done, walked to with the normal walking code; toward the lower ground from there.
+//  S1  The plan (1.5.97 list v4: HarvestVeinPlan.cs): one for everyone on the vein. A grid over the seen pieces (+3 m), a
+//      rubber band (convex outline) round every square where a seen piece stands, the trench line the squares 2 out from
+//      the band (1 m outside it), traced round. Buildings, water it would swim in, wards and no-build areas are left out
+//      of the line (it splits there); trees on it are marked. Each spot's depth: the bottom of the lowest seen piece
+//      within 1 m, not below 31 m; across a gap, the depth of the nearest spot that has one. Made again when a new piece
+//      is seen (at most once every 2 s).
+//  S2  A start: on its own the nearest spot not done, toward the lower ground from there. With others on the vein: a spot
+//      nobody is on (the farthest from the others on arriving and on meeting), going away from the nearest other; with
+//      nothing free it helps on the nearest spot not done.
 //  S3  Dig the spot ahead: before each swing a copy of the game's own swing (Attack.DoMeleeAttack) picks which way to face
 //      (9 facings) so the swing meets dirt first. Done at its depth, at the water line, a ward / no-build area, "rock in
 //      front" (no facing meets dirt first), or 3 swings without progress.
@@ -43,15 +47,13 @@ public partial class HarvestController
 
 		public int Idx;
 
-		public int Blocks;
+		// item B: who is walking to it or digging it, and who has given up on it (it's left for the others)
+		public HarvestController Holder;
 
-		public bool PersonWaited;
+		public HashSet<int> Gave;
 
-		public bool DoorTried;
-
-		public bool ExitTried;
-
-		public bool Jumped;
+		// no seen rock within 1 m (the band crosses a gap here): its depth comes from the nearest spot that has one
+		public bool NoRock;
 	}
 
 	private sealed class TLine
@@ -159,8 +161,6 @@ public partial class HarvestController
 	private bool _tNoneVisible;
 
 	private Vector3 _tCenter;
-
-	private readonly List<TLine> _tLines = new List<TLine>();
 
 	// the plan's grid
 	private Vector3 _gMin;
@@ -321,9 +321,14 @@ public partial class HarvestController
 	{
 		_tPhase = TPhasePlan;
 		_tSub = TSubPick;
-		_tLines.Clear();
 		_tVisible.Clear();
+		_tMine.Clear();
+		_tPlanVer = 0;
+		_tPickFar = false;
+		_tPickWhy = "";
+		_tStartLimit = TStartTime;
 		_gGround = null;
+		_gFoot = null;
 		_gRock = null;
 		_gIdx = 0;
 		_tLine = -1;
@@ -420,17 +425,13 @@ public partial class HarvestController
 	// ---------- S1: the plan ----------
 	private void TPlanBegin()
 	{
-		_tVisible.Clear();
+		_vp.Planner = this;
+		_vp.PlannerAt = Time.time;
+		_vp.NextReplan = Time.time + VReplanGap;
+		TSeenToVisible();
+		_tNoneVisible = _tVisible.Count == 0;
 		Bounds vb = default(Bounds);
 		bool any = false;
-		foreach (VPart p in _vParts)
-		{
-			if (PartVisible(p))
-			{
-				_tVisible.Add(p.C);
-			}
-		}
-		_tNoneVisible = _tVisible.Count == 0;
 		Vector3 sum = Vector3.zero;
 		int n = 0;
 		foreach (VPart p in _vParts)
@@ -442,6 +443,7 @@ public partial class HarvestController
 			if (_tNoneVisible)
 			{
 				_tVisible.Add(p.C);
+				_vp.Seen.Add(p.Idx);
 			}
 			Bounds b = new Bounds(p.Center, p.Half * 2f);
 			if (!any)
@@ -456,6 +458,7 @@ public partial class HarvestController
 			sum += p.Center;
 			n++;
 		}
+		_tPlanSeen = _vp.Seen.Count;
 		_tCenter = n > 0 ? sum / n : _vUnion.center;
 		_tCenter.y = GroundAt(_tCenter);
 		if (!any)
@@ -463,13 +466,15 @@ public partial class HarvestController
 			vb = _vUnion;
 		}
 		float sx = vb.size.x + 6f, sz = vb.size.z + 6f;
-		_gCell = Mathf.Max(0.5f, Mathf.Max(sx, sz) / (TGridMax - 1));
-		_gNx = Mathf.Clamp(Mathf.CeilToInt(sx / _gCell) + 1, 2, TGridMax);
-		_gNz = Mathf.Clamp(Mathf.CeilToInt(sz / _gCell) + 1, 2, TGridMax);
-		_gMin = new Vector3(vb.min.x - 3f, 0f, vb.min.z - 3f);
+		_gCell = Mathf.Max(0.5f, (Mathf.Max(sx, sz) + 1f) / (TGridMax - 1));
+		// the squares sit on the same places from plan to plan (so a spot dug in one plan is the same spot in the next)
+		_gMin = new Vector3(Mathf.Floor((vb.min.x - 3f) / _gCell) * _gCell, 0f, Mathf.Floor((vb.min.z - 3f) / _gCell) * _gCell);
+		_gNx = Mathf.Clamp(Mathf.CeilToInt((vb.max.x + 3f - _gMin.x) / _gCell) + 1, 2, TGridMax);
+		_gNz = Mathf.Clamp(Mathf.CeilToInt((vb.max.z + 3f - _gMin.z) / _gCell) + 1, 2, TGridMax);
 		_gTop = vb.max.y + 1f;
 		_gBottom = vb.min.y - 1f;
 		_gGround = new float[_gNx * _gNz];
+		_gFoot = new bool[_gNx * _gNz];
 		_gRock = new bool[_gNx * _gNz];
 		_gIdx = 0;
 		_tPhase = TPhasePlan;
@@ -501,19 +506,38 @@ public partial class HarvestController
 		return i >= 0 && _gRock[i];
 	}
 
-	// a slice of the grid each frame (at most 200 squares): the ground, and rock where a visible part stands above it
+	// a slice of the grid each frame (at most 200 squares): the ground, and the squares where a seen piece stands
 	private void TPlanTick()
 	{
+		if (_vp == null)
+		{
+			return;
+		}
+		if (_vp.Planner != this || _gGround == null)
+		{
+			// someone else is making the plan: wait for it, then work to it; nobody is: make it
+			_ai.StopMoving();
+			if (VPlannerBusy())
+			{
+				return;
+			}
+			if (_vp.Version > 0 && _vp.Seen.Count <= _vp.PlannedSeen)
+			{
+				TPlanAdopt("joined the others");
+				return;
+			}
+			TPlanBegin();
+			return;
+		}
+		_vp.PlannerAt = Time.time;
 		int total = _gNx * _gNz;
 		int end = Mathf.Min(total, _gIdx + TCellsPerFrame);
 		float len = _gTop - _gBottom;
 		for (; _gIdx < end; _gIdx++)
 		{
 			Vector3 c = GCellPos(_gIdx);
-			float g = GroundAt(c);
-			_gGround[_gIdx] = g;
-			bool hit = RayParts(new Vector3(c.x, _gTop, c.z), Vector3.down, len, _tVisible, out Vector3 hp, out _);
-			_gRock[_gIdx] = hit && (_tNoneVisible || hp.y > g + 0.05f);
+			_gGround[_gIdx] = GroundAt(c);
+			_gFoot[_gIdx] = RayParts(new Vector3(c.x, _gTop, c.z), Vector3.down, len, _tVisible, out _, out _);
 		}
 		if (_gIdx >= total)
 		{
@@ -524,6 +548,8 @@ public partial class HarvestController
 	private void TPlanFinish()
 	{
 		int total = _gNx * _gNz;
+		// item A: the rubber band round every square where a seen piece stands; everything inside it counts as rock
+		int corners = TBandFill();
 		int[] cheb = new int[total];
 		int rockCount = 0;
 		for (int i = 0; i < total; i++)
@@ -687,7 +713,7 @@ public partial class HarvestController
 			chains.RemoveRange(TMaxLines, dropped);
 		}
 		int step = Mathf.Max(1, Mathf.RoundToInt(1.0f / _gCell));
-		_tLines.Clear();
+		List<TLine> lines = new List<TLine>();
 		int spots = 0;
 		float deepest = 0f;
 		foreach (List<int> chain in chains)
@@ -703,7 +729,7 @@ public partial class HarvestController
 				s.P.y = _gGround[i];
 				s.Surface = s.P.y;
 				s.Tree = tree[i];
-				s.Line = _tLines.Count;
+				s.Line = lines.Count;
 				s.Idx = line.S.Count;
 				// out: away from the nearest rock square; depth: the bottom of the visible rock beside it, not below 31 m
 				int ix = i % _gNx, iz = i / _gNx;
@@ -725,39 +751,95 @@ public partial class HarvestController
 							bestD = d;
 							nearRock = rc;
 						}
-						if (RayParts(new Vector3(rc.x, _gBottom, rc.z), Vector3.up, _gTop - _gBottom, _tVisible, out Vector3 up, out _))
+						// the bottom of the lowest seen piece within 1 m (the band's own squares in a gap have no rock)
+						if (_gFoot[jz * _gNx + jx] && RayParts(new Vector3(rc.x, _gBottom, rc.z), Vector3.up, _gTop - _gBottom, _tVisible, out Vector3 up, out _))
 						{
 							bottom = Mathf.Min(bottom, up.y);
 						}
 					}
 				}
 				s.Out = FlatNorm(s.P - nearRock, FlatNorm(s.P - _tCenter, Vector3.forward));
-				s.Depth = bottom < float.MaxValue ? Mathf.Max(TWater, Mathf.Min(bottom, s.Surface)) : s.Surface;
-				deepest = Mathf.Max(deepest, s.Surface - s.Depth);
+				s.NoRock = bottom == float.MaxValue;
+				s.Depth = !s.NoRock ? Mathf.Max(TWater, Mathf.Min(bottom, s.Surface)) : s.Surface;
 				line.S.Add(s);
 			}
 			spots += line.S.Count;
-			_tLines.Add(line);
+			lines.Add(line);
+		}
+		// where the band crosses a gap: the depth of the nearest ring spot that has seen rock within 1 m
+		int gaps = 0;
+		foreach (TLine line in lines)
+		{
+			foreach (TSpot s in line.S)
+			{
+				if (s.NoRock)
+				{
+					gaps++;
+					float bd = float.MaxValue;
+					foreach (TLine l2 in lines)
+					{
+						foreach (TSpot o in l2.S)
+						{
+							float d = Flat(o.P, s.P);
+							if (!o.NoRock && d < bd)
+							{
+								bd = d;
+								s.Depth = Mathf.Max(TWater, Mathf.Min(o.Depth, s.Surface));
+							}
+						}
+					}
+				}
+				deepest = Mathf.Max(deepest, s.Surface - s.Depth);
+				// what was closed in the plan before stays closed (a building, deep water, ground that won't go lower, a
+				// companion's own give-ups); a spot at its depth reads as done from the ground
+				foreach (VClosed c in _vp.Closed)
+				{
+					if (Flat(c.P, s.P) > 0.6f)
+					{
+						continue;
+					}
+					if (c.Who == 0)
+					{
+						s.Done = true;
+					}
+					else
+					{
+						(s.Gave ?? (s.Gave = new HashSet<int>())).Add(c.Who);
+					}
+				}
+			}
 		}
 		_gGround = null;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts show")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, {rockCount} rock; {_tLines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down");
+		_gFoot = null;
+		// the one plan for everyone on this vein
+		_vp.Lines = lines;
+		_vp.GMin = _gMin;
+		_vp.GCell = _gCell;
+		_vp.GNx = _gNx;
+		_vp.GNz = _gNz;
+		_vp.GRock = _gRock;
+		_vp.Center = _tCenter;
+		_vp.NoneVisible = _tNoneVisible;
+		_vp.PlannedSeen = _tPlanSeen;
+		// a piece seen while this plan was being made asks for the next one
+		_vp.NeedOutside = _vp.Seen.Count > _tPlanSeen;
+		_vp.Version++;
+		_vp.Planner = null;
+		_vp.NextReplan = Time.time + VReplanGap;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree; {gaps} across a gap{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down");
 		if (CompanionsPlugin.LogDetailed)
 		{
-			for (int l = 0; l < _tLines.Count; l++)
+			for (int l = 0; l < lines.Count; l++)
 			{
-				TLine line = _tLines[l];
+				TLine line = lines[l];
 				Log($"  line {l + 1}: {line.S.Count} spots{(line.Loop ? ", all the way round" : "")}, from {MHR_Mover.Fmt(line.S[0].P)} to {MHR_Mover.Fmt(line.S[line.S.Count - 1].P)}");
 			}
 		}
-		if (_tLines.Count == 0)
+		if (_tPickWhy.Length == 0)
 		{
-			if (CompanionsPlugin.LogNormal) LogInfo($"Vein \"{_target.name}\": couldn't find the edge of the rock - mining it from where it can reach");
-			TLapStart();
-			return;
+			_tPickWhy = "the plan grew";
 		}
-		_tPhase = TPhaseTrench;
-		_tSub = TSubPick;
-		TBeginItem();
+		TPlanAdopt("made it");
 	}
 
 	private int LookMask()
@@ -777,9 +859,18 @@ public partial class HarvestController
 			_tClock += Time.deltaTime;
 		}
 		_vSide = SideOf(base.transform.position);
+		if (_vp != null)
+		{
+			_vp.Workers[this] = Time.time;
+			_vp.LastWork = Time.time;
+		}
 		if (_xActive)
 		{
 			XTick();
+			return;
+		}
+		if (TPlanSync())
+		{
 			return;
 		}
 		switch (_tPhase)
@@ -942,6 +1033,17 @@ public partial class HarvestController
 		{
 			return TFirst.None;
 		}
+		// item A: a piece the swing check meets is seen
+		if (_vRock != null && _vp != null)
+		{
+			for (int k = 0; k < gos.Count; k++)
+			{
+				if (gos[k].GetComponent<MineRock5>() == _vRock)
+				{
+					TSee(cols[k], "the swing check met it");
+				}
+			}
+		}
 		point = sums[0] / Mathf.Max(1, counts[0]);
 		_tPredGo = gos[0];
 		_tPredCol = cols[0];
@@ -1077,7 +1179,7 @@ public partial class HarvestController
 			{
 				return null;
 			}
-			if (!s.Done)
+			if (TOpen(s))
 			{
 				return s;
 			}
@@ -1085,23 +1187,67 @@ public partial class HarvestController
 		return null;
 	}
 
-	// S2: the nearest spot not done, then toward the lower ground from it
+	// S2: a start. On its own: the nearest spot not done, then toward the lower ground. With other companions on the vein
+	// (item B): a spot nobody is on - the one farthest from the others on arriving and on meeting one of them, else the
+	// nearest - then along the ring away from the nearest other. Nothing free: it helps on the nearest spot not done.
 	private void TStartPick()
 	{
 		Vector3 me = base.transform.position;
-		TSpot best = null;
-		float bd = float.MaxValue;
+		List<HarvestController> others = TOthers();
+		bool far = _tPickFar && others.Count > 0;
+		string why = _tPickWhy;
+		_tPickFar = false;
+		_tPickWhy = "";
+		TSpot best = null, bestHeld = null;
+		float bd = float.MaxValue, bs = float.MinValue, bh = float.MaxValue;
+		int open = 0, free = 0;
 		foreach (TLine l in _tLines)
 		{
 			foreach (TSpot s in l.S)
 			{
+				if (!TOpen(s))
+				{
+					continue;
+				}
+				open++;
 				float d = Flat(s.P, me);
-				if (!s.Done && d < bd)
+				if (THeldBy(s) != null)
+				{
+					if (d < bh)
+					{
+						bh = d;
+						bestHeld = s;
+					}
+					continue;
+				}
+				free++;
+				if (far)
+				{
+					float near = float.MaxValue;
+					foreach (HarvestController o in others)
+					{
+						near = Mathf.Min(near, Flat(s.P, o.transform.position));
+					}
+					if (near > bs)
+					{
+						bs = near;
+						best = s;
+						bd = d;
+					}
+				}
+				else if (d < bd)
 				{
 					bd = d;
 					best = s;
 				}
 			}
+		}
+		bool helping = false;
+		if (best == null && bestHeld != null)
+		{
+			best = bestHeld;
+			bd = bh;
+			helping = true;
 		}
 		if (best == null)
 		{
@@ -1110,27 +1256,77 @@ public partial class HarvestController
 		}
 		_tLine = best.Line;
 		_tRunStart = best.Idx;
-		_tQ = best;
+		TTake(best);
 		_tTurned = false;
 		TSpot next = TSpotAt(_tLine, best.Idx + 1), prev = TSpotAt(_tLine, best.Idx - 1);
-		float gn = next != null ? GroundAt(next.P) : float.MaxValue, gp = prev != null ? GroundAt(prev.P) : float.MaxValue;
-		_tDir = gp < gn - 0.01f ? -1 : 1;
-		if (next == null && prev != null)
+		if (next == best)
 		{
-			_tDir = -1;
+			next = null;
+		}
+		if (prev == best)
+		{
+			prev = null;
+		}
+		string way;
+		HarvestController nearOther = null;
+		float no = float.MaxValue;
+		foreach (HarvestController o in others)
+		{
+			float d = Flat(o.transform.position, best.P);
+			if (d < no)
+			{
+				no = d;
+				nearOther = o;
+			}
+		}
+		if (next == null && prev == null)
+		{
+			_tDir = 1;
+			way = "a single spot";
+		}
+		else if (next == null || prev == null)
+		{
+			_tDir = next == null ? -1 : 1;
+			way = "the only way from the end of the line";
+		}
+		else if (nearOther != null)
+		{
+			// item B: along the ring, away from the nearest other companion
+			Vector3 op = nearOther.transform.position;
+			_tDir = Flat(prev.P, op) > Flat(next.P, op) ? -1 : 1;
+			way = $"away from {nearOther.MyName}, {no:F1} m off";
+		}
+		else
+		{
+			float gn = GroundAt(next.P), gp = GroundAt(prev.P);
+			_tDir = gp < gn - 0.01f ? -1 : 1;
+			way = $"the ground is lower that way ({Mathf.Min(gn, gp):F1} against {Mathf.Max(gn, gp):F1})";
 		}
 		_tStartExited = false;
+		// 10 s to get there, and 1 s more for every metre it is away (a start on the far side of the vein)
+		_tStartLimit = TStartTime + bd;
 		_tSub = TSubStart;
 		TBeginItem();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Starting the trench at spot {best.Idx + 1}/{_tLines[_tLine].S.Count} of line {_tLine + 1} at {MHR_Mover.Fmt(best.P)} ({bd:F1} m away), going {(_tDir > 0 ? "one way" : "the other way")} - the ground is lower that way ({Mathf.Min(gn, gp):F1} against {Mathf.Max(gn, gp):F1})");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Starting the trench at spot {best.Idx + 1}/{_tLines[_tLine].S.Count} of line {_tLine + 1} at {MHR_Mover.Fmt(best.P)} ({bd:F1} m away), going {(_tDir > 0 ? "one way" : "the other way")} - {way}");
+		if (CompanionsPlugin.LogDetailed && others.Count > 0)
+		{
+			string pick = helping ? $"every spot not done has a companion on it - helping {THeldBy(best)?.MyName ?? "them"} on the nearest" : far ? $"the free spot farthest from the others ({bs:F1} m from the nearest of them)" : "the nearest free spot";
+			Log($"Start picked{(why.Length > 0 ? " (" + why + ")" : "")}: {pick}; {others.Count} other companion(s) on the vein, {open} spot(s) not done, {free} free");
+		}
 	}
 
 	private void TStartTick()
 	{
 		TSpot q = _tQ;
+		if (q == null || !TOpen(q))
+		{
+			_tSub = TSubPick;   // someone finished it on the way there
+			return;
+		}
 		Vector3 me = base.transform.position;
 		float g = GroundAt(q.P);
-		if (Flat(me, q.P) <= 1.0f)
+		// helping on a spot another companion is on: beside them (a swing's reach) is close enough
+		if (Flat(me, q.P) <= (THeldBy(q) != null ? TReach : 1.0f))
 		{
 			_tSub = TSubDig;
 			TBeginItem();
@@ -1149,26 +1345,33 @@ public partial class HarvestController
 		{
 			return;
 		}
-		if (_tClock - _tWalkSince > TStartTime)
+		if (_tClock - _tWalkSince > _tStartLimit)
 		{
-			TSpotDone(q, $"couldn't get to it in {TStartTime:F0}s");
-			TNewStart($"couldn't get to the start spot in {TStartTime:F0}s");
+			TSpotGave(q, $"couldn't get to it in {_tStartLimit:F0}s");
+			TNewStart($"couldn't get to the start spot in {_tStartLimit:F0}s");
 			return;
 		}
 		MHR_Mover.Go(_ai, Time.deltaTime, new Vector3(q.P.x, g, q.P.z), 0.8f, false, "Vein");
 	}
 
-	private void TSpotDone(TSpot q, string why)
+	// done for everyone. keep = it stays closed when the plan is made again (not for a depth read from the ground)
+	private void TSpotDone(TSpot q, string why, bool keep = false)
 	{
 		if (q.Done)
 		{
 			return;
 		}
 		q.Done = true;
+		q.Holder = null;
+		if (keep)
+		{
+			_vp?.Closed.Add(new VClosed { P = q.P, Who = 0 });
+		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {q.Idx + 1}/{_tLines[q.Line].S.Count} (line {q.Line + 1}) at {MHR_Mover.Fmt(q.P)}: {why}");
 	}
 
-	// the spot is done: on along the line; at the end, back the other way from the start once; then a new start
+	// the spot is done: on along the line; at the end, back the other way from the start once; then a new start.
+	// Item B: the next spot has another companion on it - they've met: a new start, the free spot farthest from the others.
 	private void TNextSpot()
 	{
 		TSpot q = _tQ;
@@ -1189,7 +1392,16 @@ public partial class HarvestController
 			_tSub = TSubPick;   // S2 gets out toward the start it picks
 			return;
 		}
-		_tQ = n;
+		HarvestController other = THeldBy(n);
+		if (other != null)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Met {other.MyName} at spot {n.Idx + 1} of line {_tLine + 1} - a new start away from the others");
+			_tPickFar = true;
+			_tPickWhy = "met " + other.MyName;
+			_tSub = TSubPick;
+			return;
+		}
+		TTake(n);
 		_tSub = TSubDig;
 		TBeginItem();
 	}
@@ -1198,7 +1410,7 @@ public partial class HarvestController
 	private void TDigTick()
 	{
 		TSpot q = _tQ;
-		if (q == null || q.Done)
+		if (q == null || !TOpen(q))
 		{
 			TNextSpot();
 			return;
@@ -1222,14 +1434,14 @@ public partial class HarvestController
 		if (!PrivateArea.CheckAccess(q.P, 0f, flash: false))
 		{
 			_tAnyWard = true;
-			TSpotDone(q, "someone else's ward covers it");
+			TSpotDone(q, "someone else's ward covers it", keep: true);
 			TNextSpot();
 			return;
 		}
 		if (Location.IsInsideNoBuildLocation(q.P))
 		{
 			_tAnyCantDig = true;
-			TSpotDone(q, "a no-build area");
+			TSpotDone(q, "a no-build area", keep: true);
 			TNextSpot();
 			return;
 		}
@@ -1242,9 +1454,9 @@ public partial class HarvestController
 		if (Flat(me, q.P) > TReach)
 		{
 			// fix 3: the spot is up above it (it's down in a pit or its own trench): get out toward the spot first, once
-			if (!q.ExitTried && g >= me.y + TExitDepth)
+			if (!My(q).ExitTried && g >= me.y + TExitDepth)
 			{
-				q.ExitTried = true;
+				My(q).ExitTried = true;
 				if (XBegin("to reach the next spot", new Vector3(q.P.x, g, q.P.z)))
 				{
 					return;
@@ -1276,7 +1488,7 @@ public partial class HarvestController
 		}
 		if (!TPickFacing(baseDir, q.P, 1.5f, q.Depth, out Vector3 facing))
 		{
-			TSpotDone(q, "rock in front: no way to face it that meets dirt first - left for the mining");
+			TSpotDone(q, "rock in front: no way to face it that meets dirt first - left for the mining", keep: true);
 			TNextSpot();
 			return;
 		}
@@ -1312,12 +1524,12 @@ public partial class HarvestController
 	// S5: it can't move forward - one look ahead, at the swing's height, then at knee height
 	private void TBlockStart(TSpot q)
 	{
-		q.Blocks++;
+		My(q).Blocks++;
 		Vector3 me = base.transform.position;
 		TSpot w = TSpotAt(_tLine, q.Idx - _tDir);
 		Vector3 goal = w != null && w.Done && Flat(w.P, q.P) <= 1.6f && Flat(me, w.P) > 0.5f ? w.P : q.P;
 		Vector3 dir = FlatNorm(goal - me, FlatNorm(q.P - me, base.transform.forward));
-		if (q.Blocks > TMaxBlocksPerSpot)
+		if (My(q).Blocks > TMaxBlocksPerSpot)
 		{
 			TBlockUnknown(q, $"blocked {TMaxBlocksPerSpot} times on the way to this spot");
 			return;
@@ -1462,13 +1674,13 @@ public partial class HarvestController
 		{
 			Vector3 ahead = me + _bDir * 0.8f;
 			float rise = GroundAt(ahead) - me.y;
-			if (!q.Jumped && rise > 0.4f && rise <= 1.0f && MHR_Mover.HeadRoomAt(new Vector3(ahead.x, GroundAt(ahead), ahead.z), THead))
+			if (!My(q).Jumped && rise > 0.4f && rise <= 1.0f && MHR_Mover.HeadRoomAt(new Vector3(ahead.x, GroundAt(ahead), ahead.z), THead))
 			{
 				if (TRest() || !_character.IsOnGround())
 				{
 					return;
 				}
-				q.Jumped = true;
+				My(q).Jumped = true;
 				MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(_bDir));
 				_ai.MoveTowards(_bDir, run: false);
 				_character.Jump();
@@ -1530,7 +1742,7 @@ public partial class HarvestController
 		}
 		case TBlock.Person:
 		case TBlock.Creature:
-			if (q.PersonWaited)
+			if (My(q).PersonWaited)
 			{
 				TBlockUnknown(q, "still in the way after waiting and stepping round");
 				return;
@@ -1540,15 +1752,15 @@ public partial class HarvestController
 			{
 				return;
 			}
-			q.PersonWaited = true;
+			My(q).PersonWaited = true;
 			TWalkLevel(q.P, 0.4f);
 			MHR_Mover.SidestepNow(_ai, q.P, "Vein");
 			TBlockCleared("waited 3 s, stepping round");
 			return;
 		case TBlock.Door:
-			if (!q.DoorTried)
+			if (!My(q).DoorTried)
 			{
-				q.DoorTried = true;
+				My(q).DoorTried = true;
 				TBlockCleared("the walking code opens doors on the way");
 				return;
 			}
@@ -1572,12 +1784,16 @@ public partial class HarvestController
 			if (!s.Done && Flat(s.P, at) <= 1.5f)
 			{
 				s.Done = true;
+				s.Holder = null;
+				_vp?.Closed.Add(new VClosed { P = s.P, Who = 0 });
 				n++;
 			}
 		}
 		if (!q.Done)
 		{
 			q.Done = true;
+			q.Holder = null;
+			_vp?.Closed.Add(new VClosed { P = q.P, Who = 0 });
 			n++;
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Line {_tLine + 1} split at {MHR_Mover.Fmt(at)}: {what} - {n} spot(s) by it left out; carrying on past it");
@@ -1593,17 +1809,21 @@ public partial class HarvestController
 		{
 			TSpot n = TNextUndone(_tLine, _tRunStart, -_tDir);
 			_tTurned = true;
-			if (n != null && n != q)
+			if (n != null && n != q && THeldBy(n) == null)
 			{
 				_tDir = -_tDir;
-				_tQ = n;
+				if (q.Holder == this)
+				{
+					q.Holder = null;
+				}
+				TTake(n);
 				_tSub = TSubDig;
 				TBeginItem();
 				if (CompanionsPlugin.LogNormal) LogInfo($"Blocked ({why}) - turning round and working line {_tLine + 1} the other way from where it started");
 				return;
 			}
 		}
-		TSpotDone(q, "blocked: " + why);
+		TSpotGave(q, "blocked: " + why);
 		TNewStart(why);
 	}
 
@@ -1627,7 +1847,7 @@ public partial class HarvestController
 			foreach (TSpot s in l.S)
 			{
 				all++;
-				if (s.Done)
+				if (!TOpen(s))
 				{
 					done++;
 				}
@@ -1777,8 +1997,10 @@ public partial class HarvestController
 		}
 		if (_pPart == null)
 		{
+			// item B: the nearest held part nobody is on; when every one has a companion on it, it helps on the nearest
 			bool anyDirect = false;
-			float bd = float.MaxValue;
+			float bd = float.MaxValue, bh = float.MaxValue;
+			Collider heldPart = null;
 			foreach (VPart p in _vParts)
 			{
 				if (!p.Direct)
@@ -1791,11 +2013,29 @@ public partial class HarvestController
 					continue;
 				}
 				float d = Vector3.Distance(me, p.Center);
+				if (TPartHeldBy(p.C) != null)
+				{
+					if (d < bh)
+					{
+						bh = d;
+						heldPart = p.C;
+					}
+					continue;
+				}
 				if (d < bd)
 				{
 					bd = d;
 					_pPart = p.C;
 				}
+			}
+			if (_pPart == null && heldPart != null)
+			{
+				_pPart = heldPart;
+				if (CompanionsPlugin.LogDetailed) Log($"Every held part has a companion on it - helping {TPartHeldBy(heldPart)?.MyName ?? "them"} on \"{heldPart.name}\"");
+			}
+			else if (_pPart != null && _vp != null)
+			{
+				_vp.PartHolds[_pPart] = this;
 			}
 			if (!anyDirect)
 			{
@@ -1910,7 +2150,7 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
-		if (!TPickFacing(_pSpot.P - me, _pSpot.P, 1.0f, part.MinY - 0.5f, out Vector3 facing))
+		if (!TPickFacing(_pSpot.P - me, _pSpot.P, 1.0f, part.MinY - 0.5f, out Vector3 facing, overRock: true))
 		{
 			_pStage = 1;
 			TBeginItem();
@@ -2068,7 +2308,20 @@ public partial class HarvestController
 	// ---------- after each swing: what did the game do? ----------
 	private void TJudge()
 	{
+		// item A: a piece one of its swings meets is seen (its health went down)
+		Dictionary<Collider, float> before = new Dictionary<Collider, float>();
+		foreach (VPart p in _vParts)
+		{
+			before[p.C] = p.Health;
+		}
 		VeinScan();
+		foreach (VPart p in _vParts)
+		{
+			if (before.TryGetValue(p.C, out float hb) && p.Health < hb - 0.01f)
+			{
+				TSee(p, "a swing hit it");
+			}
+		}
 		bool broke = _vParts.Count < _vLastAlive;
 		bool rock = broke || _vHealth < _vLastHealth - 0.01f;
 		if (broke && _target != null)
@@ -2086,6 +2339,11 @@ public partial class HarvestController
 		float lowered = _tQBefore - GroundAt(_tQPoint);
 		float lowered2 = _tQ2Before - GroundAt(_tQ2Point);
 		bool digProg = lowered >= VDigMin;
+		// item A: after a swing that lowered the ground, the pieces near it that now show are seen
+		if (digProg || lowered2 >= VDigMin)
+		{
+			TSeeCheck(_tQPoint);
+		}
 		if (_tPredTerrain)
 		{
 			_tPredTerrain = false;
@@ -2114,7 +2372,7 @@ public partial class HarvestController
 			_tItemNoProg = prog ? 0 : _tItemNoProg + 1;
 			if (_tItemNoProg >= TNoProgSwings && _tQ != null && !_tQ.Done)
 			{
-				TSpotDone(_tQ, $"won't go lower ({TNoProgSwings} swings in a row without progress) - leaving it at {GroundAt(_tQ.P):F1}");
+				TSpotDone(_tQ, $"won't go lower ({TNoProgSwings} swings in a row without progress) - leaving it at {GroundAt(_tQ.P):F1}", keep: true);
 				TNextSpot();
 			}
 			break;
