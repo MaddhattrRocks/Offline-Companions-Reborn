@@ -378,6 +378,28 @@ public partial class HarvestController
 			return;
 		}
 		bool busy = _humanoid.InAttack() || _humanoid.InDodge() || _character.IsStaggering();
+		// 1.5.97 (John 2026-11-15): the pickaxe in hand first, before anything else - checked every update
+		if (!busy && !_vSwung)
+		{
+			ItemDrop.ItemData inHand = ReflectionHelper.GetRightItem(_humanoid);
+			if (inHand == null || inHand.GetDamage().m_pickaxe <= 0f || Worn(inHand))
+			{
+				ItemDrop.ItemData pick = FindBestTool(3);
+				if (pick == null)
+				{
+					SayGaveUp(GiveUpWhy.NoTool, "in hand: " + (inHand?.m_shared?.m_name ?? "nothing") + (Worn(inHand) ? " (worn out)" : ""));
+					VeinLeave();
+					return;
+				}
+				_ai.StopMoving();
+				EquipTool(pick);
+				if (ReflectionHelper.GetRightItem(_humanoid) == pick && CompanionsPlugin.LogNormal)
+				{
+					LogInfo("Pickaxe back in hand (\"" + pick.m_shared.m_name + "\"; it had " + (inHand?.m_shared?.m_name ?? "nothing") + " in its hand)");
+				}
+				return;
+			}
+		}
 		// a swing has finished: what did it do?
 		if (_vSwung && !busy && Time.time - _vSwungAt > 0.35f)
 		{
@@ -556,9 +578,8 @@ public partial class HarvestController
 		}
 		_vPart = null;
 		_tItemNoProg = 0;
-		_tItemProgAt = Time.time;
 		_vWalkSince = -1f;
-		_tCand = 0;
+		_tFaceSince = -1f;
 	}
 
 	// nothing left it can dig or break from the trench: say why and move on

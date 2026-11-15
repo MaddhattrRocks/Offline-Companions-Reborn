@@ -671,6 +671,19 @@ public class CompanionSetup : MonoBehaviour
 			TryInit();
 			return;
 		}
+		if (_missingCheckPending && _humanoid != null && InventoryLoadGuard.Loading == null)
+		{
+			bool was = _equipping;
+			_equipping = true;
+			try
+			{
+				UnequipMissingEquippedItems();
+			}
+			finally
+			{
+				_equipping = was;
+			}
+		}
 		MHR_StampOwnerDeathRule();
 		MHR_MarkNoDestroy();
 		MHR_RiseWatch.Tick(this);
@@ -1802,9 +1815,19 @@ public class CompanionSetup : MonoBehaviour
 		_equipTimer = 0f;
 	}
 
+	private bool _missingCheckPending;
+
 	private void UnequipMissingEquippedItems()
 	{
 		Inventory inventory = _humanoid.GetInventory();
+		// 1.5.97: not while the game is still putting the bag back together (Inventory.Load) - the equipped item's
+		// reloaded copy may not be back yet; it runs on the next frame instead, with the whole bag there
+		if (inventory != null && InventoryLoadGuard.Loading == inventory)
+		{
+			_missingCheckPending = true;
+			return;
+		}
+		_missingCheckPending = false;
 		if (inventory != null)
 		{
 			List<ItemDrop.ItemData> allItems = inventory.GetAllItems();
