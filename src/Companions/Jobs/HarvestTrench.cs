@@ -143,6 +143,11 @@ public partial class HarvestController
 	// in a hole: the place it's heading for is this much or more above its feet
 	private const float TExitDepth = 1.5f;
 
+	private const int XMaxClimbs = 1;
+
+	// test review B3: a next spot farther off than this is walked to under the start rules
+	private const float TFarSpot = 3f;
+
 	private static readonly float[] s_tOffsets = { 0f, 15f, -15f, 30f, -30f, 45f, -45f, 60f, -60f };
 
 	private static int s_tArcMask;
@@ -280,6 +285,11 @@ public partial class HarvestController
 	// S6
 	private bool _xActive;
 
+	// where this run along the line started (test review B2: found again on a new plan)
+	private Vector3 _tRunP;
+
+	private bool _tWasTrench;
+
 	private int _xStage;
 
 	private Vector3 _xRim;
@@ -324,6 +334,7 @@ public partial class HarvestController
 		_tVisible.Clear();
 		_tMine.Clear();
 		_tPlanVer = 0;
+		_tWasTrench = false;
 		_tPickFar = false;
 		_tPickWhy = "";
 		_tStartLimit = TStartTime;
@@ -425,6 +436,7 @@ public partial class HarvestController
 	// ---------- S1: the plan ----------
 	private void TPlanBegin()
 	{
+		_tWasTrench = _tPhase == TPhaseTrench;   // B2: the planner's own place is kept only from the trench
 		_vp.Planner = this;
 		_vp.PlannerAt = Time.time;
 		_vp.NextReplan = Time.time + VReplanGap;
@@ -1194,7 +1206,17 @@ public partial class HarvestController
 	{
 		Vector3 me = base.transform.position;
 		List<HarvestController> others = TOthers();
-		bool far = _tPickFar && others.Count > 0;
+		// test review B1: "far" is measured from the spot each other companion is on or walking to (not where it
+		// stands); one with no spot yet isn't counted, and with none of them on a spot it's the nearest spot not done
+		List<Vector3> otherSpots = new List<Vector3>();
+		foreach (HarvestController o in others)
+		{
+			if (o._tPhase == TPhaseTrench && o._tQ != null)
+			{
+				otherSpots.Add(o._tQ.P);
+			}
+		}
+		bool far = _tPickFar && otherSpots.Count > 0;
 		string why = _tPickWhy;
 		_tPickFar = false;
 		_tPickWhy = "";
@@ -1224,9 +1246,9 @@ public partial class HarvestController
 				if (far)
 				{
 					float near = float.MaxValue;
-					foreach (HarvestController o in others)
+					foreach (Vector3 op in otherSpots)
 					{
-						near = Mathf.Min(near, Flat(s.P, o.transform.position));
+						near = Mathf.Min(near, Flat(s.P, op));
 					}
 					if (near > bs)
 					{
@@ -1256,6 +1278,7 @@ public partial class HarvestController
 		}
 		_tLine = best.Line;
 		_tRunStart = best.Idx;
+		_tRunP = best.P;
 		TTake(best);
 		_tTurned = false;
 		TSpot next = TSpotAt(_tLine, best.Idx + 1), prev = TSpotAt(_tLine, best.Idx - 1);
@@ -1310,7 +1333,7 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"Starting the trench at spot {best.Idx + 1}/{_tLines[_tLine].S.Count} of line {_tLine + 1} at {MHR_Mover.Fmt(best.P)} ({bd:F1} m away), going {(_tDir > 0 ? "one way" : "the other way")} - {way}");
 		if (CompanionsPlugin.LogDetailed && others.Count > 0)
 		{
-			string pick = helping ? $"every spot not done has a companion on it - helping {THeldBy(best)?.MyName ?? "them"} on the nearest" : far ? $"the free spot farthest from the others ({bs:F1} m from the nearest of them)" : "the nearest free spot";
+			string pick = helping ? $"every spot not done has a companion on it - helping {THeldBy(best)?.MyName ?? "them"} on the nearest" : far ? $"the free spot farthest from the others' spots ({bs:F1} m from the nearest of them)" : "the nearest free spot";
 			Log($"Start picked{(why.Length > 0 ? " (" + why + ")" : "")}: {pick}; {others.Count} other companion(s) on the vein, {open} spot(s) not done, {free} free");
 		}
 	}
@@ -1449,6 +1472,19 @@ public partial class HarvestController
 		if (q.Tree && TTreeNear(q.P, 2.0f, out GameObject treeGo, out Vector3 treePt))
 		{
 			TBlockBegin(TBlock.Tree, treeGo, treePt, FlatNorm(treePt - me, base.transform.forward), "a tree on the trench line");
+			return;
+		}
+		if (Flat(me, q.P) > TFarSpot)
+		{
+			// test review B3: the spots between are done and this one is a walk away: under the start rules (out of the
+			// trench first if it's below, 10 s and 1 s more a metre) - not the few seconds a step to the next spot gets.
+			// It isn't one of the new starts. S2's walk ends at the spot (then S3), or gives the spot up at its limit.
+			float far = Flat(me, q.P);
+			_tStartExited = false;
+			_tStartLimit = TStartTime + far;
+			_tSub = TSubStart;
+			TBeginItem();
+			if (CompanionsPlugin.LogNormal) LogInfo($"The next spot not done is {q.Idx + 1}/{_tLines[q.Line].S.Count} (line {q.Line + 1}), {far:F1} m away - walking there (up to {_tStartLimit:F0} s)");
 			return;
 		}
 		if (Flat(me, q.P) > TReach)
@@ -2546,9 +2582,10 @@ public partial class HarvestController
 			}
 			return;
 		case XClimbTry:
-			if (_xTries >= 3)
+			// test review B4: one try of the general climb, then the steps (log ceead815: it stopped short 20 times in 24)
+			if (_xTries >= XMaxClimbs)
 			{
-				if (CompanionsPlugin.LogNormal) LogInfo("3 climb tries didn't get it out - cutting steps");
+				if (CompanionsPlugin.LogNormal) LogInfo("The general climb didn't get it out - cutting steps");
 				_xStage = XSteps;
 				return;
 			}
@@ -2557,7 +2594,7 @@ public partial class HarvestController
 				_xTries++;
 				_xSince = _tClock;
 				_xStage = XClimbing;
-				if (CompanionsPlugin.LogNormal) LogInfo($"Climbing out, try {_xTries} of 3 (the general climb)");
+				if (CompanionsPlugin.LogNormal) LogInfo("Climbing out (the general climb, one try)");
 				return;
 			}
 			if (CompanionsPlugin.LogNormal) LogInfo(_xTries == 0 ? "The general climb finds no way up from here (too deep or rock all round for it) - cutting steps" : "The general climb has no other way up - cutting steps");
@@ -2569,7 +2606,7 @@ public partial class HarvestController
 				MHR_Mover.Go(_ai, Time.deltaTime, _xRim, 1.0f, true, XTag);
 				return;
 			}
-			if (CompanionsPlugin.LogNormal) LogInfo($"Climb try {_xTries} didn't get it out (feet {me.y:F1}, the rim {_xRimY:F1}) - resting to full first");
+			if (CompanionsPlugin.LogNormal) LogInfo($"The climb didn't get it out (feet {me.y:F1}, the rim {_xRimY:F1}) - resting to full first");
 			_xStage = XRestFull;
 			return;
 		case XSteps:

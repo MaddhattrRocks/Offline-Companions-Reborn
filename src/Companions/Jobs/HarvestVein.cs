@@ -145,6 +145,85 @@ public partial class HarvestController
 	// vein work is on: the swing's hit on the ground may dig (SpawnOnHitTerrain asks AllowDig)
 	internal bool VeinWorking => _state == HarvestState.Attacking && _vFor != null && _vFor == _target && DigMode();
 
+	// 1.5.97 (test review A2, A3): the vein it left because its pickaxe broke (none other in the bag)
+	private bool _leaveNoTool;
+
+	private GameObject _noToolRock;
+
+	private float _noToolNext;
+
+	private bool _tEnterNear;
+
+	// the same rule as FindBestTool(3), without its log lines: a pickaxe that isn't broken
+	private bool HasWorkingPick()
+	{
+		Inventory inv = _humanoid != null ? _humanoid.GetInventory() : null;
+		if (inv == null)
+		{
+			return false;
+		}
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || Worn(it) || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(it.m_shared.m_ammoType))
+			{
+				continue;
+			}
+			if (it.GetDamage().m_pickaxe > 0f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// once a second while the Ore job is on and that vein is still there: a working pickaxe in the bag (you gave it one,
+	// it picked one up) stops the getting-out where it stands, ends a "stuck in the hole" wait, and the normal scan takes
+	// the vein again - like a player who equips another pickaxe and carries on. You more than follow range + 15 m away:
+	// the normal rules (it catches up first; this keeps checking).
+	private void NoToolTick(int mode)
+	{
+		if (_noToolRock == null)
+		{
+			_noToolRock = null;   // the vein is gone
+			return;
+		}
+		if (mode != 3 || VeinWorking)
+		{
+			_noToolRock = null;
+			return;
+		}
+		if (Time.time < _noToolNext)
+		{
+			return;
+		}
+		_noToolNext = Time.time + 1f;
+		if (_humanoid == null || _humanoid.InAttack() || !HasWorkingPick())
+		{
+			return;
+		}
+		Player owner = MHR_Owner.Of(this);
+		if (_setup != null && _setup.GetFollow() && owner != null && Vector3.Distance(base.transform.position, owner.transform.position) > PlayerRange() + 15f)
+		{
+			return;
+		}
+		bool wasOut = _xActive || _pitActive, wasStuck = _stuckInHole;
+		_xActive = false;
+		_xPendingAfter = false;
+		_pitActive = false;
+		_pitDropped = false;
+		_stuckInHole = false;
+		if (_ai != null)
+		{
+			_ai.StopMoving();
+			MHR_Mover.Release(_ai);
+		}
+		_blacklist.Remove(_noToolRock.GetInstanceID());
+		_tEnterNear = true;
+		_noToolRock = null;
+		_scanTimer = 0f;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Has a working pickaxe again - back to the vein{(wasOut ? " (it stops getting out)" : wasStuck ? " (no longer stuck in the hole)" : "")}");
+	}
+
 	private void VeinReset(GameObject target)
 	{
 		VPlanLeave();
@@ -486,8 +565,10 @@ public partial class HarvestController
 		{
 			MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(flat.normalized));
 		}
+		// test review C2: an aim point straight above or below its eye has no direction on the flat - the game's
+		// SetLookDir (Character.cs:3147) then logs "Look rotation viewing vector is zero" every call; the look stays
 		Vector3 look = aim - Eye();
-		if (look.sqrMagnitude > 0.01f)
+		if (look.sqrMagnitude > 0.01f && look.x * look.x + look.z * look.z > 0.01f)
 		{
 			_character.SetLookDir(look.normalized);
 		}
@@ -628,7 +709,16 @@ public partial class HarvestController
 	private void VeinLeave()
 	{
 		bool stop = false;
-		if (_target != null)
+		bool noTool = _leaveNoTool;
+		_leaveNoTool = false;
+		if (_target != null && noTool)
+		{
+			// 1.5.97 (test review A2, A3): no working pickaxe isn't giving up on the vein - it isn't skipped and doesn't
+			// count toward "gave up twice"; a working pickaxe in the bag sends it back (NoToolTick)
+			_noToolRock = _target;
+			_noToolNext = Time.time + 1f;
+		}
+		else if (_target != null)
 		{
 			int id = _target.GetInstanceID();
 			_blacklist[id] = Time.time;

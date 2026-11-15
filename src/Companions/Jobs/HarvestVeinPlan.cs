@@ -333,8 +333,10 @@ public partial class HarvestController
 		_vp.Workers[this] = Time.time;
 		_vp.LastWork = Time.time;
 		_tMine.Clear();
-		_tPickFar = true;
-		_tPickWhy = "arriving";
+		// test review A2: back with a working pickaxe - the nearest spot not done, not the far side
+		_tPickFar = !_tEnterNear;
+		_tPickWhy = _tEnterNear ? "back with a working pickaxe" : "arriving";
+		_tEnterNear = false;
 		List<HarvestController> others = TOthers();
 		int before = _vp.Seen.Count;
 		TSeenToVisible();
@@ -354,7 +356,7 @@ public partial class HarvestController
 			{
 				_vp.Closed.Clear();
 			}
-			if (CompanionsPlugin.LogNormal && before > 0) LogInfo($"\"{_vp.Name}\" has a plan from before ({before} piece(s) seen then, {_vp.Seen.Count} now) - making the ring again from them");
+			if (CompanionsPlugin.LogNormal && before > 0 && others.Count == 0 && _vp.Version > 0) LogInfo($"\"{_vp.Name}\" has a plan from before ({before} piece(s) seen then, {_vp.Seen.Count} now) - making the ring again from them");
 			if (!VPlannerBusy())
 			{
 				TPlanBegin();
@@ -369,6 +371,12 @@ public partial class HarvestController
 	// the plan there is: its grid and lines, a start picked again
 	private void TPlanAdopt(string why)
 	{
+		// test review B2: it was on a spot of the plan before - it keeps its place and its way round
+		bool carry = _tPlanVer > 0 && _tQ != null && _tLine >= 0 && (_tPhase == TPhaseTrench || (_tPhase == TPhasePlan && _tWasTrench));
+		_tWasTrench = false;
+		Vector3 oldP = carry ? _tQ.P : Vector3.zero, oldRun = _tRunP;
+		int oldDir = _tDir;
+		bool oldTurned = _tTurned;
 		_tPlanVer = _vp.Version;
 		_gMin = _vp.GMin;
 		_gCell = _vp.GCell;
@@ -395,6 +403,65 @@ public partial class HarvestController
 		_tSub = TSubPick;
 		TBeginItem();
 		if (CompanionsPlugin.LogDetailed) Log($"Working to plan {_vp.Version} of \"{_vp.Name}\" ({why})");
+		if (carry)
+		{
+			// the new plan's spot nearest the one it was on, within 1 m (done or not: S3 moves on from a done one the
+			// same way round); else the nearest spot not done to where it stands; none: S2 picks (and finds the end)
+			Vector3 me = base.transform.position;
+			TSpot same = null, open = null, run = null;
+			float sd = 1.0f, od = float.MaxValue;
+			foreach (TLine l in _tLines)
+			{
+				foreach (TSpot s in l.S)
+				{
+					float d = Flat(s.P, oldP);
+					if (d <= sd)
+					{
+						sd = d;
+						same = s;
+					}
+					d = Flat(s.P, me);
+					if (TOpen(s) && d < od)
+					{
+						od = d;
+						open = s;
+					}
+				}
+			}
+			TSpot at = same ?? open;
+			if (at != null)
+			{
+				float rd = float.MaxValue;
+				foreach (TSpot s in _tLines[at.Line].S)
+				{
+					float d = Flat(s.P, oldRun);
+					if (d < rd)
+					{
+						rd = d;
+						run = s;
+					}
+				}
+				_tLine = at.Line;
+				_tRunStart = run != null ? run.Idx : at.Idx;
+				_tRunP = run != null ? run.P : at.P;
+				_tDir = oldDir;
+				_tTurned = oldTurned;
+				if (TOpen(at))
+				{
+					TTake(at);
+				}
+				else
+				{
+					_tQ = at;
+				}
+				_tPickFar = false;
+				_tPickWhy = "";
+				_tStartExited = false;
+				_tSub = TSubDig;
+				TBeginItem();
+				if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version}: carrying on at spot {at.Idx + 1}/{_tLines[at.Line].S.Count} of line {at.Line + 1} at {MHR_Mover.Fmt(at.P)} ({(same != null ? "the spot it was on" : "the nearest spot not done, its own spot isn't on the new ring")}), the same way round");
+			}
+		}
 	}
 
 	// each update: someone made the plan again, or a new piece wants it made again

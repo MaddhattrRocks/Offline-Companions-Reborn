@@ -226,7 +226,10 @@ public partial class HarvestController : MonoBehaviour
 
 	public bool IsInGatherMode { get; private set; }
 
-	public bool IsActive => _state != HarvestState.Idle || _goingBack;
+	// 1.5.97 (test review A1): getting out of its trench (or cutting pit steps) is the job at work too, so Follow doesn't
+	// steer at the same time (log ceead815: every climb try "dropped: a new task (Follow)")
+	// Only on the Ore job, which is what moves those two on (a job change can't leave Follow held off).
+	public bool IsActive => _state != HarvestState.Idle || _goingBack || ((_xActive || _pitActive) && GetMode() == 3);
 
 	// 1.4.121: with Follow off it works an area, like Hunt (user): around home when the job starts near home, otherwise
 	// around where it was started, whether or not you're nearby. With nothing left it walks back to the middle.
@@ -716,7 +719,8 @@ public partial class HarvestController : MonoBehaviour
 
 	internal void MHR_NotifyIfIdle()
 	{
-		if (_state == HarvestState.Idle)
+		// 1.5.97 (test review A4): not while it gets out of a trench or cuts steps - the pickaxe stays in hand
+		if (_state == HarvestState.Idle && !_xActive && !_pitActive)
 		{
 			NotifyActionModeChanged();
 		}
@@ -807,6 +811,8 @@ public partial class HarvestController : MonoBehaviour
 		{
 			return;
 		}
+		// 1.5.97 (test review A2): left a vein with no working pickaxe - one in the bag again sends it straight back
+		NoToolTick(mode);
 		if (mode == 3 && PitTick())
 		{
 			return;
