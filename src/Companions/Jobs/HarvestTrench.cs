@@ -10,7 +10,7 @@ namespace Companions;
 //    over its box) is above the ground. 16 level rays from 20 m out find its edge; the trench line runs 0.75 m outside
 //    it, a spot about every 1 m.
 //  - Start at the nearest spot (skipping spots at the water line) and dig it straight down to the base of the rock there
-//    (a level ray at the floor + 0.3 m toward the rock finds none). Deeper than 1.2 m: 1 m steps cut out there.
+//    (a level ray at the floor + 0.3 m toward the visible rock finds none; buried parts aren't followed down). Deeper than 1.2 m: 1 m steps cut out there.
 //  - Then round the ore, toward the side with the lower ground, each spot down to its own base, standing in the trench
 //    already dug.
 //  - Then the dirt under the parts still held by dirt, then mine it (held parts first). Every break makes the game pop
@@ -196,14 +196,6 @@ public partial class HarvestController
 			}
 		}
 		return dist < float.MaxValue;
-	}
-
-	private IEnumerable<Collider> AllParts()
-	{
-		foreach (VPart p in _vParts)
-		{
-			yield return p.C;
-		}
 	}
 
 	private void TOutline()
@@ -423,12 +415,14 @@ public partial class HarvestController
 			TPointDone(c, $"at the water line (ground {g:F1}, the water level is 30) - counts as dug down");
 			return;
 		}
-		// the base of the rock you can see here: a level ray at the floor + 0.3 m toward the rock
+		// the base of the rock you can see here: a level ray at the floor + 0.3 m toward the rock, against the visible
+		// parts only (the set the ring is built from; all parts when none shows) - F1, John 2026-11-15: buried parts
+		// spread far beyond the visible rock, and following them down dug through the vein
 		Vector3 o = c.Edge + c.Out * 1.5f;
 		o.y = g + 0.3f;
-		if (!RayParts(o, -c.Out, 3f, AllParts(), out _, out _))
+		if (!RayParts(o, -c.Out, 3f, _tVisible, out _, out _))
 		{
-			TPointDone(c, $"down to the base of the rock here, {g:F1} ({c.Surface - g:F1} m down)");
+			TPointDone(c, $"down to the base of the visible rock here, {g:F1} ({c.Surface - g:F1} m down)");
 			return;
 		}
 		if (!PrivateArea.CheckAccess(c.P, 0f, flash: false))
