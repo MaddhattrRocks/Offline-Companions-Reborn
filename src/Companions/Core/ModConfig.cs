@@ -787,7 +787,7 @@ internal static class ModConfig
 		RepairScanRadius = Bind(cfg, "GearRepair", "StationRange", 20f, "How far (meters) a companion looks for a crafting station to repair at. Near home, any station near home counts.", new AcceptableValueRange<float>(5f, 60f));
 		// [Gathering]
 		HarvestRange = Bind(cfg, "Gathering", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
-		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 10f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
+		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 20f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
 		HarvestFollowLogRange = Bind(cfg, "Gathering", "FollowLogRange", 20f, "Wood with Follow on: fallen logs and stumps count up to this many meters from you (further than FollowRange), so it finishes the trees it fells before starting a new one - a log can roll well away from where you stand.", new AcceptableValueRange<float>(5f, 60f));
 		GatherRestStamina = Bind(cfg, "Gathering", "RestStamina", 0.15f, "Chopping and mining: swing after swing (the weapon's combo) until stamina would drop below this share of the maximum, then stop and get its breath back.", new AcceptableValueRange<float>(0f, 0.9f));
 		GatherResumeStamina = Bind(cfg, "Gathering", "ResumeStamina", 0.6f, "Chopping and mining: after stopping for breath, start swinging again once stamina is back to this share of the maximum.", new AcceptableValueRange<float>(0.1f, 1f));
@@ -942,6 +942,24 @@ internal static class ModConfig
 		// 1.4.150: the fix-ups below only run on such an upgrade (a file from before the clean-up), not on every start -
 		// "*" for ForageItems or 40/90 for the view are fine choices once someone makes them on purpose.
 		bool upgraded = MigrateAndClean(cfg);
+		// 1.5.97 (John 2026-11-15): FollowRange's default went from 10 to 20 m. A file still holding exactly the old default
+		// is moved to 20 once (a mark in PlayerPrefs, so someone who sets 10 on purpose afterwards keeps it).
+		try
+		{
+			if (PlayerPrefs.GetInt("HC_FollowRange20", 0) == 0)
+			{
+				if (Mathf.Approximately(HarvestFollowRange.Value, 10f))
+				{
+					HarvestFollowRange.Value = 20f;
+					CompanionsPlugin.Log?.LogInfo("[Config] Gathering / FollowRange was the old default of 10 m - moved to the new default, 20 m (once)");
+				}
+				PlayerPrefs.SetInt("HC_FollowRange20", 1);
+				PlayerPrefs.Save();
+			}
+		}
+		catch
+		{
+		}
 		// 1.4.149: ViewRange/ViewAngle were never applied (20 m / 120 were hard-coded); a file still holding the old
 		// unused defaults (40 / 90) gets the values companions have always really used, so nothing changes in game
 		if (upgraded && Mathf.Approximately(ViewRange.Value, 40f) && Mathf.Approximately(ViewAngle.Value, 90f))

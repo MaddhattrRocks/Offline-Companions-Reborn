@@ -8,6 +8,14 @@ namespace Companions
 {
     internal enum YardTrip { Stone, Build, Ore, Toss }
 
+    // ---- 1.5.97 (build list v4, items F2 and G, John 2026-11-15) ----
+    //  - Wood in the Ore job is handled just like stone: a wood pile (the game's wood_stack piece, its cost read from the
+    //    game) whenever it carries a pile's worth and has a hammer; else tossed when too heavy. Stone first, then wood.
+    //  - Too heavy with the stone, wood and ore dealt with: the other junk (what the full-pack clean-up calls junk: IsJunk,
+    //    with Gathering > JunkCleanup and NeverDiscard) is tossed the same way, the heaviest stack first, until it's under
+    //    the limit. Then it keeps the rest, pauses and says it needs another chest: nothing but ore goes into a chest by
+    //    the vein, and its whole load only into a chest at home.
+
     // ---- 1.5.95/1.5.96: the Ore job's stone and ore by the vein (John's approved list, 2026-11-14) ----
     //  - Stone, with a hammer: whenever it carries a Stone pile's worth (the piece's own cost, read from the game) it builds
     //    one, using the hammer's stamina and wear like a player: 2-4 m outside the edge of the hole on the side it's
@@ -26,31 +34,38 @@ namespace Companions
     {
         const float YardReuse = 25f;
 
-        static GameObject s_stonePile; static int s_stonePileCost; static bool s_stonePileLooked;
+        static readonly string[] s_pileItems = { "Stone", "Wood" };
+        static readonly Dictionary<string, KeyValuePair<GameObject, int>> s_pilePiece = new Dictionary<string, KeyValuePair<GameObject, int>>();
 
-        // the game's Stone pile piece and how much stone it takes
-        static GameObject StonePile(out int cost)
+        static string PilePrefab(string item) { return item == "Wood" ? "wood_stack" : "stone_pile"; }
+        static string PileWord(string item) { return item == "Wood" ? "wood" : "stone"; }
+
+        // the game's pile piece for stone or wood and how much of it one takes
+        static GameObject PilePiece(string item, out int cost)
         {
-            if (!s_stonePileLooked && ZNetScene.instance != null)
+            KeyValuePair<GameObject, int> kv;
+            if (!s_pilePiece.TryGetValue(item, out kv) && ZNetScene.instance != null)
             {
-                s_stonePileLooked = true;
-                GameObject go = ZNetScene.instance.GetPrefab("stone_pile");
+                GameObject found = null; int amount = 0;
+                GameObject go = ZNetScene.instance.GetPrefab(PilePrefab(item));
                 Piece pc = go != null ? go.GetComponent<Piece>() : null;
-                if (pc != null && pc.m_resources != null && pc.m_resources.Length == 1 && pc.m_resources[0].m_resItem != null && pc.m_resources[0].m_resItem.gameObject.name == "Stone")
+                if (pc != null && pc.m_resources != null && pc.m_resources.Length == 1 && pc.m_resources[0].m_resItem != null && pc.m_resources[0].m_resItem.gameObject.name == item)
                 {
-                    s_stonePile = go; s_stonePileCost = Mathf.Max(1, pc.m_resources[0].m_amount);
+                    found = go; amount = Mathf.Max(1, pc.m_resources[0].m_amount);
                 }
-                else Warn("No Stone pile piece found (stone_pile) - stone is tossed instead");
+                else Warn("No " + PileWord(item) + " pile piece found (" + PilePrefab(item) + ") - " + PileWord(item) + " is tossed instead");
                 // 1.5.96: what the game says the piece needs (John: check it in the game, don't assume)
                 if (CompanionsPlugin.LogDetailed && pc != null)
                 {
                     string res = "";
                     if (pc.m_resources != null) foreach (Piece.Requirement r in pc.m_resources) if (r != null && r.m_resItem != null) res += (res.Length > 0 ? ", " : "") + r.m_amount + " " + r.m_resItem.gameObject.name;
-                    Debug("Stone pile piece \"" + pc.m_name + "\": costs " + res + ", crafting station " + (pc.m_craftingStation != null ? pc.m_craftingStation.m_name : "none") + ", ground only " + pc.m_groundOnly + ", in dungeons " + pc.m_allowedInDungeons);
+                    Debug("Pile piece for " + PileWord(item) + " \"" + pc.m_name + "\": costs " + res + ", crafting station " + (pc.m_craftingStation != null ? pc.m_craftingStation.m_name : "none") + ", ground only " + pc.m_groundOnly + ", in dungeons " + pc.m_allowedInDungeons);
                 }
+                kv = new KeyValuePair<GameObject, int>(found, amount);
+                s_pilePiece[item] = kv;
             }
-            cost = s_stonePileCost;
-            return s_stonePile;
+            cost = kv.Value;
+            return kv.Key;
         }
 
         // is the stone due to be dealt with? (about once a second while mining, and before each scan)
@@ -67,11 +82,17 @@ namespace Companions
                 Humanoid hum = h.GetComponent<Humanoid>();
                 Inventory inv = hum != null ? hum.GetInventory() : null;
                 if (inv == null) return false;
-                int stone = CountIn(inv, "Stone");
-                if (stone <= 0) return false;
-                int cost;
-                if (CanBuild(h, p, hum, out cost) && stone >= cost) return true;
-                return h.IsOverweight();
+                // stone first, then wood (1.5.97): a pile's worth with a hammer, or any of it when too heavy
+                bool any = false;
+                foreach (string item in s_pileItems)
+                {
+                    int have = CountIn(inv, item);
+                    if (have <= 0) continue;
+                    any = true;
+                    int cost;
+                    if (CanBuild(h, p, hum, item, out cost) && have >= cost) return true;
+                }
+                return any && h.IsOverweight();
             }
             catch (Exception e) { Warn("StoneDue: " + e.Message); return false; }
         }
@@ -84,9 +105,9 @@ namespace Companions
             return ZoneSystem.instance != null && p.y - ZoneSystem.instance.GetGroundHeight(p) > 50f;
         }
 
-        static bool CanBuild(HarvestController h, Per p, Humanoid hum, out int cost)
+        static bool CanBuild(HarvestController h, Per p, Humanoid hum, string item, out int cost)
         {
-            GameObject prefab = StonePile(out cost);
+            GameObject prefab = PilePiece(item, out cost);
             return prefab != null && Time.time >= p.NoBuildUntil && MHR_PileTaker.Hammer(hum) != null;
         }
 
@@ -130,38 +151,68 @@ namespace Companions
             if (p.PileActive) return true;
             Humanoid hum = h.GetComponent<Humanoid>();
             if (hum == null || hum.GetInventory() == null) return false;
-            int stone = CountIn(hum.GetInventory(), "Stone");
-            if (stone <= 0) return false;
-            int cost;
-            if (CanBuild(h, p, hum, out cost) && stone >= cost)
+            foreach (string item in s_pileItems)
             {
-                string why;
-                if (FindBuildSpot(h, p, out why))
+                int have = CountIn(hum.GetInventory(), item);
+                if (have <= 0) continue;
+                int cost;
+                if (CanBuild(h, p, hum, item, out cost) && have >= cost)
                 {
-                    p.Trip = YardTrip.Build; p.Arrived = false;
-                    p.PilePoint = StandFor(h, p.BuildSpot);
-                    p.PileActive = true; p.PileUntil = Time.time + 25f;
-                    if (CompanionsPlugin.LogNormal) Info("Building a stone pile (" + stone + " stone, " + cost + " a pile)");
-                    return true;
+                    string why;
+                    p.PileItem = item;
+                    if (FindBuildSpot(h, p, out why))
+                    {
+                        p.Trip = YardTrip.Build; p.Arrived = false;
+                        p.PilePoint = StandFor(h, p.BuildSpot);
+                        p.PileActive = true; p.PileUntil = Time.time + 25f;
+                        if (CompanionsPlugin.LogNormal) Info("Building a " + PileWord(item) + " pile (" + have + " " + PileWord(item) + ", " + cost + " a pile)");
+                        return true;
+                    }
+                    p.NoBuildUntil = Time.time + 60f;
+                    if (Time.time >= p.NextNoBuildLog)
+                    {
+                        p.NextNoBuildLog = Time.time + 120f;
+                        if (CompanionsPlugin.LogNormal) Info("Can't build a " + PileWord(item) + " pile here (" + why + ") - tossing the " + PileWord(item) + " instead");
+                    }
+                    return StartToss(h, p, item);
                 }
-                p.NoBuildUntil = Time.time + 60f;
-                if (Time.time >= p.NextNoBuildLog)
-                {
-                    p.NextNoBuildLog = Time.time + 120f;
-                    if (CompanionsPlugin.LogNormal) Info("Can't build a stone pile here (" + why + ") - tossing the stone instead");
-                }
-                return StartToss(h, p);
+                if (h.IsOverweight()) return StartToss(h, p, item);
             }
-            if (!h.IsOverweight()) return false;
-            return StartToss(h, p);
+            return false;
         }
 
-        static bool StartToss(HarvestController h, Per p)
+        static bool StartToss(HarvestController h, Per p, string item)
         {
-            p.Trip = YardTrip.Toss;
+            p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false;
             p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
             p.PilePoint = h.transform.position;
-            if (CompanionsPlugin.LogNormal) Info("Too heavy - tossing its stone off to one side");
+            if (CompanionsPlugin.LogNormal) Info("Too heavy - tossing its " + PileWord(item) + " off to one side");
+            return true;
+        }
+
+        // item G: the heaviest stack of what the full-pack clean-up calls junk (null = none)
+        static ItemDrop.ItemData HeaviestJunk(Humanoid hum)
+        {
+            ItemDrop.ItemData best = null; float bw = -1f;
+            foreach (ItemDrop.ItemData it in hum.GetInventory().GetAllItems())
+            {
+                if (!IsJunk(hum, it)) continue;
+                float w = it.GetWeight();
+                if (w > bw) { bw = w; best = it; }
+            }
+            return best;
+        }
+
+        // item G: too heavy with the stone, wood and ore dealt with - the other junk goes, the heaviest stack first, until
+        // it's under the limit. False = nothing to toss (or Gathering > JunkCleanup is off).
+        static bool StartJunkToss(HarvestController h, Per p, Humanoid hum)
+        {
+            if (ModConfig.JunkCleanup == null || !ModConfig.JunkCleanup.Value) return false;
+            if (hum == null || hum.GetInventory() == null || HeaviestJunk(hum) == null) return false;
+            p.Trip = YardTrip.Toss; p.TossJunk = true;
+            p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
+            p.PilePoint = h.transform.position;
+            if (CompanionsPlugin.LogNormal) Info("Still too heavy - tossing other junk off to one side, the heaviest first");
             return true;
         }
 
@@ -199,19 +250,31 @@ namespace Companions
             ai.StopMoving();
             if (Time.time < p.NextToss || hum.InAttack()) return true;
             ItemDrop.ItemData stack = null;
-            foreach (ItemDrop.ItemData it in inv.GetAllItems())
-                if (it != null && it.m_dropPrefab != null && it.m_dropPrefab.name == "Stone" && !it.m_equipped) { stack = it; break; }
-            if (stack == null)
+            if (p.TossJunk)
             {
-                p.PackFull = false;
-                return false;
+                // item G: only until it's under the limit again (weight, or a free slot when the pack was full)
+                if (!h.IsOverweight()) return false;
+                stack = HeaviestJunk(hum);
+                if (stack == null) return false;
+            }
+            else
+            {
+                foreach (ItemDrop.ItemData it in inv.GetAllItems())
+                    if (it != null && it.m_dropPrefab != null && it.m_dropPrefab.name == p.PileItem && !it.m_equipped) { stack = it; break; }
+                if (stack == null)
+                {
+                    p.PackFull = false;
+                    return false;
+                }
             }
             Vector3 dir = TossDir(h, p);
             h.transform.rotation = Quaternion.LookRotation(dir);
             int n = stack.m_stack;
+            string tossed = p.TossJunk ? (stack.m_dropPrefab != null ? stack.m_dropPrefab.name : stack.m_shared.m_name) : PileWord(p.PileItem);
             if (PlayerDrop(hum, stack, n))
             {
-                if (CompanionsPlugin.LogDetailed) Debug("Tossed " + n + " stone toward " + MHR_Mover.Fmt(h.transform.position + dir * 3f));
+                if (p.TossJunk) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " (junk) to get under its weight limit"); }
+                else if (CompanionsPlugin.LogDetailed) Debug("Tossed " + n + " " + tossed + " toward " + MHR_Mover.Fmt(h.transform.position + dir * 3f));
             }
             p.NextToss = Time.time + 0.5f;
             return true;
@@ -325,9 +388,9 @@ namespace Companions
         {
             why = null;
             int cost;
-            GameObject prefab = StonePile(out cost);
+            GameObject prefab = PilePiece(p.PileItem, out cost);
             Piece piece = prefab != null ? prefab.GetComponent<Piece>() : null;
-            if (piece == null) { why = "no Stone pile piece"; return false; }
+            if (piece == null) { why = "no pile piece"; return false; }
             if (s_buildBlockMask < 0) s_buildBlockMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "character", "character_net", "vehicle", "item");
             if (s_groundMask < 0) s_groundMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain");
             bool noBench = ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(GlobalKeys.NoWorkbench);
@@ -364,7 +427,7 @@ namespace Companions
                 return true;
             }
             why = station > 0 ? "it needs a " + MHR_List.Local(piece.m_craftingStation.m_name) + " nearby" : rules > 0 ? "a ward or no-build area" : notFlat >= blocked ? "no flat ground" : "no free ground";
-            if (CompanionsPlugin.LogDetailed) Debug("No stone pile spot (" + (inVoid ? "in the hole" : "outside the hole") + "): " + notFlat + " not flat, " + blocked + " in the way, " + rules + " ward/no-build, " + station + " no station");
+            if (CompanionsPlugin.LogDetailed) Debug("No " + PileWord(p.PileItem) + " pile spot (" + (inVoid ? "in the hole" : "outside the hole") + "): " + notFlat + " not flat, " + blocked + " in the way, " + rules + " ward/no-build, " + station + " no station");
             return false;
         }
 
@@ -375,8 +438,8 @@ namespace Companions
             Character ch = h.GetComponent<Character>();
             Inventory bag = hum != null ? hum.GetInventory() : null;
             int cost;
-            GameObject prefab = StonePile(out cost);
-            if (bag == null || prefab == null || CountIn(bag, "Stone") < cost || Time.time >= p.PileUntil) return false;
+            GameObject prefab = PilePiece(p.PileItem, out cost);
+            if (bag == null || prefab == null || CountIn(bag, p.PileItem) < cost || Time.time >= p.PileUntil) return false;
             ItemDrop.ItemData hammer = MHR_PileTaker.Hammer(hum);
             if (hammer == null) return false;
             CompanionSetup cs = h.GetComponent<CompanionSetup>();
@@ -405,7 +468,7 @@ namespace Companions
             }
             PlaceStonePile(h, p, prefab, cost, hammer, stamina);
             p.NextAct = Time.time + 1.0f;
-            if (CountIn(bag, "Stone") < cost) return false;
+            if (CountIn(bag, p.PileItem) < cost) return false;
             string why2;
             if (!FindBuildSpot(h, p, out why2)) return false;
             p.PilePoint = StandFor(h, p.BuildSpot);
@@ -442,20 +505,20 @@ namespace Companions
             h.GetComponent<ZSyncAnimation>()?.SetTrigger(!string.IsNullOrEmpty(anim) ? anim : "swing_hammer");
             if (piece != null && ch != null) piece.m_placeEffect.Create(p.BuildSpot, p.BuildRot, go.transform, 1f, -1, ch.GetZDOID());
             Inventory bag = hum.GetInventory();
-            RemoveStone(bag, cost);
+            RemoveStone(bag, p.PileItem, cost);
             h.GetComponent<CompanionStamina>()?.UseStamina(stamina);
             if (hammer.m_shared.m_useDurability) hammer.m_durability = Mathf.Max(0f, hammer.m_durability - hammer.m_shared.m_useDurabilityDrain * Game.m_durabilityRate);
             p.PackFull = false;
-            if (CompanionsPlugin.LogNormal) Info("Built a " + (piece != null ? MHR_List.Local(piece.m_name) : prefab.name) + " at " + MHR_Mover.Fmt(p.BuildSpot) + " from " + cost + " stone");
+            if (CompanionsPlugin.LogNormal) Info("Built a " + (piece != null ? MHR_List.Local(piece.m_name) : prefab.name) + " at " + MHR_Mover.Fmt(p.BuildSpot) + " from " + cost + " " + PileWord(p.PileItem));
         }
 
-        static void RemoveStone(Inventory bag, int n)
+        static void RemoveStone(Inventory bag, string item, int n)
         {
             List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>(bag.GetAllItems());
             for (int i = 0; i < items.Count && n > 0; i++)
             {
                 ItemDrop.ItemData it = items[i];
-                if (it == null || it.m_dropPrefab == null || it.m_dropPrefab.name != "Stone") continue;
+                if (it == null || it.m_dropPrefab == null || it.m_dropPrefab.name != item) continue;
                 int take = Mathf.Min(n, it.m_stack);
                 bag.RemoveItem(it, take);
                 n -= take;

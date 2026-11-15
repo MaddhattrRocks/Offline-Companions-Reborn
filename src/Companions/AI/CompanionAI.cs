@@ -1956,6 +1956,14 @@ public class CompanionAI : BaseAI
 		{
 			return;
 		}
+		// 1.5.97 (F1, user report): picking things up as it walks past obeys the wheel's Auto Pickup, like going over to
+		// what a kill dropped (MHR_Loot). What its own job produces is picked up by the job itself.
+		ZNetView pickNv = m_nview;
+		ZDO pickZdo = pickNv != null && pickNv.IsValid() ? pickNv.GetZDO() : null;
+		if (pickZdo != null && !pickZdo.GetBool(CompanionSetup.AutoPickupHash, defaultValue: true))
+		{
+			return;
+		}
 		Vector3 vector = base.transform.position + Vector3.up;
 		int num = Physics.OverlapSphereNonAlloc(vector, AutoPickupRange, _autoPickupBuffer, _autoPickupMask);
 		for (int i = 0; i < num; i++)

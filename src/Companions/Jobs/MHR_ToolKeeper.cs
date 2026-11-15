@@ -139,10 +139,15 @@ namespace Companions
             if (st.LastMode == -999) st.LastMode = mode;
             if (mode != st.LastMode)
             {
-                st.UnloadPending = true; st.UnloadTrips = 0;
+                // 1.5.97 (F2, John 2026-11-15): a job switch empties its bags only when it has a home and is at home.
+                // Anywhere else nothing happens (it used to fill any chest within 30 m when it had no home, and to
+                // remember the switch until it was back home).
+                bool emptyNow = cs.HasHomePosition() && AtHome(cs);
+                st.UnloadPending = emptyNow; st.UnloadTrips = 0;
+                if (!emptyNow) st.UnloadActive = false;
                 st.Refused.Clear();
                 CompanionStatus.Clear(cs);   // 1.5.42: the old job's "why" no longer applies
-                if (CompanionsPlugin.LogDetailed) LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
+                if (CompanionsPlugin.LogDetailed) LogDebug("Job changed (" + st.LastMode + " -> " + mode + ") - " + (emptyNow ? "at home: will empty bags" : "not at home: keeping what it carries"));
                 // 1.5.4: a fetch the new job has no use for is called off (user log: Hunt turned off, and he still walked
                 // 50 m back to a chest for a bow, again after every recall)
                 if (st.Phase == 1 && !NeedsKind(mode, st.Kind))
@@ -599,6 +604,8 @@ namespace Companions
             Vector3 me = cs.transform.position;
             bool hasHome = cs.HasHomePosition();
             Vector3 home = hasHome ? cs.GetHomePosition() : me;
+            // 1.5.97 (F2): with no home it never empties its bags into chests
+            if (!hasHome) { st.UnloadPending = false; st.UnloadActive = false; return false; }
             // 1.4.81: only when actually at home (25 m), not anywhere within HomeTripRange - he walked 54 m back to put
             // away a stack of stone when the job was switched off out in the field (1.4.80 test)
             if (hasHome && Vector3.Distance(me, home) > AtHomeRange()) { st.UnloadActive = false; return false; }   // later, when back home

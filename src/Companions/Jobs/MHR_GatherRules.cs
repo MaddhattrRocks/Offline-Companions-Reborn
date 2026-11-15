@@ -24,6 +24,8 @@ namespace Companions
             public float NextStoneCheck, NoBuildUntil, NextNoBuildLog;
             // 1.5.96: the hole a popped vein left (stone piles go in it), ore due after a vein, the next toss
             public bool VoidHas; public Vector3 VoidAt; public float VoidUntil; public bool OreDue; public float NextToss;
+            // 1.5.97: what the pile or toss is of (Stone or Wood), or the other junk (item G)
+            public string PileItem = "Stone"; public bool TossJunk;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();
@@ -331,7 +333,9 @@ namespace Companions
                 CompanionSetup cs = h.GetComponent<CompanionSetup>();
                 Per p = P(h);
                 if (Mode(h) == 3 && StoneDue(h, true) && StartPile(h)) return false;
-                if (h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position) != null)
+                // 1.5.97 (F2): in the Ore job a load only goes to a chest at home - a chest by the vein is for ore
+                bool oreAway = Mode(h) == 3 && !(cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs));
+                if (!oreAway && h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position) != null)
                 {
                     if (!p.PackFull) if (CompanionsPlugin.LogNormal) Info("Pack is full - taking a load to the chest");
                     p.PackFull = true;           // IsOverweight() now reports true until a slot frees up
@@ -475,10 +479,15 @@ namespace Companions
                 Humanoid hum = h.GetComponent<Humanoid>();
                 // 1.5.95: Ore job - the ore into a chest within 20 m, else all of it on one spot by the vein (user)
                 if (Mode(h) == 3 && ai != null && hum != null && OreLoad(h, p, ai, hum)) return;
-                if (now >= p.NextDropOffCheck)
+                // 1.5.97 (item G): the other junk, the heaviest first, until it's under the limit
+                if (Mode(h) == 3 && ai != null && hum != null && !InDungeon(h) && StartJunkToss(h, p, hum)) return;
+                // 1.5.97 (F2): in the Ore job its whole load only goes into a chest at home. Away from home it keeps what's
+                // left (a chest by the vein is for ore), pauses and says it needs another chest.
+                CompanionSetup cs = h.GetComponent<CompanionSetup>();
+                bool oreAway = Mode(h) == 3 && !(cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs));
+                if (!oreAway && now >= p.NextDropOffCheck)
                 {
                     p.NextDropOffCheck = now + 5f;
-                    CompanionSetup cs = h.GetComponent<CompanionSetup>();
                     Container c = h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position);
                     if (c != null && ai != null && hum != null)
                     {
@@ -493,7 +502,7 @@ namespace Companions
                 if (!p.TooHeavy)
                 {
                     p.TooHeavy = true;
-                    if (CompanionsPlugin.LogNormal) Info("Too heavy and nowhere to put things - pausing the job until there's room");
+                    if (CompanionsPlugin.LogNormal) Info(oreAway ? "Too heavy with the stone, wood, ore and junk dealt with - keeping the rest (a chest by the vein is for ore) and pausing the job until there's room" : "Too heavy and nowhere to put things - pausing the job until there's room");
                     h.ResetToIdle();
                     h.RestoreLoadout();
                 }
@@ -501,7 +510,7 @@ namespace Companions
                 {
                     p.NextHeavySpeak = now + 60f;
                     CompanionTalk t = h.GetComponent<CompanionTalk>();
-                    if (t != null) t.SayProblem("overweight", ModLocalization.Loc("hc_speech_overweight"));
+                    if (t != null) t.SayProblem(oreAway ? "pack_full_chest" : "overweight", ModLocalization.Loc(oreAway ? "hc_speech_pack_full_chest" : "hc_speech_overweight"));
                 }
             }
             catch (Exception e) { Warn("HandleOverweight: " + e.Message); }

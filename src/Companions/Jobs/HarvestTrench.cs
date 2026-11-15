@@ -298,6 +298,11 @@ public partial class HarvestController
 
 	private bool _xPendingAfter;
 
+	// item D: the step directions tried in this getting-out (one bit each of the 16), and the one more pick after mining
+	private int _xDirsTried;
+
+	private bool _xFinalPick;
+
 	// the swing check's last answer: what the swing would meet first, and where the last chosen facing expected dirt
 	private GameObject _tPredGo;
 
@@ -2183,7 +2188,7 @@ public partial class HarvestController
 			_tItemNoProg = rock ? 0 : _tItemNoProg + 1;
 			if (broke || _tItemNoProg >= TNoProgSwings)
 			{
-				_xStage = XSteps;
+				XAfterMine();
 			}
 			break;
 		}
@@ -2254,6 +2259,8 @@ public partial class HarvestController
 		_xTries = 0;
 		_xMineTried = false;
 		_xEquipTries = 0;
+		_xDirsTried = 0;
+		_xFinalPick = false;
 		_xSince = _tClock;
 		_xStage = XRestFull;
 		_ai.StopMoving();
@@ -2313,6 +2320,14 @@ public partial class HarvestController
 		case XStepsRunning:
 			if (!_pitActive)
 			{
+				if (_pitDropped)
+				{
+					// item D: that direction didn't work - pick again from where it stands
+					_pitDropped = false;
+					if (CompanionsPlugin.LogNormal) LogInfo($"Steps that way didn't get it out ({_pitDropWhy}) - picking another direction from {MHR_Mover.Fmt(me)}");
+					_xStage = XSteps;
+					return;
+				}
 				_xActive = false;   // out (PitStep said so), or stuck and waiting (PitStuck)
 				_tWalkSince = _tClock;
 			}
@@ -2341,22 +2356,66 @@ public partial class HarvestController
 			EquipTool(pick);
 			return;
 		}
-		// fix 4: the directions nearest the place it's heading for first. A direction is a way out when the ground along
-		// it (16 m) gets up to the height it needs; if none does, the one whose ground gets highest (1.5 m up at least).
+		// item D: after the one more pick that follows mining, there's nothing else to try
+		if (_xFinalPick && _xDirsTried != 0)
+		{
+			_pitVein = true;
+			PitStuck(me, "boxed in: the steps didn't get it out in any direction, even after mining the rock in the way");
+			_xActive = false;
+			return;
+		}
+		// item D: only directions pointing away from the nearest rock piece (the way out of a trench is its outer wall,
+		// which is dirt), each tried once per getting-out. Among those, the one nearest the place it's heading for whose
+		// ground (16 m) gets up to the height it needs; if none does, the one whose ground gets highest (1.5 m up at least).
+		Vector3 fromRock = Vector3.zero;
+		float rockD = float.MaxValue;
+		foreach (VPart p in _vParts)
+		{
+			if (p.C == null)
+			{
+				continue;
+			}
+			Vector3 cp = SafeClosestPoint(p.C, me + Vector3.up);
+			float d = Flat(cp, me);
+			if (d < rockD)
+			{
+				rockD = d;
+				fromRock = me - cp;
+			}
+		}
+		fromRock.y = 0f;
+		bool haveRock = rockD < float.MaxValue && fromRock.sqrMagnitude > 0.0001f;
+		if (haveRock)
+		{
+			fromRock.Normalize();
+		}
 		Vector3 best = Vector3.zero, bestLow = Vector3.zero;
+		int bestK = -1, bestLowK = -1, nTried = 0, nToward = 0, nBlocked = 0;
 		float bestDot = float.MinValue, bestTop = float.MinValue, bestRim = _xRimY;
 		for (int k = 0; k < 16; k++)
 		{
+			if ((_xDirsTried & (1 << k)) != 0)
+			{
+				nTried++;
+				continue;
+			}
 			Vector3 d = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
+			if (haveRock && Vector3.Dot(d, fromRock) <= 0f)
+			{
+				nToward++;
+				continue;
+			}
 			Vector3 p1 = me + d, p2 = me + d * 2f;
 			p1.y = GroundAt(p1);
 			p2.y = GroundAt(p2);
 			if (!MHR_Mover.HeadRoomAt(p1, THead) || !MHR_Mover.HeadRoomAt(p2, THead))
 			{
+				nBlocked++;
 				continue;
 			}
 			if (TPredict(me, d, out _) != TFirst.Dirt)
 			{
+				nBlocked++;
 				continue;
 			}
 			float top = XRiseAlong(me, d);
@@ -2367,23 +2426,28 @@ public partial class HarvestController
 				{
 					bestDot = dot;
 					best = d;
+					bestK = k;
 				}
 			}
 			else if (top >= me.y + TExitDepth && top > bestTop)
 			{
 				bestTop = top;
 				bestLow = d;
+				bestLowK = k;
 			}
 		}
 		if (best == Vector3.zero && bestLow != Vector3.zero)
 		{
 			best = bestLow;
+			bestK = bestLowK;
 			bestRim = bestTop;
 			if (CompanionsPlugin.LogNormal) LogInfo($"No way up to {_xRimY:F1} that's dirt with room overhead - taking the highest there is, up to {bestTop:F1}");
 		}
 		if (best != Vector3.zero)
 		{
+			_xDirsTried |= 1 << bestK;
 			_xStage = XStepsRunning;
+			if (CompanionsPlugin.LogDetailed) Log($"Step direction {bestK * 22.5f:F0} deg: away from the nearest rock{(haveRock ? $" ({rockD:F1} m off)" : " (none left)")}, nearest of those to where it's heading ({nTried} tried before, {nToward} point at the rock, {nBlocked} no head room or not dirt first)");
 			PitBegin(best, vein: true, Mathf.Min(bestRim, _xRimY));
 			return;
 		}
@@ -2392,7 +2456,7 @@ public partial class HarvestController
 			_xMineTried = true;
 			_xStage = XMine;
 			TBeginItem();
-			if (CompanionsPlugin.LogNormal) LogInfo("No way up that's dirt with room overhead - mining the rock in the way first");
+			if (CompanionsPlugin.LogNormal) LogInfo($"No step direction left ({nTried} tried, {nToward} point at the rock, {nBlocked} no head room or not dirt first) - mining the rock in the way first, then one more pick");
 			return;
 		}
 		_pitVein = true;
@@ -2417,11 +2481,19 @@ public partial class HarvestController
 		}
 		if (best == null || bd > TMineReach)
 		{
-			_xStage = XSteps;
+			XAfterMine();
 			return;
 		}
 		_ai.StopMoving();
 		TRockSwing(SafeClosestPoint(best, Eye()), TFor.ExitMine);
+	}
+
+	// item D: the rock in the way was mined (once): one more pick, from all 16 directions again
+	private void XAfterMine()
+	{
+		_xDirsTried = 0;
+		_xFinalPick = true;
+		_xStage = XSteps;
 	}
 
 	// after a vein (all broken, or given up) and the ore is picked up: out of the trench first, before anything else
@@ -2454,7 +2526,7 @@ public partial class HarvestController
 		}
 		if (_xStage == XMine)
 		{
-			_xStage = XSteps;   // the vein's gone: nothing to mine
+			XAfterMine();   // the vein's gone: nothing to mine
 		}
 		XTick();
 		return _xActive;

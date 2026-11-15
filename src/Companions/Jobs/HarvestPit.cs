@@ -43,6 +43,16 @@ public partial class HarvestController
 
 	private float _pitRimY;
 
+	// 1.5.97 (item D): walking at a low step - where and when it last got somewhere; a direction given up on (the vein's
+	// getting-out picks another)
+	private Vector3 _pitWalkFrom;
+
+	private float _pitWalkAt;
+
+	private bool _pitDropped;
+
+	private string _pitDropWhy;
+
 	private Vector3 _stuckAt;
 
 	internal bool PitDigging => _pitActive;
@@ -129,6 +139,9 @@ public partial class HarvestController
 		_pitNoProg = 0;
 		_pitBestY = me.y;
 		_pitSwung = false;
+		_pitWalkFrom = me;
+		_pitWalkAt = Time.time;
+		_pitDropped = false;
 		if (!vein)
 		{
 			ResetToIdle();
@@ -148,6 +161,20 @@ public partial class HarvestController
 		{
 			_vFor = null;   // once it's moved or given a job, it plans the vein again from where it is
 		}
+	}
+
+	// item D: on a vein a direction that doesn't work is dropped, and the getting-out picks another (each of the 16 once)
+	private void PitGiveUpDir(Vector3 me, string detail)
+	{
+		if (!_pitVein)
+		{
+			PitStuck(me, detail);
+			return;
+		}
+		_pitActive = false;
+		_pitDropped = true;
+		_pitDropWhy = detail;
+		_ai.StopMoving();
 	}
 
 	private void PitStep()
@@ -178,7 +205,7 @@ public partial class HarvestController
 		}
 		if (_pitNoProg >= VNoProgSwings || Time.time - _pitProgAt >= VNoProgTime)
 		{
-			PitStuck(me, $"{_pitNoProg} swings / {Time.time - _pitProgAt:F0}s without getting 0.1 m higher, step ground {g:F1}, feet {me.y:F1}");
+			PitGiveUpDir(me, $"{_pitNoProg} swings / {Time.time - _pitProgAt:F0}s without getting 0.1 m higher, step ground {g:F1}, feet {me.y:F1}");
 			return;
 		}
 		if (busy || _pitSwung)
@@ -190,6 +217,20 @@ public partial class HarvestController
 		{
 			Vector3 flat = _pitDir;
 			flat.y = 0f;
+			// item D: walking at a low step and not getting anywhere - not moved 0.3 m or risen 0.1 m in 3 s
+			if (_pitVein)
+			{
+				if (Flat(me, _pitWalkFrom) >= 0.3f || me.y >= _pitWalkFrom.y + 0.1f)
+				{
+					_pitWalkFrom = me;
+					_pitWalkAt = Time.time;
+				}
+				else if (Time.time - _pitWalkAt >= 3f)
+				{
+					PitGiveUpDir(me, $"walked at the step for 3 s without moving 0.3 m or getting 0.1 m higher (step ground {g:F1}, feet {me.y:F1})");
+					return;
+				}
+			}
 			MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(flat.normalized));
 			_ai.MoveTowards(flat.normalized, run: false);
 			if (_character.IsOnGround() && Time.time >= _pitJumpAt && g > me.y + 0.4f)
@@ -197,7 +238,7 @@ public partial class HarvestController
 				// 1.5.97 (plan v3): the ladder head room check over the step before jumping onto it
 				if (!MHR_Mover.HeadRoomAt(new Vector3(step.x, g, step.z), 2.2f))
 				{
-					PitStuck(me, $"something over the step at {MHR_Mover.Fmt(new Vector3(step.x, g, step.z))} - no room to jump onto it");
+					PitGiveUpDir(me, $"something over the step at {MHR_Mover.Fmt(new Vector3(step.x, g, step.z))} - no room to jump onto it");
 					return;
 				}
 				// a jump costs stamina: get it back first, standing on the flat
@@ -205,6 +246,7 @@ public partial class HarvestController
 				{
 					_ai.StopMoving();
 					_pitProgAt += Time.deltaTime;   // resting: the clock waits
+					_pitWalkAt += Time.deltaTime;
 					return;
 				}
 				_pitJumpAt = Time.time + 1f;
@@ -214,6 +256,8 @@ public partial class HarvestController
 		}
 		// dig the notch: at the wall 1 m ahead, about 1 m above its feet
 		_ai.StopMoving();
+		_pitWalkFrom = me;
+		_pitWalkAt = Time.time;
 		Vector3 aim = new Vector3(step.x, me.y + 1.2f, step.z);
 		bool leave;
 		_pitStepGround = g;
