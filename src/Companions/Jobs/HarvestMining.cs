@@ -92,6 +92,7 @@ public partial class HarvestController
 			GiveUpWhy.StuckInHole => "it's stuck in the hole it dug",
 			_ => "no working tool left"
 		};
+		_lastGiveUpText = what + (string.IsNullOrEmpty(detail) ? "" : " (" + detail + ")");
 		if (CompanionsPlugin.LogNormal) LogInfo("Leaving \"" + thing + "\" - " + what);
 		if (CompanionsPlugin.LogDetailed && !string.IsNullOrEmpty(detail)) Log("  (" + detail + ")");
 		if (why == GiveUpWhy.NoTool)

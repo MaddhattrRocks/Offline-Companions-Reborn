@@ -8,9 +8,9 @@ namespace Companions;
 //  - The game pops a vein when a part breaks (MineRock5.CheckSupport): every part whose box (its collider's bounds, set
 //    once) touches no ground, no solid thing that can't be broken, nothing breakable lower than the vein's origin and no
 //    held-up neighbour part, breaks at once and drops its ore. VeinScan copies that test (OverlapBox, same layers).
-//  - The trench work (outline of the rock you can see, trench round it to each spot's own base, stair out, undercut, then
-//    mining held parts first) is in HarvestTrench.cs. This file keeps the parts scan, the dirt spots, the swing and the
-//    dig rules the game asks for (AllowDig).
+//  - The trench work (plan v3: the plan of the trench, digging it dirt first, what's in the way, getting out, clearing it
+//    so it pops, the mining lap) is in HarvestTrench.cs. This file keeps the parts scan, the dirt spots, the swing, the
+//    give-up rule and the dig rules the game asks for (AllowDig).
 public partial class HarvestController
 {
 	private struct VPart
@@ -89,11 +89,9 @@ public partial class HarvestController
 
 	private float _vProgAt;
 
-	private float _vWalkSince = -1f;
-
-	private Vector3 _vWalkFor;
-
 	private bool _vSwung;
+
+	private float _vEquipSince = -1f;
 
 	private float _vSwungAt;
 
@@ -155,7 +153,6 @@ public partial class HarvestController
 		_vSpotTried.Clear();
 		_vStuck.Clear();
 		_vProgAt = Time.time;
-		_vWalkSince = -1f;
 		_vSwung = false;
 		_vDigPending = false;
 		_vSpotsAt = -1f;
@@ -371,15 +368,16 @@ public partial class HarvestController
 			}
 			VeinLogParts();
 			LogToolOnce(ReflectionHelper.GetRightItem(_humanoid));
-			TOutline();
+			TPlanBegin();
 		}
 		if (_humanoid == null || _character == null || _ai == null)
 		{
 			return;
 		}
 		bool busy = _humanoid.InAttack() || _humanoid.InDodge() || _character.IsStaggering();
-		// 1.5.97 (John 2026-11-15): the pickaxe in hand first, before anything else - checked every update
-		if (!busy && !_vSwung)
+		// 1.5.97 (John 2026-11-15): the pickaxe in hand first, before anything else - checked every update (not while it
+		// has the axe out for a tree in the way)
+		if (!busy && !_vSwung && !_tChopping)
 		{
 			ItemDrop.ItemData inHand = ReflectionHelper.GetRightItem(_humanoid);
 			if (inHand == null || inHand.GetDamage().m_pickaxe <= 0f || Worn(inHand))
@@ -391,6 +389,18 @@ public partial class HarvestController
 					VeinLeave();
 					return;
 				}
+				// S0 (L6): still not in hand 5 s after it first tried: give up with the "no tool" reason
+				if (_vEquipSince < 0f)
+				{
+					_vEquipSince = Time.time;
+				}
+				else if (Time.time - _vEquipSince > 5f)
+				{
+					_vEquipSince = -1f;
+					SayGaveUp(GiveUpWhy.NoTool, "couldn't get \"" + pick.m_shared.m_name + "\" in hand in 5 s");
+					VeinLeave();
+					return;
+				}
 				_ai.StopMoving();
 				EquipTool(pick);
 				if (ReflectionHelper.GetRightItem(_humanoid) == pick && CompanionsPlugin.LogNormal)
@@ -399,6 +409,10 @@ public partial class HarvestController
 				}
 				return;
 			}
+		}
+		if (!_tChopping)
+		{
+			_vEquipSince = -1f;   // the pickaxe is in hand
 		}
 		// a swing has finished: what did it do?
 		if (_vSwung && !busy && Time.time - _vSwungAt > 0.35f)
@@ -419,23 +433,10 @@ public partial class HarvestController
 		VeinScan(force: false);
 		if (_vParts.Count == 0)
 		{
+			_xPendingAfter = true;   // out of the trench once the ore is picked up (VeinExitTick)
 			return;   // all broken: the next frame sees the target gone and collects the ore
 		}
-		switch (_tPhase)
-		{
-		case TPhaseTrench:
-			TrenchTick();
-			break;
-		case TPhaseStair:
-			StairTick();
-			break;
-		case TPhaseUnder:
-			UnderTick();
-			break;
-		default:
-			MineTick();
-			break;
-		}
+		TTick();
 	}
 
 	// mining: a part that still holds the rest (touching dirt, rock or a building), nearest first; else the free part
@@ -578,8 +579,6 @@ public partial class HarvestController
 		}
 		_vPart = null;
 		_tItemNoProg = 0;
-		_vWalkSince = -1f;
-		_tFaceSince = -1f;
 	}
 
 	// nothing left it can dig or break from the trench: say why and move on
@@ -619,37 +618,55 @@ public partial class HarvestController
 
 	private void VeinLeave()
 	{
+		bool stop = false;
 		if (_target != null)
 		{
-			_blacklist[_target.GetInstanceID()] = Time.time;
+			int id = _target.GetInstanceID();
+			_blacklist[id] = Time.time;
+			// 1.5.97 (S9, John's Q1): given up on the same vein twice in a row with nothing broken in between - it stops
+			// and waits for you (set a job, or move it 5 m), so it never goes round the same vein forever
+			_vGiveUps.TryGetValue(id, out int n);
+			_vGiveUps[id] = ++n;
+			_vGiveUpWhy.TryGetValue(id, out string before);
+			_vGiveUpWhy[id] = _lastGiveUpText;
+			if (n >= 2)
+			{
+				stop = true;
+				_vGiveUps.Remove(id);
+				_vGiveUpWhy.Remove(id);
+				LogWarn($"Stopping the Ore job: gave up on \"{_target.name}\" twice with nothing broken in between (1: {before}; 2: {_lastGiveUpText}) at {MHR_Mover.Fmt(base.transform.position)} - waiting for you (set a job, or move it 5 m)");
+			}
 		}
+		_xPendingAfter = true;
+		_tChopping = false;
 		_vFor = null;
 		_vRock = null;
 		MHR_GatherRules.AfterVein(this);
 		ResetToIdle();
+		if (stop)
+		{
+			_stuckInHole = true;
+			_stuckAt = base.transform.position;
+			_xPendingAfter = false;
+		}
 	}
 
-	// SpawnOnHitTerrain asks: may this swing's hit on the ground dig? Over and around the vein it's working (within 2.5 m
-	// of it, not while mining, not below the water level or the depth the swing was meant for), and when it digs its way
-	// out of a hole (HarvestPit.cs)
+	// SpawnOnHitTerrain asks: may this swing's hit on the ground dig? A dig swing of the vein job (the trench, the dirt in
+	// the way, the dirt under a held part), not below the water level, within 2.5 m of the vein; and the steps out of a
+	// hole or trench (HarvestPit.cs). A swing meant for the rock never digs.
 	internal bool AllowDig(Vector3 hitPoint)
 	{
 		if (PitDigging && Vector3.Distance(hitPoint, base.transform.position) < 3f)
 		{
-			return true;
+			return hitPoint.y >= TWater;
 		}
-		if (!VeinWorking || _vParts.Count == 0)
+		if (!VeinWorking || _vParts.Count == 0 || !_tDigOK)
 		{
 			return false;
 		}
-		// 1.5.97: no digging in the mining phase, never into the water level, and never below the depth it meant to dig to
-		if (_tPhase == TPhaseMine || hitPoint.y < TWater || hitPoint.y < _tDigMinY - 0.05f)
+		if (hitPoint.y < TWater || hitPoint.y < _tDigMinY - 0.05f)
 		{
 			return false;
-		}
-		if (_tPhase == TPhaseStair && Flat(hitPoint, TStairPoint()) <= 1.5f)
-		{
-			return true;   // the stair out of the trench can reach past the vein's box
 		}
 		Bounds b = _vUnion;
 		float dx = Mathf.Max(0f, Mathf.Max(b.min.x - hitPoint.x, hitPoint.x - b.max.x));
@@ -725,7 +742,7 @@ public partial class HarvestController
 					joint += " (not found on its model)";
 				}
 			}
-			Log($"Tool \"{tool.m_shared.m_name}\": swing starts at joint {joint}, {startY:F2} m above its feet; swing {a.m_attackType}, range {a.m_attackRange:F2}, height {a.m_attackHeight:F2}, angle {a.m_attackAngle:F0}, max up/down {a.m_maxYAngle:F0} deg, ray width {a.m_attackRayWidth:F2}, stamina {a.m_attackStamina:F0}, hits terrain {a.m_hitTerrain}, pickaxe rule {a.m_pickaxeSpecial}; dig: {dig}");
+			Log($"Tool \"{tool.m_shared.m_name}\": swing starts at joint {joint}, {startY:F2} m above its feet; swing {a.m_attackType}, range {a.m_attackRange:F2}, height {a.m_attackHeight:F2}, angle {a.m_attackAngle:F0}, max up/down {a.m_maxYAngle:F0} deg, ray width {a.m_attackRayWidth:F2}, stamina {a.m_attackStamina:F0}, hits terrain {a.m_hitTerrain}, pickaxe rule {a.m_pickaxeSpecial}, hits several {a.m_multiHit}, through walls {a.m_hitThroughWalls}, less damage each when several {a.m_lowerDamagePerHit}; dig: {dig}");
 		}
 	}
 }

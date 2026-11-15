@@ -523,6 +523,7 @@ public partial class HarvestController : MonoBehaviour
 
 	public void NotifyTerrainHit()
 	{
+		_vTerrainHit = true;   // 1.5.97: the swing met the ground but wasn't allowed to dig (the vein job's swing check compares)
 	}
 
 	public void NotifyActionModeChanged()
@@ -746,6 +747,11 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		if (mode == 3 && PitTick())
+		{
+			return;
+		}
+		// 1.5.97 (plan v3, S6): after a vein (broken or given up) and its ore picked up, out of the trench first
+		if (mode == 3 && _state != HarvestState.CollectingDrops && VeinExitTick())
 		{
 			return;
 		}

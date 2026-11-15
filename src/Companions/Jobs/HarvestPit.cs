@@ -9,9 +9,12 @@ namespace Companions;
 //    round, 8 directions) does it dig its way out.
 //  - It picks the wall where the ground 2 m out is lowest (of 16 directions), digs a 1 m-deep notch into it at about 1 m
 //    above its feet, jumps up onto it and repeats: a stair of 1 m steps at about 45 degrees. No ladders.
-//  - Progress: the ground at the next step lowered 5 cm or more, or its feet 0.3 m higher. 12 swings or 60 s without
-//    progress on a step: "I'm stuck in this hole", and the job stops (it still follows you when you call it; it picks
+//  - 1.5.97 (L3): progress is only its feet getting 0.1 m higher. 12 swings or 60 s without that: "I'm stuck in this
+//    hole", and the job stops (it still follows you when you call it; it picks
 //    the job back up when you set a job again or it has been moved 5 m away).
+//  - 1.5.97 (plan v3): the Ore job also starts it itself on a vein (PitBegin, vein: true) when the general climb can't get
+//    it out of its trench: then it's out when its feet are within 0.5 m of the rim, the job carries on, and it checks the
+//    ladder head room over each step before jumping onto it.
 public partial class HarvestController
 {
 	private bool _pitActive;
@@ -35,6 +38,10 @@ public partial class HarvestController
 	private float _pitJumpAt;
 
 	private bool _stuckInHole;
+
+	private bool _pitVein;
+
+	private float _pitRimY;
 
 	private Vector3 _stuckAt;
 
@@ -95,6 +102,7 @@ public partial class HarvestController
 	{
 		Vector3 me = base.transform.position;
 		float best = float.MaxValue;
+		Vector3 dir = Vector3.forward;
 		for (int k = 0; k < 16; k++)
 		{
 			Vector3 d = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
@@ -102,29 +110,58 @@ public partial class HarvestController
 			if (g < best)
 			{
 				best = g;
-				_pitDir = d;
+				dir = d;
 			}
 		}
+		PitBegin(dir, vein: false, 0f);
+	}
+
+	// 1.5.97 (plan v3): the stair toward dir. vein = the Ore job's own way out of its trench: the job stays on (no reset)
+	// and it's out when its feet are within 0.5 m of the rim ground rimY
+	private void PitBegin(Vector3 dir, bool vein, float rimY)
+	{
+		Vector3 me = base.transform.position;
+		_pitDir = dir;
+		_pitVein = vein;
+		_pitRimY = rimY;
 		_pitActive = true;
 		_pitProgAt = Time.time;
 		_pitNoProg = 0;
 		_pitBestY = me.y;
 		_pitSwung = false;
-		ResetToIdle();
+		if (!vein)
+		{
+			ResetToIdle();
+		}
 		_ai.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Can't climb out of the hole at {MHR_Mover.Fmt(me)} - digging steps out toward {MHR_Mover.Fmt(me + _pitDir * 3f)}");
+		if (CompanionsPlugin.LogNormal) LogInfo(vein ? $"Cutting steps out of the trench at {MHR_Mover.Fmt(me)} toward {MHR_Mover.Fmt(me + _pitDir * 3f)} (the rim is {rimY - me.y:F1} m up)" : $"Can't climb out of the hole at {MHR_Mover.Fmt(me)} - digging steps out toward {MHR_Mover.Fmt(me + _pitDir * 3f)}");
+	}
+
+	private void PitStuck(Vector3 me, string detail)
+	{
+		_pitActive = false;
+		_stuckInHole = true;
+		_stuckAt = me;
+		SayGaveUp(GiveUpWhy.StuckInHole, detail);
+		RestoreLoadout();
+		if (_pitVein)
+		{
+			_vFor = null;   // once it's moved or given a job, it plans the vein again from where it is
+		}
 	}
 
 	private void PitStep()
 	{
 		Vector3 me = base.transform.position;
-		if (!InHole())
+		if (_pitVein ? me.y >= _pitRimY - 0.5f : !InHole())
 		{
 			_pitActive = false;
-			if (CompanionsPlugin.LogNormal) LogInfo("Dug its way out of the hole");
+			if (CompanionsPlugin.LogNormal) LogInfo(_pitVein ? $"Out of the trench by its own steps (feet {me.y:F1}, the rim {_pitRimY:F1})" : "Dug its way out of the hole");
 			return;
 		}
-		if (me.y > _pitBestY + 0.3f)
+		// 1.5.97 (L3): progress is only its feet getting at least 0.1 m higher - walking about on its own step, or digging
+		// without getting up, doesn't restart the clock
+		if (me.y > _pitBestY + 0.1f)
 		{
 			_pitBestY = me.y;
 			_pitProgAt = Time.time;
@@ -136,23 +173,12 @@ public partial class HarvestController
 		if (_pitSwung && !busy && Time.time - _pitSwungAt > 0.35f)
 		{
 			_pitSwung = false;
-			if (_pitStepGround - g >= VDigMin)
-			{
-				_pitProgAt = Time.time;
-				_pitNoProg = 0;
-			}
-			else
-			{
-				_pitNoProg++;
-			}
+			_pitNoProg++;
+			if (CompanionsPlugin.LogDetailed) Log($"Step swing: the step ahead {_pitStepGround:F2} -> {g:F2} ({(_pitStepGround - g) * 100f:F0} cm), feet {me.y:F2}");
 		}
 		if (_pitNoProg >= VNoProgSwings || Time.time - _pitProgAt >= VNoProgTime)
 		{
-			_pitActive = false;
-			_stuckInHole = true;
-			_stuckAt = me;
-			SayGaveUp(GiveUpWhy.StuckInHole, $"{_pitNoProg} swings / {Time.time - _pitProgAt:F0}s without a step, step ground {g:F1}, feet {me.y:F1}");
-			RestoreLoadout();
+			PitStuck(me, $"{_pitNoProg} swings / {Time.time - _pitProgAt:F0}s without getting 0.1 m higher, step ground {g:F1}, feet {me.y:F1}");
 			return;
 		}
 		if (busy || _pitSwung)
@@ -168,12 +194,21 @@ public partial class HarvestController
 			_ai.MoveTowards(flat.normalized, run: false);
 			if (_character.IsOnGround() && Time.time >= _pitJumpAt && g > me.y + 0.4f)
 			{
+				// 1.5.97 (plan v3): the ladder head room check over the step before jumping onto it
+				if (!MHR_Mover.HeadRoomAt(new Vector3(step.x, g, step.z), 2.2f))
+				{
+					PitStuck(me, $"something over the step at {MHR_Mover.Fmt(new Vector3(step.x, g, step.z))} - no room to jump onto it");
+					return;
+				}
+				// a jump costs stamina: get it back first, standing on the flat
+				if (_stamina != null && _stamina.Stamina < 10f + 0.15f * Mathf.Max(1f, _stamina.MaxStamina))
+				{
+					_ai.StopMoving();
+					_pitProgAt += Time.deltaTime;   // resting: the clock waits
+					return;
+				}
 				_pitJumpAt = Time.time + 1f;
 				_character.Jump();
-			}
-			if (Time.time - _pitProgAt > 3f && g <= me.y + 0.4f)
-			{
-				_pitProgAt = Time.time;   // walking up a slope of its own stair
 			}
 			return;
 		}
@@ -187,11 +222,18 @@ public partial class HarvestController
 			_pitSwung = true;
 			_pitSwungAt = Time.time;
 		}
-		else if (leave)
+		else
 		{
-			_pitActive = false;
-			_stuckInHole = true;
-			_stuckAt = me;
+			if (_catchingBreath)
+			{
+				_pitProgAt += Time.deltaTime;   // catching its breath: the clock waits
+			}
+			if (leave)
+			{
+				_pitActive = false;
+				_stuckInHole = true;
+				_stuckAt = me;
+			}
 		}
 	}
 }

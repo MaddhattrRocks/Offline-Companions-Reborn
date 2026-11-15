@@ -1465,6 +1465,24 @@ namespace Companions
         // CompanionLadderBumpPatch makes his walking input read right when he walks the ladder's way. (An own bump from the AI
         // was tried and dropped: the game's walking code capped it at 3 m/s while he was still on the floor, and it took the
         // 0.5 s slot so the ladder's real bump was refused.)
+        // 1.5.97 (plan v3): the ladder head room check for the Ore job's own jumps and the way it cuts steps out
+        internal static bool HeadRoomAt(Vector3 spot, float height) { return HeadRoom(spot, height); }
+
+        // 1.5.97 (plan v3): the walking code's own side step, for the Ore job when you or another companion stands in its way.
+        // The next Go call (same tag and goal) carries it out.
+        internal static void SidestepNow(CompanionAI ai, Vector3 toward, string tag)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null) return;
+            Vector3 pos = ai.transform.position;
+            Vector3 dir = toward - pos; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
+            float now = Time.time;
+            s.LastGo = now;
+            Sidestep(ai, c, s, pos, dir.normalized, now, tag, "someone in the way", true);
+        }
+
         // nothing but ladder within `height` above a spot
         static bool HeadRoom(Vector3 spot, float height)
         {
