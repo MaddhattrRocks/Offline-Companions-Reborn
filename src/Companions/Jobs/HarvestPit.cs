@@ -47,6 +47,14 @@ public partial class HarvestController
 	// getting-out picks another)
 	private Vector3 _pitWalkFrom;
 
+	// part 1 G2: where its feet last got 0.1 m higher (or the steps began) - walking PitWalkMax from there without
+	// rising drops the direction
+	private Vector3 _pitProgFrom;
+
+	private bool _pitWalkLogged;
+
+	private const float PitWalkMax = 3f;
+
 	private float _pitWalkAt;
 
 	private bool _pitDropped;
@@ -141,6 +149,8 @@ public partial class HarvestController
 		_pitSwung = false;
 		_pitWalkFrom = me;
 		_pitWalkAt = Time.time;
+		_pitProgFrom = me;
+		_pitWalkLogged = false;
 		_pitDropped = false;
 		if (!vein)
 		{
@@ -193,6 +203,7 @@ public partial class HarvestController
 			_pitBestY = me.y;
 			_pitProgAt = Time.time;
 			_pitNoProg = 0;
+			_pitProgFrom = me;
 		}
 		bool busy = _humanoid.InAttack() || _character.IsStaggering();
 		Vector3 step = me + _pitDir * 1.0f;
@@ -220,6 +231,18 @@ public partial class HarvestController
 			// item D: walking at a low step and not getting anywhere - not moved 0.3 m or risen 0.1 m in 3 s
 			if (_pitVein)
 			{
+				// part 1 G2: the walk has a length - PitWalkMax from where its feet last rose (log 97d599fc: Gunter
+				// walked at a low step for 30 s, out of the loaded area and into water)
+				if (!_pitWalkLogged)
+				{
+					_pitWalkLogged = true;
+					if (CompanionsPlugin.LogDetailed) Log($"Walking at the step (the ground 1 m ahead is {g:F1}, feet {me.y:F1}; out at {_pitRimY - 0.5f:F1}) - {PitWalkMax:F0} m at most without getting higher");
+				}
+				if (Flat(me, _pitProgFrom) > PitWalkMax)
+				{
+					PitGiveUpDir(me, $"walked {Flat(me, _pitProgFrom):F1} m along the steps without getting 0.1 m higher (feet {me.y:F1}, out at {_pitRimY - 0.5f:F1})");
+					return;
+				}
 				if (Flat(me, _pitWalkFrom) >= 0.3f || me.y >= _pitWalkFrom.y + 0.1f)
 				{
 					_pitWalkFrom = me;

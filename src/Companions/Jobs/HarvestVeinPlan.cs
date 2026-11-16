@@ -86,6 +86,9 @@ public partial class HarvestController
 
 		public readonly List<VClosed> Closed = new List<VClosed>();
 
+		// part 1 T6: spots a companion with no axe left because of a tree (kept across new plans, by place)
+		public readonly List<Vector3> AxeSpots = new List<Vector3>();
+
 		public float LastWork;
 	}
 

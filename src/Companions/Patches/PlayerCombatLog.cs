@@ -246,8 +246,159 @@ internal static class PlayerCombatLog
 		{
 			return false;
 		}
+		// part 1 L1: with any companion within 30 m, on any job (it used to need one on the Ore job, which would dig
+		// the vein you are demonstrating on)
 		ItemDrop.ItemData w = p.GetCurrentWeapon();
-		return w != null && w.GetDamage().m_pickaxe > 0f && HarvestController.AnyOreNear(p.transform.position, OreNear);
+		return w != null && w.GetDamage().m_pickaxe > 0f && HarvestController.AnyCompanionNear(p.transform.position, OreNear);
+	}
+
+	// ---------- part 1 L2, L3: the vein's layout on your first hit, what each break did, your hits on trees and bushes ----------
+	private struct Break
+	{
+		public float At;
+
+		public MineRock5 Rock;
+
+		public int Before;
+	}
+
+	private struct ObjHit
+	{
+		public float At;
+
+		public Component Obj;
+
+		public ZNetView Nv;
+
+		public string Name;
+
+		public Vector3 P;
+
+		public float Before;
+
+		public string Tool;
+
+		public Vector3 Stood;
+	}
+
+	private static readonly List<Break> s_breaks = new List<Break>();
+
+	private static readonly List<ObjHit> s_objHits = new List<ObjHit>();
+
+	private static readonly HashSet<int> s_laidOut = new HashSet<int>();
+
+	private static float s_veinNearAt = -100f;
+
+	private static bool s_veinNear;
+
+	private static Vector3 s_veinNearFrom;
+
+	private static void NoteVeinHit(MineRock5 rock)
+	{
+		if (rock == null)
+		{
+			return;
+		}
+		int parts, dirt;
+		if (s_laidOut.Add(rock.GetInstanceID()))
+		{
+			HarvestController.VeinCount(rock, true, Log, out parts, out dirt);
+		}
+		else
+		{
+			HarvestController.VeinCount(rock, false, null, out parts, out dirt);
+		}
+		// one swing can land on several parts: one "after that hit" line a swing
+		if (s_breaks.Count > 0 && s_breaks[s_breaks.Count - 1].Rock == rock && Time.time - s_breaks[s_breaks.Count - 1].At < 0.2f)
+		{
+			return;
+		}
+		s_breaks.Add(new Break { At = Time.time, Rock = rock, Before = parts });
+	}
+
+	// a vein within 30 m of you: a split rock, or a whole one that splits when hit (looked up at most every 5 s)
+	private static bool VeinNear(Vector3 p)
+	{
+		if (Time.time - s_veinNearAt < 5f && Vector3.Distance(p, s_veinNearFrom) < 5f)
+		{
+			return s_veinNear;
+		}
+		s_veinNearAt = Time.time;
+		s_veinNearFrom = p;
+		s_veinNear = false;
+		foreach (Collider c in Physics.OverlapSphere(p, OreNear))
+		{
+			if (c == null)
+			{
+				continue;
+			}
+			if (c.GetComponentInParent<MineRock5>() != null)
+			{
+				s_veinNear = true;
+				break;
+			}
+			Destructible d = c.GetComponentInParent<Destructible>();
+			if (d != null && d.m_spawnWhenDestroyed != null && d.m_spawnWhenDestroyed.GetComponentInChildren<MineRock5>(true) != null)
+			{
+				s_veinNear = true;
+				break;
+			}
+		}
+		return s_veinNear;
+	}
+
+	// your axe or pickaxe hit on a tree, log, stump, bush or loose rock near a vein (before the game applies it)
+	internal static void NotePlayerObjHit(Component obj, HitData hit)
+	{
+		Player p = Player.m_localPlayer;
+		if (!CompanionsPlugin.LogDetailed || p == null || obj == null || hit == null || hit.GetAttacker() != p)
+		{
+			return;
+		}
+		ItemDrop.ItemData w = p.GetCurrentWeapon();
+		if (w == null || (w.GetDamage().m_pickaxe <= 0f && w.GetDamage().m_chop <= 0f))
+		{
+			return;
+		}
+		if (!HarvestController.AnyCompanionNear(p.transform.position, OreNear) || !VeinNear(p.transform.position))
+		{
+			return;
+		}
+		ZNetView nv = obj.GetComponentInParent<ZNetView>();
+		ZDO z = nv != null && nv.IsValid() ? nv.GetZDO() : null;
+		s_objHits.Add(new ObjHit { At = Time.time, Obj = obj, Nv = nv, Name = obj.name, P = hit.m_point, Before = z != null ? z.GetFloat(ZDOVars.s_health, -1f) : -2f, Tool = w.m_shared.m_name, Stood = p.transform.position });
+	}
+
+	private static string Health(float h)
+	{
+		return h == -1f ? "full" : h < -1f ? "?" : h.ToString("F0");
+	}
+
+	private static void DemoTick()
+	{
+		while (s_breaks.Count > 0 && Time.time - s_breaks[0].At >= 0.5f)
+		{
+			Break b = s_breaks[0];
+			s_breaks.RemoveAt(0);
+			if (b.Rock == null)
+			{
+				if (CompanionsPlugin.LogDetailed) Log($"The vein is gone: the last {b.Before} part(s) went with that hit");
+				continue;
+			}
+			HarvestController.VeinCount(b.Rock, false, null, out int parts, out int dirt);
+			if (parts < b.Before && CompanionsPlugin.LogDetailed)
+			{
+				Log($"After that hit: {b.Before - parts} part(s) went, {parts} left, {dirt} touching dirt");
+			}
+		}
+		while (s_objHits.Count > 0 && Time.time - s_objHits[0].At >= 0.5f)
+		{
+			ObjHit o = s_objHits[0];
+			s_objHits.RemoveAt(0);
+			bool gone = o.Obj == null || o.Nv == null || !o.Nv.IsValid();
+			float after = gone ? 0f : o.Nv.GetZDO().GetFloat(ZDOVars.s_health, -1f);
+			if (CompanionsPlugin.LogDetailed) Log($"Hit \"{o.Name}\" with {o.Tool} at {MHR_Mover.Fmt(o.P)}, standing at {MHR_Mover.Fmt(o.Stood)}: its health {Health(o.Before)} -> {(gone ? "gone" : Health(after))}");
+		}
 	}
 
 	// your dig (Attack.SpawnOnHitTerrain): the ground is read again half a second later, when the game has lowered it
@@ -262,6 +413,7 @@ internal static class PlayerCombatLog
 
 	private static void DigTick()
 	{
+		DemoTick();
 		while (s_digs.Count > 0 && Time.time - s_digs[0].At >= 0.5f)
 		{
 			Dig d = s_digs[0];
@@ -279,6 +431,7 @@ internal static class PlayerCombatLog
 		{
 			return false;
 		}
+		NoteVeinHit(hit.m_hitCollider != null ? hit.m_hitCollider.GetComponentInParent<MineRock5>() : null);
 		if (CompanionsPlugin.LogDetailed) Log($"Hit vein piece \"{(hit.m_hitCollider != null ? hit.m_hitCollider.name : "?")}\" at {MHR_Mover.Fmt(hit.m_point)}, standing at {MHR_Mover.Fmt(c.transform.position)}");
 		return hit.m_hitCollider != null;
 	}

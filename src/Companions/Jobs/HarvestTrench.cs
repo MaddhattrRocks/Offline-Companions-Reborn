@@ -54,6 +54,9 @@ public partial class HarvestController
 
 		// no seen rock within 1 m (the band crosses a gap here): its depth comes from the nearest spot that has one
 		public bool NoRock;
+
+		// part 1 B1: its depth is the lowest the game lets this ground go (8 m under its first height), not the rock's base
+		public bool AtFloor;
 	}
 
 	private sealed class TLine
@@ -80,7 +83,8 @@ public partial class HarvestController
 		PopDig,
 		PopMine,
 		Lap,
-		ExitMine
+		ExitMine,
+		Obstacle
 	}
 
 	private enum TBlock
@@ -136,7 +140,7 @@ public partial class HarvestController
 
 	private const int TMaxBlocksPerSpot = 10;
 
-	private const int TMaxChops = 10;
+	private const int TMaxChops = 40;
 
 	private const float THead = 2.2f;
 
@@ -360,7 +364,21 @@ public partial class HarvestController
 		_tPredMiss = 0;
 		_tCheckOff = false;
 		_tChopping = false;
-		_tChops = 0;
+		// part 1 T5/T7: the count of things cleared, the skip list and the one side step are per vein - a new plan
+		// (or planning again from where it stands) doesn't reset them
+		int veinId = _target != null ? _target.GetInstanceID() : 0;
+		if (veinId != _tChopsFor)
+		{
+			_tChopsFor = veinId;
+			_tChops = 0;
+			_oSkip.Clear();
+			_oNoAxe.Clear();
+			_tSideHas = false;
+		}
+		_oActive = false;
+		_oGo = null;
+		_tSideUntil = 0f;
+		_tAxeWaiting = false;
 		_pRound = 0;
 		_pPart = null;
 		_pLeft.Clear();
@@ -781,7 +799,7 @@ public partial class HarvestController
 			lines.Add(line);
 		}
 		// where the band crosses a gap: the depth of the nearest ring spot that has seen rock within 1 m
-		int gaps = 0;
+		int gaps = 0, floored = 0;
 		foreach (TLine line in lines)
 		{
 			foreach (TSpot s in line.S)
@@ -802,6 +820,15 @@ public partial class HarvestController
 							}
 						}
 					}
+				}
+				// part 1 B1: never planned deeper than the game lets that ground go (log 97d599fc: 16 give-ups at "-8.0 m
+				// from its first height")
+				float floor = TFloorAt(s.P) + TFloorMargin;
+				if (s.Depth < floor)
+				{
+					s.Depth = Mathf.Min(floor, s.Surface);
+					s.AtFloor = true;
+					floored++;
 				}
 				deepest = Mathf.Max(deepest, s.Surface - s.Depth);
 				// what was closed in the plan before stays closed (a building, deep water, ground that won't go lower, a
@@ -840,7 +867,7 @@ public partial class HarvestController
 		_vp.Version++;
 		_vp.Planner = null;
 		_vp.NextReplan = Time.time + VReplanGap;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree; {gaps} across a gap{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree; {gaps} across a gap{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down, {floored} spot(s) held to the 8 m the game allows");
 		if (CompanionsPlugin.LogDetailed)
 		{
 			for (int l = 0; l < lines.Count; l++)
@@ -881,6 +908,18 @@ public partial class HarvestController
 		if (_xActive)
 		{
 			XTick();
+			return;
+		}
+		// part 1 T4: a side step being carried out (the mover does it on the same goal)
+		if (Time.time < _tSideUntil)
+		{
+			MHR_Mover.Go(_ai, Time.deltaTime, _tSideGoal, 0.05f, false, "Vein");
+			return;
+		}
+		// part 1 T3: a thing in the way is cleared first, through a new plan too (T7)
+		if (_oActive)
+		{
+			OTick();
 			return;
 		}
 		if (TPlanSync())
@@ -1276,6 +1315,12 @@ public partial class HarvestController
 		}
 		if (best == null)
 		{
+			// part 1 T6: tree spots left for a companion with an axe who is still on the trench
+			if (TAxeWait())
+			{
+				_ai.StopMoving();
+				return;
+			}
 			TTrenchDone("every spot is done", allDone: true);
 			return;
 		}
@@ -1466,7 +1511,7 @@ public partial class HarvestController
 		}
 		if (g <= q.Depth + 0.05f)
 		{
-			TSpotDone(q, $"down to its depth, {g:F1} ({q.Surface - g:F1} m down)");
+			TSpotDone(q, q.AtFloor ? $"as low as the game lets this ground go, {g:F1} (8 m under its first height; the rock's base is lower)" : $"down to its depth, {g:F1} ({q.Surface - g:F1} m down)");
 			TNextSpot();
 			return;
 		}
@@ -1489,8 +1534,15 @@ public partial class HarvestController
 		// a tree marked on the plan right by this spot: the axe first
 		if (q.Tree && TTreeNear(q.P, 2.0f, out GameObject treeGo, out Vector3 treePt))
 		{
-			TBlockBegin(TBlock.Tree, treeGo, treePt, FlatNorm(treePt - me, base.transform.forward), "a tree on the trench line");
-			return;
+			if (ONoAxeSpot(treeGo, q))
+			{
+				return;
+			}
+			if (OCan(treeGo))
+			{
+				OBegin(treeGo, OCtx.Trench, "a tree on the trench line");
+				return;
+			}
 		}
 		if (Flat(me, q.P) > TFarSpot)
 		{
@@ -1542,10 +1594,17 @@ public partial class HarvestController
 		}
 		if (!TPickFacing(baseDir, q.P, 1.5f, q.Depth, out Vector3 facing))
 		{
+			// part 1 T2: no swing from here meets dirt first, and what a straight one meets is a thing it can clear
+			if (TPredict(me, FlatNorm(baseDir, base.transform.forward), out _) == TFirst.Other && OCan(_tPredGo))
+			{
+				OBegin(_tPredGo, OCtx.Trench, "a straight swing meets it before the dirt");
+				return;
+			}
 			TSpotDone(q, "rock in front: no way to face it that meets dirt first - left for the mining", keep: true);
 			TNextSpot();
 			return;
 		}
+		_tKey = q.P;
 		TDigSwing(facing, q.P, TFor.Dig);
 	}
 
@@ -1634,9 +1693,9 @@ public partial class HarvestController
 		{
 			TBlockBegin(TBlock.Rock, go, hit.point, dir, "rock (" + go.name + ")", col);
 		}
-		else if (col.GetComponentInParent<TreeBase>() != null || col.GetComponentInParent<TreeLog>() != null)
+		else if (OCan(col.gameObject) && (col.GetComponentInParent<TreeBase>() != null || col.GetComponentInParent<TreeLog>() != null))
 		{
-			TBlockBegin(TBlock.Tree, go, hit.point, dir, "a tree or log (" + go.name + ")");
+			OBegin(col.gameObject, OCtx.Trench, "it can't move forward past it");
 		}
 		else if (col.GetComponentInParent<Door>() != null)
 		{
@@ -1646,13 +1705,9 @@ public partial class HarvestController
 		{
 			TBlockBegin(TBlock.Built, go, hit.point, dir, "a building piece (" + go.name + ")");
 		}
-		else if (des != null && des.m_damages.m_pickaxe != HitData.DamageModifier.Immune)
+		else if (OCan(col.gameObject))
 		{
-			TBlockBegin(TBlock.Rock, des.gameObject, hit.point, dir, "rock (" + des.name + ")");
-		}
-		else if (des != null && des.m_damages.m_chop != HitData.DamageModifier.Immune)
-		{
-			TBlockBegin(TBlock.Tree, des.gameObject, hit.point, dir, "wood (" + des.name + ")");
+			OBegin(col.gameObject, OCtx.Trench, "it can't move forward past it");
 		}
 		else
 		{
@@ -1754,6 +1809,7 @@ public partial class HarvestController
 				TBlockUnknown(q, "dirt in front, but no swing from here meets dirt first" + (first == TFirst.Other && _tPredGo != null ? " (a straight one meets " + _tPredGo.name + ")" : ""));
 				return;
 			}
+			_tKey = q.P;
 			TDigSwing(face, ahead, TFor.BlockDirt);
 			return;
 		}
@@ -1989,7 +2045,7 @@ public partial class HarvestController
 	}
 
 	// the axe swing: the axe in hand, a breather when low (the same numbers as the pickaxe), then the game's attack
-	private void TChopSwing(ItemDrop.ItemData axe, Vector3 aim)
+	private void TChopSwing(ItemDrop.ItemData axe, Vector3 aim, TFor why = TFor.BlockObj)
 	{
 		VeinFace(aim);
 		_attackTimer -= Time.deltaTime;
@@ -2035,7 +2091,8 @@ public partial class HarvestController
 		_vSwungAt = Time.time;
 		_vSwingDig = false;
 		_vSwingAim = aim;
-		_tSwingFor = TFor.BlockObj;
+		_tHitObj = null;
+		_tSwingFor = why;
 		_tDigOK = false;
 		_tPredTerrain = false;
 	}
@@ -2179,6 +2236,34 @@ public partial class HarvestController
 
 	private static readonly System.Reflection.FieldInfo s_tSmoothDelta = HarmonyLib.AccessTools.Field(typeof(TerrainComp), "m_smoothDelta");
 
+	// part 1 B1: the lowest the game lets the ground at p go - its level change is held to 8 m down (TerrainComp), so the
+	// floor is the ground now less what is left of those 8 m. Ground nobody has changed: 8 m under where it is.
+	private const float TFloorMargin = 0.15f;
+
+	private static float TFloorAt(Vector3 p)
+	{
+		float g = GroundAt(p);
+		Heightmap hm = Heightmap.FindHeightmap(p);
+		TerrainComp tc = TerrainComp.FindTerrainCompiler(p);
+		if (hm == null || tc == null)
+		{
+			return g - 8f;
+		}
+		float[] level = s_tLevelDelta?.GetValue(tc) as float[], smooth = s_tSmoothDelta?.GetValue(tc) as float[];
+		if (level == null || smooth == null)
+		{
+			return g - 8f;
+		}
+		hm.WorldToVertex(p, out int x, out int y);
+		int i = y * (hm.m_width + 1) + x;
+		if (i < 0 || i >= level.Length || i >= smooth.Length)
+		{
+			return g - 8f;
+		}
+		// the game holds the changed height between 8 m under and 8 m over the first height (TerrainComp.ApplyToHeightmap)
+		return g - Mathf.Max(0f, 8f + Mathf.Clamp(level[i] + smooth[i], -8f, 8f));
+	}
+
 	private static string TLoweredSoFar(Vector3 p)
 	{
 		Heightmap hm = Heightmap.FindHeightmap(p);
@@ -2269,6 +2354,7 @@ public partial class HarvestController
 			if (CompanionsPlugin.LogDetailed) Log($"\"{part.C.name}\" is too close to the ground to dig under (no swing meets the dirt first) - mining it");
 			return;
 		}
+		_tKey = part.C.bounds.center;
 		TDigSwing(facing, _pSpot.P, TFor.PopDig);
 	}
 
@@ -2304,6 +2390,7 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
+		_tKey = part.bounds.center;
 		TRockSwing(aim, why);
 	}
 
@@ -2414,6 +2501,7 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
+		_tKey = best.bounds.center;
 		TRockSwing(TPartAim(best), TFor.Lap);
 	}
 
@@ -2480,10 +2568,30 @@ public partial class HarvestController
 		_tSwingFor = TFor.None;
 		switch (why)
 		{
+		case TFor.Obstacle:
+			OJudge();
+			break;
 		case TFor.Dig:
 		{
 			bool prog = digProg || lowered2 >= VDigMin || rock;
 			_tItemNoProg = prog ? 0 : _tItemNoProg + 1;
+			// part 1 T2: a tree, bush, stump or loose rock ate the swing - that goes first
+			if (!prog && OEaten(OCtx.Trench))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
+			// part 1 T6: it was a tree it already left for lack of an axe - this spot is left for an axe too
+			if (!prog && ONoAxeSpot(_tHitObj, _tQ))
+			{
+				break;
+			}
+			// part 1 T4: one step to the side before the spot is closed
+			if (_tItemNoProg >= TNoProgSwings && _tQ != null && !_tQ.Done && TSideOnce(_tKey, _tQ.P, $"{TNoProgSwings} dig swings at spot {_tQ.Idx + 1} did nothing; the last hit {(terrain ? "the ground" : "nothing it reported")}"))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
 			if (_tItemNoProg >= TNoProgSwings && _tQ != null && !_tQ.Done)
 			{
 				TSpotDone(_tQ, $"won't go lower ({TNoProgSwings} swings in a row without progress) - leaving it at {GroundAt(_tQ.P):F1}", keep: true);
@@ -2495,6 +2603,14 @@ public partial class HarvestController
 			if (digProg)
 			{
 				TBlockCleared($"dug the dirt in front {lowered * 100f:F0} cm");
+			}
+			else if (!rock && OEaten(OCtx.Trench))
+			{
+				_bNoProg = 0;
+			}
+			else if (_bNoProg + 1 >= TNoProgSwings && _tQ != null && TSideOnce(_tKey, _tQ.P, $"{TNoProgSwings} swings at the dirt in front did nothing"))
+			{
+				_bNoProg = 0;
 			}
 			else if (++_bNoProg >= TNoProgSwings && _tQ != null)
 			{
@@ -2521,6 +2637,16 @@ public partial class HarvestController
 			bool freed = _pPart == null || !TPartAlive(_pPart, out VPart pp) || !pp.Dirt;
 			bool prog = digProg || freed || rock;
 			_tItemNoProg = prog ? 0 : _tItemNoProg + 1;
+			if (!prog && OEaten(OCtx.Other))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
+			if (_tItemNoProg >= TNoProgSwings && TSideOnce(_tKey, _tQPoint, $"{TNoProgSwings} dig swings under \"{_pPart?.name}\" did nothing; the last hit {(terrain ? "the ground" : "nothing it reported")}"))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
 			if (_tItemNoProg >= TNoProgSwings)
 			{
 				if (_pHasSpot)
@@ -2535,6 +2661,16 @@ public partial class HarvestController
 		}
 		case TFor.PopMine:
 			_tItemNoProg = rock ? 0 : _tItemNoProg + 1;
+			if (!rock && OEaten(OCtx.Other))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
+			if (_tItemNoProg >= TNoProgSwings && TSideOnce(_tKey, _vSwingAim, $"{TNoProgSwings} swings at \"{_pPart?.name}\" took no health off it; the last hit {(terrain ? "the ground" : "nothing it reported")}"))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
 			if (_tItemNoProg >= TNoProgSwings)
 			{
 				if (_pStage == 3)
@@ -2550,6 +2686,16 @@ public partial class HarvestController
 			break;
 		case TFor.Lap:
 			_tItemNoProg = rock ? 0 : _tItemNoProg + 1;
+			if (!rock && OEaten(OCtx.Other))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
+			if (_tItemNoProg >= TNoProgSwings && TSideOnce(_tKey, _vSwingAim, $"{TNoProgSwings} swings at a part took no health off it; the last hit {(terrain ? "the ground" : "nothing it reported")}"))
+			{
+				_tItemNoProg = 0;
+				break;
+			}
 			if (_tItemNoProg >= TNoProgSwings)
 			{
 				_lIdx++;
@@ -2682,6 +2828,16 @@ public partial class HarvestController
 			if (MHR_Mover.ForcedClimbing(_ai) && _tClock - _xSince < 25f)
 			{
 				MHR_Mover.Go(_ai, Time.deltaTime, _xRim, 1.0f, true, XTag);
+				return;
+			}
+			// part 1 G1: after the climb it's out when it's less than TExitDepth below the height to reach - the number
+			// that starts a getting-out (log 97d599fc: 1.0 m below a spot 15 m away sent Gunter cutting steps on open ground)
+			if (_xRimY - me.y < TExitDepth)
+			{
+				_xActive = false;
+				_tWalkSince = _tClock;
+				_ai.StopMoving();
+				if (CompanionsPlugin.LogNormal) LogInfo($"Out after the climb at {MHR_Mover.Fmt(me)}: {_xRimY - me.y:F1} m below the height to reach ({_xRimY:F1}), under {TExitDepth:F1} m - walking on");
 				return;
 			}
 			if (CompanionsPlugin.LogNormal) LogInfo($"The climb didn't get it out (feet {me.y:F1}, the rim {_xRimY:F1}) - resting to full first");

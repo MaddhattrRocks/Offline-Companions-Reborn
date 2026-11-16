@@ -813,6 +813,11 @@ public partial class HarvestController : MonoBehaviour
 		}
 		// 1.5.97 (test review A2): left a vein with no working pickaxe - one in the bag again sends it straight back
 		NoToolTick(mode);
+		// part 1 G3: more than 20 m outside the vein while its vein work is what moves it - back to the vein first
+		if (mode == 3 && LeashTick())
+		{
+			return;
+		}
 		if (mode == 3 && PitTick())
 		{
 			return;
@@ -2126,6 +2131,10 @@ public partial class HarvestController : MonoBehaviour
 		}
 	}
 
+	private static readonly List<string> s_toolLines = new List<string>();
+
+	private readonly string[] _toolLogKey = new string[2];
+
 	private ItemDrop.ItemData FindBestTool(int mode)
 	{
 		Inventory inventory = _humanoid?.GetInventory();
@@ -2137,6 +2146,9 @@ public partial class HarvestController : MonoBehaviour
 		ItemDrop.ItemData itemData = null;
 		float num = 0f;
 		int num2 = 0;
+		// part 1 T7: the tool lines are written when the answer changes, not on every call (log 97d599fc: 2,900 lines
+		// for 12 axe swings)
+		s_toolLines.Clear();
 		foreach (ItemDrop.ItemData allItem in inventory.GetAllItems())
 		{
 			if (allItem?.m_shared == null || (allItem.m_shared.m_useDurability && allItem.m_durability <= 0f))
@@ -2168,7 +2180,7 @@ public partial class HarvestController : MonoBehaviour
 			if (flag)
 			{
 				num2++;
-				if (CompanionsPlugin.LogDetailed) Log("  Tool candidate: \"" + allItem.m_shared.m_name + "\" " + $"type={allItem.m_shared.m_itemType} " + $"chop={damage.m_chop:F0} pick={damage.m_pickaxe:F0} " + $"relevantDmg={num3:F0} " + $"equipped={_humanoid.IsItemEquiped(allItem)}");
+				if (CompanionsPlugin.LogDetailed) s_toolLines.Add("  Tool candidate: \"" + allItem.m_shared.m_name + "\" " + $"type={allItem.m_shared.m_itemType} " + $"chop={damage.m_chop:F0} pick={damage.m_pickaxe:F0} " + $"relevantDmg={num3:F0} " + $"equipped={_humanoid.IsItemEquiped(allItem)}");
 				// 1.5.95: a pickaxe by tier first, then damage (Ore/Stone) - the best tier is what the targets were picked by
 				bool better = itemData == null || (mode != 1 ? (allItem.m_shared.m_toolTier > itemData.m_shared.m_toolTier || (allItem.m_shared.m_toolTier == itemData.m_shared.m_toolTier && num3 > num)) : num3 > num);
 				if (better)
@@ -2178,13 +2190,23 @@ public partial class HarvestController : MonoBehaviour
 				}
 			}
 		}
-		if (itemData != null)
+		int slot = mode == 1 ? 0 : 1;
+		string key = itemData != null ? itemData.m_shared.m_name + "|" + num2 + "|" + (ReflectionHelper.GetRightItem(_humanoid) == itemData) : "none";
+		if (key != _toolLogKey[slot])
 		{
-			if (CompanionsPlugin.LogDetailed) Log($"Best tool: \"{itemData.m_shared.m_name}\" dmg={num:F0} " + $"(out of {num2} matching tools)");
-		}
-		else
-		{
-			LogWarn("No matching tools found! " + string.Format("Mode={0} need={1} ", mode, (mode == 1) ? "m_chop > 0" : "m_pickaxe > 0") + $"totalItems={inventory.GetAllItems().Count}");
+			_toolLogKey[slot] = key;
+			foreach (string line in s_toolLines)
+			{
+				Log(line);
+			}
+			if (itemData != null)
+			{
+				if (CompanionsPlugin.LogDetailed) Log($"Best tool: \"{itemData.m_shared.m_name}\" dmg={num:F0} " + $"(out of {num2} matching tools)");
+			}
+			else
+			{
+				LogWarn("No matching tools found! " + string.Format("Mode={0} need={1} ", mode, (mode == 1) ? "m_chop > 0" : "m_pickaxe > 0") + $"totalItems={inventory.GetAllItems().Count}");
+			}
 		}
 		return itemData;
 	}
@@ -2327,6 +2349,7 @@ public partial class HarvestController : MonoBehaviour
 	// HarvestHitRegister: the game registered a hit by this companion on `go`
 	internal void OnHitRegistered(GameObject go)
 	{
+		ONoteHit(go);   // part 1 T2: what the Ore job's swing landed on
 		if (go == null || _target == null || (go != _target && !_target.transform.IsChildOf(go.transform) && !go.transform.IsChildOf(_target.transform)))
 		{
 			return;

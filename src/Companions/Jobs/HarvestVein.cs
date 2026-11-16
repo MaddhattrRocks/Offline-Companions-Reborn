@@ -128,6 +128,119 @@ public partial class HarvestController
 
 	private float _vUnionAt = -100f;
 
+	// ---------- part 1 G3: the leash ----------
+	// Log 97d599fc: a walk with no limit took Gunter 150 m from the vein. While its vein work is what moves it (the vein
+	// job itself, getting out, its own steps), more than LeashOut outside the vein's box: stop, walk back with the
+	// mover, plan again from where it stands. LeashBackTime to get back. The count is per vein and a new plan doesn't
+	// reset it: a second time, or not back in time, is the existing give-up and it waits (set a job, or move it 5 m).
+	private const float LeashOut = 20f;
+
+	private const float LeashNear = 10f;
+
+	private const float LeashBackTime = 60f;
+
+	private int _leashId;
+
+	private int _leashCount;
+
+	private bool _leashBack;
+
+	private float _leashSince;
+
+	private float LeashDist(Vector3 me, out Vector3 near)
+	{
+		near = _vUnion.ClosestPoint(me);
+		near.y = GroundAt(near);
+		return Flat(me, near);
+	}
+
+	private void LeashStop(Vector3 me, string detail)
+	{
+		_leashBack = false;
+		_xActive = false;
+		_pitActive = false;
+		_pitDropped = false;
+		_ai.StopMoving();
+		MHR_Mover.Release(_ai);
+		SayGaveUp(GiveUpWhy.OutOfReach, detail);
+		if (_vFor != null)
+		{
+			VeinLeave();
+		}
+		_xPendingAfter = false;
+		_stuckInHole = true;
+		_stuckAt = me;
+		LogWarn($"Stopping the Ore job at {MHR_Mover.Fmt(me)}: {detail} - waiting for you (set a job, or move it 5 m)");
+	}
+
+	private bool LeashTick()
+	{
+		if (_ai == null || _character == null || _humanoid == null || _vUnionAt < 0f || _stuckInHole)
+		{
+			_leashBack = false;
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		if (_leashBack)
+		{
+			float d = LeashDist(me, out Vector3 near);
+			if (d <= LeashNear)
+			{
+				_leashBack = false;
+				_ai.StopMoving();
+				if (CompanionsPlugin.LogNormal) LogInfo($"Back by the vein at {MHR_Mover.Fmt(me)} ({d:F0} m from it) - planning again from here");
+				if (_vFor != null)
+				{
+					_vFor = null;   // VeinTick plans the vein again from where it stands
+				}
+				else
+				{
+					_xPendingAfter = true;   // it was getting out after the vein: that starts again from here
+				}
+				return false;
+			}
+			if (Time.time - _leashSince > LeashBackTime)
+			{
+				LeashStop(me, $"couldn't get back to the vein in {LeashBackTime:F0} s (still {d:F0} m from it)");
+				return true;
+			}
+			MHR_Mover.Go(_ai, Time.deltaTime, near, 2f, true, "Vein");
+			return true;
+		}
+		// a getting-out that is heading somewhere far off (you on Follow, a chest at home) isn't held to the vein
+		bool xNear = _xActive && Flat(_vUnion.ClosestPoint(_xRim), _xRim) <= LeashOut;
+		bool veinWork = (_state == HarvestState.Attacking && _vFor != null && _vFor == _target) || xNear || (_pitActive && _pitVein);
+		if (!veinWork)
+		{
+			return false;
+		}
+		if (_vFor != null && _vFor.GetInstanceID() != _leashId)
+		{
+			_leashId = _vFor.GetInstanceID();
+			_leashCount = 0;
+		}
+		float dist = LeashDist(me, out _);
+		if (dist <= LeashOut || _humanoid.InAttack())
+		{
+			return false;
+		}
+		_leashCount++;
+		if (_leashCount >= 2)
+		{
+			LeashStop(me, $"{dist:F0} m outside the vein while working it, for the second time on this vein");
+			return true;
+		}
+		_leashBack = true;
+		_leashSince = Time.time;
+		_xActive = false;
+		_pitActive = false;
+		_pitDropped = false;
+		_tChopping = false;
+		_ai.StopMoving();
+		if (CompanionsPlugin.LogNormal) LogInfo($"{dist:F0} m outside the vein while working it (at {MHR_Mover.Fmt(me)}) - coming back ({LeashBackTime:F0} s at most)");
+		return true;
+	}
+
 	// the vein it's working (or just finished): its box, the side it started on and the side it's on now (-1 = none)
 	internal bool VeinBox(out Bounds box, out int firstSide, out int side)
 	{
@@ -592,6 +705,7 @@ public partial class HarvestController
 		_vLastHealth = health;
 		_vLastAlive = alive;
 		_vLastDirt = dirt;
+		_tHitObj = null;
 		_vDigPending = false;
 		_vDigAimDeg = Mathf.Asin(Mathf.Clamp((aim - Eye()).normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
 		_vSwung = true;
@@ -775,6 +889,75 @@ public partial class HarvestController
 	}
 
 	// pop test D1: is a companion on the Ore job within r of this place?
+	// part 1 L1: any companion within r, on any job (your demonstration is logged with them on Follow)
+	internal static bool AnyCompanionNear(Vector3 p, float r)
+	{
+		foreach (CompanionSetup cs in CompanionSetup.AllCompanions)
+		{
+			if (cs != null && (cs.transform.position - p).sqrMagnitude <= r * r)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// part 1 L2: a vein's parts as the companions' own scan reads them (the same boxes and the same "touching dirt"
+	// test as VeinScan), for the lines about your own work. full = one line per part through log.
+	internal static void VeinCount(MineRock5 rock, bool full, System.Action<string> log, out int parts, out int dirt)
+	{
+		parts = 0;
+		dirt = 0;
+		if (rock == null || !MHR_Vein.Areas(rock, s_vAreas, out bool haveBounds))
+		{
+			return;
+		}
+		if (s_vMask < 0)
+		{
+			s_vMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
+			s_vTerrain = LayerMask.NameToLayer("terrain");
+		}
+		Vector3 origin = rock.transform.position;
+		List<string> lines = full ? new List<string>() : null;
+		Vector3 min = Vector3.one * float.MaxValue, max = Vector3.one * float.MinValue;
+		foreach (MHR_Vein.Area ha in s_vAreas)
+		{
+			if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)
+			{
+				continue;
+			}
+			Vector3 centre = haveBounds ? origin + ha.BoundPos : ha.Collider.bounds.center;
+			Vector3 half = haveBounds ? ha.BoundSize : ha.Collider.bounds.size * 0.5f;
+			bool held = false;
+			int n = Physics.OverlapBoxNonAlloc(centre, half, s_vBuf, Quaternion.identity, s_vMask);
+			for (int i = 0; i < n; i++)
+			{
+				Collider c = s_vBuf[i];
+				if (c != null && c != ha.Collider && c.attachedRigidbody == null && !c.isTrigger && c.gameObject.layer == s_vTerrain)
+				{
+					held = true;
+					break;
+				}
+			}
+			parts++;
+			if (held)
+			{
+				dirt++;
+			}
+			min = Vector3.Min(min, centre - half);
+			max = Vector3.Max(max, centre + half);
+			lines?.Add($"  part \"{ha.Collider.name}\": centre {MHR_Mover.Fmt(centre)}, size {half.x * 2f:F1} x {half.y * 2f:F1} x {half.z * 2f:F1}, bottom {centre.y - half.y:F1}, ground {GroundAt(centre):F1}, {(held ? "touching dirt" : "not touching dirt")}, health {ha.Health:F0}");
+		}
+		if (full && log != null)
+		{
+			log($"Vein \"{rock.name}\" at {MHR_Mover.Fmt(origin)}: {parts} parts, {dirt} touching dirt, box {MHR_Mover.Fmt(min)} to {MHR_Mover.Fmt(max)}");
+			foreach (string l in lines)
+			{
+				log(l);
+			}
+		}
+	}
+
 	internal static bool AnyOreNear(Vector3 p, float r)
 	{
 		foreach (CompanionSetup cs in CompanionSetup.AllCompanions)
