@@ -26,6 +26,8 @@ namespace Companions
             public bool VoidHas; public Vector3 VoidAt; public float VoidUntil; public bool OreDue; public float NextToss;
             // 1.5.97: what the pile or toss is of (Stone or Wood), or the other junk (item G)
             public string PileItem = "Stone"; public bool TossJunk; public float NoJunkUntil;
+            // pop test E1: Stone job over what it can carry - stone tossed only until it's at or under it
+            public bool TossToCap; public float NoCapTossUntil;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();
@@ -474,6 +476,8 @@ namespace Companions
                 if (now - p.LastHeavyCall > 1.5f) { p.TooHeavy = false; p.NextDropOffCheck = 0f; }
                 p.LastHeavyCall = now;
                 if (p.PileActive) return;
+                // pop test E1: Stone job over what it can carry - some of its stone goes off to one side first
+                if (Mode(h) == 2 && StartCapToss(h, p)) return;
                 if (Mode(h) == 3 && StoneDue(h, true) && StartPile(h)) return;
                 CompanionAI ai = h.GetComponent<CompanionAI>();
                 Humanoid hum = h.GetComponent<Humanoid>();

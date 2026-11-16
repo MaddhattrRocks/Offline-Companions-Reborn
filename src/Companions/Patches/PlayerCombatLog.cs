@@ -83,6 +83,7 @@ internal static class PlayerCombatLog
 
 	internal static void Tick()
 	{
+		DigTick();
 		Player p = Player.m_localPlayer;
 		if (!On || p == null || p.IsDead())
 		{
@@ -220,5 +221,74 @@ internal static class PlayerCombatLog
 			return;
 		}
 		if (CompanionsPlugin.LogDetailed) Log($"Hit {target.m_name} for {hit.GetTotalDamage():F0}{(target.IsStaggering() ? " (staggered - double damage)" : "")}");
+	}
+
+	// ---------- pop test D1: your own pickaxe work beside a companion on the Ore job (to model the clearing on) ----------
+	private struct Dig
+	{
+		public float At;
+
+		public Vector3 P;
+
+		public float Before;
+
+		public Vector3 Stood;
+	}
+
+	private const float OreNear = 30f;
+
+	private static readonly List<Dig> s_digs = new List<Dig>();
+
+	private static bool OreWork(Character c)
+	{
+		Player p = Player.m_localPlayer;
+		if (!CompanionsPlugin.LogDetailed || p == null || c != p)
+		{
+			return false;
+		}
+		ItemDrop.ItemData w = p.GetCurrentWeapon();
+		return w != null && w.GetDamage().m_pickaxe > 0f && HarvestController.AnyOreNear(p.transform.position, OreNear);
+	}
+
+	// your dig (Attack.SpawnOnHitTerrain): the ground is read again half a second later, when the game has lowered it
+	internal static void NotePlayerDig(Character c, Vector3 hitPoint)
+	{
+		if (!OreWork(c) || ZoneSystem.instance == null)
+		{
+			return;
+		}
+		s_digs.Add(new Dig { At = Time.time, P = hitPoint, Before = ZoneSystem.instance.GetGroundHeight(hitPoint), Stood = c.transform.position });
+	}
+
+	private static void DigTick()
+	{
+		while (s_digs.Count > 0 && Time.time - s_digs[0].At >= 0.5f)
+		{
+			Dig d = s_digs[0];
+			s_digs.RemoveAt(0);
+			float after = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(d.P) : d.Before;
+			if (CompanionsPlugin.LogDetailed) Log($"Dug at {MHR_Mover.Fmt(d.P)}: ground {d.Before:F2} -> {after:F2}, standing at {MHR_Mover.Fmt(d.Stood)}");
+		}
+	}
+
+	// your hit on a vein piece (MineRock5.Damage), by the piece's own name - the name the companions' lines use
+	internal static bool NotePlayerRockHit(HitData hit)
+	{
+		Character c = hit != null ? hit.GetAttacker() : null;
+		if (c == null || !OreWork(c))
+		{
+			return false;
+		}
+		if (CompanionsPlugin.LogDetailed) Log($"Hit vein piece \"{(hit.m_hitCollider != null ? hit.m_hitCollider.name : "?")}\" at {MHR_Mover.Fmt(hit.m_point)}, standing at {MHR_Mover.Fmt(c.transform.position)}");
+		return hit.m_hitCollider != null;
+	}
+
+	internal static void NotePlayerRockBroke(HitData hit)
+	{
+		Collider col = hit != null ? hit.m_hitCollider : null;
+		if (col == null || !col.gameObject.activeSelf)
+		{
+			if (CompanionsPlugin.LogDetailed) Log($"Vein piece \"{(col != null ? col.name : "?")}\" broke");
+		}
 	}
 }

@@ -198,8 +198,9 @@ public static class CombatPatches
 	[HarmonyPatch(typeof(MineRock5), "Damage")]
 	private static class MineRock5_SuppressHarvestPhysical
 	{
-		private static bool Prefix(MineRock5 __instance, HitData hit)
+		private static bool Prefix(MineRock5 __instance, HitData hit, out bool __state)
 		{
+			__state = false;
 			if (HarvestController.IsApplyingAoeDamage)
 			{
 				return true;
@@ -209,6 +210,8 @@ public static class CombatPatches
 			{
 				return true;
 			}
+			// pop test D1: the player's own hits on a vein, logged beside a companion on the Ore job
+			__state = PlayerCombatLog.NotePlayerRockHit(hit);
 			HarvestController component = attacker.GetComponent<HarvestController>();
 			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
 			{
@@ -216,6 +219,14 @@ public static class CombatPatches
 				return false;
 			}
 			return true;
+		}
+
+		private static void Postfix(HitData hit, bool __state)
+		{
+			if (__state)
+			{
+				PlayerCombatLog.NotePlayerRockBroke(hit);
+			}
 		}
 	}
 
@@ -275,6 +286,8 @@ public static class CombatPatches
 			// 1.4.150: companions only - it blocked every creature's ground effects (and Aoe.OnHit uses the result)
 			if (character == null || character.IsPlayer() || character.GetComponent<CompanionSetup>() == null)
 			{
+				// pop test D1: the player's own digs, logged beside a companion on the Ore job
+				PlayerCombatLog.NotePlayerDig(character, hitPoint);
 				return true;
 			}
 			HarvestController hc = character.GetComponent<HarvestController>();

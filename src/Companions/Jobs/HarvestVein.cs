@@ -774,6 +774,24 @@ public partial class HarvestController
 		return Mathf.Sqrt(dx * dx + dz * dz) <= 2.5f;
 	}
 
+	// pop test D1: is a companion on the Ore job within r of this place?
+	internal static bool AnyOreNear(Vector3 p, float r)
+	{
+		foreach (CompanionSetup cs in CompanionSetup.AllCompanions)
+		{
+			if (cs == null || (cs.transform.position - p).sqrMagnitude > r * r)
+			{
+				continue;
+			}
+			HarvestController h = cs.GetComponent<HarvestController>();
+			if (h != null && h.GetMode() == 3)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	internal void NotifyDig(Vector3 hitPoint)
 	{
 		_lastHitAt = Time.time;

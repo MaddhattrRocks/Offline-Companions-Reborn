@@ -226,6 +226,8 @@ public partial class HarvestController
 
 	private bool _vTerrainHit;
 
+	private bool _tDigMeasured;
+
 	// the swing check (a copy of the game's arc): what it said for this swing, and 3 misses in a row turn it off
 	private bool _tPredTerrain;
 
@@ -533,7 +535,7 @@ public partial class HarvestController
 			{
 				return;
 			}
-			if (_vp.Version > 0 && _vp.Seen.Count <= _vp.PlannedSeen)
+			if (_vp.Version > 0 && (_vp.TrenchDone || _vp.Seen.Count <= _vp.PlannedSeen))
 			{
 				TPlanAdopt("joined the others");
 				return;
@@ -1115,6 +1117,7 @@ public partial class HarvestController
 	{
 		Vector3 me = base.transform.position;
 		_tQPoint = at;
+		_tDigMeasured = true;
 		_tQBefore = GroundAt(at);
 		_tQ2Point = me;
 		_tQ2Before = GroundAt(me);
@@ -1273,7 +1276,7 @@ public partial class HarvestController
 		}
 		if (best == null)
 		{
-			TTrenchDone("every spot is done");
+			TTrenchDone("every spot is done", allDone: true);
 			return;
 		}
 		_tLine = best.Line;
@@ -1416,6 +1419,21 @@ public partial class HarvestController
 			return;
 		}
 		HarvestController other = THeldBy(n);
+		if (other != null && !_tTurned)
+		{
+			// pop test C1: the other way round from where this run started first (once per run), before a new start
+			TSpot back = TNextUndone(_tLine, _tRunStart, -_tDir);
+			if (back != null && THeldBy(back) == null)
+			{
+				_tTurned = true;
+				_tDir = -_tDir;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Met {other.MyName} at spot {n.Idx + 1} of line {_tLine + 1} - working the other way");
+				TTake(back);
+				_tSub = TSubDig;
+				TBeginItem();
+				return;
+			}
+		}
 		if (other != null)
 		{
 			if (CompanionsPlugin.LogNormal) LogInfo($"Met {other.MyName} at spot {n.Idx + 1} of line {_tLine + 1} - a new start away from the others");
@@ -1875,21 +1893,36 @@ public partial class HarvestController
 		_tSub = TSubPick;   // S2 gets out toward the start it picks
 	}
 
-	private void TTrenchDone(string why)
+	private void TTrenchDone(string why, bool allDone = false)
 	{
-		int done = 0, all = 0;
+		int done = 0, all = 0, shut = 0;
 		foreach (TLine l in _tLines)
 		{
 			foreach (TSpot s in l.S)
 			{
 				all++;
+				if (s.Done)
+				{
+					shut++;
+				}
 				if (!TOpen(s))
 				{
 					done++;
 				}
 			}
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_target.name}\" is done ({why}; {done} of {all} spots) - clearing it so it pops");
+		if (why == null)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_target.name}\" is already done - clearing it so it pops");
+		}
+		else
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_target.name}\" is done ({why}; {done} of {all} spots) - clearing it so it pops");
+			if (allDone && shut == all && _vp != null)
+			{
+				_vp.TrenchDone = true;   // pop test A1
+			}
+		}
 		_tPhase = TPhasePop;
 		_pRound = 1;
 		_pPart = null;
@@ -2125,6 +2158,49 @@ public partial class HarvestController
 		}
 	}
 
+	// pop test B2: where to aim at a vein piece. The shape's own nearest point where the engine has one (B1); for a
+	// hollow mesh, where a line from the eye to the middle of its box first meets that piece (10 m); else the box point
+	private Vector3 TPartAim(Collider part)
+	{
+		Vector3 eye = Eye();
+		if (part is MeshCollider mc && !mc.convex)
+		{
+			Vector3 to = part.bounds.center - eye;
+			if (to.sqrMagnitude > 0.0001f && part.Raycast(new Ray(eye, to.normalized), out RaycastHit hit, 10f))
+			{
+				return hit.point;
+			}
+		}
+		return SafeClosestPoint(part, eye);
+	}
+
+	// pop test D2: how far the game has already lowered (-) or raised (+) the ground here from its first height
+	private static readonly System.Reflection.FieldInfo s_tLevelDelta = HarmonyLib.AccessTools.Field(typeof(TerrainComp), "m_levelDelta");
+
+	private static readonly System.Reflection.FieldInfo s_tSmoothDelta = HarmonyLib.AccessTools.Field(typeof(TerrainComp), "m_smoothDelta");
+
+	private static string TLoweredSoFar(Vector3 p)
+	{
+		Heightmap hm = Heightmap.FindHeightmap(p);
+		TerrainComp tc = TerrainComp.FindTerrainCompiler(p);
+		if (hm == null || tc == null)
+		{
+			return "not changed by anyone yet";
+		}
+		float[] level = s_tLevelDelta?.GetValue(tc) as float[], smooth = s_tSmoothDelta?.GetValue(tc) as float[];
+		if (level == null || smooth == null)
+		{
+			return "unknown";
+		}
+		hm.WorldToVertex(p, out int x, out int y);
+		int i = y * (hm.m_width + 1) + x;
+		if (i < 0 || i >= level.Length || i >= smooth.Length)
+		{
+			return "unknown";
+		}
+		return (level[i] + smooth[i]).ToString("F1") + " m from its first height (the game's limit is 8 m down)";
+	}
+
 	private void TPopLeave(string why)
 	{
 		if (_pPart != null)
@@ -2199,7 +2275,7 @@ public partial class HarvestController
 	// a vein part: walk until the swing's start is within reach of it, then swing
 	private void TPopMine(Collider part, TFor why)
 	{
-		Vector3 aim = SafeClosestPoint(part, Eye());
+		Vector3 aim = TPartAim(part);
 		if (Vector3.Distance(TOrigin(), aim) > TMineReach)
 		{
 			if (TRest())
@@ -2220,7 +2296,7 @@ public partial class HarvestController
 				}
 				else
 				{
-					TPopLeave($"couldn't get within a swing of it in {TStepTime:F0}s");
+					TPopLeave($"couldn't get within a swing of it in {TStepTime:F0}s (aiming at {MHR_Mover.Fmt(aim)}, {Vector3.Distance(TOrigin(), aim):F1} m from the swing's start; no swing)");
 				}
 				return;
 			}
@@ -2237,7 +2313,7 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (VPart p in _vParts)
 		{
-			float d = Vector3.Distance(TOrigin(), SafeClosestPoint(p.C, Eye()));
+			float d = Vector3.Distance(TOrigin(), TPartAim(p.C));
 			if (d < bd)
 			{
 				bd = d;
@@ -2324,7 +2400,7 @@ public partial class HarvestController
 		Vector3 o = TOrigin();
 		foreach (VPart p in _vParts)
 		{
-			float d = Vector3.Distance(o, SafeClosestPoint(p.C, Eye()));
+			float d = Vector3.Distance(o, TPartAim(p.C));
 			if (d < bd)
 			{
 				bd = d;
@@ -2338,7 +2414,7 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
-		TRockSwing(SafeClosestPoint(best, Eye()), TFor.Lap);
+		TRockSwing(TPartAim(best), TFor.Lap);
 	}
 
 	// ---------- after each swing: what did the game do? ----------
@@ -2395,7 +2471,9 @@ public partial class HarvestController
 				if (CompanionsPlugin.LogNormal) LogInfo("The swing check got it wrong 3 times in a row - turned off for this vein (facing straight along the trench)");
 			}
 		}
-		string what = (broke ? (_vLastAlive - _vParts.Count) + " part(s) broke" : rock ? "hit the rock" : "") + (digProg ? (rock ? ", " : "") + "dug " + (lowered * 100f).ToString("F0") + " cm" : "");
+		bool digShown = digProg && _tDigMeasured;   // pop test B4: not an old number on a swing that didn't dig
+		_tDigMeasured = false;
+		string what = (broke ? (_vLastAlive - _vParts.Count) + " part(s) broke" : rock ? "hit the rock" : "") + (digShown ? (rock ? ", " : "") + "dug " + (lowered * 100f).ToString("F0") + " cm" : "");
 		if (CompanionsPlugin.LogDetailed && what.Length > 0) Log("Vein progress: " + what);
 		_tDigOK = false;
 		TFor why = _tSwingFor;
@@ -2451,7 +2529,7 @@ public partial class HarvestController
 				}
 				_pStage = 1;
 				TBeginItem();
-				if (CompanionsPlugin.LogDetailed) Log($"The dirt under \"{_pPart?.name}\" won't go lower ({TNoProgSwings} swings) - mining that part instead");
+				if (CompanionsPlugin.LogDetailed) Log($"The dirt under \"{_pPart?.name}\" won't go lower ({TNoProgSwings} swings) - mining that part instead (the ground at the spot {MHR_Mover.Fmt(_tQPoint)} is {GroundAt(_tQPoint):F2}, the piece's bottom {(_pPart != null && TPartAlive(_pPart, out VPart pb) ? pb.MinY.ToString("F2") : "?")}, the water line {TWater:F0}; the ground there is {TLoweredSoFar(_tQPoint)})");
 			}
 			break;
 		}
@@ -2466,7 +2544,7 @@ public partial class HarvestController
 				}
 				else
 				{
-					TPopLeave($"{TNoProgSwings} swings with no health off it");
+					TPopLeave($"{TNoProgSwings} swings with no health off it (aimed at {MHR_Mover.Fmt(_vSwingAim)}, {Vector3.Distance(TOrigin(), _vSwingAim):F1} m from the swing's start; the last swing hit {(rock ? "the rock" : terrain ? "the ground" : "nothing it reported")})");
 				}
 			}
 			break;
@@ -2767,7 +2845,7 @@ public partial class HarvestController
 		Vector3 o = TOrigin();
 		foreach (VPart p in _vParts)
 		{
-			float d = Vector3.Distance(o, SafeClosestPoint(p.C, Eye()));
+			float d = Vector3.Distance(o, TPartAim(p.C));
 			if (d < bd)
 			{
 				bd = d;
@@ -2780,7 +2858,7 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
-		TRockSwing(SafeClosestPoint(best, Eye()), TFor.ExitMine);
+		TRockSwing(TPartAim(best), TFor.ExitMine);
 	}
 
 	// item D: the rock in the way was mined (once): one more pick, from all 16 directions again

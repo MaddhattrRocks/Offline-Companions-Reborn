@@ -1996,7 +1996,8 @@ public partial class HarvestController : MonoBehaviour
 
 	private static Vector3 SafeClosestPoint(Collider col, Vector3 point)
 	{
-		if (col is MeshCollider)
+		// pop test B1: the shape itself where the engine can (a convex mesh); only a hollow mesh falls back to its box
+		if (col is MeshCollider mc && !mc.convex)
 		{
 			return col.ClosestPointOnBounds(point);
 		}

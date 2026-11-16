@@ -55,6 +55,9 @@ public partial class HarvestController
 
 		public bool NeedOutside;
 
+		// pop test A1: every spot of the trench was done once - no new ring for this vein, arrivals go straight to clearing
+		public bool TrenchDone;
+
 		public float NextReplan;
 
 		public float NextSeeCheck;
@@ -258,7 +261,7 @@ public partial class HarvestController
 				Vector3 q = p.Center + new Vector3((k & 1) == 0 ? p.Half.x : -p.Half.x, 0f, k < 2 ? p.Half.z : -p.Half.z) * 0.5f;
 				outside = !GRockAt(q);
 			}
-			if (outside)
+			if (outside && !_vp.TrenchDone)
 			{
 				_vp.NeedOutside = true;
 			}
@@ -350,6 +353,12 @@ public partial class HarvestController
 				s.Gave?.Remove(MyId);
 			}
 		}
+		// pop test A3: the trench round this vein was finished - the plan there is, and straight to clearing
+		if (_vp.TrenchDone && _vp.Version > 0 && !VPlannerBusy())
+		{
+			TPlanAdopt("the trench is already done");
+			return;
+		}
 		if (others.Count == 0 || _vp.Version == 0)
 		{
 			if (others.Count == 0)
@@ -399,10 +408,16 @@ public partial class HarvestController
 			TLapStart();
 			return;
 		}
+		if (CompanionsPlugin.LogDetailed) Log($"Working to plan {_vp.Version} of \"{_vp.Name}\" ({why})");
+		if (_vp.TrenchDone)
+		{
+			// pop test A2/A3: never back to the trench once it was finished
+			TTrenchDone(null);
+			return;
+		}
 		_tPhase = TPhaseTrench;
 		_tSub = TSubPick;
 		TBeginItem();
-		if (CompanionsPlugin.LogDetailed) Log($"Working to plan {_vp.Version} of \"{_vp.Name}\" ({why})");
 		if (carry)
 		{
 			// the new plan's spot nearest the one it was on, within 1 m (done or not: S3 moves on from a done one the
@@ -470,6 +485,10 @@ public partial class HarvestController
 		if (_vp == null || _tPhase == TPhasePlan)
 		{
 			return false;
+		}
+		if (_vp.TrenchDone && _vp.Version == _tPlanVer)
+		{
+			return false;   // pop test A2: the plan isn't made again once the trench was finished
 		}
 		if (_vp.Version != _tPlanVer)
 		{

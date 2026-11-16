@@ -185,10 +185,27 @@ namespace Companions
 
         static bool StartToss(HarvestController h, Per p, string item)
         {
-            p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false;
+            p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false; p.TossToCap = false;
             p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
             p.PilePoint = h.transform.position;
             if (CompanionsPlugin.LogNormal) Info("Too heavy - tossing its " + PileWord(item) + " off to one side");
+            return true;
+        }
+
+        // pop test E1 (John 2026-11-16: "for the stone job they should drop some of the stone to get under their carry
+        // capacity"): over what it can carry (General > MaxCarryWeight plus its gear) with stone in the bag - the existing
+        // toss, only as much stone as takes it to that weight or under. False = not over it, or no stone.
+        static bool StartCapToss(HarvestController h, Per p)
+        {
+            Humanoid hum = h.GetComponent<Humanoid>();
+            Inventory inv = hum != null ? hum.GetInventory() : null;
+            if (inv == null || Time.time < p.NoCapTossUntil) return false;
+            float limit = CompanionTierData.CarryLimit(h), w = inv.GetTotalWeight();
+            if (w <= limit || CountIn(inv, "Stone") <= 0) return false;
+            p.Trip = YardTrip.Toss; p.PileItem = "Stone"; p.TossJunk = false; p.TossToCap = true;
+            p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
+            p.PilePoint = h.transform.position;
+            if (CompanionsPlugin.LogNormal) Info("Over what it can carry (" + w.ToString("F0") + " of " + limit.ToString("F0") + ") - tossing some of its stone off to one side");
             return true;
         }
 
@@ -211,7 +228,7 @@ namespace Companions
         {
             if (ModConfig.JunkCleanup == null || !ModConfig.JunkCleanup.Value) return false;
             if (Time.time < p.NoJunkUntil || hum == null || hum.GetInventory() == null || HeaviestJunk(hum) == null) return false;
-            p.Trip = YardTrip.Toss; p.TossJunk = true;
+            p.Trip = YardTrip.Toss; p.TossJunk = true; p.TossToCap = false;
             p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
             p.PilePoint = h.transform.position;
             if (CompanionsPlugin.LogNormal) Info("Still too heavy - tossing other junk off to one side, the heaviest first");
@@ -252,6 +269,7 @@ namespace Companions
             ai.StopMoving();
             if (Time.time < p.NextToss || hum.InAttack()) return true;
             ItemDrop.ItemData stack = null;
+            float capOver = 0f;
             if (p.TossJunk)
             {
                 // item G: only until it's under the limit again (weight, or a free slot when the pack was full)
@@ -261,6 +279,11 @@ namespace Companions
             }
             else
             {
+                if (p.TossToCap)
+                {
+                    capOver = inv.GetTotalWeight() - CompanionTierData.CarryLimit(h);
+                    if (capOver <= 0f) return false;   // at or under what it can carry
+                }
                 foreach (ItemDrop.ItemData it in inv.GetAllItems())
                     if (it != null && it.m_dropPrefab != null && it.m_dropPrefab.name == p.PileItem && !it.m_equipped) { stack = it; break; }
                 if (stack == null)
@@ -272,11 +295,23 @@ namespace Companions
             Vector3 dir = TossDir(h, p);
             h.transform.rotation = Quaternion.LookRotation(dir);
             int n = stack.m_stack;
+            if (!p.TossJunk && p.TossToCap)
+            {
+                // only as many as it takes
+                n = Mathf.Clamp(Mathf.CeilToInt(capOver / Mathf.Max(0.01f, stack.GetWeight() / Mathf.Max(1, stack.m_stack))), 1, stack.m_stack);
+            }
             string tossed = p.TossJunk ? (stack.m_dropPrefab != null ? stack.m_dropPrefab.name : stack.m_shared.m_name) : PileWord(p.PileItem);
             if (PlayerDrop(hum, stack, n))
             {
                 if (p.TossJunk) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " (junk) to get under its weight limit"); }
+                else if (p.TossToCap) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " to get to what it can carry"); }
                 else if (CompanionsPlugin.LogDetailed) Debug("Tossed " + n + " " + tossed + " toward " + MHR_Mover.Fmt(h.transform.position + dir * 3f));
+            }
+            else if (p.TossToCap)
+            {
+                // the game refused the drop: no more of this for a minute, so it can't go round on one stack
+                p.NoCapTossUntil = Time.time + 60f;
+                return false;
             }
             else if (p.TossJunk)
             {
