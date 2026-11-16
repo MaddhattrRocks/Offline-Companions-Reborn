@@ -28,6 +28,8 @@ namespace Companions
             public string PileItem = "Stone"; public bool TossJunk; public float NoJunkUntil;
             // pop test E1: Stone job over what it can carry - stone tossed only until it's at or under it
             public bool TossToCap; public float NoCapTossUntil;
+            // pop test E2: a pile was left because it would take it over what it can carry
+            public bool CapFull; public float NextCapLog;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();
@@ -387,6 +389,30 @@ namespace Companions
                     if (s.Length > 0 && (name.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0 ||
                         (it.m_shared.m_name != null && it.m_shared.m_name.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0))) return false;
                 }
+            return true;
+        }
+
+        // pop test E2: it left a pile that would take it over what it can carry. With stone in the bag that is "too heavy"
+        // (the load goes to the chest as at the weight limit); with none there is nothing to take, so it only leaves it.
+        public static void NoteCapSkip(HarvestController h, float w, float add, float limit)
+        {
+            Per p = P(h);
+            Humanoid hum = h.GetComponent<Humanoid>();
+            bool stone = hum != null && hum.GetInventory() != null && CountIn(hum.GetInventory(), "Stone") > 0;
+            if (Time.time >= p.NextCapLog)
+            {
+                p.NextCapLog = Time.time + 60f;
+                if (CompanionsPlugin.LogNormal) Info("Leaving a pile that would take it over what it can carry (" + w.ToString("F0") + " + " + add.ToString("F0") + " of " + limit.ToString("F0") + ")" + (stone ? " - taking its load to the chest first" : ""));
+            }
+            if (stone) p.CapFull = true;
+        }
+
+        public static bool CapFull(HarvestController h)
+        {
+            Per p;
+            if (!s_per.TryGetValue(h.GetInstanceID(), out p) || !p.CapFull) return false;
+            Humanoid hum = h.GetComponent<Humanoid>();
+            if (Mode(h) != 2 || hum == null || hum.GetInventory() == null || CountIn(hum.GetInventory(), "Stone") <= 0) { p.CapFull = false; return false; }
             return true;
         }
 

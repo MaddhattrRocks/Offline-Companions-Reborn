@@ -957,7 +957,24 @@ public partial class HarvestController : MonoBehaviour
 		{
 			return true;
 		}
-		return MHR_GatherRules.PackFull(this);
+		return MHR_GatherRules.PackFull(this) || MHR_GatherRules.CapFull(this);
+	}
+
+	// pop test E2: Stone job - a pile that would take it over what it can carry is left, as the game leaves it for a
+	// player (Player.AutoPickup); with stone in the bag that counts as too heavy, so the load goes to the chest
+	private bool OverCapWith(ItemDrop d)
+	{
+		if (GetMode() != 2 || d == null || d.m_itemData == null)
+		{
+			return false;
+		}
+		float w = GetCurrentWeight(), add = d.m_itemData.GetWeight(), limit = CompanionTierData.CarryLimit(this);
+		if (w + add <= limit)
+		{
+			return false;
+		}
+		MHR_GatherRules.NoteCapSkip(this, w, add, limit);
+		return true;
 	}
 
 	internal void RestoreLoadout()
@@ -2977,6 +2994,10 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		ItemDrop component = dropGO.GetComponent<ItemDrop>();
+		if (component != null && OverCapWith(component))
+		{
+			return;
+		}
 		if (!(component == null))
 		{
 			string arg = component.m_itemData?.m_shared?.m_name ?? "?";
@@ -3051,6 +3072,10 @@ public partial class HarvestController : MonoBehaviour
 					_scanFull++;
 					continue;
 				}
+				if (OverCapWith(component))
+				{
+					continue;
+				}
 			}
 			num3++;
 			float num4 = Vector3.Distance(base.transform.position, component.transform.position);
@@ -3100,6 +3125,10 @@ public partial class HarvestController : MonoBehaviour
 			}
 			d.Load();
 			if (inv != null && !inv.CanAddItem(d.m_itemData))
+			{
+				continue;
+			}
+			if (OverCapWith(d))
 			{
 				continue;
 			}
