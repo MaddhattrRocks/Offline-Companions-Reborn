@@ -46,8 +46,6 @@ namespace Companions
             public bool MainPartial;
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
-            // trench test G1e: the highest its feet got on this climb (a slide back is measured from it)
-            public float ClimbHighY;
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
             public bool ForcedClimb; public float NextClimbWhyLog;   // 1.5.97: a climb out of a hole asked for straight away (MHR_Follow), and the Detailed "no way up" log's throttle
             public bool Direct; public float NextHop, NoDirectUntil;
@@ -120,6 +118,8 @@ namespace Companions
         }
         // 1.5.3: climbing a planned chain of ladders (Follow leaves it to finish rather than switching to the player's path)
         public static bool OnLadderChain(CompanionAI ai) { S s = Peek(ai); return s != null && s.OnChain && Time.time - s.LastGo < 1f; }
+        // 1.5.98 (Ore job rebuild): seconds since the current walk last got 0.75 m closer (0 when it is not walking)
+        public static float NoHeadway(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? Time.time - s.ProgressTime : 0f; }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -1220,13 +1220,6 @@ namespace Companions
             return (now - s.LastGo < 1f ? "moving (" + s.Tag + ") to " + Fmt(s.Goal) : "not moving (last " + s.Tag + ")") + (now < s.ClimbUntil ? (s.ClimbLadder ? ", on a ladder" : ", climbing to " + Fmt(s.ClimbTop)) : "") + (s.GaveUp ? ", gave up" : "") + (s.HasDetour ? ", on a detour" : "");
         }
 
-        // trench test G1 (log of 11-17: every way out of the trench was a jump climb, up to 7 m and steps of 3.1 m, with rests
-        // on the face where it slid back - John: "If the wall is taller than 1.5x their height just carve your way out";
-        // "they should be using [the steps] much more often"): on a vein job (tags Vein / VeinOut) the climb is one try,
-        // never more than 1.5 x its height, and it ends at the first struggle - no rise of 0.3 m in 3 s, a slide of
-        // 0.3 m back from the highest it got, or out of breath - so the job cuts steps. Other jobs and following: unchanged.
-        static bool VeinRules(string tag) { return tag != null && tag.StartsWith("Vein"); }
-        public static float VeinClimbMax(Character c) { return c != null ? 1.5f * c.GetHeight() : 2.7f; }
 
         // 1.5.97: climbing out of a hole that MHR_Follow asked for (it fell off the player's path twice in a hole)
         public static bool ForcedClimbing(CompanionAI ai) { S s = Peek(ai); return s != null && s.ForcedClimb && Time.time < s.ClimbUntil; }
@@ -1241,10 +1234,9 @@ namespace Companions
             float now = Time.time;
             Vector3 pos = ai.transform.position;
             if (s.Tag != tag || Vector3.Distance(goal, s.Goal) > 4f || now - s.LastGo > 2f) Reset(s, goal, pos, now, tag);
-            if (s.ClimbTries >= (VeinRules(tag) ? 1 : ClimbMaxTries)) return false;
+            if (s.ClimbTries >= ClimbMaxTries) return false;
             float needY = Mathf.Min(goal.y, pos.y + ClimbMaxRise);
             if (needY < pos.y + 1.5f) return false;
-            if (VeinRules(tag) && needY - pos.y > VeinClimbMax(c)) return false;
             Vector3 top; float steep;
             System.Text.StringBuilder why = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
             if (!FindClimb(s, pos, needY, out top, out steep, why))
@@ -1253,7 +1245,7 @@ namespace Companions
                 return false;
             }
             s.ClimbTries++; s.ClimbTried.Add(top);
-            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbHighY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false; s.ClimbLadder = false; s.ForcedClimb = true; s.LastGo = now;
             s.GaveUp = false; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] in a hole " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
@@ -2176,23 +2168,16 @@ namespace Companions
 
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
-            if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= (VeinRules(tag) ? 1 : ClimbMaxTries)) return false;
+            if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
             // how high we need to get: the last spot a full route started from, else the goal itself
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             if (needY < pos.y + 1.5f) return false;
             needY = Mathf.Min(needY, pos.y + ClimbMaxRise);
-            if (VeinRules(tag) && needY - pos.y > VeinClimbMax(c))
-            {
-                // trench test G1a: too high to climb on a vein - no climb; the mover gives up and the job cuts steps
-                s.ClimbTries = 1;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m up is more than 1.5 x its height (" + VeinClimbMax(c).ToString("F1") + "m) - no climb, steps instead");
-                return false;
-            }
             Vector3 top; float steep;
             System.Text.StringBuilder whyNot = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
             if (!FindClimb(s, pos, needY, out top, out steep, whyNot)) { LogNoClimb(s, tag, pos, needY, whyNot, now); return false; }
             s.ClimbTries++; s.ClimbTried.Add(top);
-            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbHighY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false; s.ForcedClimb = false;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
             return true;
@@ -2341,20 +2326,6 @@ namespace Companions
                 return;
             }
             dir.Normalize();
-            if (pos.y > s.ClimbHighY) s.ClimbHighY = pos.y;
-            if (VeinRules(tag) && !s.ClimbLadder)
-            {
-                // trench test G1b/G1d/G1e: the first sign of struggle ends the climb - no rest on the face
-                float maxS = MaxStamina(ai);
-                string st = now - s.ClimbProgressAt > 3f ? "no 0.3 m higher in 3 s" : pos.y <= s.ClimbHighY - 0.3f ? "slid back " + (s.ClimbHighY - pos.y).ToString("F1") + "m" : maxS > 0f && Stamina(ai) < maxS * 0.15f ? "out of breath" : null;
-                if (st != null)
-                {
-                    s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0; s.ClimbTries = Mathf.Max(s.ClimbTries, 1);
-                    Halt(ai, c, s);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the climb at " + Fmt(s.ClimbTop) + " is a struggle (" + st + ", got to " + Fmt(pos) + ") - steps instead");
-                    return;
-                }
-            }
             // out of breath: stand and get some back, like a player would, then go again
             float max = MaxStamina(ai);
             if (max > 0f && (now < s.ClimbRestUntil || Stamina(ai) < max * 0.15f) && c.IsOnGround())

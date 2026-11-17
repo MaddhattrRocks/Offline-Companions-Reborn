@@ -343,6 +343,8 @@ public static class ModLocalization
 			{ "hc_speech_pack_full_chest", "My pack's full. We need another chest." },
 			{ "hc_speech_vein_buried", "The rest of this {0} is buried too deep for me." },
 			{ "hc_speech_vein_trench_gap", "I couldn't dig all the way round this {0}. I'll clear what I can." },
+			{ "hc_speech_vein_trench_done", "The trench round this {0} is done." },
+			{ "hc_speech_vein_trench_done_gaps", "The trench round this {0} is done, but I couldn't dig {1} spots of it." },
 			{ "hc_speech_vein_cant_dig", "I can't dig here to get at this {0}." },
 			{ "hc_speech_vein_out_of_reach", "I can't reach that {0}." },
 			{ "hc_speech_vein_too_hard", "This {0} is too hard for my pickaxe." },

@@ -12,7 +12,9 @@ public partial class HarvestController : MonoBehaviour
 		Idle,
 		Moving,
 		Attacking,
-		CollectingDrops
+		CollectingDrops,
+		// 1.5.98 (Ore job rebuild): on a split vein outdoors, the vein chooser (OreVein.cs) decides what's next
+		Vein
 	}
 
 	private ZNetView _nview;
@@ -196,7 +198,7 @@ public partial class HarvestController : MonoBehaviour
 	// [Gathering] PowerChopLogBelow above the companion's feet.
 	private bool WantsPowerChop(ItemDrop.ItemData tool)
 	{
-		if (GetMode() != 1 || _target == null || tool == null || !tool.HaveSecondaryAttack())
+		if (WorkMode() != 1 || _target == null || tool == null || !tool.HaveSecondaryAttack())
 		{
 			return false;
 		}
@@ -226,10 +228,9 @@ public partial class HarvestController : MonoBehaviour
 
 	public bool IsInGatherMode { get; private set; }
 
-	// 1.5.97 (test review A1): getting out of its trench (or cutting pit steps) is the job at work too, so Follow doesn't
-	// steer at the same time (log ceead815: every climb try "dropped: a new task (Follow)")
-	// Only on the Ore job, which is what moves those two on (a job change can't leave Follow held off).
-	public bool IsActive => _state != HarvestState.Idle || _goingBack || ((_xActive || _pitActive) && GetMode() == 3);
+	// 1.5.98: getting out of its trench before leaving a vein (OreVein.cs C6) is the job at work too, so Follow and the
+	// other jobs don't steer at the same time - also after a job change, which it finishes before letting go
+	public bool IsActive => _state != HarvestState.Idle || _goingBack || _ovOut;
 
 	// 1.4.121: with Follow off it works an area, like Hunt (user): around home when the job starts near home, otherwise
 	// around where it was started, whether or not you're nearby. With nothing left it walks back to the middle.
@@ -587,7 +588,7 @@ public partial class HarvestController : MonoBehaviour
 
 	public void NotifyTerrainHit()
 	{
-		_vTerrainHit = true;   // 1.5.97: the swing met the ground but wasn't allowed to dig (the vein job's swing check compares)
+		// 1.5.98: the swing met the ground and wasn't allowed to dig (nothing to do: only a vein dirt swing digs)
 	}
 
 	public void NotifyActionModeChanged()
@@ -719,8 +720,8 @@ public partial class HarvestController : MonoBehaviour
 
 	internal void MHR_NotifyIfIdle()
 	{
-		// 1.5.97 (test review A4): not while it gets out of a trench or cuts steps - the pickaxe stays in hand
-		if (_state == HarvestState.Idle && !_xActive && !_pitActive)
+		// 1.5.97 (test review A4): not while it gets out of its trench - the pickaxe stays in hand
+		if (_state == HarvestState.Idle && !_ovOut)
 		{
 			NotifyActionModeChanged();
 		}
@@ -785,6 +786,12 @@ public partial class HarvestController : MonoBehaviour
 				_tag = $"[Harvest#{GetInstanceID() & 0xFFFF}|{text}]";
 			}
 		}
+		// 1.5.98 (C6): getting out of its trench before it lets go of a vein - also after a job change - unless in a fight
+		if (_ovOut && !(_ai != null && _ai.IsInCombat))
+		{
+			OvOutTick();
+			return;
+		}
 		int mode = GetMode();
 		bool flag = (mode >= 1 && mode <= 3) || mode == 5;
 		if (!flag && !_isDirectedHarvest)
@@ -813,19 +820,31 @@ public partial class HarvestController : MonoBehaviour
 		}
 		// 1.5.97 (test review A2): left a vein with no working pickaxe - one in the bag again sends it straight back
 		NoToolTick(mode);
+		// 1.5.98: stuck in its trench (the ramp out failed) - it waits for you (set a job, or move it 5 m)
+		if (mode == 3 && OvStuckTick())
+		{
+			return;
+		}
 		// part 1 G3: more than 20 m outside the vein while its vein work is what moves it - back to the vein first
 		if (mode == 3 && LeashTick())
 		{
 			return;
 		}
-		if (mode == 3 && PitTick())
+		// 1.5.98 (C1): a split vein outdoors picked by the scan (or pointed at): the vein chooser takes it, no walk to a part
+		if (mode == 3 && _vFor == null && (_state == HarvestState.Moving || _state == HarvestState.Attacking) && DigMode())
 		{
+			OvStart();
 			return;
 		}
-		// 1.5.97 (plan v3, S6): after a vein (broken or given up) and its ore picked up, out of the trench first
-		if (mode == 3 && _state != HarvestState.CollectingDrops && VeinExitTick())
+		// 1.5.98 (C3.2): a thing in the trench handed to the Wood / Stone flow is over (gone or given up): back to the vein
+		if (_vFor != null && _state == HarvestState.Idle)
 		{
-			return;
+			if (mode == 3)
+			{
+				OvResume();
+				return;
+			}
+			OvLeave("the job changed");
 		}
 		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or tossed), so it never gets overloaded
 		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && (_ai == null || _ai.PendingDepositContainer == null) && MHR_GatherRules.StoneDue(this) && MHR_GatherRules.StartPile(this))
@@ -835,6 +854,12 @@ public partial class HarvestController : MonoBehaviour
 		// 1.5.96: the ore after each finished vein (a chest within 20 m, else the ore spot)
 		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && MHR_GatherRules.OreDue(this))
 		{
+			return;
+		}
+		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
+		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
+		{
+			OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 owGoal, out string owWhat) ? owGoal : base.transform.position, IsOverweight() ? "it's carrying too much" : "its bag is full");
 			return;
 		}
 		if (IsOverweight())
@@ -871,6 +896,13 @@ public partial class HarvestController : MonoBehaviour
 			LeashDistance(out bool toVein) > PlayerRange() + 15f)
 		{
 			if (CompanionsPlugin.LogDetailed) Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up" + (toVein ? $" (you are {LeashDistance(out _):F0} m from the vein's nearest part)" : ""));
+			// 1.5.98 (C6): on its vein - out of the trench first (toward you), then it catches up
+			if (_vFor != null)
+			{
+				OvLeaveOut(MHR_Owner.Of(this).transform.position, "you moved on");
+				_scanTimer = 3f;
+				return;
+			}
 			ResetToIdle();
 			RestoreLoadout();
 			// 1.5.69: catch up first (log fc93f903: it took the same log straight back, 57 times)
@@ -898,6 +930,9 @@ public partial class HarvestController : MonoBehaviour
 		case HarvestState.CollectingDrops:
 			UpdateCollectingDrops();
 			break;
+		case HarvestState.Vein:
+			OvTick();
+			break;
 		}
 	}
 
@@ -915,6 +950,8 @@ public partial class HarvestController : MonoBehaviour
 		if (CompanionsPlugin.LogDetailed) Log($"EXIT gather mode — was state={_state} " + "target=\"" + ((_target != null) ? _target.name : "null") + "\" " + $"toolEquipped={_toolEquipped}");
 		IsInGatherMode = false;
 		_hasAnchor = false;
+		// 1.5.98 (C6): off the Ore job while in its trench - it gets out first (Update finishes it), else the vein is let go
+		OvJobOff();
 		if (_goingBack)
 		{
 			_goingBack = false;
@@ -1204,41 +1241,11 @@ public partial class HarvestController : MonoBehaviour
 		}
 		float deltaTime = Time.deltaTime;
 		bool flag2 = _humanoid != null && _humanoid.InAttack();
-		if (!flag2)
-		{
-			Vector3 lhs = _character?.GetVelocity() ?? Vector3.zero;
-			Vector3 vector2 = _target.transform.position - base.transform.position;
-			vector2.y = 0f;
-			float num3 = ((vector2.sqrMagnitude > 0.01f) ? Vector3.Dot(lhs, vector2.normalized) : 0f);
-			// 1.4.77: following a route around something (MHR_Mover still getting closer) counts like walking at the target
-			float num4 = ((num3 > 1f || MHR_Mover.Progressing(_ai)) ? 0.3f : 1f);
-			if (MHR_DoorBusy())
-			{
-				goto IL_04a6;
-			}
-			_moveTimer += deltaTime * num4;
-		}
-		// 1.4.77: the movement worked through its whole stuck ladder - give this target up now (after a moment, so a
-		// give-up left over from the previous target doesn't count)
-		if (_moveTimer > 0.5f && MHR_Mover.GaveUp(_ai))
-		{
-			_moveTimer = 10.01f;
-		}
-		if (_moveTimer > 10f)
+		// 1.5.98 (B1): the walk's clock is shared with the vein's dirt and ramp walks (WalkTimer / WalkGo)
+		if (WalkTimer(deltaTime, _target.transform.position) && _moveTimer > 10f)
 		{
 			float num5 = Vector3.Distance(base.transform.position, _target.transform.position);
 			Vector3 vector3 = _character?.GetVelocity() ?? Vector3.zero;
-			bool flag3 = _targetType == "TreeLog" || _targetType == "TreeBase";
-			bool flag4 = _targetType == "Destructible" || _targetType == "MineRock";
-			_ = flag3 || flag4;
-			// 1.5.97 (W8): Ore job, outdoors, in a hole (ground 3 m out at least 1.5 m above its feet all round): get out of
-			// the hole first (the pit exit's 1 m steps) instead of giving up the vein; it scans again once it's out
-			if (GetMode() == 3 && _character != null && _character.IsOnGround() && !InDungeonAt(base.transform.position) && InHole())
-			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"Can't get to \"{_target.name}\" from the hole it's in ({num5:F1}m away) - getting out of the hole first");
-				PitStart();
-				return;
-			}
 			LogWarn($"STUCK timeout ({10f}s) — giving up on \"{_target.name}\" " + $"dist={num5:F1}m vel={vector3.magnitude:F1} " + $"myPos={base.transform.position:F1} targetPos={_target.transform.position:F1} " + $"targetY={_target.transform.position.y:F2} myY={base.transform.position.y:F2} " + $"heightDiff={_target.transform.position.y - base.transform.position.y:F2}");
 			if (RockGiveUp())
 			{
@@ -1249,8 +1256,6 @@ public partial class HarvestController : MonoBehaviour
 			ResetToIdle();
 			return;
 		}
-		goto IL_04a6;
-		IL_04a6:
 		bool flag5 = _targetType == "Pickable";
 		float num6 = (flag5 ? 1.5f : GetAttackRange());
 		if (!_moveTargetLocked)
@@ -1296,31 +1301,7 @@ public partial class HarvestController : MonoBehaviour
 			num8 = num6 * 0.8f;
 			flag7 = num7 > 8f;
 		}
-		_shouldRun = flag7;
-		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint.
-		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), num8, flag7, "Gather");
-		if (!flag8 && num7 < 4f && (_character?.GetVelocity().magnitude ?? 0f) < 1f)
-		{
-			// 1.4.78: put back from before 1.4.77. Close in but not moving (the approach point is right up against a big
-			// rock): step straight at it, so the swings connect. Without this he swung 20 times from 1.9 m and missed.
-			Vector3 vector4 = lockedMoveTarget - base.transform.position;
-			vector4.y = 0f;
-			// 1.4.82: not over an edge (1.4.81 log: he pushed at a stump on the moat's lip and fell in)
-			if (vector4.sqrMagnitude > 0.01f && !MHR_Mover.HazardAhead(base.transform.position, vector4, 0.8f) && !MHR_Mover.Climbing(_ai))
-			{
-				_ai.MoveTowards(vector4.normalized, run: false);
-			}
-		}
-		else if (flag8 && num7 > num8 + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
-		{
-			Vector3 vector5 = lockedMoveTarget - base.transform.position;
-			vector5.y = 0f;
-			// 1.5.72: not over a drop, into fire or spikes
-			if (vector5.sqrMagnitude > 0.01f && !MHR_Mover.HazardAhead(base.transform.position, vector5, 0.8f))
-			{
-				_ai.MoveTowards(vector5.normalized, run: false);
-			}
-		}
+		bool flag8 = WalkGo(lockedMoveTarget, num8, flag7, deltaTime);
 		_moveLogTimer -= deltaTime;
 		if (_moveLogTimer <= 0f)
 		{
@@ -1374,6 +1355,67 @@ public partial class HarvestController : MonoBehaviour
 				_rock5ActiveSections = CountActiveRock5Sections();
 			}
 		}
+	}
+
+	// 1.5.98 (Ore job rebuild B1): the walking half of UpdateMoving, shared with the vein's dirt and ramp walks.
+	// WalkTimer: the 10 s clock (slower while it's making headway, held while a door is being opened, 10.01 when the
+	// mover has given up). False = a door is busy: the caller's give-up check waits.
+	private bool WalkTimer(float deltaTime, Vector3 toward)
+	{
+		bool inAttack = _humanoid != null && _humanoid.InAttack();
+		if (!inAttack)
+		{
+			Vector3 lhs = _character?.GetVelocity() ?? Vector3.zero;
+			Vector3 vector2 = toward - base.transform.position;
+			vector2.y = 0f;
+			float num3 = ((vector2.sqrMagnitude > 0.01f) ? Vector3.Dot(lhs, vector2.normalized) : 0f);
+			// 1.4.77: following a route around something (MHR_Mover still getting closer) counts like walking at the target
+			float num4 = ((num3 > 1f || MHR_Mover.Progressing(_ai)) ? 0.3f : 1f);
+			if (MHR_DoorBusy())
+			{
+				return false;
+			}
+			_moveTimer += deltaTime * num4;
+		}
+		// 1.4.77: the movement worked through its whole stuck ladder - give this target up now (after a moment, so a
+		// give-up left over from the previous target doesn't count)
+		if (_moveTimer > 0.5f && MHR_Mover.GaveUp(_ai))
+		{
+			_moveTimer = 10.01f;
+		}
+		return true;
+	}
+
+	// WalkGo: one frame of the walk itself (the mover, and the step straight in when close but not moving)
+	private bool WalkGo(Vector3 lockedMoveTarget, float stopDist, bool run, float deltaTime)
+	{
+		float num7 = Vector3.Distance(base.transform.position, lockedMoveTarget);
+		_shouldRun = run;
+		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint.
+		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), stopDist, run, "Gather");
+		if (!flag8 && num7 < 4f && (_character?.GetVelocity().magnitude ?? 0f) < 1f)
+		{
+			// 1.4.78: put back from before 1.4.77. Close in but not moving (the approach point is right up against a big
+			// rock): step straight at it, so the swings connect. Without this he swung 20 times from 1.9 m and missed.
+			Vector3 vector4 = lockedMoveTarget - base.transform.position;
+			vector4.y = 0f;
+			// 1.4.82: not over an edge (1.4.81 log: he pushed at a stump on the moat's lip and fell in)
+			if (vector4.sqrMagnitude > 0.01f && !MHR_Mover.HazardAhead(base.transform.position, vector4, 0.8f) && !MHR_Mover.Climbing(_ai))
+			{
+				_ai.MoveTowards(vector4.normalized, run: false);
+			}
+		}
+		else if (flag8 && num7 > stopDist + 0.5f && (_character?.GetVelocity() ?? Vector3.zero).magnitude < 0.3f)
+		{
+			Vector3 vector5 = lockedMoveTarget - base.transform.position;
+			vector5.y = 0f;
+			// 1.5.72: not over a drop, into fire or spikes
+			if (vector5.sqrMagnitude > 0.01f && !MHR_Mover.HazardAhead(base.transform.position, vector5, 0.8f))
+			{
+				_ai.MoveTowards(vector5.normalized, run: false);
+			}
+		}
+		return flag8;
 	}
 
 	private void UpdateAttacking()
@@ -1472,11 +1514,6 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		// 1.5.96/1.5.97: the Ore job on a split vein outdoors - trench round it, clear under it, then pop it (HarvestVein.cs, HarvestTrench.cs)
-		if (DigMode())
-		{
-			VeinTick();
-			return;
-		}
 		FaceTarget();
 		bool flag = IsRockLikeTarget();
 		Vector3 effectiveTargetPosition = GetEffectiveTargetPosition();
@@ -1538,90 +1575,19 @@ public partial class HarvestController : MonoBehaviour
 				_ai.StopMoving();
 			}
 		}
-		_attackTimer -= Time.deltaTime;
-		if (_attackTimer > 0f)
+		// 1.5.98 (B2): the swing itself is shared with the vein's dirt swings (SwingNow)
+		int swung = SwingNow(out ItemDrop.ItemData rightItem, out bool flag8);
+		if (swung == -1)
+		{
+			RestoreLoadout();
+			ResetToIdle();
+			return;
+		}
+		if (swung == 0)
 		{
 			return;
 		}
-		ItemDrop.ItemData rightItem = ReflectionHelper.GetRightItem(_humanoid);
-		int mode2 = GetMode();
-		bool flag3 = rightItem == null;
-		if (!flag3)
-		{
-			HitData.DamageTypes damage = rightItem.GetDamage();
-			flag3 = ((mode2 != 1) ? (damage.m_pickaxe <= 0f) : (damage.m_chop <= 0f));
-			// 1.5.95: a worn-out tool in hand is swapped too (its swings did nothing)
-			flag3 = flag3 || Worn(rightItem);
-		}
-		if (flag3)
-		{
-			if (CompanionsPlugin.LogDetailed) Log(string.Format("Wrong/missing tool: \"{0}\" — re-equipping for mode={1}", rightItem?.m_shared?.m_name ?? "NONE", mode2));
-			ItemDrop.ItemData itemData = FindBestTool(mode2);
-			if (itemData == null)
-			{
-				SayGaveUp(GiveUpWhy.NoTool, "in hand: " + (rightItem?.m_shared?.m_name ?? "nothing") + (Worn(rightItem) ? " (worn out)" : ""));
-				RestoreLoadout();
-				ResetToIdle();
-				return;
-			}
-			EquipTool(itemData);
-			rightItem = ReflectionHelper.GetRightItem(_humanoid);
-			if (rightItem == null)
-			{
-				_attackTimer = 0.25f;
-				return;
-			}
-		}
-		bool flag4 = _humanoid != null && _humanoid.InAttack();
-		bool flag5 = _humanoid != null && _humanoid.InDodge();
-		bool flag6 = _character != null && _character.IsStaggering();
-		// 1.5.61: like a player holding attack - the next swing goes as soon as the current one allows it (the weapon's
-		// combo, its last swing for double damage) instead of one swing every 2.5 s (user: "It seems like it might be a
-		// little slow"). Mid-swing it waits for the chain point (CompanionChainPatch) and checks again next frame.
-		bool chainReady = flag4 && !flag5 && !flag6 && _chopChain && CurrentAttackCanChain();
-		if ((flag4 && !chainReady) || flag5 || flag6)
-		{
-			if (flag5 || flag6)
-			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"Attack blocked: inDodge={flag5} stagger={flag6} — retry in {0.25f}s");
-			}
-			_attackTimer = (flag4 ? 0f : 0.25f);
-			return;
-		}
-		// 1.5.61: the power chop only where a player uses it (user: "The only time I use a power chop is when taking out a
-		// stump as it swings down rather than across. Occasionally I will use it if a log is below me and I cannot hit the
-		// log with a regular swing.") - it used to be every swing from the 4th on
-		bool flag8 = WantsPowerChop(rightItem);
-		float attackStamina = SwingStamina(rightItem, flag8);
-		if (_stamina != null && attackStamina > 0f)
-		{
-			// 1.5.61: chops until it's nearly out of breath, then stops and gets it back before chopping on, like a player
-			float max = Mathf.Max(1f, _stamina.MaxStamina);
-			if (_catchingBreath)
-			{
-				if (_stamina.Stamina < (ModConfig.GatherResumeStamina?.Value ?? 0.6f) * max)
-				{
-					_chopChain = false;
-					_attackTimer = 0.5f;
-					return;
-				}
-				_catchingBreath = false;
-				if (CompanionsPlugin.LogDetailed) Log($"Got its breath back ({_stamina.Stamina:F0}/{max:F0}) — back to work");
-			}
-			if (_stamina.Stamina < attackStamina + (ModConfig.GatherRestStamina?.Value ?? 0.15f) * max)
-			{
-				_catchingBreath = true;
-				_chopChain = false;
-				_attackTimer = 0.5f;
-				if (CompanionsPlugin.LogDetailed) Log($"Catching its breath ({_stamina.Stamina:F0}/{max:F0} stamina) before swinging again");
-				return;
-			}
-		}
-		bool flag9 = _humanoid != null && _humanoid.StartAttack(null, flag8);
-		_totalAttempts++;
-		_chopChain = flag9 && !flag8;
-		// a swing that just started isn't InAttack for a frame - don't start another over it
-		_attackTimer = (flag9 ? 0.4f : 0.5f);
+		bool flag9 = swung == 1;
 		if (flag9)
 		{
 			_swingCount++;
@@ -1766,6 +1732,98 @@ public partial class HarvestController : MonoBehaviour
 			float num9 = ((_stamina != null) ? _stamina.MaxStamina : (-1f));
 			LogWarn($"Attack FAILED — attempts={_totalAttempts}/{30} " + $"animState=[{arg}] power={flag8} " + "weapon=\"" + (rightItem?.m_shared?.m_name ?? "NONE") + "\" " + $"stamina={num8:F0}/{num9:F0} " + $"atkCost={rightItem.m_shared.m_attack.m_attackStamina:F0}");
 		}
+	}
+
+	// 1.5.98 (Ore job rebuild B2): the swinging half of UpdateAttacking, shared with the vein's dirt swings: the right tool
+	// in hand (WorkMode), the chain, the power chop rule, catching its breath, then the game's attack.
+	// 1 = a swing started, 2 = the attack didn't start, 0 = not this frame, -1 = no tool for it (SayGaveUp said so).
+	private int SwingNow(out ItemDrop.ItemData rightItem, out bool flag8)
+	{
+		rightItem = null;
+		flag8 = false;
+		_attackTimer -= Time.deltaTime;
+		if (_attackTimer > 0f)
+		{
+			return 0;
+		}
+		rightItem = ReflectionHelper.GetRightItem(_humanoid);
+		int mode2 = WorkMode();
+		bool flag3 = rightItem == null;
+		if (!flag3)
+		{
+			HitData.DamageTypes damage = rightItem.GetDamage();
+			flag3 = ((mode2 != 1) ? (damage.m_pickaxe <= 0f) : (damage.m_chop <= 0f));
+			// 1.5.95: a worn-out tool in hand is swapped too (its swings did nothing)
+			flag3 = flag3 || Worn(rightItem);
+		}
+		if (flag3)
+		{
+			if (CompanionsPlugin.LogDetailed) Log(string.Format("Wrong/missing tool: \"{0}\" — re-equipping for mode={1}", rightItem?.m_shared?.m_name ?? "NONE", mode2));
+			ItemDrop.ItemData itemData = FindBestTool(mode2);
+			if (itemData == null)
+			{
+				SayGaveUp(GiveUpWhy.NoTool, "in hand: " + (rightItem?.m_shared?.m_name ?? "nothing") + (Worn(rightItem) ? " (worn out)" : ""));
+				return -1;
+			}
+			EquipTool(itemData);
+			rightItem = ReflectionHelper.GetRightItem(_humanoid);
+			if (rightItem == null)
+			{
+				_attackTimer = 0.25f;
+				return 0;
+			}
+		}
+		bool flag4 = _humanoid != null && _humanoid.InAttack();
+		bool flag5 = _humanoid != null && _humanoid.InDodge();
+		bool flag6 = _character != null && _character.IsStaggering();
+		// 1.5.61: like a player holding attack - the next swing goes as soon as the current one allows it (the weapon's
+		// combo, its last swing for double damage) instead of one swing every 2.5 s (user: "It seems like it might be a
+		// little slow"). Mid-swing it waits for the chain point (CompanionChainPatch) and checks again next frame.
+		bool chainReady = flag4 && !flag5 && !flag6 && _chopChain && CurrentAttackCanChain();
+		if ((flag4 && !chainReady) || flag5 || flag6)
+		{
+			if (flag5 || flag6)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Attack blocked: inDodge={flag5} stagger={flag6} — retry in {0.25f}s");
+			}
+			_attackTimer = (flag4 ? 0f : 0.25f);
+			return 0;
+		}
+		// 1.5.61: the power chop only where a player uses it (user: "The only time I use a power chop is when taking out a
+		// stump as it swings down rather than across. Occasionally I will use it if a log is below me and I cannot hit the
+		// log with a regular swing.") - it used to be every swing from the 4th on
+		flag8 = WantsPowerChop(rightItem);
+		float attackStamina = SwingStamina(rightItem, flag8);
+		if (_stamina != null && attackStamina > 0f)
+		{
+			// 1.5.61: chops until it's nearly out of breath, then stops and gets it back before chopping on, like a player
+			float max = Mathf.Max(1f, _stamina.MaxStamina);
+			if (_catchingBreath)
+			{
+				if (_stamina.Stamina < (ModConfig.GatherResumeStamina?.Value ?? 0.6f) * max)
+				{
+					_chopChain = false;
+					_attackTimer = 0.5f;
+					return 0;
+				}
+				_catchingBreath = false;
+				if (CompanionsPlugin.LogDetailed) Log($"Got its breath back ({_stamina.Stamina:F0}/{max:F0}) — back to work");
+			}
+			if (_stamina.Stamina < attackStamina + (ModConfig.GatherRestStamina?.Value ?? 0.15f) * max)
+			{
+				_catchingBreath = true;
+				_chopChain = false;
+				_attackTimer = 0.5f;
+				if (CompanionsPlugin.LogDetailed) Log($"Catching its breath ({_stamina.Stamina:F0}/{max:F0} stamina) before swinging again");
+				return 0;
+			}
+		}
+		bool flag9 = _humanoid != null && _humanoid.StartAttack(null, flag8);
+		_totalAttempts++;
+		_chopChain = flag9 && !flag8;
+		// a swing that just started isn't InAttack for a frame - don't start another over it
+		_attackTimer = (flag9 ? 0.4f : 0.5f);
+		return flag9 ? 1 : 2;
 	}
 
 	private void UpdateCollectingDrops()
@@ -2349,7 +2407,6 @@ public partial class HarvestController : MonoBehaviour
 	// HarvestHitRegister: the game registered a hit by this companion on `go`
 	internal void OnHitRegistered(GameObject go)
 	{
-		ONoteHit(go);   // part 1 T2: what the Ore job's swing landed on
 		if (go == null || _target == null || (go != _target && !_target.transform.IsChildOf(go.transform) && !go.transform.IsChildOf(_target.transform)))
 		{
 			return;
@@ -2454,7 +2511,7 @@ public partial class HarvestController : MonoBehaviour
 	private void NoteLogsAround()
 	{
 		_preLogs.Clear();
-		if (_target == null || GetMode() != 1)
+		if (_target == null || WorkMode() != 1)
 		{
 			return;
 		}
@@ -3040,7 +3097,8 @@ public partial class HarvestController : MonoBehaviour
 		}
 		// 1.5.96: the Ore job, done with a rock: the ore goes to a chest within 20 m or the ore spot (John: "it should do
 		// both" - when over its limit and after each finished vein)
-		if (GetMode() == 3 && (_targetType == "MineRock5" || _targetType == "MineRock" || _targetType == "Destructible") && !InDungeonAt(base.transform.position))
+		// 1.5.98: not for a rock in its trench that the vein work handed over (the vein isn't done)
+		if (GetMode() == 3 && _vFor == null && (_targetType == "MineRock5" || _targetType == "MineRock" || _targetType == "Destructible") && !InDungeonAt(base.transform.position))
 		{
 			MHR_GatherRules.AfterVein(this);
 		}

@@ -97,7 +97,6 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogDetailed && !string.IsNullOrEmpty(detail)) Log("  (" + detail + ")");
 		if (why == GiveUpWhy.NoTool)
 		{
-			_leaveNoTool = true;   // VeinLeave reads it (A2, A3)
 			string tool = ModLocalization.Loc(GetMode() == 1 ? "hc_tool_axe" : "hc_tool_pickaxe");
 			_talk?.SayProblem("tool:none:" + GetMode(), string.Format(ModLocalization.Loc(key), tool));
 			return;
