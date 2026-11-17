@@ -58,6 +58,23 @@ public partial class HarvestController
 		// pop test A1: every spot of the trench was done once - no new ring for this vein, arrivals go straight to clearing
 		public bool TrenchDone;
 
+		// part 2 M2: the trench is dug in laps of 2 m. Lap = the lap being dug; RingFixed = lap 1 was finished (or the
+		// trench was ended), so the ring is never made again for this vein; LapBase = each spot's ground when the lap
+		// began, by place (x, z; y = that ground); the counts are for the end line of the log (M7)
+		public int Lap = 1;
+
+		public bool RingFixed;
+
+		public readonly List<Vector3> LapBase = new List<Vector3>();
+
+		public bool GapSaid;
+
+		public int LastAlive = -1;
+
+		public int ByHand;
+
+		public int Fell;
+
 		public float NextReplan;
 
 		public float NextSeeCheck;
@@ -264,7 +281,7 @@ public partial class HarvestController
 				Vector3 q = p.Center + new Vector3((k & 1) == 0 ? p.Half.x : -p.Half.x, 0f, k < 2 ? p.Half.z : -p.Half.z) * 0.5f;
 				outside = !GRockAt(q);
 			}
-			if (outside && !_vp.TrenchDone)
+			if (outside && !_vp.TrenchDone && !_vp.RingFixed)
 			{
 				_vp.NeedOutside = true;
 			}
@@ -357,9 +374,10 @@ public partial class HarvestController
 			}
 		}
 		// pop test A3: the trench round this vein was finished - the plan there is, and straight to clearing
-		if (_vp.TrenchDone && _vp.Version > 0 && !VPlannerBusy())
+		// part 2 M2: after lap 1 the ring is fixed - the plan there is, on with the lap being dug
+		if ((_vp.TrenchDone || _vp.RingFixed) && _vp.Version > 0 && !VPlannerBusy())
 		{
-			TPlanAdopt("the trench is already done");
+			TPlanAdopt(_vp.TrenchDone ? "the trench is already done" : $"the ring is fixed, lap {_vp.Lap}");
 			return;
 		}
 		if (others.Count == 0 || _vp.Version == 0)
@@ -489,9 +507,9 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		if (_vp.TrenchDone && _vp.Version == _tPlanVer)
+		if ((_vp.TrenchDone || _vp.RingFixed) && _vp.Version == _tPlanVer)
 		{
-			return false;   // pop test A2: the plan isn't made again once the trench was finished
+			return false;   // pop test A2 / part 2 M2: the plan isn't made again once lap 1 or the trench was finished
 		}
 		if (_vp.Version != _tPlanVer)
 		{

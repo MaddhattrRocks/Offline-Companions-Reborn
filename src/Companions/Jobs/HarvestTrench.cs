@@ -52,11 +52,13 @@ public partial class HarvestController
 
 		public HashSet<int> Gave;
 
-		// no seen rock within 1 m (the band crosses a gap here): its depth comes from the nearest spot that has one
-		public bool NoRock;
-
 		// part 1 B1: its depth is the lowest the game lets this ground go (8 m under its first height), not the rock's base
 		public bool AtFloor;
+
+		// part 2 M2: how low this lap takes it (never under Depth), and done at that, not yet at Depth
+		public float LapDepth;
+
+		public bool LapOnly;
 	}
 
 	private sealed class TLine
@@ -115,8 +117,26 @@ public partial class HarvestController
 
 	private const int TSubBlock = 3;
 
-	// a swing only at ground this high or higher: one swing takes up to 0.5 m, so nothing goes below 30.5 (water at 30)
-	private const float TWater = 31f;
+	// part 2 M1 (John 2026-11-17: floor at 29.5, half a metre of water; the water level is 30): a dig swing only at
+	// ground this high or higher - one swing takes up to 0.5 m, so the ground ends between about 29.3 and 29.75
+	private const float TWater = 29.75f;
+
+	// part 2 M1: the floor where the water stops the digging
+	private const float TWaterFloor = 29.5f;
+
+	// part 2 M1: a shallow vein - the trench stops this far under the lowest part of the whole vein
+	private const float TUnderVein = 1.0f;
+
+	// part 2 M2: a lap lowers a spot by at most this from its ground when the lap began; at most this many laps; a lap
+	// that lowered no spot by TLapMinGain ends the trench
+	private const float TLapStep = 2.0f;
+
+	private const int TMaxLaps = 5;
+
+	private const float TLapMinGain = 0.3f;
+
+	// part 2 M4/M5: a part whose top is less than this above the floor at its place is under the ground
+	private const float TBuriedTop = 0.7f;
 
 	private const int TGridMax = 80;
 
@@ -374,6 +394,7 @@ public partial class HarvestController
 			_oSkip.Clear();
 			_oNoAxe.Clear();
 			_tSideHas = false;
+			_pUnder.Clear();
 		}
 		_oActive = false;
 		_oGo = null;
@@ -553,7 +574,7 @@ public partial class HarvestController
 			{
 				return;
 			}
-			if (_vp.Version > 0 && (_vp.TrenchDone || _vp.Seen.Count <= _vp.PlannedSeen))
+			if (_vp.Version > 0 && (_vp.TrenchDone || _vp.RingFixed || _vp.Seen.Count <= _vp.PlannedSeen))
 			{
 				TPlanAdopt("joined the others");
 				return;
@@ -746,8 +767,10 @@ public partial class HarvestController
 		}
 		int step = Mathf.Max(1, Mathf.RoundToInt(1.0f / _gCell));
 		List<TLine> lines = new List<TLine>();
-		int spots = 0;
+		int spots = 0, floored = 0;
 		float deepest = 0f;
+		// part 2 M1: 1 m under the lowest part of the whole vein (the game's own list of its parts)
+		float under = (_vLowest < float.MaxValue ? _vLowest : float.MinValue) - TUnderVein;
 		foreach (List<int> chain in chains)
 		{
 			TLine line = new TLine();
@@ -763,9 +786,9 @@ public partial class HarvestController
 				s.Tree = tree[i];
 				s.Line = lines.Count;
 				s.Idx = line.S.Count;
-				// out: away from the nearest rock square; depth: the bottom of the visible rock beside it, not below 31 m
+				// out: away from the nearest rock square
 				int ix = i % _gNx, iz = i / _gNx;
-				float bestD = float.MaxValue, bottom = float.MaxValue;
+				float bestD = float.MaxValue;
 				Vector3 nearRock = s.P;
 				for (int dz = -2; dz <= 2; dz++)
 				{
@@ -776,61 +799,35 @@ public partial class HarvestController
 						{
 							continue;
 						}
-						Vector3 rc = GCellPos(jz * _gNx + jx);
 						float d = dx * dx + dz * dz;
 						if (d < bestD)
 						{
 							bestD = d;
-							nearRock = rc;
-						}
-						// the bottom of the lowest seen piece within 1 m (the band's own squares in a gap have no rock)
-						if (_gFoot[jz * _gNx + jx] && RayParts(new Vector3(rc.x, _gBottom, rc.z), Vector3.up, _gTop - _gBottom, _tVisible, out Vector3 up, out _))
-						{
-							bottom = Mathf.Min(bottom, up.y);
+							nearRock = GCellPos(jz * _gNx + jx);
 						}
 					}
 				}
 				s.Out = FlatNorm(s.P - nearRock, FlatNorm(s.P - _tCenter, Vector3.forward));
-				s.NoRock = bottom == float.MaxValue;
-				s.Depth = !s.NoRock ? Mathf.Max(TWater, Mathf.Min(bottom, s.Surface)) : s.Surface;
+				// part 2 M1: one floor for the whole vein - the lowest the game lets this ground go or half a metre of
+				// water, whichever is higher; a shallow vein: 1 m under its lowest part. Not from the pieces seen.
+				float floor = TFloorHard(s.P);
+				s.AtFloor = floor >= under;
+				s.Depth = Mathf.Min(s.Surface, Mathf.Max(floor, under));
+				if (s.AtFloor)
+				{
+					floored++;
+				}
+				deepest = Mathf.Max(deepest, s.Surface - s.Depth);
+				TSetLapDepth(s);
 				line.S.Add(s);
 			}
 			spots += line.S.Count;
 			lines.Add(line);
 		}
-		// where the band crosses a gap: the depth of the nearest ring spot that has seen rock within 1 m
-		int gaps = 0, floored = 0;
 		foreach (TLine line in lines)
 		{
 			foreach (TSpot s in line.S)
 			{
-				if (s.NoRock)
-				{
-					gaps++;
-					float bd = float.MaxValue;
-					foreach (TLine l2 in lines)
-					{
-						foreach (TSpot o in l2.S)
-						{
-							float d = Flat(o.P, s.P);
-							if (!o.NoRock && d < bd)
-							{
-								bd = d;
-								s.Depth = Mathf.Max(TWater, Mathf.Min(o.Depth, s.Surface));
-							}
-						}
-					}
-				}
-				// part 1 B1: never planned deeper than the game lets that ground go (log 97d599fc: 16 give-ups at "-8.0 m
-				// from its first height")
-				float floor = TFloorAt(s.P) + TFloorMargin;
-				if (s.Depth < floor)
-				{
-					s.Depth = Mathf.Min(floor, s.Surface);
-					s.AtFloor = true;
-					floored++;
-				}
-				deepest = Mathf.Max(deepest, s.Surface - s.Depth);
 				// what was closed in the plan before stays closed (a building, deep water, ground that won't go lower, a
 				// companion's own give-ups); a spot at its depth reads as done from the ground
 				foreach (VClosed c in _vp.Closed)
@@ -867,7 +864,7 @@ public partial class HarvestController
 		_vp.Version++;
 		_vp.Planner = null;
 		_vp.NextReplan = Time.time + VReplanGap;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree; {gaps} across a gap{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down, {floored} spot(s) held to the 8 m the game allows");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down, {floored} spot(s) at the floor (the 8 m the game allows, or the water at {TWaterFloor:F1}), the rest 1 m under the vein's lowest part ({_vLowest:F1}); lap {_vp.Lap} of at most {TMaxLaps}, {TLapStep:F0} m a lap");
 		if (CompanionsPlugin.LogDetailed)
 		{
 			for (int l = 0; l < lines.Count; l++)
@@ -1321,6 +1318,11 @@ public partial class HarvestController
 				_ai.StopMoving();
 				return;
 			}
+			// part 2 M2/M3: the next lap, or wait for a companion still on a spot, before the trench counts as over
+			if (TLapNext())
+			{
+				return;
+			}
 			TTrenchDone("every spot is done", allDone: true);
 			return;
 		}
@@ -1505,13 +1507,21 @@ public partial class HarvestController
 		float g = GroundAt(q.P);
 		if (g < TWater)
 		{
-			TSpotDone(q, $"at the water line (ground {g:F1}, the water level is 30) - counts as dug down");
+			TSpotDone(q, $"at the water (ground {g:F1}, the water level is 30, the floor there {TWaterFloor:F1}) - counts as dug down");
+			TNextSpot();
+			return;
+		}
+		if (g <= q.LapDepth + 0.05f && q.LapDepth > q.Depth + 0.05f)
+		{
+			// part 2 M2: this lap's 2 m; the next lap opens it again
+			q.LapOnly = true;
+			TSpotDone(q, $"down to lap {(_vp != null ? _vp.Lap : 1)}'s depth, {g:F1} (its target is {q.Depth:F1})");
 			TNextSpot();
 			return;
 		}
 		if (g <= q.Depth + 0.05f)
 		{
-			TSpotDone(q, q.AtFloor ? $"as low as the game lets this ground go, {g:F1} (8 m under its first height; the rock's base is lower)" : $"down to its depth, {g:F1} ({q.Surface - g:F1} m down)");
+			TSpotDone(q, q.AtFloor ? $"as low as the game lets this ground go, {g:F1} (8 m under its first height; the rock's base is lower)" : $"down to its target, {g:F1} (1 m under the vein's lowest part)");
 			TNextSpot();
 			return;
 		}
@@ -1592,7 +1602,7 @@ public partial class HarvestController
 			TSpot ahead = TSpotAt(_tLine, q.Idx + _tDir);
 			baseDir = ahead != null ? ahead.P - me : Vector3.Cross(Vector3.up, q.Out);
 		}
-		if (!TPickFacing(baseDir, q.P, 1.5f, q.Depth, out Vector3 facing))
+		if (!TPickFacing(baseDir, q.P, 1.5f, q.LapDepth, out Vector3 facing))
 		{
 			// part 1 T2: no swing from here meets dirt first, and what a straight one meets is a thing it can clear
 			if (TPredict(me, FlatNorm(baseDir, base.transform.forward), out _) == TFirst.Other && OCan(_tPredGo))
@@ -1978,6 +1988,54 @@ public partial class HarvestController
 			{
 				_vp.TrenchDone = true;   // pop test A1
 			}
+			if (_vp != null)
+			{
+				// part 2 M2: the trench is over for this companion - with nobody else still on it the ring stays as it is
+				if (TOtherTrenching() == null)
+				{
+					_vp.RingFixed = true;
+				}
+				// part 2 M3 (John 2026-11-17: carry on past a stretch that can't be dug): said once for the vein
+				if (shut < all && !_vp.GapSaid)
+				{
+					_vp.GapSaid = true;
+					string where = "";
+					int shown = 0;
+					foreach (TLine l in _tLines)
+					{
+						foreach (TSpot s in l.S)
+						{
+							if (!s.Done && shown < 6)
+							{
+								where += (shown++ > 0 ? ", " : "") + MHR_Mover.Fmt(s.P);
+							}
+						}
+					}
+					if (CompanionsPlugin.LogNormal) LogInfo($"{all - shut} of the {all} trench spots round \"{_target.name}\" couldn't be dug (at {where}{(all - shut > shown ? ", ..." : "")}) - carrying on with the clearing from the trench there is");
+					_talk?.SayProblem("vein:gap", string.Format(ModLocalization.Loc("hc_speech_vein_trench_gap"), MHR_Items.NiceName(_target)));
+				}
+			}
+		}
+		// part 2 M7: what the clearing starts with
+		if (CompanionsPlugin.LogNormal)
+		{
+			int held = 0, under = 0, hang = 0;
+			foreach (VPart p in _vParts)
+			{
+				if (TBuried(p))
+				{
+					under++;
+				}
+				else if (p.Direct)
+				{
+					held++;
+				}
+				else
+				{
+					hang++;
+				}
+			}
+			LogInfo($"Clearing \"{_target.name}\": {_vParts.Count} parts - {held} held by the ground or something solid (their dirt is dug to the floor, the ones standing in the floor are mined), {hang} hanging on other parts (left alone, they fall), {under} under the ground (top less than {TBuriedTop:F1} m above the floor - ignored)");
 		}
 		_tPhase = TPhasePop;
 		_pRound = 1;
@@ -2112,12 +2170,43 @@ public partial class HarvestController
 		return false;
 	}
 
+	// part 2 M4/M5: a part under the ground - its top is less than 0.7 m above the floor at its place (the lowest the
+	// game lets that ground go, or half a metre of water). Neither the top nor that floor changes, so it's kept per part.
+	private readonly Dictionary<Collider, bool> _pUnder = new Dictionary<Collider, bool>();
+
+	private bool TBuried(VPart p)
+	{
+		if (p.C == null)
+		{
+			return false;
+		}
+		if (!_pUnder.TryGetValue(p.C, out bool under))
+		{
+			float floor = TFloorHard(p.Center), top = p.Center.y + p.Half.y;
+			under = top < floor + TBuriedTop;
+			_pUnder[p.C] = under;
+			if (under && CompanionsPlugin.LogDetailed) Log($"Part \"{p.C.name}\" is under the ground: its top {top:F1} is less than {TBuriedTop:F1} m above the floor there ({floor:F1}) - ignored");
+		}
+		return under;
+	}
+
+	// part 2 M5: only parts under the ground are left - the vein is finished (not a give-up: it doesn't count toward
+	// "gave up twice"), said once with the "buried" line there already is
+	private void TVeinFinished()
+	{
+		string count = _vp != null ? $"about {_vp.ByHand} part(s) mined by hand, {_vp.Fell} fell, " : "";
+		if (CompanionsPlugin.LogNormal) LogInfo($"\"{_target.name}\" is finished: {count}{_vParts.Count} left under the ground (top less than {TBuriedTop:F1} m above the floor)");
+		SayGaveUp(GiveUpWhy.Buried, $"{_vParts.Count} part(s) left, all under the ground");
+		_leaveFinished = true;
+		VeinLeave();
+	}
+
 	private void TPopTick()
 	{
 		VeinSpots();
 		Vector3 me = base.transform.position;
 		VPart part = default(VPart);
-		if (_pPart != null && (!TPartAlive(_pPart, out part) || !part.Direct || _pLeft.Contains(_pPart)))
+		if (_pPart != null && (!TPartAlive(_pPart, out part) || !part.Direct || _pLeft.Contains(_pPart) || TBuried(part)))
 		{
 			_pPart = null;
 		}
@@ -2127,13 +2216,25 @@ public partial class HarvestController
 			bool anyDirect = false;
 			float bd = float.MaxValue, bh = float.MaxValue;
 			Collider heldPart = null;
+			int notUnder = 0, heldUnder = 0;
 			foreach (VPart p in _vParts)
 			{
+				bool under = TBuried(p);
+				if (!under)
+				{
+					notUnder++;
+				}
 				if (!p.Direct)
 				{
 					continue;
 				}
 				anyDirect = true;
+				// part 2 M4.1: a part under the ground is never tried
+				if (under)
+				{
+					heldUnder++;
+					continue;
+				}
 				if (_pLeft.Contains(p.C))
 				{
 					continue;
@@ -2163,6 +2264,11 @@ public partial class HarvestController
 			{
 				_vp.PartHolds[_pPart] = this;
 			}
+			if (notUnder == 0 && _vParts.Count > 0)
+			{
+				TVeinFinished();
+				return;
+			}
 			if (!anyDirect)
 			{
 				// nothing holds it up any more: one break and the game pops the rest
@@ -2173,6 +2279,13 @@ public partial class HarvestController
 					TBeginItem();
 				}
 				TPopBreak();
+				return;
+			}
+			if (_pPart == null && _pLeft.Count == 0)
+			{
+				// part 2 M6: what's left hangs on parts under the ground - the mining lap is the last resort
+				if (CompanionsPlugin.LogNormal) LogInfo($"Nothing more to clear round \"{_target.name}\": the {heldUnder} held part(s) left are under the ground, {notUnder} part(s) still hang on them - the mining lap for what it can reach");
+				TLapStart();
 				return;
 			}
 			if (_pPart == null)
@@ -2264,6 +2377,137 @@ public partial class HarvestController
 		return g - Mathf.Max(0f, 8f + Mathf.Clamp(level[i] + smooth[i], -8f, 8f));
 	}
 
+	// part 2 M1: the floor at p - the lowest the game lets that ground go, or half a metre of water, whichever is higher
+	private static float TFloorHard(Vector3 p)
+	{
+		return Mathf.Max(TFloorAt(p) + TFloorMargin, TWaterFloor);
+	}
+
+	// part 2 M2: the ground at this place when the lap being dug began (kept by place, so a ring made again in lap 1
+	// keeps it); a place not known yet starts from its ground now
+	private float TLapBaseFor(Vector3 p, float groundNow)
+	{
+		if (_vp == null)
+		{
+			return groundNow;
+		}
+		foreach (Vector3 b in _vp.LapBase)
+		{
+			if (Flat(b, p) <= 0.6f)
+			{
+				return b.y;
+			}
+		}
+		_vp.LapBase.Add(new Vector3(p.x, groundNow, p.z));
+		return groundNow;
+	}
+
+	private void TSetLapDepth(TSpot s)
+	{
+		s.LapDepth = Mathf.Max(s.Depth, TLapBaseFor(s.P, GroundAt(s.P)) - TLapStep);
+	}
+
+	// part 2 M3: another companion is still digging a spot of the trench
+	private HarvestController TOtherTrenching()
+	{
+		foreach (HarvestController o in TOthers())
+		{
+			if (o._tPhase == TPhaseTrench && !o._stuckInHole && o._tSub != TSubPick && o._tQ != null && o.TOpen(o._tQ))
+			{
+				return o;
+			}
+		}
+		return null;
+	}
+
+	// part 2 M2: no spot is open for this companion. True = not the end of the trench yet: it waits for a companion
+	// still on a spot, or the next lap has begun (S2 picks a start in it). False = the trench has ended.
+	// A new lap only while under TMaxLaps, and only if this lap lowered some spot by TLapMinGain and some spot closed
+	// at the lap's depth is still above its target. It reopens just those spots; give-ups, spots closed for a fixed
+	// reason, the chop count and the new-start count are not reset.
+	private float _tLapWaitLog;
+
+	private bool TLapNext()
+	{
+		if (_vp == null)
+		{
+			return false;
+		}
+		HarvestController busy = TOtherTrenching();
+		if (busy != null)
+		{
+			_ai.StopMoving();
+			if (Time.time >= _tLapWaitLog)
+			{
+				_tLapWaitLog = Time.time + 10f;
+				if (CompanionsPlugin.LogDetailed) Log($"Nothing left for it on lap {_vp.Lap} - waiting for {busy.MyName} to finish its spot before the next step");
+			}
+			return true;
+		}
+		int all = 0, atTarget = 0, lapOnly = 0, shut = 0, left = 0;
+		bool gained = false;
+		foreach (TLine l in _tLines)
+		{
+			foreach (TSpot s in l.S)
+			{
+				all++;
+				float g = GroundAt(s.P);
+				if (TLapBaseFor(s.P, g) - g >= TLapMinGain)
+				{
+					gained = true;
+				}
+				if (!s.Done)
+				{
+					left++;
+				}
+				else if (s.LapOnly)
+				{
+					lapOnly++;
+				}
+				else if (g <= s.Depth + 0.05f || g < TWater)
+				{
+					atTarget++;
+				}
+				else
+				{
+					shut++;
+				}
+			}
+		}
+		if (!_vp.RingFixed)
+		{
+			_vp.RingFixed = true;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Lap {_vp.Lap} of the trench round \"{_vp.Name}\" is done - the ring stays where it is from here on");
+		}
+		string sum = $"{all} spots: {atTarget} at their target, {lapOnly} at this lap's depth, {shut} closed for a fixed reason, {left} given up";
+		if (_vp.Lap < TMaxLaps && gained && lapOnly > 0)
+		{
+			_vp.Lap++;
+			_vp.LapBase.Clear();
+			foreach (TLine l in _tLines)
+			{
+				foreach (TSpot s in l.S)
+				{
+					float g = GroundAt(s.P);
+					_vp.LapBase.Add(new Vector3(s.P.x, g, s.P.z));
+					s.LapDepth = Mathf.Max(s.Depth, g - TLapStep);
+					if (s.Done && s.LapOnly)
+					{
+						s.Done = false;
+						s.LapOnly = false;
+					}
+				}
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"Trench lap {_vp.Lap} of at most {TMaxLaps} round \"{_vp.Name}\": {lapOnly} spot(s) open again, up to {TLapStep:F0} m lower (after lap {_vp.Lap - 1}: {sum})");
+			_tPickWhy = "lap " + _vp.Lap;
+			_tSub = TSubPick;
+			TBeginItem();
+			return true;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Trench lap {_vp.Lap} was the last ({(lapOnly == 0 ? "no spot is left above its target" : !gained ? $"it lowered no spot by {TLapMinGain:F1} m" : $"{TMaxLaps} laps is the limit")}; {sum})");
+		return false;
+	}
+
 	private static string TLoweredSoFar(Vector3 p)
 	{
 		Heightmap hm = Heightmap.FindHeightmap(p);
@@ -2309,7 +2553,8 @@ public partial class HarvestController
 			float bd = float.MaxValue;
 			foreach (VSpot s in _vSpots)
 			{
-				if (s.Part != part.C || _vStuck.Contains(s.Key) || s.P.y < TWater)
+				// part 2 M4.2: dirt already at the floor (the water, or within 0.15 m of the game's 8 m limit) isn't swung at
+				if (s.Part != part.C || _vStuck.Contains(s.Key) || s.P.y < TWater || s.P.y <= TFloorAt(s.P) + TFloorMargin)
 				{
 					continue;
 				}
@@ -2325,7 +2570,8 @@ public partial class HarvestController
 			{
 				_pStage = 1;
 				TBeginItem();
-				if (CompanionsPlugin.LogDetailed) Log($"No dirt it can dig under \"{part.C.name}\" - mining that part instead");
+				// part 2 M4.3: no dirt above the floor touches it any more and the game still says the ground holds it
+				if (CompanionsPlugin.LogDetailed) Log($"Part \"{part.C.name}\": no dirt spot above the floor is left for it and the ground still holds it (its bottom {part.MinY:F1}, the floor there {TFloorHard(part.Center):F1}) - mining it");
 				return;
 			}
 			TBeginItem();
@@ -2338,20 +2584,22 @@ public partial class HarvestController
 			}
 			if (_tClock - _tWalkSince > TStepTime)
 			{
-				_pStage = 1;
+				// part 2 M4: that spot is left, the next one for this part (the part is mined only with none left)
+				_vStuck.Add(_pSpot.Key);
+				_pHasSpot = false;
 				TBeginItem();
-				if (CompanionsPlugin.LogDetailed) Log($"Couldn't get beside the dirt under \"{part.C.name}\" in {TStepTime:F0}s - mining that part instead");
+				if (CompanionsPlugin.LogDetailed) Log($"Couldn't get beside the dirt at {MHR_Mover.Fmt(_pSpot.P)} under \"{part.C.name}\" in {TStepTime:F0}s - leaving that spot");
 				return;
 			}
 			TWalkLevel(_pSpot.P, 0.4f);
 			return;
 		}
 		_ai.StopMoving();
-		if (!TPickFacing(_pSpot.P - me, _pSpot.P, 1.0f, part.MinY - 0.5f, out Vector3 facing, overRock: true))
+		if (!TPickFacing(_pSpot.P - me, _pSpot.P, 1.0f, Mathf.Max(part.MinY - 0.5f, TFloorAt(_pSpot.P)), out Vector3 facing, overRock: true))
 		{
 			_pStage = 1;
 			TBeginItem();
-			if (CompanionsPlugin.LogDetailed) Log($"\"{part.C.name}\" is too close to the ground to dig under (no swing meets the dirt first) - mining it");
+			if (CompanionsPlugin.LogDetailed) Log($"\"{part.C.name}\" is in the way of the dirt under it (no swing from here meets the dirt first) - mining it");
 			return;
 		}
 		_tKey = part.C.bounds.center;
@@ -2400,6 +2648,10 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (VPart p in _vParts)
 		{
+			if (TBuried(p))
+			{
+				continue;   // part 2 M4.1
+			}
 			float d = Vector3.Distance(TOrigin(), TPartAim(p.C));
 			if (d < bd)
 			{
@@ -2441,6 +2693,21 @@ public partial class HarvestController
 
 	private void TLapTick()
 	{
+		// part 2 M5: only parts under the ground are left - finished
+		bool anyAbove = false;
+		foreach (VPart p in _vParts)
+		{
+			if (!TBuried(p))
+			{
+				anyAbove = true;
+				break;
+			}
+		}
+		if (!anyAbove && _vParts.Count > 0)
+		{
+			TVeinFinished();
+			return;
+		}
 		TSpot s = TLapSpot(_lIdx);
 		Vector3 me = base.transform.position;
 		if (s == null)
@@ -2487,6 +2754,10 @@ public partial class HarvestController
 		Vector3 o = TOrigin();
 		foreach (VPart p in _vParts)
 		{
+			if (TBuried(p))
+			{
+				continue;   // part 2 M6: the mining lap skips parts under the ground
+			}
 			float d = Vector3.Distance(o, TPartAim(p.C));
 			if (d < bd)
 			{
@@ -2524,6 +2795,18 @@ public partial class HarvestController
 		}
 		bool broke = _vParts.Count < _vLastAlive;
 		bool rock = broke || _vHealth < _vLastHealth - 0.01f;
+		// part 2 M7: one part of a break is the one mined, the others fell (kept for the vein, all companions together)
+		if (_vp != null)
+		{
+			if (_vp.LastAlive > _vParts.Count)
+			{
+				int went = _vp.LastAlive - _vParts.Count;
+				_vp.ByHand++;
+				_vp.Fell += went - 1;
+				if (went > 1 && CompanionsPlugin.LogNormal) LogInfo($"{went} parts of \"{_vp.Name}\" went with that break: {went - 1} fell ({_vParts.Count} left)");
+			}
+			_vp.LastAlive = _vParts.Count;
+		}
 		if (broke && _target != null)
 		{
 			_vGiveUps.Remove(_target.GetInstanceID());
@@ -2649,13 +2932,14 @@ public partial class HarvestController
 			}
 			if (_tItemNoProg >= TNoProgSwings)
 			{
+				// part 2 M4: that spot is left, the next one for this part (the part is mined only with none left)
 				if (_pHasSpot)
 				{
 					_vStuck.Add(_pSpot.Key);
 				}
-				_pStage = 1;
+				_pHasSpot = false;
 				TBeginItem();
-				if (CompanionsPlugin.LogDetailed) Log($"The dirt under \"{_pPart?.name}\" won't go lower ({TNoProgSwings} swings) - mining that part instead (the ground at the spot {MHR_Mover.Fmt(_tQPoint)} is {GroundAt(_tQPoint):F2}, the piece's bottom {(_pPart != null && TPartAlive(_pPart, out VPart pb) ? pb.MinY.ToString("F2") : "?")}, the water line {TWater:F0}; the ground there is {TLoweredSoFar(_tQPoint)})");
+				if (CompanionsPlugin.LogDetailed) Log($"The dirt under \"{_pPart?.name}\" won't go lower ({TNoProgSwings} swings) - leaving that spot (the ground at the spot {MHR_Mover.Fmt(_tQPoint)} is {GroundAt(_tQPoint):F2}, the piece's bottom {(_pPart != null && TPartAlive(_pPart, out VPart pb) ? pb.MinY.ToString("F2") : "?")}, the water floor {TWaterFloor:F1}; the ground there is {TLoweredSoFar(_tQPoint)})");
 			}
 			break;
 		}

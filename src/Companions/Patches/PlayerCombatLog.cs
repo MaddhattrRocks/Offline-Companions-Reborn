@@ -260,6 +260,8 @@ internal static class PlayerCombatLog
 		public MineRock5 Rock;
 
 		public int Before;
+
+		public HashSet<string> Names;
 	}
 
 	private struct ObjHit
@@ -313,7 +315,10 @@ internal static class PlayerCombatLog
 		{
 			return;
 		}
-		s_breaks.Add(new Break { At = Time.time, Rock = rock, Before = parts });
+		// part 2 M7: the names of the parts there before, so the ones that fall in a pop can be named
+		HashSet<string> names = new HashSet<string>();
+		HarvestController.VeinNames(rock, names);
+		s_breaks.Add(new Break { At = Time.time, Rock = rock, Before = parts, Names = names });
 	}
 
 	// a vein within 30 m of you: a split rock, or a whole one that splits when hit (looked up at most every 5 s)
@@ -389,6 +394,13 @@ internal static class PlayerCombatLog
 			if (parts < b.Before && CompanionsPlugin.LogDetailed)
 			{
 				Log($"After that hit: {b.Before - parts} part(s) went, {parts} left, {dirt} touching dirt");
+				if (b.Before - parts > 1 && b.Names != null)
+				{
+					HashSet<string> now = new HashSet<string>();
+					HarvestController.VeinNames(b.Rock, now);
+					b.Names.ExceptWith(now);
+					Log($"  the parts that went: {string.Join(", ", b.Names)}");
+				}
 			}
 		}
 		while (s_objHits.Count > 0 && Time.time - s_objHits[0].At >= 0.5f)

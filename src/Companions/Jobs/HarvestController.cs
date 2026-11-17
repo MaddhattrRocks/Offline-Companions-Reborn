@@ -3210,7 +3210,7 @@ public partial class HarvestController : MonoBehaviour
 		int num7 = 0;
 		int num8 = 0;
 		int outOfRange = 0;
-		int claimedSkips = 0;
+		int claimedSkips = 0, underSkips = 0;
 		for (int i = 0; i < num; i++)
 		{
 			Collider collider = _scanBuffer[i];
@@ -3238,6 +3238,11 @@ public partial class HarvestController : MonoBehaviour
 				{
 					LogWarn($"  Tier SKIP \"{harvestCandidateWithType.name}\" — requires tier {minToolTier}, " + $"best tool tier={bestToolTier} (need bronze pickaxe tier≥1 for copper/silver)");
 				}
+			}
+			else if (type == "MineRock5" && mode == 3 && !InDungeonAt(base.transform.position) && VeinAllUnder(harvestCandidateWithType.GetComponent<MineRock5>()))
+			{
+				// part 2 M5: all that's left of this vein is under the ground - finished
+				if (underSkips++ == 0 && CompanionsPlugin.LogDetailed) Log($"  Skipping \"{harvestCandidateWithType.name}\" - every part left of it is under the ground");
 			}
 			else if (_blacklist.ContainsKey(harvestCandidateWithType.GetInstanceID()))
 			{

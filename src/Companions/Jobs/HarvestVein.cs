@@ -261,6 +261,9 @@ public partial class HarvestController
 	// 1.5.97 (test review A2, A3): the vein it left because its pickaxe broke (none other in the bag)
 	private bool _leaveNoTool;
 
+	// part 2 M5: VeinLeave reads it - the vein is finished (only parts under the ground are left), not given up
+	private bool _leaveFinished;
+
 	private GameObject _noToolRock;
 
 	private float _noToolNext;
@@ -832,6 +835,12 @@ public partial class HarvestController
 			_noToolRock = _target;
 			_noToolNext = Time.time + 1f;
 		}
+		else if (_target != null && _leaveFinished)
+		{
+			// part 2 M5: finished, not given up - skipped from here on, and no count toward "gave up twice"
+			_blacklist[_target.GetInstanceID()] = Time.time;
+			_vGiveUps.Remove(_target.GetInstanceID());
+		}
 		else if (_target != null)
 		{
 			int id = _target.GetInstanceID();
@@ -850,6 +859,7 @@ public partial class HarvestController
 				LogWarn($"Stopping the Ore job: gave up on \"{_target.name}\" twice with nothing broken in between (1: {before}; 2: {_lastGiveUpText}) at {MHR_Mover.Fmt(base.transform.position)} - waiting for you (set a job, or move it 5 m)");
 			}
 		}
+		_leaveFinished = false;
 		_xPendingAfter = true;
 		_tChopping = false;
 		VPlanLeave();
@@ -954,6 +964,71 @@ public partial class HarvestController
 			foreach (string l in lines)
 			{
 				log(l);
+			}
+		}
+	}
+
+	// part 2 M5: every part this vein has left is under the ground (top less than 0.7 m above the floor at its place) -
+	// the Ore job's search leaves it. Worked out from the world, so it holds after a restart; looked at again every 30 s.
+	private static readonly Dictionary<int, KeyValuePair<float, bool>> s_vUnder = new Dictionary<int, KeyValuePair<float, bool>>();
+
+	private static readonly List<MHR_Vein.Area> s_vUnderAreas = new List<MHR_Vein.Area>();
+
+	internal static bool VeinAllUnder(MineRock5 rock)
+	{
+		if (rock == null)
+		{
+			return false;
+		}
+		int id = rock.GetInstanceID();
+		if (s_vUnder.TryGetValue(id, out KeyValuePair<float, bool> kv) && Time.time - kv.Key < 30f)
+		{
+			return kv.Value;
+		}
+		if (s_vUnder.Count > 200)
+		{
+			s_vUnder.Clear();
+		}
+		bool all = false;
+		if (MHR_Vein.Areas(rock, s_vUnderAreas, out bool haveBounds))
+		{
+			int alive = 0;
+			all = true;
+			Vector3 origin = rock.transform.position;
+			foreach (MHR_Vein.Area ha in s_vUnderAreas)
+			{
+				if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)
+				{
+					continue;
+				}
+				alive++;
+				Vector3 centre = haveBounds ? origin + ha.BoundPos : ha.Collider.bounds.center;
+				float halfY = haveBounds ? ha.BoundSize.y : ha.Collider.bounds.size.y * 0.5f;
+				if (centre.y + halfY >= TFloorHard(centre) + TBuriedTop)
+				{
+					all = false;
+					break;
+				}
+			}
+			all &= alive > 0;
+		}
+		s_vUnder[id] = new KeyValuePair<float, bool>(Time.time, all);
+		return all;
+	}
+
+	// part 2 M7: the names of a vein's parts that are still there
+	internal static void VeinNames(MineRock5 rock, HashSet<string> into)
+	{
+		into.Clear();
+		if (rock == null || !MHR_Vein.Areas(rock, s_vUnderAreas, out _))
+		{
+			return;
+		}
+		foreach (MHR_Vein.Area ha in s_vUnderAreas)
+		{
+			if (ha.Health > 0f && ha.Collider != null && ha.Collider.gameObject.activeSelf)
+			{
+				into.Add(ha.Collider.name);
 			}
 		}
 	}
