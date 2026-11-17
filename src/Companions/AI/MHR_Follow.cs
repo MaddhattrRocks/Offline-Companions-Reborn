@@ -225,7 +225,7 @@ namespace Companions
                     {
                         Vector3 g;
                         // 1.5.91: and when a cart someone pulls is on it now
-                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g) || MHR_Cart.InCartWay(g, 0.8f)) PickSpot(ai, s, t, pp, maxD, false, 0f);
+                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g) || MHR_Cart.InCartWay(g, CartSpotPad, c)) PickSpot(ai, s, t, pp, maxD, false, 0f);
                         else s.SpotDy = g.y - pp.y;
                     }
                 }
@@ -254,9 +254,7 @@ namespace Companions
                     int pace = Pace(player, dSpot, distP, maxD);
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
-                    // 1.5.92: round a cart someone pulls, like a player
-                    Vector3 via;
-                    if (MHR_Cart.AroundCart(c, me, lead, 0.6f, out via)) { lead = via; CartLogAround(s, c, via, now); }
+                    // 1.5.92: round a cart, like a player - 1.5.97 (C9): now done in MHR_Mover.Go for every walk
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
@@ -286,8 +284,6 @@ namespace Companions
                 if (!s.HasSpot || s.Radius > maxD * 0.7f) PickSpot(ai, s, t, pp, maxD, false, maxD * 0.6f);
                 Vector3 goal = Goal(ai, s, t, pp, tid);
                 s.Moving = true; s.HasIdle = false; s.IdleMoving = false;
-                Vector3 viaBack;
-                if (MHR_Cart.AroundCart(c, me, goal, 0.6f, out viaBack)) { goal = viaBack; CartLogAround(s, c, viaBack, now); }   // 1.5.92
                 MHR_Mover.Go(ai, dt, goal, 1.0f, true, MHR_Mover.FollowTag, distP > maxD + 6f ? MHR_Mover.SpeedRun : MHR_Mover.SpeedJog);
                 // no way up/down to the player's floor while close by: wait here (the mover tries again after a while)
                 if (MHR_Mover.GaveUp(ai)) { if (distP > maxD || c.IsSwimming()) ai.MHR_FollowFallback(target, dt); else ai.StopMoving(); }
@@ -323,9 +319,8 @@ namespace Companions
             }
             if (s.IdleMoving)
             {
-                Vector3 idleAim = s.IdleGoal, viaIdle;
-                if (MHR_Cart.AroundCart(c, me, idleAim, 0.6f, out viaIdle)) { idleAim = viaIdle; CartLogAround(s, c, viaIdle, now); }   // 1.5.92
-                if ((MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) && idleAim == s.IdleGoal) || MHR_Mover.GaveUp(ai))
+                Vector3 idleAim = s.IdleGoal;   // 1.5.97 (C9): round carts in MHR_Mover.Go
+                if (MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))
                 {
                     s.IdleMoving = false; s.NextIdle = now + UnityEngine.Random.Range(6f, 14f);
                     MHR_Mover.Release(ai);
@@ -611,12 +606,25 @@ namespace Companions
             }
             return true;
         }
-        // companions pulling a cart for the same player, nearer the player than this one
-        // 1.5.94: Detailed log only, at most every 3 s per companion
-        static void CartLogAround(S s, Character c, Vector3 via, float now)
+        // 1.5.97 (C6): follow and idle spots keep 1.2 m clear of a cart (step-aside starts at 1.0 m), so a spot is never
+        // somewhere it would step out of again
+        const float CartSpotPad = 1.2f;
+
+        // 1.5.97 (C2): a companion that just took the shafts is pulling from now, even if this code hasn't seen it hitched
+        // yet - so a cart that comes off in the first second goes through the same loss rules (CartFollow)
+        internal static void MarkPulling(CompanionAI ai, Character c, Vagon v)
         {
-            if (now - s.CartLog > 3f) { s.CartLog = now; Dbg(c.m_name + " walks round a cart, via " + via.ToString("F1")); }
+            if (ai == null || v == null) return;
+            S s = Get(ai);
+            s.LastCart = v; s.Loose = null;
+            if (!s.Cart)
+            {
+                s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
+                Dbg(c.m_name + " is pulling a cart (from the hitch)");
+            }
         }
+
+        // companions pulling a cart for the same player, nearer the player than this one
         static int CartRank(CompanionAI ai, S me, int tid, float now)
         {
             int id = ai.gameObject.GetInstanceID(), rank = 0;
@@ -652,7 +660,7 @@ namespace Companions
                 // right behind them)
                 float back = 2f + Rank(ai, tid) * 1.5f;
                 Vector3 p = TrailPoint(t, pp, back);
-                for (int k = 0; k < 8 && MHR_Cart.InCartWay(p, 0.8f); k++) { back += 1.5f; p = TrailPoint(t, pp, back); }
+                for (int k = 0; k < 8 && MHR_Cart.InCartWay(p, CartSpotPad, ai.GetComponent<Character>()); k++) { back += 1.5f; p = TrailPoint(t, pp, back); }
                 return p;
             }
             s.Spot = SpotXZ(s, t, pp);
@@ -685,7 +693,7 @@ namespace Companions
                 Vector3 w = pp + Quaternion.Euler(0f, ang, 0f) * t.Travel * r;
                 Vector3 g;
                 // 1.5.91: never on a cart someone is pulling (the spots behind the player were on top of it)
-                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || MHR_Cart.InCartWay(g, 1f) || !Los(pp, g)) continue;
+                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || MHR_Cart.InCartWay(g, CartSpotPad, ai.GetComponent<Character>()) || !Los(pp, g)) continue;
                 s.Angle = ang; s.Radius = r; s.SpotDy = g.y - pp.y; s.Spot = g;
                 s.HasSpot = true; s.Trail = false;
                 s.NextPick = now + UnityEngine.Random.Range(10f, 25f); s.NextCheck = now + 1f;
@@ -702,6 +710,7 @@ namespace Companions
             g = w;
             RaycastHit hit;
             if (!Physics.Raycast(new Vector3(w.x, pp.y + 2.5f, w.z), Vector3.down, out hit, 6f, GroundMask())) return false;
+            if (MHR_Cart.IsCartInWay(hit.collider)) return false;   // 1.5.97 (C7): never a spot on a cart
             if (hit.normal.y < 0.6f || Mathf.Abs(hit.point.y - pp.y) > 2.5f) return false;
             if (MHR_Water.DepthAt(hit.point) > 1.0f) return false;
             if (MHR_Mover.NearFire(hit.point, 1.2f)) return false;   // 1.4.88: not in the fire pit (1.5.44: nor at its edge)
@@ -752,7 +761,7 @@ namespace Companions
                 Vector3 w = s.IdleAnchor + new Vector3(r.x, 0f, r.y);
                 if (!Ground(w, pp, out g)) continue;
                 float dp = Flat(g, pp);
-                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || MHR_Cart.InCartWay(g, 0.8f) || !Los(s.IdleAnchor, g)) continue;
+                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || MHR_Cart.InCartWay(g, CartSpotPad, ai.GetComponent<Character>()) || !Los(s.IdleAnchor, g)) continue;
                 return true;
             }
             return false;

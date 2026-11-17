@@ -38,6 +38,19 @@
   - S7 clear to pop (John's Q2): held parts (VeinScan Dirt/Solid/Low) nearest first: dig its dirt spots dirt-first, else mine it; solid/low-held parts left; nothing held -> break one; 2 rounds. S7b mining lap 2 laps. S9: two give-ups on one vein with nothing broken -> it waits (_stuckInHole wait, LogWarn with both reasons). S0: pickaxe not in hand 5 s -> give up.
   - AllowDig: only dig swings (_tDigOK), not below 31 m, within 2.5 m of the vein; pit steps within 3 m. Tool log line adds m_multiHit / m_hitThroughWalls / m_lowerDamagePerHit.
 
+### 1.5.97 - carts and the hot tub (John, 2026-11-17: "The NPC's still ran into the carts all over the place and could not stay connected to them. The hottub did not get re-stocked at all."; approved list C1-C10, H1-H4 in reviews/1.5.97-cart-hottub-review.md)
+- Game fact: Vagon.AttachTo calls the static DetachAll, so one game can only ever have one hitched cart; companions all run on the host's game.
+- C1: Harmony on Vagon.AttachTo (marks the puller) and DetachAll (prefix): only carts whose hitch joint is on that same puller let go (MHR_Cart.DetachOnlySamePuller). Reads the private m_instances, m_attachJoin, Detach by reflection; falls back to the game's rule if they can't be read.
+- C2/C3: MHR_Cart.NoteHitch at both hitch points (CompanionInteract.DirectCart, CompanionAI pending cart); MHR_Cart.HitchCheck runs 1 s later from UpdateAI: hitched (or hitched and already lost) -> MHR_Follow.MarkPulling, so CartFollow's loss rules (4 s wait, one re-hitch, second loss in 30 s = leave it) run even for a loss in the first second; never hitched -> hc_speech_cart_left with the reason, no retry.
+- C4: InCartWay / AroundCart / InTheWay look at every loaded cart within 30 m (the game's list), not just carts seen pulled; own cart excluded.
+- C5: InTheWay (step aside) only for a cart that's hitched, seen pulled in the last 1.5 s, or rolling over 0.5 m/s.
+- C6: Follow spot / trail / idle checks pad 1.2 m (MHR_Follow.CartSpotPad); step aside still 1.0 m.
+- C7: MHR_Mover.HopLine treats a cart under the line as "a cart in the way"; MHR_Follow.Ground never puts a spot on a cart. The vehicle layer stays in the masks (ships).
+- C9: walk round a cart moved into MHR_Mover.GoInner (every mode and job, pullers included, own cart excluded); Follow's three AroundCart calls removed.
+- C10: MHR_Mover keeps S.GoalCart = the cart being hitched, or the cart whose box (+1.5 m) holds the goal (deposit order, drop-off); it is left out of the walk-round and the HopLine cart test (MHR_Cart.HopExempt, set for the duration of Go).
+- C8: Detailed log: "[Cart] X hitches a cart: let go of N of its own, M pulled by others stay hitched", hitch result, "[Move|tag] walking round a cart".
+- H1/H2: UpkeepController.PlanFuel also takes a hot tub (Smelter with SmeltController.IsHotTub) under RefuelHotTubs and FuelAtOrBelow; _fire is now a Component; fuel read from ZDOVars.s_fuel, max/fuel item from the piece; full = fuel > max - 1 (Smelter.OnAddFuel); stands at the add-wood switch and adds one piece at a time with RPC_AddFuel. H3 unchanged (smelt job skips it). H4: Detailed "Hot tub: ... fuel x/y (item)" at most once a minute while planning.
+
 ### 1.5.96 - mining redone like a player, dungeon mining, UI speed-ups (John, 2026-11-14: 1.5.95 feedback, approved list 21:15 + answers 21:39-22:01)
 - Fifth 1.5.97 test (v3 build 476b6fb: no dirt dug, no steps, "nothing left to gather"; reviews/1.5.97-v3-test-review.md). Five fixes approved 2026-11-15 14:36, still 1.5.97:
   - Depth comes from the plan only: the level-ray "base of the visible rock" test in TDigTick is gone (it closed spots on untouched ground). John: dig all the way down, no maximum.

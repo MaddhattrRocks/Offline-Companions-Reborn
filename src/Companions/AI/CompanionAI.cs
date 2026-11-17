@@ -1280,6 +1280,7 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "vanilla BaseAI.UpdateAI() false");
 			return false;
 		}
+		MHR_Cart.HitchCheck(this);   // 1.5.97 (C2): a hitch is checked a second later
 		if (WaterSafety.Tick(this, dt))
 		{
 			AIGateDiag.Report(_setup, "WaterSafety");
@@ -1423,6 +1424,7 @@ public class CompanionAI : BaseAI
 					}
 					FreezeTimer = 1f;
 					FollowAfterHitch(PendingCartAttach);
+					MHR_Cart.NoteHitch(this, PendingCartAttach);   // 1.5.97 (C2)
 					PendingCartAttach.Interact(PendingCartHumanoid, hold: false, alt: false);
 					PendingCartAttach = null;
 					PendingCartHumanoid = null;

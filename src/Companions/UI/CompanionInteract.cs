@@ -1286,6 +1286,7 @@ public class CompanionInteract : MonoBehaviour
 			}
 			component5.FreezeTimer = 1f;
 			component5.FollowAfterHitch(vagon);   // 1.5.89
+			MHR_Cart.NoteHitch(component5, vagon);   // 1.5.97 (C2)
 			vagon.Interact(component4, hold: false, alt: false);
 		}
 		else

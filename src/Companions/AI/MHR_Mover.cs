@@ -17,6 +17,7 @@ namespace Companions
             public int Gait = -1; public float GaitAt;   // 1.5.94: walk 0 / jog 1 / run 2 as last set, and when
             public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
             public bool FireReplan;   // 1.5.70: stepped out of a fire - plan again from outside it
+            public Vagon GoalCart; public float NextGoalCart; public float CartLog;   // 1.5.97 (C9/C10): the cart this walk is heading for, and the walk-round log
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
@@ -153,6 +154,7 @@ namespace Companions
                 if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
                 return false;
             }
+            finally { MHR_Cart.HopExempt = null; }
         }
 
         static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag, int speed)
@@ -180,6 +182,11 @@ namespace Companions
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
             else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
             s.LastGo = now; s.Goal = goal; s.Dist = dist;
+            // 1.5.97 (C10, user: "ensure that an NPC can still load items into a cart"): a cart the goal is on or right by
+            // (the cart order, the deposit order, a job's drop-off) is never avoided on this walk; looked up when the goal
+            // moves and once a second
+            if (fresh || shift > 0.5f || now >= s.NextGoalCart) { s.NextGoalCart = now + 1f; s.GoalCart = MHR_Cart.GoalCart(ai, goal); }
+            MHR_Cart.HopExempt = s.GoalCart;
             // 1.5.4: crouched (sneaking up on prey): wade shallow water and walk round instead of jumping - a jump is loud,
             // stands it up and costs stamina (user log: jumped the water while sneaking up on a deer, which then bolted)
             CompanionStamina cst = ai.GetComponent<CompanionStamina>();
@@ -316,6 +323,19 @@ namespace Companions
             // 1.4.140: line up with a doorway on the way and walk straight through it, like a player
             // 1.5.91: not with a cart in tow - stepping across to the doorway's line swings the cart and can pull the shafts loose
             if (!c.IsSwimming() && !MHR_Cart.Pulling(c)) target = DoorwayLine(s, pos, target, now, tag);
+
+            // 1.5.97 (C9, user: "Not running into a cart should go into the shared movement code"): the straight way to the
+            // next point crosses a cart (pulled or parked, not its own, not the one it's walking to): head for the nearer
+            // corner of it first, like a player walking round it. Moved here from Follow so every mode and job does it.
+            if (!c.IsSwimming())
+            {
+                Vector3 via;
+                if (MHR_Cart.AroundCart(c, pos, target, 0.6f, out via, s.GoalCart))
+                {
+                    target = via;
+                    if (CompanionsPlugin.LogDetailed && now - s.CartLog > 3f) { s.CartLog = now; Dbg("[Move|" + tag + "] walking round a cart, via " + Fmt(via)); }
+                }
+            }
 
             // a closed door right ahead: open it before walking into it
             if (now >= s.NextDoorPeek)
@@ -2402,6 +2422,8 @@ namespace Companions
                 RaycastHit hit;
                 // 1.4.84: from just above where the feet are, like walking: a roof or an upper floor overhead isn't the ground
                 bool ground = Physics.Raycast(new Vector3(p.x, prev.y + 1.5f, p.z), Vector3.down, out hit, 2f + maxDrop, Mask());
+                // 1.5.97 (C7): a cart isn't a step to hop onto (its bed read as ground) - something in the way; go round
+                if (ground && MHR_Cart.IsCartInWay(hit.collider)) { s_hopWhy = "a cart in the way at " + Fmt(p); return false; }
                 float rise = ground ? hit.point.y - prev.y : -100f;
                 if (!ground || rise < -maxDrop)
                 {
