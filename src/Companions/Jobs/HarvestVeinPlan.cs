@@ -107,6 +107,14 @@ public partial class HarvestController
 		public readonly List<Vector3> AxeSpots = new List<Vector3>();
 
 		public float LastWork;
+
+		// list v2 V2: the veins of this job - the first is the one the plan was made for, the others joined it (a deposit
+		// whose box came within VJoinGap of one already in the job). Only added to, so a vein keeps its place.
+		public readonly List<MineRock5> Rocks = new List<MineRock5>();
+
+		// list v2 V3: deposits that couldn't join (no reach for the splitting hit, a pickaxe too weak, or another job's)
+		// - never tried again for this plan
+		public readonly HashSet<int> LeftOut = new HashSet<int>();
 	}
 
 	// kept 1 hour after the last companion worked the vein (John 2026-11-15 16:05)
@@ -179,11 +187,23 @@ public partial class HarvestController
 				s_vPlans.Remove(k);
 			}
 		}
+		// list v2 V2: a vein joined to another's job works to that job's plan
+		foreach (VPlan jp in s_vPlans.Values)
+		{
+			if (rock != null && jp.Rocks.Contains(rock))
+			{
+				return jp;
+			}
+		}
 		string key = VPlanKey(rock);
 		if (!s_vPlans.TryGetValue(key, out VPlan p))
 		{
 			p = new VPlan { Key = key, Name = name, LastWork = Time.time };
 			s_vPlans[key] = p;
+		}
+		if (p.Rocks.Count == 0 && rock != null)
+		{
+			p.Rocks.Add(rock);
 		}
 		return p;
 	}
@@ -353,6 +373,11 @@ public partial class HarvestController
 	private void TPlanEnter()
 	{
 		_vp = VPlanFor(_vRock, _target != null ? _target.name : "?");
+		// list v2 V4: the parts of every vein of the job from now on
+		VeinScan(force: true);
+		_vLastHealth = _vHealth;
+		_vLastAlive = _vParts.Count;
+		_vLastDirt = _vDirtCount;
 		_vp.Workers[this] = Time.time;
 		_vp.LastWork = Time.time;
 		_tMine.Clear();
@@ -553,7 +578,7 @@ public partial class HarvestController
 	}
 
 	// this companion gives up on a spot: it's left for the others (the hold ends), and counts as done for this one
-	private void TSpotGave(TSpot q, string why)
+	private void TSpotGave(TSpot q, string why, bool quiet = false)
 	{
 		if (q == null || !TOpen(q))
 		{
@@ -565,7 +590,11 @@ public partial class HarvestController
 			q.Holder = null;
 		}
 		_vp?.Closed.Add(new VClosed { P = q.P, Who = MyId });
-		if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {q.Idx + 1}/{_tLines[q.Line].S.Count} (line {q.Line + 1}) at {MHR_Mover.Fmt(q.P)}: giving up on it ({why})");
+		if (quiet)
+		{
+			if (CompanionsPlugin.LogDetailed) Log($"Trench spot {q.Idx + 1}/{_tLines[q.Line].S.Count} (line {q.Line + 1}) at {MHR_Mover.Fmt(q.P)}: giving up on it ({why})");
+		}
+		else if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {q.Idx + 1}/{_tLines[q.Line].S.Count} (line {q.Line + 1}) at {MHR_Mover.Fmt(q.P)}: giving up on it ({why})");
 	}
 
 	private HarvestController TPartHeldBy(Collider c)
@@ -635,5 +664,274 @@ public partial class HarvestController
 			_gRock[i] = inside;
 		}
 		return hull.Count;
+	}
+
+	// ---------- list v2 V1-V3: deposits touching the vein are one job ----------
+	private const float VJoinGap = 4f;
+
+	private bool _tSplitDone;
+
+	private bool _tSplitWasTrench;
+
+	// the highest tool tier of a pickaxe in its bag that isn't broken (HasWorkingPick's rule, without log lines)
+	private int VBestPickTier()
+	{
+		int best = -1;
+		Inventory inv = _humanoid != null ? _humanoid.GetInventory() : null;
+		if (inv == null)
+		{
+			return best;
+		}
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (it?.m_shared == null || Worn(it) || it.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Bow || !string.IsNullOrEmpty(it.m_shared.m_ammoType))
+			{
+				continue;
+			}
+			if (it.GetDamage().m_pickaxe > 0f)
+			{
+				best = Mathf.Max(best, it.m_shared.m_toolTier);
+			}
+		}
+		return best;
+	}
+
+	private static readonly List<MHR_Vein.Area> s_vJoinAreas = new List<MHR_Vein.Area>();
+
+	// the box round a deposit: its live parts (a split vein) or its own colliders (a whole one)
+	private static bool VDepositBox(GameObject go, out Bounds box)
+	{
+		box = default(Bounds);
+		bool any = false;
+		MineRock5 m = go != null ? go.GetComponent<MineRock5>() : null;
+		if (m != null)
+		{
+			if (!MHR_Vein.Areas(m, s_vJoinAreas, out _))
+			{
+				return false;
+			}
+			foreach (MHR_Vein.Area a in s_vJoinAreas)
+			{
+				if (a.Health <= 0f || a.Collider == null || !a.Collider.gameObject.activeSelf)
+				{
+					continue;
+				}
+				if (!any)
+				{
+					box = a.Collider.bounds;
+					any = true;
+				}
+				else
+				{
+					box.Encapsulate(a.Collider.bounds);
+				}
+			}
+			return any;
+		}
+		if (go == null)
+		{
+			return false;
+		}
+		foreach (Collider c in go.GetComponentsInChildren<Collider>())
+		{
+			if (c == null || !c.enabled || c.isTrigger)
+			{
+				continue;
+			}
+			if (!any)
+			{
+				box = c.bounds;
+				any = true;
+			}
+			else
+			{
+				box.Encapsulate(c.bounds);
+			}
+		}
+		return any;
+	}
+
+	// the flat gap between two boxes (0 when they overlap seen from above)
+	private static float VFlatGap(Bounds a, Bounds b)
+	{
+		float dx = Mathf.Max(0f, Mathf.Max(a.min.x - b.max.x, b.min.x - a.max.x));
+		float dz = Mathf.Max(0f, Mathf.Max(a.min.z - b.max.z, b.min.z - a.max.z));
+		return Mathf.Sqrt(dx * dx + dz * dz);
+	}
+
+	private bool VInOtherPlan(MineRock5 m)
+	{
+		foreach (VPlan p in s_vPlans.Values)
+		{
+			if (p != _vp && p.Rocks.Contains(m) && p.Workers.Count > 0)
+			{
+				foreach (KeyValuePair<HarvestController, float> kv in p.Workers)
+				{
+					if (VActive(kv.Key))
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	// V2: every deposit the Ore job would mine (its own scan test) whose box comes within VJoinGap (flat) of a vein
+	// already in the job joins it, again and again until none is added (a third touching the second joins too). A
+	// whole deposit (not split yet) is handed back for its splitting hit first (V3). Only while the ring isn't fixed (V7).
+	private GameObject VJoin(out int added)
+	{
+		added = 0;
+		if (_vp == null || _vp.RingFixed || _vp.TrenchDone || _vp.Rocks.Count == 0)
+		{
+			return null;
+		}
+		int mask = s_vMask & ~(1 << s_vTerrain);
+		int tier = VBestPickTier();
+		GameObject split = null;
+		float splitGap = float.MaxValue;
+		bool changed = true;
+		HashSet<int> looked = new HashSet<int>();
+		while (changed)
+		{
+			changed = false;
+			List<Bounds> boxes = new List<Bounds>();
+			foreach (MineRock5 r in _vp.Rocks)
+			{
+				if (r != null && VDepositBox(r.gameObject, out Bounds rb))
+				{
+					boxes.Add(rb);
+				}
+			}
+			foreach (Bounds b in boxes)
+			{
+				Collider[] cols = Physics.OverlapBox(b.center, new Vector3(b.extents.x + VJoinGap, b.extents.y + 4f, b.extents.z + VJoinGap), Quaternion.identity, mask, QueryTriggerInteraction.Ignore);
+				foreach (Collider col in cols)
+				{
+					string type = null;
+					GameObject go = col != null ? GetHarvestCandidateWithType(col, 3, out type) : null;
+					if (go == null)
+					{
+						continue;
+					}
+					int id = go.GetInstanceID();
+					MineRock5 m = go.GetComponent<MineRock5>();
+					if ((m != null && _vp.Rocks.Contains(m)) || _vp.LeftOut.Contains(id) || !looked.Add(id))
+					{
+						continue;
+					}
+					if (type != "MineRock5" && type != "Destructible")
+					{
+						continue;   // a one-piece ore rock: left alone (V1); a swing that meets it closes the spot as today
+					}
+					if (!VDepositBox(go, out Bounds db))
+					{
+						continue;
+					}
+					float gap = float.MaxValue;
+					foreach (Bounds b2 in boxes)
+					{
+						gap = Mathf.Min(gap, VFlatGap(b2, db));
+					}
+					if (gap > VJoinGap)
+					{
+						looked.Remove(id);   // may come within reach of a vein that joins later in this pass
+						continue;
+					}
+					int need = m != null ? m.m_minToolTier : (go.GetComponent<Destructible>()?.m_minToolTier ?? 0);
+					if (need > tier)
+					{
+						_vp.LeftOut.Add(id);
+						if (CompanionsPlugin.LogNormal) LogInfo($"A deposit {gap:F1} m from \"{_vp.Name}\" at {MHR_Mover.Fmt(go.transform.position)} needs pickaxe tier {need} (its best is {tier}) - not joined, the trench works round it");
+						continue;
+					}
+					if (m != null)
+					{
+						if (VInOtherPlan(m))
+						{
+							_vp.LeftOut.Add(id);
+							if (CompanionsPlugin.LogNormal) LogInfo($"A vein {gap:F1} m from \"{_vp.Name}\" at {MHR_Mover.Fmt(go.transform.position)} is another job that companions are on - not joined");
+							continue;
+						}
+						_vp.Rocks.Add(m);
+						added++;
+						changed = true;
+						if (CompanionsPlugin.LogNormal) LogInfo($"Joining the vein at {MHR_Mover.Fmt(go.transform.position)} to \"{_vp.Name}\" ({gap:F1} m from it): one job, one trench round all {_vp.Rocks.Count}");
+					}
+					else if (gap < splitGap)
+					{
+						split = go;
+						splitGap = gap;
+					}
+				}
+			}
+		}
+		return split;
+	}
+
+	// V2/V3, at the start of each plan made before the ring is fixed: join what touches; a whole deposit first gets its
+	// splitting hit (the obstacle walk and swing with their limits). True = that hit is under way.
+	private bool VJoinStep()
+	{
+		GameObject split = VJoin(out int added);
+		if (added > 0)
+		{
+			VeinScan(force: true);
+			_vLastHealth = _vHealth;
+			_vLastAlive = _vParts.Count;
+			_vLastDirt = _vDirtCount;
+			TSeeCheck(base.transform.position, all: true);
+		}
+		if (split == null)
+		{
+			return false;
+		}
+		_vp.Planner = this;
+		_vp.PlannerAt = Time.time;
+		_tPhase = TPhasePlan;
+		_gGround = null;
+		OBegin(split, OCtx.Split, $"a deposit within {VJoinGap:F0} m of \"{_vp.Name}\" - its splitting hit first, then it joins the job");
+		return true;
+	}
+
+	// L1: which rock a swing or a step met - a vein of this job (and the part), or a rock outside it
+	private string VRockWhat(GameObject go, Collider col = null)
+	{
+		MineRock5 m = go != null ? go.GetComponentInParent<MineRock5>() : null;
+		if (m != null && VInGroup(m))
+		{
+			int n = _vp != null ? Mathf.Max(1, _vp.Rocks.Count) : 1, i = _vp != null ? _vp.Rocks.IndexOf(m) : 0;
+			string part = "";
+			if (col != null)
+			{
+				foreach (VPart p in _vParts)
+				{
+					if (p.C == col)
+					{
+						part = $", part {p.Idx % VSlot}";
+						break;
+					}
+				}
+			}
+			return $"vein {i + 1} of {n} of this job at {MHR_Mover.Fmt(m.transform.position)}{part}";
+		}
+		Transform t = m != null ? m.transform : go != null ? go.transform : null;
+		return $"a rock outside the job{(go != null ? " (" + go.name + ")" : "")}{(t != null ? " at " + MHR_Mover.Fmt(t.position) : "")}";
+	}
+
+	// L2: the plan line's list of the job's deposits
+	private string VJoinedText()
+	{
+		if (_vp == null || _vp.Rocks.Count < 2)
+		{
+			return "";
+		}
+		List<string> at = new List<string>();
+		foreach (MineRock5 r in _vp.Rocks)
+		{
+			at.Add(r != null ? MHR_Mover.Fmt(r.transform.position) : "(gone)");
+		}
+		return $"; {_vp.Rocks.Count} deposits in this job: " + string.Join(", ", at);
 	}
 }

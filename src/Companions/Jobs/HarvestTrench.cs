@@ -167,6 +167,9 @@ public partial class HarvestController
 	// in a hole: the place it's heading for is this much or more above its feet
 	private const float TExitDepth = 1.5f;
 
+	// list v2 H6: after a vein the watch for "the mover gave up below the outer rim" ends this far outside the vein's box
+	private const float XAfterClear = 6f;
+
 	private const int XMaxClimbs = 1;
 
 	// test review B3: a next spot farther off than this is walked to under the start rules
@@ -293,6 +296,31 @@ public partial class HarvestController
 
 	private Collider _pPart;
 
+	// list v2 V6: the vein of the job being cleared now, and the last one logged
+	private MineRock5 _pCur;
+
+	private MineRock5 _pCurSaid;
+
+	private MineRock5 TPopRock()
+	{
+		MineRock5 best = null;
+		float by = float.MaxValue;
+		foreach (VPart p in _vParts)
+		{
+			if (p.Rock == null || TBuried(p))
+			{
+				continue;
+			}
+			float y = p.Rock.transform.position.y;
+			if (y < by)
+			{
+				by = y;
+				best = p.Rock;
+			}
+		}
+		return best;
+	}
+
 	private int _pStage;
 
 	private bool _pHasSpot;
@@ -398,6 +426,10 @@ public partial class HarvestController
 		}
 		_oActive = false;
 		_oGo = null;
+		_tSplitDone = false;
+		_tSplitWasTrench = false;
+		_pCur = null;
+		_pCurSaid = null;
 		_tSideUntil = 0f;
 		_tAxeWaiting = false;
 		_pRound = 0;
@@ -477,7 +509,15 @@ public partial class HarvestController
 	// ---------- S1: the plan ----------
 	private void TPlanBegin()
 	{
-		_tWasTrench = _tPhase == TPhaseTrench;   // B2: the planner's own place is kept only from the trench
+		bool wasTrench = _tPhase == TPhaseTrench || _tSplitWasTrench;
+		_tSplitWasTrench = false;
+		// list v2 V2/V3: deposits touching the vein join the job first (a whole one gets its splitting hit)
+		if (VJoinStep())
+		{
+			_tSplitWasTrench = wasTrench;
+			return;
+		}
+		_tWasTrench = wasTrench;   // B2: the planner's own place is kept only from the trench
 		_vp.Planner = this;
 		_vp.PlannerAt = Time.time;
 		_vp.NextReplan = Time.time + VReplanGap;
@@ -574,11 +614,13 @@ public partial class HarvestController
 			{
 				return;
 			}
-			if (_vp.Version > 0 && (_vp.TrenchDone || _vp.RingFixed || _vp.Seen.Count <= _vp.PlannedSeen))
+			// list v2 V3: after a splitting hit the plan is made again (the vein it became joins)
+			if (!_tSplitDone && _vp.Version > 0 && (_vp.TrenchDone || _vp.RingFixed || _vp.Seen.Count <= _vp.PlannedSeen))
 			{
 				TPlanAdopt("joined the others");
 				return;
 			}
+			_tSplitDone = false;
 			TPlanBegin();
 			return;
 		}
@@ -665,7 +707,7 @@ public partial class HarvestController
 				{
 					continue;
 				}
-				if (_vRock != null && col.GetComponentInParent<MineRock5>() == _vRock)
+				if (VInGroup(col.GetComponentInParent<MineRock5>()))
 				{
 					continue;
 				}
@@ -864,7 +906,7 @@ public partial class HarvestController
 		_vp.Version++;
 		_vp.Planner = null;
 		_vp.NextReplan = Time.time + VReplanGap;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down, {floored} spot(s) at the floor (the 8 m the game allows, or the water at {TWaterFloor:F1}), the rest 1 m under the vein's lowest part ({_vLowest:F1}); lap {_vp.Lap} of at most {TMaxLaps}, {TLapStep:F0} m a lap");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan {_vp.Version} for \"{_target.name}\": {(_tNoneVisible ? "no part shows above the ground (using all " + _vParts.Count + ")" : _tVisible.Count + " of " + _vParts.Count + " parts seen")}, {_vDirtCount} held by dirt; a {_gNx} x {_gNz} grid of {_gCell:F1} m squares, the band round them has {corners} corners and {rockCount} squares inside; {lines.Count} line(s), {spots} spots ({nRing} trench squares, left out: {nBuilt} built, {nWater} water, {nWard} ward or no-build; {nTree} with a tree{(dropped > 0 ? "; " + dropped + " short piece(s) dropped" : "")}), deepest spot {deepest:F1} m down, {floored} spot(s) at the floor (the 8 m the game allows, or the water at {TWaterFloor:F1}), the rest 1 m under the vein's lowest part ({_vLowest:F1}); lap {_vp.Lap} of at most {TMaxLaps}, {TLapStep:F0} m a lap{VJoinedText()}");
 		if (CompanionsPlugin.LogDetailed)
 		{
 			for (int l = 0; l < lines.Count; l++)
@@ -1088,7 +1130,7 @@ public partial class HarvestController
 		{
 			for (int k = 0; k < gos.Count; k++)
 			{
-				if (gos[k].GetComponent<MineRock5>() == _vRock)
+				if (VInGroup(gos[k].GetComponent<MineRock5>()))
 				{
 					TSee(cols[k], "the swing check met it");
 				}
@@ -1101,7 +1143,7 @@ public partial class HarvestController
 		{
 			return TFirst.Dirt;
 		}
-		if (_vRock != null && gos[0].GetComponent<MineRock5>() == _vRock)
+		if (VInGroup(gos[0].GetComponent<MineRock5>()))
 		{
 			return TFirst.Vein;
 		}
@@ -1405,11 +1447,13 @@ public partial class HarvestController
 			TBeginItem();
 			return;
 		}
-		// below the rim of its own trench: get out first, then walk there
-		if (!_tStartExited && me.y <= g - TExitDepth && Flat(me, q.P) > 1.5f)
+		// list v2 H1/H2 (log ff6c8861: on a hillside the height of a spot 20 m away read as a 9 m pit): a plain walk by
+		// the normal route first, the mover's own climb included. Its own getting-out only once the mover has given up on
+		// this walk, and only up to the trench's outer rim beside it (XBeginOuter) - once per walk.
+		if (!_tStartExited && _tClock - _tWalkSince > 2f && MHR_Mover.GaveUp(_ai))
 		{
 			_tStartExited = true;
-			if (XBegin("to walk to the next start", new Vector3(q.P.x, g, q.P.z)))
+			if (XBeginOuter("the walk to the next start found no way", _tCenter))
 			{
 				return;
 			}
@@ -1610,7 +1654,7 @@ public partial class HarvestController
 				OBegin(_tPredGo, OCtx.Trench, "a straight swing meets it before the dirt");
 				return;
 			}
-			TSpotDone(q, "rock in front: no way to face it that meets dirt first - left for the mining", keep: true);
+			TSpotDone(q, $"rock in front ({VRockWhat(_tPredGo, _tPredCol)}): no way to face it that meets dirt first - left for the mining", keep: true);
 			TNextSpot();
 			return;
 		}
@@ -1701,7 +1745,7 @@ public partial class HarvestController
 		}
 		else if (col.GetComponentInParent<MineRock5>() != null || col.GetComponentInParent<MineRock>() != null)
 		{
-			TBlockBegin(TBlock.Rock, go, hit.point, dir, "rock (" + go.name + ")", col);
+			TBlockBegin(TBlock.Rock, go, hit.point, dir, "rock (" + VRockWhat(go, col) + ")", col);
 		}
 		else if (OCan(col.gameObject) && (col.GetComponentInParent<TreeBase>() != null || col.GetComponentInParent<TreeLog>() != null))
 		{
@@ -1857,7 +1901,7 @@ public partial class HarvestController
 				return;
 			}
 			_tChopping = true;
-			TChopSwing(axe, _bPoint);
+			TChopSwing(axe, _bPoint, TFor.BlockObj, _bGo);
 			return;
 		}
 		case TBlock.Person:
@@ -1947,7 +1991,7 @@ public partial class HarvestController
 		TNewStart(why);
 	}
 
-	private void TNewStart(string why)
+	private void TNewStart(string why, bool quiet = false)
 	{
 		_tNewStarts++;
 		if (_tNewStarts > TMaxNewStarts)
@@ -1955,7 +1999,11 @@ public partial class HarvestController
 			TTrenchDone($"blocked again ({why}) after {TMaxNewStarts} new starts");
 			return;
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"A new start ({_tNewStarts} of {TMaxNewStarts}): {why}");
+		if (quiet)
+		{
+			if (CompanionsPlugin.LogDetailed) Log($"A new start ({_tNewStarts} of {TMaxNewStarts}): {why}");
+		}
+		else if (CompanionsPlugin.LogNormal) LogInfo($"A new start ({_tNewStarts} of {TMaxNewStarts}): {why}");
 		_tSub = TSubPick;   // S2 gets out toward the start it picks
 	}
 
@@ -2093,9 +2141,9 @@ public partial class HarvestController
 		{
 			return -2f;
 		}
-		if (_vRock != null && go.GetComponentInParent<MineRock5>() == _vRock)
+		if (VInGroup(go.GetComponentInParent<MineRock5>()))
 		{
-			return _vHealth;
+			return _vHealth;   // list v2 V5: any vein of the job counts
 		}
 		ZNetView nv = go.GetComponentInParent<ZNetView>();
 		ZDO z = nv != null && nv.IsValid() ? nv.GetZDO() : null;
@@ -2103,8 +2151,18 @@ public partial class HarvestController
 	}
 
 	// the axe swing: the axe in hand, a breather when low (the same numbers as the pickaxe), then the game's attack
-	private void TChopSwing(ItemDrop.ItemData axe, Vector3 aim, TFor why = TFor.BlockObj)
+	// list v2 T1: a stump (the wood job's own test: a Destructible named "stub") - the wood job's downward power chop
+	// when the axe has one (WantsPowerChop, HarvestController.cs); the sideways swing passes over a low stump (log
+	// ff6c8861: Gunter's bronze axe, "the last hit nothing it reported")
+	private static bool TIsStump(GameObject go)
 	{
+		Destructible d = go != null ? go.GetComponentInParent<Destructible>() : null;
+		return d != null && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) >= 0;
+	}
+
+	private void TChopSwing(ItemDrop.ItemData axe, Vector3 aim, TFor why = TFor.BlockObj, GameObject thing = null)
+	{
+		bool power = TIsStump(thing) && axe != null && axe.HaveSecondaryAttack();
 		VeinFace(aim);
 		_attackTimer -= Time.deltaTime;
 		if (_attackTimer > 0f)
@@ -2117,7 +2175,7 @@ public partial class HarvestController
 			_attackTimer = 0.25f;
 			return;
 		}
-		float cost = SwingStamina(axe, secondary: false);
+		float cost = SwingStamina(axe, secondary: power);
 		if (_stamina != null && cost > 0f)
 		{
 			float max = Mathf.Max(1f, _stamina.MaxStamina);
@@ -2134,7 +2192,8 @@ public partial class HarvestController
 				return;
 			}
 		}
-		bool started = _humanoid.StartAttack(null, secondaryAttack: false);
+		bool started = _humanoid.StartAttack(null, secondaryAttack: power);
+		if (started && power && CompanionsPlugin.LogDetailed) Log($"A stump: the downward power chop with {axe.m_shared.m_name} (the wood job's way)");
 		_attackTimer = started ? 0.4f : 0.5f;
 		if (!started)
 		{
@@ -2206,7 +2265,21 @@ public partial class HarvestController
 		VeinSpots();
 		Vector3 me = base.transform.position;
 		VPart part = default(VPart);
-		if (_pPart != null && (!TPartAlive(_pPart, out part) || !part.Direct || _pLeft.Contains(_pPart) || TBuried(part)))
+		// list v2 V6: vein by vein, the lowest vein of the job first (each is finished by the rules below)
+		_pCur = TPopRock();
+		if (_pCur != null && _pCur != _pCurSaid)
+		{
+			// a new vein of the job: its own clearing rounds (the order only moves on, so no vein comes back)
+			if (_pCurSaid != null)
+			{
+				_pRound = 1;
+				_pLeft.Clear();
+				_pPart = null;
+			}
+			_pCurSaid = _pCur;
+			if (_vp != null && _vp.Rocks.Count > 1 && CompanionsPlugin.LogNormal) LogInfo($"Clearing vein {_vp.Rocks.IndexOf(_pCur) + 1} of {_vp.Rocks.Count} of this job (at {MHR_Mover.Fmt(_pCur.transform.position)}, the lowest with parts above the ground)");
+		}
+		if (_pPart != null && (!TPartAlive(_pPart, out part) || !part.Direct || _pLeft.Contains(_pPart) || TBuried(part) || (_pCur != null && part.Rock != _pCur)))
 		{
 			_pPart = null;
 		}
@@ -2219,6 +2292,10 @@ public partial class HarvestController
 			int notUnder = 0, heldUnder = 0;
 			foreach (VPart p in _vParts)
 			{
+				if (_pCur != null && p.Rock != _pCur)
+				{
+					continue;
+				}
 				bool under = TBuried(p);
 				if (!under)
 				{
@@ -2308,7 +2385,14 @@ public partial class HarvestController
 			TBeginItem();
 			if (!part.Dirt)
 			{
-				TPopLeave($"held by {(part.Solid ? "something solid that isn't the vein" : "rock lower down")}, not dirt");
+				if (!part.Join || part.Solid || part.Low)
+				{
+					TPopLeave($"held by {(part.Solid ? "something solid that isn't the vein" : "rock lower down")}, not dirt");
+					return;
+				}
+				// list v2 V6: held only by another vein of the job lying lower - mined by hand, as a part standing in the
+				// floor, so the veins come apart
+				if (CompanionsPlugin.LogDetailed) Log($"Clearing part \"{_pPart.name}\": held by another vein of this job lower down - mining it to separate them");
 				return;
 			}
 			if (CompanionsPlugin.LogDetailed) Log($"Clearing part \"{_pPart.name}\": held by dirt, {Vector3.Distance(me, part.Center):F1} m away");
@@ -2648,6 +2732,10 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (VPart p in _vParts)
 		{
+			if (_pCur != null && p.Rock != _pCur)
+			{
+				continue;   // list v2 V6
+			}
 			if (TBuried(p))
 			{
 				continue;   // part 2 M4.1
@@ -2911,6 +2999,12 @@ public partial class HarvestController
 			}
 			else if (++_bNoProg >= TNoProgSwings && _tQ != null)
 			{
+				// list v2 S1 (log ff6c8861: Comp gave spot 37 up for itself and the other two walked to it in turn): rock in
+				// front that takes no damage closes the spot for everyone, and it stays closed when the plan is made again
+				if (_bKind == TBlock.Rock)
+				{
+					TSpotDone(_tQ, $"rock in front that takes no damage ({TNoProgSwings} swings) - closed for everyone", keep: true);
+				}
 				TBlockUnknown(_tQ, $"{_bKind.ToString().ToLowerInvariant()} in front that takes no damage ({TNoProgSwings} swings)");
 			}
 			break;
@@ -3048,8 +3142,40 @@ public partial class HarvestController
 	private bool XBegin(string why, Vector3 dest)
 	{
 		Vector3 me = base.transform.position;
-		_xOut = FlatNorm(dest - me, base.transform.forward);
-		_xRimY = XTargetY(me, dest);
+		return XBeginAt(why, me, FlatNorm(dest - me, base.transform.forward), XTargetY(me, dest), dest);
+	}
+
+	// list v2 H2: the trench's outer rim beside it - the highest ground 1, 2 and 3 m out on the side away from the
+	// vein's middle
+	private float XOuterRim(Vector3 me, Vector3 mid, out Vector3 outDir)
+	{
+		outDir = FlatNorm(me - mid, base.transform.forward);
+		float top = float.MinValue;
+		for (float t = 1f; t <= 3f; t += 1f)
+		{
+			top = Mathf.Max(top, GroundAt(me + outDir * t));
+		}
+		return top;
+	}
+
+	// list v2 H2: getting out to the outer rim beside it (never to the height of a far place). True = it has started;
+	// false = its feet are less than TExitDepth below that rim (plain walking)
+	private bool XBeginOuter(string why, Vector3 mid)
+	{
+		Vector3 me = base.transform.position;
+		float rim = XOuterRim(me, mid, out Vector3 outDir);
+		if (rim - me.y < TExitDepth)
+		{
+			return false;
+		}
+		MHR_Mover.Release(_ai);   // the walk that gave up is over - the mover starts clean after the getting-out
+		return XBeginAt(why, me, outDir, rim, me + outDir * 3f);
+	}
+
+	private bool XBeginAt(string why, Vector3 me, Vector3 outDir, float rimY, Vector3 dest)
+	{
+		_xOut = outDir;
+		_xRimY = rimY;
 		_xRim = new Vector3(dest.x, _xRimY, dest.z);
 		float depth = _xRimY - me.y;
 		if (depth < TExitDepth)
@@ -3326,12 +3452,20 @@ public partial class HarvestController
 		}
 		if (!_xActive)
 		{
-			_xPendingAfter = false;
-			// fix 4: measured against where it goes next: a chest, the ore spot, you (Follow), or where the job started
-			if (!MHR_GatherRules.AfterVeinGoal(this, out Vector3 dest, out string what) || !XBegin("after the vein, heading for " + what, dest))
+			// list v2 H6: the same order as a walk to a spot - whatever moves it next walks first (the normal route, the
+			// mover's own climb); its own getting-out only once the mover has given up, up to the outer rim beside it.
+			// Over once it is XAfterClear outside the vein's box.
+			Vector3 at = base.transform.position;
+			if (Flat(_vUnion.ClosestPoint(at), at) > XAfterClear)
 			{
+				_xPendingAfter = false;
 				return false;
 			}
+			if (!MHR_Mover.GaveUp(_ai) || !XBeginOuter("after the vein: no way out by walking", _vUnion.center))
+			{
+				return false;   // still watching (a give-up on open ground starts nothing)
+			}
+			_xPendingAfter = false;
 		}
 		if (!_catchingBreath)
 		{

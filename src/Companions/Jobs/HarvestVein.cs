@@ -32,7 +32,14 @@ public partial class HarvestController
 
 		public bool Low;
 
-		public bool Direct => Dirt || Solid || Low;
+		// list v2 V6: held by rock of another vein of the same job lying lower than this part's own vein (the game's
+		// GetSupport rule) - mined by hand to separate the veins
+		public bool Join;
+
+		// list v2 V2: the vein (of the job's deposits) this part belongs to
+		public MineRock5 Rock;
+
+		public bool Direct => Dirt || Solid || Low || Join;
 
 		public float MinY => Center.y - Half.y;
 	}
@@ -374,18 +381,23 @@ public partial class HarvestController
 		_vParts.Clear();
 		_vHealth = 0f;
 		_vDirtCount = 0;
-		if (_vRock == null || !MHR_Vein.Areas(_vRock, s_vAreas, out bool haveBounds))
-		{
-			return;
-		}
 		if (s_vMask < 0)
 		{
 			s_vMask = LayerMask.GetMask("piece", "Default", "static_solid", "Default_small", "terrain");
 			s_vTerrain = LayerMask.NameToLayer("terrain");
 		}
-		Vector3 origin = _vRock.transform.position;
 		bool first = true;
 		_vLowest = float.MaxValue;
+		// list v2 V4: every vein of the job (the deposits joined to it), each part numbered by its vein's place in the job
+		List<MineRock5> group = VGroup();
+		for (int slot = 0; slot < group.Count; slot++)
+		{
+		MineRock5 rock = group[slot];
+		if (rock == null || !MHR_Vein.Areas(rock, s_vAreas, out bool haveBounds))
+		{
+			continue;
+		}
+		Vector3 origin = rock.transform.position;
 		int areaIdx = -1;
 		foreach (MHR_Vein.Area ha in s_vAreas)
 		{
@@ -396,7 +408,8 @@ public partial class HarvestController
 			}
 			VPart p = default(VPart);
 			p.C = ha.Collider;
-			p.Idx = areaIdx;
+			p.Idx = slot * VSlot + areaIdx;
+			p.Rock = rock;
 			p.Health = ha.Health;
 			if (haveBounds)
 			{
@@ -424,13 +437,20 @@ public partial class HarvestController
 				IDestructible d = c.gameObject.GetComponentInParent<IDestructible>();
 				if (d != null)
 				{
-					if ((object)d == _vRock)
+					if ((object)d == rock)
 					{
 						continue;   // a neighbour part: held only if it is
 					}
 					if (c.transform.position.y < origin.y)
 					{
-						p.Low = true;
+						if (d is MineRock5 other && VInGroup(other))
+						{
+							p.Join = true;   // list v2 V6
+						}
+						else
+						{
+							p.Low = true;
+						}
 					}
 					continue;
 				}
@@ -455,6 +475,37 @@ public partial class HarvestController
 				_vUnion.Encapsulate(b);
 			}
 		}
+		}
+	}
+
+	// list v2 V2: part numbers per vein of the job (a vein has far fewer than this many parts)
+	private const int VSlot = 100000;
+
+	private static readonly List<MineRock5> s_vOne = new List<MineRock5>();
+
+	// the veins of the job: the shared plan's list, else (before the plan is known) the one it was sent to
+	private List<MineRock5> VGroup()
+	{
+		if (_vp != null && _vp.Rocks.Count > 0)
+		{
+			return _vp.Rocks;
+		}
+		s_vOne.Clear();
+		if (_vRock != null)
+		{
+			s_vOne.Add(_vRock);
+		}
+		return s_vOne;
+	}
+
+	// list v2 V5: a vein of this job (the one it was sent to, or one joined to it)
+	private bool VInGroup(MineRock5 m)
+	{
+		if (m == null)
+		{
+			return false;
+		}
+		return _vp != null && _vp.Rocks.Count > 0 ? _vp.Rocks.Contains(m) : m == _vRock;
 	}
 
 	// the dirt that holds parts: the ground inside each dirt-held part's box (a 0.5 m grid over its footprint) that is

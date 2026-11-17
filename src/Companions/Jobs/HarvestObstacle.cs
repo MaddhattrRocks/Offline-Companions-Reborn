@@ -26,7 +26,8 @@ public partial class HarvestController
 	private enum OCtx
 	{
 		Trench,
-		Other
+		Other,
+		Split   // list v2 V3: the splitting hit on a deposit that joins the job
 	}
 
 	private const int OMaxSwitches = 3;
@@ -99,6 +100,13 @@ public partial class HarvestController
 		if (m5 != null)
 		{
 			return false;   // the vein, or another split rock: the rock rules deal with those
+		}
+		// list v2 V1 (log ff6c8861: Comp cracked a whole copper deposit beside the vein as a thing "in the way"): anything
+		// the Ore job's own scan would mine is never in the way
+		Collider oc = go.GetComponentInChildren<Collider>();
+		if (oc != null && GetHarvestCandidateWithType(oc, 3, out _) != null)
+		{
+			return false;
 		}
 		return go.GetComponentInParent<TreeBase>() != null || go.GetComponentInParent<TreeLog>() != null || go.GetComponentInParent<Destructible>() != null || go.GetComponentInParent<MineRock>() != null;
 	}
@@ -207,7 +215,7 @@ public partial class HarvestController
 	// the hit register: one of its swings landed on go
 	private void ONoteHit(GameObject go)
 	{
-		if (!_vSwung || _tHitObj != null || go == null || (_vRock != null && go.GetComponentInParent<MineRock5>() == _vRock))
+		if (!_vSwung || _tHitObj != null || go == null || VInGroup(go.GetComponentInParent<MineRock5>()))
 		{
 			return;
 		}
@@ -290,6 +298,10 @@ public partial class HarvestController
 
 	private void OTick()
 	{
+		if (_oCtx == OCtx.Split && _vp != null)
+		{
+			_vp.PlannerAt = Time.time;   // the others wait for the plan meanwhile
+		}
 		if (TGone(_oGo))
 		{
 			_tChops++;
@@ -338,7 +350,7 @@ public partial class HarvestController
 		_ai.StopMoving();
 		if (chop)
 		{
-			TChopSwing(tool, pt, TFor.Obstacle);
+			TChopSwing(tool, pt, TFor.Obstacle, _oGo);
 		}
 		else
 		{
@@ -396,6 +408,19 @@ public partial class HarvestController
 		_oActive = false;
 		_oGo = null;
 		_tChopping = false;
+		if (_oCtx == OCtx.Split)
+		{
+			// list v2 V3: split - the next plan joins the vein it became; not split - left out for good, the trench works
+			// round it
+			_tSplitDone = true;
+			if (!cleared && go != null && _vp != null)
+			{
+				_vp.LeftOut.Add(go.GetInstanceID());
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo(cleared ? $"Split {what} - it joins the job in the plan made now" : $"Couldn't split {what} ({why}) - left out of the job, the trench works round it");
+			TBeginItem();
+			return;
+		}
 		if (cleared)
 		{
 			if (_oCtx == OCtx.Trench)

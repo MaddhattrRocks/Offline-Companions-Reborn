@@ -162,6 +162,23 @@ public partial class HarvestController
 
 	private void PitStuck(Vector3 me, string detail)
 	{
+		// list v2 H4 (log ff6c8861: three companions "stuck in the hole" on an open hillside): on a vein the stuck state is
+		// only for a real hole - the mover's own test, the ground 3 m out 1.5 m above its feet all round. Otherwise the
+		// spot it was heading for is given up for itself and a new start counted, and it says nothing.
+		if (_pitVein && !MHR_Mover.InHole(me))
+		{
+			_pitActive = false;
+			_xActive = false;
+			_ai.StopMoving();
+			bool spot = VeinWorking && _tPhase == TPhaseTrench && _tQ != null;
+			if (CompanionsPlugin.LogDetailed) Log($"Couldn't get up from {MHR_Mover.Fmt(me)} ({detail}), and it isn't in a hole (the ground 3 m out isn't 1.5 m above its feet all round) - {(spot ? "giving this spot up" : "carrying on")}");
+			if (spot)
+			{
+				TSpotGave(_tQ, "no way up to it from where it stood", quiet: true);
+				TNewStart("couldn't get up to a spot", quiet: true);
+			}
+			return;
+		}
 		_pitActive = false;
 		_stuckInHole = true;
 		_stuckAt = me;
