@@ -3738,6 +3738,7 @@ public partial class HarvestController
 		}
 		_xActive = true;
 		_xTries = 0;
+		_xFrom = me;
 		_xMineTried = false;
 		_xEquipTries = 0;
 		_xDirsTried = 0;
@@ -3798,24 +3799,31 @@ public partial class HarvestController
 	}
 
 	// trench test G1f (John: "Is there a check to see if they have gone backwards and are no longer within that
-	// distance?"): for XWatchTime after it counts as out, feet XSlidBack or more under where they were = not out
+	// distance?" - "Why not just check if they are moving in the direction opposite of their intended direction?"):
+	// for XWatchTime after it counts as out, feet XSlideLimit or more under where they were AND moved back along the way
+	// it came up (from where the getting-out began to where it got out) = not out
 	private void XWatch(Vector3 me)
 	{
 		_xWatchUntil = Time.time + XWatchTime;
 		_xWatchY = me.y;
 		_xWatchP = me;
+		Vector3 up = me - (_xStepsFromSet ? _xStepsFrom : _xFrom);
+		up.y = 0f;
+		_xWatchUp = up.sqrMagnitude > 0.01f ? up.normalized : Vector3.zero;
 	}
 
-	// true = it slid back: the same getting-out goes on, with the steps from where it stands (no new climb)
+	// true = it slid back: the same getting-out goes on, with the steps from where it stands (no new climb). Not while
+	// it is going down into the trench on purpose (G5).
 	private bool XSlidBack()
 	{
-		if (_xActive || Time.time > _xWatchUntil)
+		if (_xActive || _dActive || Time.time > _xWatchUntil)
 		{
 			return false;
 		}
 		Vector3 me = base.transform.position;
-		// a slide is down the face where it stood: not a walk on that goes down somewhere else (1.5 m or more away)
-		if (me.y > _xWatchY - XSlideLimit || Flat(me, _xWatchP) > XWatchNear)
+		Vector3 moved = me - _xWatchP;
+		moved.y = 0f;
+		if (me.y > _xWatchY - XSlideLimit || (_xWatchUp != Vector3.zero && Vector3.Dot(moved, _xWatchUp) >= 0f))
 		{
 			return false;
 		}
@@ -3824,7 +3832,7 @@ public partial class HarvestController
 		_xStage = XSteps;
 		_xSince = _tClock;
 		_ai.StopMoving();
-		if (CompanionsPlugin.LogDetailed) Log($"Slid back {_xWatchY - me.y:F1} m after getting out - cutting steps");
+		if (CompanionsPlugin.LogDetailed) Log($"Slid back {_xWatchY - me.y:F1} m, back the way it came up, after getting out - cutting steps");
 		return true;
 	}
 
@@ -3832,11 +3840,9 @@ public partial class HarvestController
 
 	private const float XSlideLimit = 0.5f;
 
-	private const float XWatchNear = 1.5f;
-
 	private float _xWatchUntil, _xWatchY;
 
-	private Vector3 _xWatchP;
+	private Vector3 _xWatchP, _xWatchUp, _xFrom;
 
 	private void XTick()
 	{
