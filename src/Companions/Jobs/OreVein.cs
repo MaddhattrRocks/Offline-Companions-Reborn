@@ -26,6 +26,8 @@ public partial class HarvestController
 
 		public float LapStart;
 
+		public int OpenLap = 1;   // G7: the lap it was last opened for (only those count toward "how far a lap went down")
+
 		public float LapDepth;
 
 		public bool Closed;
@@ -64,6 +66,9 @@ public partial class HarvestController
 
 		public readonly Dictionary<HarvestController, float> Workers = new Dictionary<HarvestController, float>();
 
+		// G6: the spot each thing was handed over for (a thing it couldn't clear skips only that spot)
+		public readonly Dictionary<int, OvSpot> HandFor = new Dictionary<int, OvSpot>();
+
 		public Vector3 Center;
 
 		public float Goal;
@@ -77,6 +82,8 @@ public partial class HarvestController
 		public bool Done;
 
 		public bool DoneSaid;
+
+		public bool ExitTried;   // G10: a way out was cut (or tried) before "done"
 
 		public float LastWork;
 
@@ -113,6 +120,8 @@ public partial class HarvestController
 
 	private const float OvThingRadius = 2.0f;      // C3.2
 
+	private const float OvThingNear = 4.0f;        // G5: things on a spot are looked for once it is within 4 m of it
+
 	private const float OvRampRatio = 1.5f;        // C3.3: 1.5 x its height up: the way up at once
 
 	private const float OvNoHeadway = 3f;          // C4.1
@@ -134,6 +143,10 @@ public partial class HarvestController
 	private const float OvRampNear = 10f;          // C5: a saved ramp's bottom within 10 m
 
 	private const float OvRampTopNear = 5f;        // C5: ... and its top within 5 m of where it's going
+
+	private const float OvRampReach = 3f;          // G2: the way up only for a spot within 3 m (flat): the wall in front
+
+	private const float OvRampBadNear = 2f;        // G1: no new way up within 2 m of where one met the dig limit, this lap
 
 	private const float OvOutDeep = 1.5f;          // C6: 1.5 m under the ground outside the ring: in the trench
 
@@ -210,6 +223,11 @@ public partial class HarvestController
 
 	private bool _dgLastProg;
 
+	private bool _dgThingChecked;
+
+	// G10: walking down into the trench to cut the way out from its floor
+	private bool _exWalking;   // G5: the things on this spot were looked for once it got within 4 m
+
 	// C5: the ramp
 	private bool _rpActive;
 
@@ -234,6 +252,11 @@ public partial class HarvestController
 	private OvRamp _rpSaved;
 
 	private readonly HashSet<OvRamp> _rpTried = new HashSet<OvRamp>();
+
+	// G1: where a way up met the game's dig limit this lap (no new way up from within 2 m of it)
+	private readonly List<Vector3> _rpBad = new List<Vector3>();
+
+	private int _rpBadLap = -1;
 
 	// part 1 G3 (kept): more than 20 m outside the vein while the vein work moves it - back to it
 	private const float LeashOut = 20f;
@@ -283,6 +306,9 @@ public partial class HarvestController
 
 	// vein work is on (a dirt swing may dig)
 	internal bool VeinWorking => _vFor != null && _state == HarvestState.Vein;
+
+	// G4: on a vein (its own work or a thing it clears for the trench): the mover's cliff climb is off
+	internal bool OnVein => _vFor != null;
 
 	// ---------- the floor (C2.5) ----------
 	// the lowest the game lets the ground at p go: 8 m under its first height (TerrainComp keeps the change within 8 m)
@@ -359,6 +385,7 @@ public partial class HarvestController
 		_ovHand = null;
 		_ovHandMode = 0;
 		_rpTried.Clear();
+		_exWalking = false;
 		OvDigOff();
 		_rpActive = false;
 		_ai?.StopMoving();
@@ -494,7 +521,7 @@ public partial class HarvestController
 	}
 
 	// C6: in the trench = its feet 1.5 m or more under the ground 3 m outside the ring at the nearest spot. The goal out is
-	// the ground 3 m outside the ring at the spot nearest to where it's going.
+	// (G3) that same point: straight up the nearest wall; dest is where it heads after (the normal walk)
 	private bool OvInTrench(Vector3 dest, out Vector3 goal)
 	{
 		goal = base.transform.position;
@@ -503,20 +530,15 @@ public partial class HarvestController
 			return false;
 		}
 		Vector3 me = base.transform.position;
-		OvSpot near = null, toward = null;
-		float nd = float.MaxValue, td = float.MaxValue;
+		OvSpot near = null;
+		float nd = float.MaxValue;
 		foreach (OvSpot s in _vp.Spots)
 		{
-			float a = Flat(me, s.P), b = Flat(dest, s.P);
+			float a = Flat(me, s.P);
 			if (a < nd)
 			{
 				nd = a;
 				near = s;
-			}
-			if (b < td)
-			{
-				td = b;
-				toward = s;
 			}
 		}
 		Vector3 nearOut = OvOutside(near);
@@ -524,8 +546,8 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		goal = OvOutside(toward);
-		goal.y = GroundAt(goal);
+		// G3: straight up the nearest wall (3 m outside the nearest spot); the normal walk takes it on from there
+		goal = nearOut;
 		return true;
 	}
 
@@ -571,6 +593,10 @@ public partial class HarvestController
 
 	private void OvStuck(string why)
 	{
+		if (_vFor != null)
+		{
+			_target = _vFor;   // G9: the give-up line names the vein (it said "pickaxe" when no target was set)
+		}
 		SayGaveUp(GiveUpWhy.StuckInHole, why);
 		Vector3 me = base.transform.position;
 		OvLeave("stuck in the trench: " + why);
@@ -811,6 +837,7 @@ public partial class HarvestController
 			if (old != null)
 			{
 				s.LapStart = old.LapStart;
+				s.OpenLap = old.OpenLap;
 				s.LapDepth = Mathf.Max(s.Target, old.LapStart - OvLapStep);
 				s.Done = old.Done;
 				s.DoneWhy = old.DoneWhy;
@@ -978,7 +1005,11 @@ public partial class HarvestController
 				closed++;
 				continue;
 			}
-			best = Mathf.Max(best, s.LapStart - GroundAt(s.P));
+			if (s.OpenLap == p.Lap)
+			{
+				// G7: only the spots worked this lap (a spot done in an earlier lap kept its old drop: 6.7 m every lap)
+				best = Mathf.Max(best, s.LapStart - GroundAt(s.P));
+			}
 			if (s.Skip)
 			{
 				skipped++;
@@ -1016,6 +1047,7 @@ public partial class HarvestController
 				s.Done = false;
 				s.DoneWhy = null;
 				s.LapStart = g;
+				s.OpenLap = p.Lap;
 				s.LapDepth = Mathf.Max(s.Target, g - OvLapStep);
 				open++;
 			}
@@ -1152,16 +1184,17 @@ public partial class HarvestController
 			}
 		}
 		OvSpot q = _ovSpot;
-		// 1. anything on the spot: the Wood / Stone flow
-		if (OvThing(q))
+		Vector3 me = base.transform.position;
+		// 1. anything on the spot: the Wood / Stone flow (G5: once it is within 4 m; farther, the dirt walk gets it there
+		// and looks then)
+		if (Flat(me, q.P) <= OvThingNear && OvThing(q))
 		{
 			return;
 		}
-		Vector3 me = base.transform.position;
 		float g = GroundAt(q.P);
 		// 2. far up: the way up first
 		float height = _character != null ? _character.GetHeight() : 1.8f;
-		if (!q.RampTried && g >= me.y + OvRampRatio * height)
+		if (!q.RampTried && g >= me.y + OvRampRatio * height && Flat(me, q.P) <= OvRampReach)
 		{
 			OvRampBegin(q.P, q, outOfTrench: false, $"spot {q.Idx + 1} is {g - me.y:F1} m up (1.5 x its height is {OvRampRatio * height:F1} m)");
 			return;
@@ -1332,7 +1365,10 @@ public partial class HarvestController
 		{
 			s_ovThingMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
 		}
-		int k = Physics.OverlapSphereNonAlloc(q.P + Vector3.up * 1.0f, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
+		// G5: centred 1 m above the ground as it is now (the planned height can be 8 m above the dug ground)
+		Vector3 at = q.P;
+		at.y = GroundAt(q.P) + 1.0f;
+		int k = Physics.OverlapSphereNonAlloc(at, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
 		GameObject best = null, blocked = null;
 		string bestType = null;
 		int bestMode = 0;
@@ -1377,7 +1413,11 @@ public partial class HarvestController
 			}
 			if (_blacklist.ContainsKey(id))
 			{
-				blocked = go;
+				// G6: a thing it couldn't clear skips only the spot it was handed over for; for the others it is ignored
+				if (_vp.HandFor.TryGetValue(id, out OvSpot hs) && hs == q)
+				{
+					blocked = go;
+				}
 				continue;
 			}
 			float d2 = Flat(go.transform.position, q.P);
@@ -1407,6 +1447,10 @@ public partial class HarvestController
 		_ovHand = best;
 		_ovHandSpot = q;
 		_ovHandMode = bestMode;
+		if (!_vp.HandFor.ContainsKey(best.GetInstanceID()))
+		{
+			_vp.HandFor[best.GetInstanceID()] = q;
+		}
 		_ai?.StopMoving();
 		_target = best;
 		_targetType = bestMode == 1 && bestType == "Destructible" ? "Destructible" : ClassifyTargetType(best, bestMode);
@@ -1427,10 +1471,122 @@ public partial class HarvestController
 		return true;
 	}
 
+	// G9: what is still within 2 m of a spot that the Wood or Stone job would take (the same tests as OvThing)
+	private void OvThingsLeft(OvSpot q, Dictionary<int, string> into)
+	{
+		if (s_ovThingMask == 0)
+		{
+			s_ovThingMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+		}
+		Vector3 at = q.P;
+		at.y = GroundAt(q.P) + 1.0f;
+		int k = Physics.OverlapSphereNonAlloc(at, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
+		for (int i = 0; i < k; i++)
+		{
+			Collider c = s_ovThingBuf[i];
+			if (c == null || c.GetComponentInParent<Character>() != null || c.GetComponentInParent<MineRock5>() != null || GetHarvestCandidateWithType(c, 3, out _) != null)
+			{
+				continue;
+			}
+			GameObject go = GetHarvestCandidateWithType(c, 1, out _);
+			if (go == null)
+			{
+				Destructible d = c.GetComponentInParent<Destructible>();
+				if (d != null && d.m_damages.m_chop != HitData.DamageModifier.Immune && d.m_damages.m_chop != HitData.DamageModifier.Ignore && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) < 0)
+				{
+					go = d.gameObject;
+				}
+			}
+			if (go == null)
+			{
+				go = GetHarvestCandidateWithType(c, 2, out _);
+			}
+			if (go == null || !go.activeInHierarchy || IsBuilt(go) || into.ContainsKey(go.GetInstanceID()))
+			{
+				continue;
+			}
+			into[go.GetInstanceID()] = "\"" + go.name + "\" at " + MHR_Mover.Fmt(go.transform.position) + " (spot " + (q.Idx + 1) + (_blacklist.ContainsKey(go.GetInstanceID()) ? ", it gave up on it" : "") + ")";
+		}
+	}
+
+	private OvSpot OvNearest(Vector3 p)
+	{
+		OvSpot near = null;
+		float nd = float.MaxValue;
+		foreach (OvSpot s in _vp.Spots)
+		{
+			float d = Flat(p, s.P);
+			if (d < nd)
+			{
+				nd = d;
+				near = s;
+			}
+		}
+		return near;
+	}
+
+	// G10: a saved ramp whose top is out of the trench (not 1.5 m or more under the ground 3 m outside the ring there)
+	private bool OvHasWayOut()
+	{
+		foreach (OvRamp r in _vp.Ramps)
+		{
+			OvSpot s = OvNearest(r.Top);
+			if (s != null && r.Top.y > GroundAt(OvOutside(s)) - OvOutDeep)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// G10: before "done", one way out from the trench floor straight up the nearest wall (the ramp logic), cut by the
+	// first companion that gets here. True = busy with it. One try per vein: the ramp's own limits end it.
+	private bool OvExitTick()
+	{
+		if (_vp.Spots.Count == 0 || OvHasWayOut())
+		{
+			_vp.ExitTried = true;
+			_exWalking = false;
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		if (OvInTrench(me, out Vector3 goal))
+		{
+			_vp.ExitTried = true;
+			_exWalking = false;
+			OvRampBegin(goal, null, outOfTrench: false, "a way out of the trench before it's done");
+			return true;
+		}
+		// not in the trench: down to the floor at the nearest spot first (the normal walk, 10 s like any other)
+		OvSpot n = OvNearest(me);
+		Vector3 floor = n.P;
+		floor.y = GroundAt(n.P);
+		if (!_exWalking)
+		{
+			_exWalking = true;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The trench is dug - going down to {MHR_Mover.Fmt(floor)} to cut a way out before it's done");
+		}
+		if (Flat(me, floor) <= 0.8f || (WalkTimer(Time.deltaTime, floor) && _moveTimer > 10f))
+		{
+			// there and still not 1.5 m under the outside (a shallow trench needs no ramp), or the walk gave up
+			_vp.ExitTried = true;
+			_exWalking = false;
+			if (CompanionsPlugin.LogNormal) LogInfo(Flat(me, floor) <= 0.8f ? "The trench is shallow here - no way out needed" : "Couldn't get down into the trench to cut a way out");
+			return false;
+		}
+		WalkGo(floor, 0.3f, false, Time.deltaTime);
+		return true;
+	}
+
 	// C7 (build 1): the trench is done - it says so once and stands by the vein
 	private void OvDoneTick()
 	{
 		OvRelease();
+		if (!_vp.ExitTried && OvExitTick())
+		{
+			return;
+		}
 		_ai?.StopMoving();
 		if (_ovDoneSaid)
 		{
@@ -1455,6 +1611,16 @@ public partial class HarvestController
 				notDug++;
 			}
 		}
+		// G9: the trees, bushes and rocks still within 2 m of a spot (at today's ground), so the log shows what was missed
+		Dictionary<int, string> left = new Dictionary<int, string>();
+		foreach (OvSpot s in _vp.Spots)
+		{
+			if (!s.Closed)
+			{
+				OvThingsLeft(s, left);
+			}
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Left in the trench: {(left.Count == 0 ? "nothing" : left.Count + " thing(s): " + string.Join("; ", new List<string>(left.Values).GetRange(0, Mathf.Min(12, left.Count))) + (left.Count > 12 ? "; ..." : ""))}");
 		if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_vp.Name}\" is done after {_vp.Lap} lap(s): {_vp.Spots.Count} spots, {closed} closed for good, {notDug} more than 0.3 m above the goal{(notDug > 0 ? " (at " + where + (notDug > 6 ? ", ..." : "") + ")" : "")} - clearing comes in build 2; it stands by");
 		if (!_vp.DoneSaid)
 		{
@@ -1475,6 +1641,7 @@ public partial class HarvestController
 		_dgSwung = false;
 		_dgNoProg = 0;
 		_dgLastProg = false;
+		_dgThingChecked = false;
 		_moveTimer = 0f;
 	}
 
@@ -1521,7 +1688,28 @@ public partial class HarvestController
 		{
 			// walking to it: within reach, and not more than 1.2 m below its feet (then it walks on down to it)
 			float flat = Flat(me, _dgPoint);
+			if (!_dgThingChecked && _dgSpot != null && flat <= OvThingNear)
+			{
+				// G5: within 4 m of the spot - anything on it now goes to the Wood / Stone flow first
+				_dgThingChecked = true;
+				OvSpot tq = _dgSpot;
+				if (OvThing(tq))
+				{
+					OvDigOff();
+					return;
+				}
+			}
 			bool below = _dgPoint.y < me.y - 1.2f;
+			float upNow = GroundAt(_dgPoint) - me.y;
+			float h = _character != null ? _character.GetHeight() : 1.8f;
+			if (_dgSpot != null && !_dgSpot.RampTried && flat <= OvRampReach && upNow >= OvRampRatio * h)
+			{
+				// G2: at the wall in front of the spot (within 3 m) and it is 1.5 x its height up: carve the way up
+				OvSpot rq = _dgSpot;
+				OvDigOff();
+				OvRampBegin(_dgPoint, rq, outOfTrench: false, $"spot {rq.Idx + 1} is {upNow:F1} m up, {flat:F1} m away (1.5 x its height is {OvRampRatio * h:F1} m)");
+				return;
+			}
 			if (flat > reach * 0.9f || (below && flat > 0.6f))
 			{
 				if (!_dgWalking)
@@ -1531,7 +1719,7 @@ public partial class HarvestController
 				}
 				float up = GroundAt(_dgPoint) - me.y;
 				OvSpot q = _dgSpot;
-				if (q != null && !q.RampTried && up >= OvStepUp && MHR_Mover.NoHeadway(_ai) >= OvNoHeadway)
+				if (q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && MHR_Mover.NoHeadway(_ai) >= OvNoHeadway)
 				{
 					OvDigOff();
 					OvRampBegin(_dgPoint, q, outOfTrench: false, $"no headway for {OvNoHeadway:F0} s toward spot {q.Idx + 1}, {up:F1} m up");
@@ -1540,7 +1728,7 @@ public partial class HarvestController
 				if (WalkTimer(dt, _dgPoint) && _moveTimer > 10f)
 				{
 					OvDigOff();
-					if (q != null && up > 0f && !q.RampTried)
+					if (q != null && up > 0f && !q.RampTried && flat <= OvRampReach)
 					{
 						OvRampBegin(_dgPoint, q, outOfTrench: false, $"the walk to spot {q.Idx + 1} gave up, {up:F1} m up");
 					}
@@ -1630,6 +1818,23 @@ public partial class HarvestController
 	private void OvRampBegin(Vector3 goal, OvSpot spot, bool outOfTrench, string why)
 	{
 		Vector3 me = base.transform.position;
+		if (_vp != null && _rpBadLap != _vp.Lap)
+		{
+			_rpBadLap = _vp.Lap;
+			_rpBad.Clear();
+		}
+		if (!outOfTrench && spot != null)
+		{
+			foreach (Vector3 b in _rpBad)
+			{
+				if (Flat(b, me) <= OvRampBadNear)
+				{
+					spot.RampTried = true;
+					OvSkip(spot, $"it would need a way up from here, and the wall here is at the game's 8 m dig limit ({why})", normal: true);
+					return;
+				}
+			}
+		}
 		_rpActive = true;
 		_rpGoal = goal;
 		_rpSpot = spot;
@@ -1730,6 +1935,13 @@ public partial class HarvestController
 		{
 			// the wall in front: dig it (one swing, then look again)
 			ahead.y = ga;
+			if (ga <= OvFloor(ahead) + OvDigGain)
+			{
+				// G1: the game won't let that ground go any lower - no swing, and no new way up from here this lap
+				_rpBad.Add(_rpStart);
+				OvRampFail($"the ground in front at {MHR_Mover.Fmt(ahead)} is at the game's 8 m dig limit ({ga - me.y:F1} m above its feet)");
+				return;
+			}
 			if (Flat(ahead, _rpStepPt) > 0.5f)
 			{
 				_rpStepPt = ahead;

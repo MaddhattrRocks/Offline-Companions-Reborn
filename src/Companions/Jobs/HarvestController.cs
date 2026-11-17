@@ -859,6 +859,12 @@ public partial class HarvestController : MonoBehaviour
 		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
 		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
 		{
+			// G8: its stone and wood go off to one side right here and it keeps working; only ore (or nothing to toss)
+			// takes it away from the vein
+			if (_humanoid != null && !_humanoid.InAttack() && MHR_GatherRules.TossOnVein(this))
+			{
+				return;
+			}
 			OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 owGoal, out string owWhat) ? owGoal : base.transform.position, IsOverweight() ? "it's carrying too much" : "its bag is full");
 			return;
 		}
@@ -1671,13 +1677,18 @@ public partial class HarvestController : MonoBehaviour
 		}
 		if (flag9 && SwingsNotLanding())
 		{
-			if (_targetType == "TreeLog" && !_triedOtherSide)
+			// 1.5.98 (G6): a tree gets the same one retry as a log (every job); a tree has no stand points to pick from, so
+			// it walks in closer (the re-approach) where a log tries another side
+			if ((_targetType == "TreeLog" || _targetType == "TreeBase") && !_triedOtherSide)
 			{
 				_triedOtherSide = true;
-				_logBadPoints.Add(_logPoint);
-				_logPointAt = -10f;
+				if (_targetType == "TreeLog")
+				{
+					_logBadPoints.Add(_logPoint);
+					_logPointAt = -10f;
+				}
 				_noDamageSwings = 0;
-				if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't reaching \"" + _target.name + "\" (something in the way) - trying another side");
+				if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't reaching \"" + _target.name + "\" (something in the way) - " + (_targetType == "TreeLog" ? "trying another side" : "trying again from closer"));
 				_reapproach = true;
 				_attackFaceLocked = false;
 				_moveTimer = 0f;

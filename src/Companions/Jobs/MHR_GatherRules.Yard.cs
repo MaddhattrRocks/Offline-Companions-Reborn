@@ -183,6 +183,22 @@ namespace Companions
             return false;
         }
 
+        // 1.5.98 (G8): too heavy (or the bag full) on a vein - its stone, then its wood, tossed off to one side right where it
+        // works (the toss above); the toss ends in ResetToIdle and the vein work carries on. False = no stone or wood.
+        public static bool TossOnVein(HarvestController h)
+        {
+            Per p = P(h);
+            if (p.PileActive) return true;
+            Humanoid hum = h.GetComponent<Humanoid>();
+            if (hum == null || hum.GetInventory() == null) return false;
+            foreach (string item in s_pileItems)
+            {
+                if (item == p.VeinTossItem && Time.time - p.VeinTossAt < 5f) continue;
+                if (CountIn(hum.GetInventory(), item) > 0) { p.VeinTossAt = Time.time; p.VeinTossItem = item; return StartToss(h, p, item); }
+            }
+            return false;
+        }
+
         static bool StartToss(HarvestController h, Per p, string item)
         {
             p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false; p.TossToCap = false;

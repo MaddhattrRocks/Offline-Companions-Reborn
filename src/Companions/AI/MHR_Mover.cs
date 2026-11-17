@@ -2169,6 +2169,14 @@ namespace Companions
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
+            // 1.5.98 (G4, John: "Just use the damn pickaxe, dont try to scale tall walls"): no cliff climb while it works a
+            // vein (a tree or rock it clears for the trench included) - the pickaxe way up (OreVein) is its way up there
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null && hv.OnVein)
+            {
+                if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
+                return false;
+            }
             // how high we need to get: the last spot a full route started from, else the goal itself
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             if (needY < pos.y + 1.5f) return false;

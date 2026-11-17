@@ -18,6 +18,7 @@ namespace Companions
             public int ApproachFor; public Vector3 ApproachOffset; public bool ApproachHas;
             public bool TooHeavy; public float LastHeavyCall, NextDropOffCheck, NextHeavySpeak;
             public bool PileActive; public float PileUntil; public Vector3 PilePoint;
+            public float VeinTossAt = -100f; public string VeinTossItem;   // 1.5.98 (G8): the last toss on a vein (the same item again within 5 s = it didn't help: skipped)
             // 1.5.95: Ore job yard - what the trip is for, where the ore goes, the stone pile being built
             public YardTrip Trip; public bool OreHas; public Vector3 OreSpot; public Vector3 YardFor;
             public bool BuildHas; public Vector3 BuildSpot; public Quaternion BuildRot; public float NextAct; public bool Arrived;

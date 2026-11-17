@@ -7,6 +7,17 @@
 - The way up (ramp): 1 m ahead higher than 0.7 m = dig it (one swing a step), else walk on with the goal capped at feet + 0.7 (hops, never climbs). Starts when a spot is 1.5 x its height up, after 3 s no headway 0.7 m+ up (MHR_Mover.NoHeadway), or a walk give-up with the spot above. Fails after 3 no-change swings or 60 s without rising 0.3 m. Ramps of 1.5 m+ are saved and reused (bottom within 10 m, top within 5 m of the goal); several per vein.
 - Getting out: leaving (job change, full bag, you moved on) with its feet 1.5 m+ under the ground 3 m outside the ring = the ramp out first.
 - Trench done: says so once (hc_speech_vein_trench_done / _gaps) and stands by. Clearing and the pop come in build 2.
+- Fixes after John's first 1.5.98 test (review reviews/1.5.98-trench-test1-review.md, approved G1-G10, still 1.5.98):
+  - G1: a ramp step at the game's 8 m dig limit ends the way up at once with that reason (it used to count 3 "swings" that never happened); no new way up within 2 m of that place this lap (a spot that needs one there is skipped).
+  - G2: the way up only for a spot within 3 m (flat) and 1.5 x its height up, or no headway / a walk give-up within 3 m; a farther spot is walked to, and skipped if the walk gives up.
+  - G3: getting out aims 3 m outside the nearest spot (straight up the nearest wall).
+  - G4: MHR_Mover.TryStartClimb is off while the companion is on a vein (HarvestController.OnVein), the pickaxe ramp instead.
+  - G5: things on a spot are looked for 1 m above today's ground, once within 4 m of the spot (on the dirt walk's arrival).
+  - G6: a tree whose swings don't land gets the one retry logs get (it walks in closer; logs try another side), in every job. A thing it gave up on skips only the spot it was handed over for.
+  - G7: a lap's "how far it went down" counts only the spots opened that lap (OvSpot.OpenLap).
+  - G8: too heavy or the bag full on a vein: its stone, then wood, tossed right there (MHR_GatherRules.TossOnVein, the same item again within 5 s is skipped); only otherwise does it leave.
+  - G9: the done log lists the trees, bushes and rocks left within 2 m of a spot; the stuck line names the vein.
+  - G10: before "done", if no saved ramp reaches out of the trench, one companion walks down to the floor at the nearest spot and cuts one (one try per vein).
 
 ### 1.5.97 - a vein mined the way a player does: trench round it, clear under it, pop it (John, 2026-11-14: 1.5.96 dug straight down into the water; approved plan reviews/1.5.97-vein-trench-plan.md T1-T8 + answers Q1-Q4)
 - T1 (HarvestTrench.cs TOutline): a part is "visible" if a ray down onto its own collider (0.5 m grid over its box, max 12x12) lands more than 5 cm above the ground. From the visible parts' centre, 16 level rays (22.5 deg) start 20 m out at ground + 0.5 m (if that misses, at the centre's ground + 0.5 m) and hit only visible parts: the edge points. No visible part = all parts used. Trench line 0.75 m outside the edge points, a point about every 1 m. Start = the trench point nearest the companion. Normal log: visible/held counts, bearings found, trench size; Detailed: the 16 edge points.
