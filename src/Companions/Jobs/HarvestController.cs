@@ -868,9 +868,9 @@ public partial class HarvestController : MonoBehaviour
 		}
 		// 1.4.120: following and you've moved on - leave the tree/rock/plant and catch up, like Hunt leaves its prey
 		if (_state != HarvestState.Idle && !_isDirectedHarvest && _setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null &&
-			Vector3.Distance(base.transform.position, MHR_Owner.Of(this).transform.position) > PlayerRange() + 15f)
+			LeashDistance(out bool toVein) > PlayerRange() + 15f)
 		{
-			if (CompanionsPlugin.LogDetailed) Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up");
+			if (CompanionsPlugin.LogDetailed) Log("You moved on - leaving \"" + (_target != null ? _target.name : "the drops") + "\" and catching up" + (toVein ? $" (you are {LeashDistance(out _):F0} m from the vein's nearest part)" : ""));
 			ResetToIdle();
 			RestoreLoadout();
 			// 1.5.69: catch up first (log fc93f903: it took the same log straight back, 57 times)
@@ -2394,7 +2394,58 @@ public partial class HarvestController : MonoBehaviour
 	// following and further from you than a job may take it - the "You moved on" distance
 	private bool TooFarFromYou()
 	{
-		return !_isDirectedHarvest && _setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null && Vector3.Distance(base.transform.position, MHR_Owner.Of(this).transform.position) > PlayerRange() + 15f;
+		return !_isDirectedHarvest && _setup != null && _setup.GetFollow() && MHR_Owner.Of(this) != null && LeashDistance(out _) > PlayerRange() + 15f;
+	}
+
+	// trench test A4 (log of 11-17: 64 "You moved on" while you stood by the vein - the companion was the one far off, on
+	// the other side of the ring; John 2026-11-15: a vein's range is measured to its nearest part): on a vein job the
+	// leash is from you to the nearest part of the vein (any vein of the job), otherwise from you to the companion
+	private float _leashAt = -10f, _leashVal;
+
+	private MineRock5 _leashVein;
+
+	private float LeashDistance(out bool toVein)
+	{
+		toVein = false;
+		Player owner = MHR_Owner.Of(this);
+		if (owner == null)
+		{
+			return 0f;
+		}
+		Vector3 you = owner.transform.position;
+		if (_vRock != null && _vp != null)
+		{
+			// the vein's parts are read at most once a second (it is checked every frame)
+			if (Time.time < _leashAt + 1f && _leashVein == _vRock)
+			{
+				toVein = true;
+				return _leashVal;
+			}
+			float best = float.MaxValue;
+			if (_vp.Rocks.Count > 0)
+			{
+				foreach (MineRock5 r in _vp.Rocks)
+				{
+					if (r != null)
+					{
+						best = Mathf.Min(best, Vector3.Distance(you, NearestOfVein(r.gameObject, you)));
+					}
+				}
+			}
+			else
+			{
+				best = Vector3.Distance(you, NearestOfVein(_vRock.gameObject, you));
+			}
+			if (best < float.MaxValue)
+			{
+				toVein = true;
+				_leashAt = Time.time;
+				_leashVal = best;
+				_leashVein = _vRock;
+				return best;
+			}
+		}
+		return Vector3.Distance(base.transform.position, you);
 	}
 
 	// it's working from a spot its swings land from - no walking about

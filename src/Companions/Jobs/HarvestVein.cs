@@ -931,7 +931,8 @@ public partial class HarvestController
 	// hole or trench (HarvestPit.cs). A swing meant for the rock never digs.
 	internal bool AllowDig(Vector3 hitPoint)
 	{
-		if (PitDigging && Vector3.Distance(hitPoint, base.transform.position) < 3f)
+		// trench test G5: cutting a stair down into the trench digs like cutting steps up (beside it, anywhere)
+		if ((PitDigging || (_dActive && _dStage == DCut)) && Vector3.Distance(hitPoint, base.transform.position) < 3f)
 		{
 			return hitPoint.y >= TWater;
 		}

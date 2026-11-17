@@ -115,6 +115,17 @@ public partial class HarvestController
 		// list v2 V3: deposits that couldn't join (no reach for the splitting hit, a pickaxe too weak, or another job's)
 		// - never tried again for this plan
 		public readonly HashSet<int> LeftOut = new HashSet<int>();
+
+		// trench test G2 (John: "They should carve steps out and use those to safely get in and out of the trench"): the
+		// stairs cut on this vein (where the steps began and where they came out), shared, kept through new plans
+		public readonly List<VStair> Stairs = new List<VStair>();
+	}
+
+	private sealed class VStair
+	{
+		public Vector3 Bottom;
+
+		public Vector3 Top;
 	}
 
 	// kept 1 hour after the last companion worked the vein (John 2026-11-15 16:05)
@@ -134,9 +145,6 @@ public partial class HarvestController
 	private int _tPlanVer;
 
 	private int _tPlanSeen;
-
-	// the next start: on arriving and on meeting another companion, the free spot farthest from the others
-	private bool _tPickFar;
 
 	private string _tPickWhy = "";
 
@@ -382,7 +390,6 @@ public partial class HarvestController
 		_vp.LastWork = Time.time;
 		_tMine.Clear();
 		// test review A2: back with a working pickaxe - the nearest spot not done, not the far side
-		_tPickFar = !_tEnterNear;
 		_tPickWhy = _tEnterNear ? "back with a working pickaxe" : "arriving";
 		_tEnterNear = false;
 		List<HarvestController> others = TOthers();
@@ -515,7 +522,6 @@ public partial class HarvestController
 				{
 					_tQ = at;
 				}
-				_tPickFar = false;
 				_tPickWhy = "";
 				_tStartExited = false;
 				_tSub = TSubDig;

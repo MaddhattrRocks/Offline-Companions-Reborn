@@ -17,6 +17,10 @@ internal static class CompanionFallDamagePatch
 	// the player, a respawn), not a fall - the highest point is reset then so it isn't counted as one
 	private static readonly System.Collections.Generic.Dictionary<int, Vector3> s_lastPos = new System.Collections.Generic.Dictionary<int, Vector3>();
 
+	private static readonly System.Collections.Generic.HashSet<int> s_fallSaid = new System.Collections.Generic.HashSet<int>();
+
+	private const float FallSayAt = 2.5f;
+
 	private static void Prefix(Character __instance, out float __state)
 	{
 		__state = 0f;
@@ -36,6 +40,15 @@ internal static class CompanionFallDamagePatch
 			if (s_groundContact(__instance))
 			{
 				__state = Mathf.Max(0f, s_maxAirAltitude(__instance) - position.y);
+				s_fallSaid.Remove(instanceID);
+			}
+			else if (CompanionsPlugin.LogDetailed && s_maxAirAltitude(__instance) - position.y > FallSayAt && !__instance.InLiquid() && s_fallSaid.Add(instanceID))
+			{
+				// trench test F2 (log of 11-17: five falls into the trench with nothing in the log to say how): one line when a
+				// fall passes FallSayAt - where from, and what it was doing
+				CompanionAI ai = __instance.GetComponent<CompanionAI>();
+				HarvestController hc = __instance.GetComponent<HarvestController>();
+				CompanionsPlugin.Log.LogDebug($"[Move] \"{__instance.m_name}\" is falling: {s_maxAirAltitude(__instance) - position.y:F1} m down so far from the height {s_maxAirAltitude(__instance):F1}, now at {MHR_Mover.Fmt(position)}; mover: {(ai != null ? MHR_Mover.Describe(ai) : "none")}{(hc != null ? "; job: " + hc.FallNote() : "")}");
 			}
 		}
 		catch

@@ -86,7 +86,8 @@ public partial class HarvestController
 		PopMine,
 		Lap,
 		ExitMine,
-		Obstacle
+		Obstacle,
+		StairDown
 	}
 
 	private enum TBlock
@@ -389,7 +390,6 @@ public partial class HarvestController
 		_tMine.Clear();
 		_tPlanVer = 0;
 		_tWasTrench = false;
-		_tPickFar = false;
 		_tPickWhy = "";
 		_tStartLimit = TStartTime;
 		_gGround = null;
@@ -403,6 +403,14 @@ public partial class HarvestController
 		_tQ = null;
 		_tNewStarts = 0;
 		_tStartExited = false;
+		_tStepInQ = null;
+		_tLegFor = null;
+		_tLegOff = null;
+		_dActive = false;
+		_dQ = null;
+		_xWatchUntil = 0f;
+		_xStair = null;
+		_xStepsFromSet = false;
 		_tAnyWard = false;
 		_tAnyCantDig = false;
 		_tDigMinY = TWater;
@@ -715,8 +723,10 @@ public partial class HarvestController
 				{
 					built = true;
 				}
-				else if (col.GetComponentInParent<TreeBase>() != null || col.GetComponentInParent<TreeLog>() != null)
+				else if (col.GetComponentInParent<TreeBase>() != null || col.GetComponentInParent<TreeLog>() != null || OIsThing(col.gameObject))
 				{
+					// trench test E1 (log of 11-17: bushes and a rock left in the trench, John: "If there is a tree or bush in
+					// the trench clear it"): anything the obstacle rule takes - trees, logs, stumps, bushes, small rocks
 					isTree = true;
 				}
 			}
@@ -944,9 +954,14 @@ public partial class HarvestController
 			_vp.Workers[this] = Time.time;
 			_vp.LastWork = Time.time;
 		}
-		if (_xActive)
+		if (_xActive || XSlidBack())
 		{
 			XTick();
+			return;
+		}
+		if (_dActive)
+		{
+			DTick();
 			return;
 		}
 		// part 1 T4: a side step being carried out (the mover does it on the same goal)
@@ -1152,6 +1167,17 @@ public partial class HarvestController
 
 	// which way to face for a swing that meets dirt first, near `want` (within `near` flat) and above `minY`: straight at
 	// baseDir first, then 15, 30, 45, 60 degrees either side. With the check off (3 misses), straight at baseDir.
+	// trench test D1: why the straight swing was turned down (set by TPickFacing)
+	private const int TFaceNone = 0, TFaceNothing = 1, TFaceFar = 2, TFaceDepth = 3, TFaceWater = 4, TFaceOverRock = 5, TFaceVein = 6, TFaceOther = 7;
+
+	private int _tFaceWhy;
+
+	private float _tFaceFar;
+
+	private GameObject _tFaceGo;
+
+	private Collider _tFaceCol;
+
 	private bool TPickFacing(Vector3 baseDir, Vector3 want, float near, float minY, out Vector3 facing, bool overRock = false)
 	{
 		baseDir = FlatNorm(baseDir, base.transform.forward);
@@ -1167,14 +1193,32 @@ public partial class HarvestController
 			facing = _tFaceDir;
 			return true;
 		}
+		_tFaceWhy = TFaceNone;
+		_tFaceFar = 0f;
+		_tFaceGo = null;
+		_tFaceCol = null;
 		foreach (float off in s_tOffsets)
 		{
 			Vector3 d = Quaternion.Euler(0f, off, 0f) * baseDir;
-			if (TPredict(me, d, out Vector3 pt) != TFirst.Dirt)
+			TFirst first = TPredict(me, d, out Vector3 pt);
+			if (first != TFirst.Dirt)
 			{
+				if (off == 0f)
+				{
+					// trench test D1: what the straight swing really met
+					_tFaceWhy = first == TFirst.None ? TFaceNothing : first == TFirst.Vein ? TFaceVein : TFaceOther;
+					_tFaceGo = _tPredGo;
+					_tFaceCol = _tPredCol;
+				}
 				continue;
 			}
 			float g = GroundAt(pt);
+			if (off == 0f)
+			{
+				// trench test D1: dirt first straight ahead, but turned down - which of the four reasons (the first that applies)
+				_tFaceWhy = Flat(pt, want) > near ? TFaceFar : g <= minY + 0.05f ? TFaceDepth : g < TWater ? TFaceWater : (!overRock && GRockAt(pt)) ? TFaceOverRock : TFaceNone;
+				_tFaceFar = Flat(pt, want);
+			}
 			if (Flat(pt, want) <= near && g > minY + 0.05f && g >= TWater && (overRock || !GRockAt(pt)))
 			{
 				facing = d;
@@ -1280,29 +1324,293 @@ public partial class HarvestController
 		return null;
 	}
 
+	// trench test F2: what the vein job was doing (for the fall line)
+	internal string FallNote()
+	{
+		if (!VeinWorking && !_xActive)
+		{
+			return _state.ToString();
+		}
+		string ph = _tPhase == TPhasePlan ? "planning" : _tPhase == TPhaseTrench ? "trench" : _tPhase == TPhasePop ? "clearing" : "lap";
+		string sub = _xActive ? $"getting out (stage {_xStage}, up to {_xRimY:F1})" : _tSub == TSubStart ? "walking to a spot" : _tSub == TSubDig ? "digging" : _tSub == TSubBlock ? "blocked" : "picking a spot";
+		return $"vein {ph}, {sub}{(_tQ != null ? $", spot {_tQ.Idx + 1} at {MHR_Mover.Fmt(_tQ.P)}" : "")}";
+	}
+
+	// ---------- trench test G5: getting into the trench ----------
+	// John: "They should carve steps out and use those to safely get in and out of the trench." Going to a spot within
+	// DNear whose trench floor (the lowest of the spot and its dug neighbours) is more than DDeep under its feet: down a
+	// saved stair (its top within XStairNear), else a stair cut down - along the trench's outer wall toward the spot,
+	// the ground in front dug to 1 m under its feet, a step down onto it, again, until it is on the floor. One try ends
+	// after DNoProgSwings swings or DNoProgTime without its feet getting 0.1 m lower; DMaxTries tries, then the spot is
+	// given up for itself and a new start counted.
+	private const float DNear = 3f;
+
+	private const float DDeep = 1.5f;
+
+	private const int DNoProgSwings = 12;
+
+	private const float DNoProgTime = 60f;
+
+	private const int DMaxTries = 2;
+
+	private const int DStairTop = 0, DStairDown = 1, DCut = 2;
+
+	private bool _dActive;
+
+	private int _dStage;
+
+	private TSpot _dQ;
+
+	private VStair _dStair;
+
+	private Vector3 _dDir, _dStart;
+
+	private bool _dTurned;
+
+	private int _dTries, _dSwings;
+
+	private float _dBestY, _dProgAt, _dSince;
+
+	private float DFloor(TSpot q)
+	{
+		float f = GroundAt(q.P);
+		foreach (int k in new[] { -1, 1 })
+		{
+			TSpot n = TSpotAt(q.Line, q.Idx + k);
+			if (n != null && n != q && n.Done)
+			{
+				f = Mathf.Min(f, GroundAt(n.P));
+			}
+		}
+		return f;
+	}
+
+	// true = getting in has started (or goes on)
+	private bool DCheck(TSpot q)
+	{
+		Vector3 me = base.transform.position;
+		if (q == null || Flat(me, q.P) > DNear || me.y - DFloor(q) <= DDeep)
+		{
+			return false;
+		}
+		if (_dQ != q)
+		{
+			_dQ = q;
+			_dTries = 0;
+		}
+		_dActive = true;
+		_dSince = _tClock;
+		_dStart = me;
+		_dStair = null;
+		_ai.StopMoving();
+		if (_vp != null)
+		{
+			float nd = float.MaxValue;
+			foreach (VStair st in _vp.Stairs)
+			{
+				float d = Flat(me, st.Top);
+				if (d <= XStairNear && d < nd)
+				{
+					nd = d;
+					_dStair = st;
+				}
+			}
+		}
+		if (_dStair != null)
+		{
+			_dStage = DStairTop;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The trench at spot {q.Idx + 1} is {me.y - DFloor(q):F1} m down - in by the stair at {MHR_Mover.Fmt(_dStair.Top)}");
+			return true;
+		}
+		DCutBegin(me, q);
+		return true;
+	}
+
+	private void DCutBegin(Vector3 me, TSpot q)
+	{
+		_dStage = DCut;
+		_dStart = me;
+		_dBestY = me.y;
+		_dProgAt = _tClock;
+		_dSwings = 0;
+		_dTurned = false;
+		// along the ring at the spot, the way toward the spot (or toward its dug neighbour when it is the spot itself)
+		TSpot a = TSpotAt(q.Line, q.Idx - 1), b = TSpotAt(q.Line, q.Idx + 1);
+		Vector3 tan = a != null && b != null ? b.P - a.P : Vector3.Cross(Vector3.up, q.Out);
+		_dDir = FlatNorm(tan, base.transform.forward);
+		if (Vector3.Dot(_dDir, FlatNorm(q.P - me, _dDir)) < 0f)
+		{
+			_dDir = -_dDir;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The trench at spot {q.Idx + 1} is {me.y - DFloor(q):F1} m down and there's no stair near - cutting one down along the wall toward {MHR_Mover.Fmt(me + _dDir * 3f)} (try {_dTries + 1} of {DMaxTries})");
+	}
+
+	private void DEnd(string msg)
+	{
+		_dActive = false;
+		_tWalkSince = _tClock;
+		_ai.StopMoving();
+		if (CompanionsPlugin.LogNormal && msg != null) LogInfo(msg);
+	}
+
+	private void DTick()
+	{
+		Vector3 me = base.transform.position;
+		TSpot q = _dQ;
+		if (q == null || !TOpen(q) || q != _tQ)
+		{
+			DEnd(null);
+			return;
+		}
+		float floor = DFloor(q);
+		if (me.y <= floor + 0.5f)
+		{
+			if (_dStage == DCut && _vp != null && _dStart.y - me.y >= TExitDepth && _vp.Stairs.Count < XMaxStairs)
+			{
+				_vp.Stairs.Add(new VStair { Bottom = me, Top = _dStart });
+				if (CompanionsPlugin.LogNormal) LogInfo($"A stair for everyone on this vein: from {MHR_Mover.Fmt(me)} up to {MHR_Mover.Fmt(_dStart)} ({_vp.Stairs.Count} of {XMaxStairs})");
+			}
+			DEnd($"Down in the trench at {MHR_Mover.Fmt(me)}");
+			return;
+		}
+		if (_humanoid.InAttack())
+		{
+			return;
+		}
+		switch (_dStage)
+		{
+		case DStairTop:
+			if (Flat(me, _dStair.Top) <= 1.0f)
+			{
+				_dStage = DStairDown;
+				_dSince = _tClock;
+				return;
+			}
+			if (_tClock - _dSince > TStartTime + 5f + Flat(_dStart, _dStair.Top))
+			{
+				DCutBegin(me, q);
+				return;
+			}
+			MHR_Mover.Go(_ai, Time.deltaTime, _dStair.Top, 0.8f, false, "Vein");
+			return;
+		case DStairDown:
+			if (Flat(me, _dStair.Bottom) <= 1.0f)
+			{
+				if (me.y - floor > DDeep)
+				{
+					// the trench here is deeper than the stair goes now: on down from its bottom by cutting
+					DCutBegin(me, q);
+					return;
+				}
+				DEnd($"Down the stair at {MHR_Mover.Fmt(me)}");
+				return;
+			}
+			if (_tClock - _dSince > TStartTime)
+			{
+				DCutBegin(me, q);
+				return;
+			}
+			MHR_Mover.Go(_ai, Time.deltaTime, _dStair.Bottom, 0.5f, false, "Vein");
+			return;
+		}
+		// DCut
+		if (me.y < _dBestY - 0.1f)
+		{
+			_dBestY = me.y;
+			_dProgAt = _tClock;
+			_dSwings = 0;
+		}
+		if (_dSwings >= DNoProgSwings || _tClock - _dProgAt >= DNoProgTime)
+		{
+			DFail(me, $"{_dSwings} swings / {_tClock - _dProgAt:F0}s without getting 0.1 m lower");
+			return;
+		}
+		Vector3 ahead = me + _dDir * 1.0f;
+		float ga = GroundAt(ahead);
+		if (ga < me.y - 1.5f)
+		{
+			// the trench itself is ahead (the ring turns): the other way along the wall, once
+			if (!_dTurned)
+			{
+				_dTurned = true;
+				_dDir = -_dDir;
+				if (CompanionsPlugin.LogDetailed) Log("Cutting down: a drop ahead - the other way along the wall");
+				return;
+			}
+			DFail(me, "a drop ahead both ways along the wall");
+			return;
+		}
+		if (ga <= me.y - 0.7f)
+		{
+			// the step in front is cut: step down onto it
+			MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(_dDir));
+			_ai.MoveTowards(_dDir, run: false);
+			return;
+		}
+		_ai.StopMoving();
+		_tKey = ahead;
+		TDigSwing(_dDir, ahead, TFor.StairDown);
+	}
+
+	private void DFail(Vector3 me, string why)
+	{
+		_dTries++;
+		if (_dTries < DMaxTries)
+		{
+			if (CompanionsPlugin.LogDetailed) Log($"Cutting down didn't work ({why}) - once more from here");
+			DCutBegin(me, _dQ);
+			return;
+		}
+		TSpot q = _dQ;
+		DEnd(null);
+		if (CompanionsPlugin.LogDetailed) Log($"Couldn't cut a way down into the trench ({why}, {DMaxTries} tries) - giving spot {q.Idx + 1} up");
+		TSpotGave(q, "no way down into the trench to it", quiet: true);
+		TNewStart("couldn't get down into the trench", quiet: true);
+	}
+
+	// trench test A1: how many spots apart along the ring (the shorter way round on a loop); another line counts as far
+	private int TRingSteps(int line, int idx, TSpot s)
+	{
+		if (line < 0 || s.Line != line)
+		{
+			return 100000;
+		}
+		int n = _tLines[line].S.Count;
+		int a = Mathf.Abs(s.Idx - idx);
+		return _tLines[line].Loop ? Mathf.Min(a, n - a) : a;
+	}
+
 	// S2: a start. On its own: the nearest spot not done, then toward the lower ground. With other companions on the vein
-	// (item B): a spot nobody is on - the one farthest from the others on arriving and on meeting one of them, else the
-	// nearest - then along the ring away from the nearest other. Nothing free: it helps on the nearest spot not done.
+	// (item B): a spot nobody is on, then along the ring away from the nearest other. Nothing free: it helps on the
+	// nearest spot not done.
+	// trench test A1 (log of 11-17: "the free spot farthest from the others" sent them 20 to 39 m round the ring, John:
+	// "cut a smooth trench all the way round"): every pick is the nearest free spot counted ALONG THE RING (fewest spots
+	// away, either way round) from the ring spot nearest to where it stands; a tie goes to the nearer one in a straight line
 	private void TStartPick()
 	{
 		Vector3 me = base.transform.position;
 		List<HarvestController> others = TOthers();
-		// test review B1: "far" is measured from the spot each other companion is on or walking to (not where it
-		// stands); one with no spot yet isn't counted, and with none of them on a spot it's the nearest spot not done
-		List<Vector3> otherSpots = new List<Vector3>();
-		foreach (HarvestController o in others)
+		string why = _tPickWhy;
+		_tPickWhy = "";
+		// where it is on the ring: the spot nearest to it, done or not
+		int homeLine = -1, homeIdx = 0;
+		float hd = float.MaxValue;
+		foreach (TLine l in _tLines)
 		{
-			if (o._tPhase == TPhaseTrench && o._tQ != null)
+			foreach (TSpot s in l.S)
 			{
-				otherSpots.Add(o._tQ.P);
+				float d = Flat(s.P, me);
+				if (d < hd)
+				{
+					hd = d;
+					homeLine = s.Line;
+					homeIdx = s.Idx;
+				}
 			}
 		}
-		bool far = _tPickFar && otherSpots.Count > 0;
-		string why = _tPickWhy;
-		_tPickFar = false;
-		_tPickWhy = "";
 		TSpot best = null, bestHeld = null;
-		float bd = float.MaxValue, bs = float.MinValue, bh = float.MaxValue;
+		float bd = float.MaxValue, bh = float.MaxValue;
+		int bsteps = int.MaxValue;
 		int open = 0, free = 0;
 		foreach (TLine l in _tLines)
 		{
@@ -1324,22 +1632,10 @@ public partial class HarvestController
 					continue;
 				}
 				free++;
-				if (far)
+				int steps = TRingSteps(homeLine, homeIdx, s);
+				if (steps < bsteps || (steps == bsteps && d < bd))
 				{
-					float near = float.MaxValue;
-					foreach (Vector3 op in otherSpots)
-					{
-						near = Mathf.Min(near, Flat(s.P, op));
-					}
-					if (near > bs)
-					{
-						bs = near;
-						best = s;
-						bd = d;
-					}
-				}
-				else if (d < bd)
-				{
+					bsteps = steps;
 					bd = d;
 					best = s;
 				}
@@ -1425,7 +1721,7 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"Starting the trench at spot {best.Idx + 1}/{_tLines[_tLine].S.Count} of line {_tLine + 1} at {MHR_Mover.Fmt(best.P)} ({bd:F1} m away), going {(_tDir > 0 ? "one way" : "the other way")} - {way}");
 		if (CompanionsPlugin.LogDetailed && others.Count > 0)
 		{
-			string pick = helping ? $"every spot not done has a companion on it - helping {THeldBy(best)?.MyName ?? "them"} on the nearest" : far ? $"the free spot farthest from the others' spots ({bs:F1} m from the nearest of them)" : "the nearest free spot";
+			string pick = helping ? $"every spot not done has a companion on it - helping {THeldBy(best)?.MyName ?? "them"} on the nearest" : $"the nearest free spot along the ring ({bsteps} spot(s) from where it is)";
 			Log($"Start picked{(why.Length > 0 ? " (" + why + ")" : "")}: {pick}; {others.Count} other companion(s) on the vein, {open} spot(s) not done, {free} free");
 		}
 	}
@@ -1447,6 +1743,24 @@ public partial class HarvestController
 			TBeginItem();
 			return;
 		}
+		if (TRest())
+		{
+			return;
+		}
+		if (_tClock - _tWalkSince > _tStartLimit)
+		{
+			TSpotGave(q, $"couldn't get to it in {_tStartLimit:F0}s");
+			TNewStart($"couldn't get to the start spot in {_tStartLimit:F0}s");
+			return;
+		}
+		if (DCheck(q))
+		{
+			return;
+		}
+		if (TLegTick(q))
+		{
+			return;
+		}
 		// list v2 H1/H2 (log ff6c8861: on a hillside the height of a spot 20 m away read as a 9 m pit): a plain walk by
 		// the normal route first, the mover's own climb included. Its own getting-out only once the mover has given up on
 		// this walk, and only up to the trench's outer rim beside it (XBeginOuter) - once per walk.
@@ -1458,18 +1772,121 @@ public partial class HarvestController
 				return;
 			}
 		}
-		if (TRest())
-		{
-			return;
-		}
-		if (_tClock - _tWalkSince > _tStartLimit)
-		{
-			TSpotGave(q, $"couldn't get to it in {_tStartLimit:F0}s");
-			TNewStart($"couldn't get to the start spot in {_tStartLimit:F0}s");
-			return;
-		}
 		MHR_Mover.Go(_ai, Time.deltaTime, new Vector3(q.P.x, g, q.P.z), 0.8f, false, "Vein");
 	}
+
+	// trench test G4 (John: "There is very little reason to leave the trench at all"): in the trench (the ring spot
+	// nearest to it is dug and within 1.5 m) and the spot on the same line, the walk goes along the floor from dug spot to
+	// dug spot, the shorter way round, each leg at most TLegMax. An undug spot on the way is dug next (B1 digs through).
+	// A leg with no headway for TStepTime: the other way round, once; then the normal walk (out by the getting-out, a
+	// stair or steps, and in again). True = it took care of this frame.
+	private bool TLegTick(TSpot q)
+	{
+		if (_tLegOff == q)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		TSpot home = null;
+		float hd = float.MaxValue;
+		foreach (TSpot s in _tLines[q.Line].S)
+		{
+			float d = Flat(s.P, me);
+			if (d < hd)
+			{
+				hd = d;
+				home = s;
+			}
+		}
+		if (home == null || hd > 1.5f || TOpen(home) || home == q)
+		{
+			return false;
+		}
+		TLine line = _tLines[q.Line];
+		int n = line.S.Count;
+		if (_tLegFor != q)
+		{
+			_tLegFor = q;
+			_tLegTurned = false;
+			int fwd = line.Loop ? ((q.Idx - home.Idx) % n + n) % n : q.Idx - home.Idx;
+			_tLegDir = line.Loop ? (fwd <= n - fwd ? 1 : -1) : (fwd >= 0 ? 1 : -1);
+			_tLegSince = _tClock;
+			_tLegBest = float.MaxValue;
+			if (CompanionsPlugin.LogDetailed) Log($"Walking along the trench floor to spot {q.Idx + 1} ({(_tLegDir > 0 ? "one way" : "the other way")} round)");
+		}
+		// the farthest spot within TLegMax going that way with every spot before it dug
+		TSpot goal = null;
+		for (int i = 1; i <= n; i++)
+		{
+			TSpot s = TSpotAt(q.Line, home.Idx + _tLegDir * i);
+			if (s == null || Flat(me, s.P) > TLegMax)
+			{
+				break;
+			}
+			if (s == q)
+			{
+				goal = s;
+				break;
+			}
+			if (TOpen(s))
+			{
+				if (THeldBy(s) == null)
+				{
+					// an undug spot on the way: dug next, from the floor (B1) - the trench stays one trench
+					if (CompanionsPlugin.LogDetailed) Log($"Spot {s.Idx + 1} on the way to {q.Idx + 1} isn't dug - digging through it");
+					if (q.Holder == this)
+					{
+						q.Holder = null;
+					}
+					_tLegFor = null;
+					_tLine = s.Line;
+					_tRunStart = s.Idx;
+					_tDir = _tLegDir;
+					_tTurned = false;
+					TTake(s);
+					_tSub = TSubDig;
+					TBeginItem();
+					return true;
+				}
+				break;
+			}
+			goal = s;
+		}
+		float left = Flat(me, q.P);
+		if (left < _tLegBest - 0.3f)
+		{
+			_tLegBest = left;
+			_tLegSince = _tClock;
+		}
+		if (goal == null || _tClock - _tLegSince > TStepTime)
+		{
+			if (!_tLegTurned)
+			{
+				_tLegTurned = true;
+				_tLegDir = -_tLegDir;
+				_tLegSince = _tClock;
+				_tLegBest = float.MaxValue;
+				if (CompanionsPlugin.LogDetailed) Log($"No way on along the floor toward spot {q.Idx + 1} - the other way round");
+				return true;
+			}
+			_tLegOff = q;
+			_tLegFor = null;
+			if (CompanionsPlugin.LogDetailed) Log($"No way along the floor to spot {q.Idx + 1} either way - the normal walk");
+			return false;
+		}
+		TWalkLevel(goal.P, 0.5f);
+		return true;
+	}
+
+	private const float TLegMax = 3f;
+
+	private TSpot _tLegFor, _tLegOff;
+
+	private int _tLegDir = 1;
+
+	private bool _tLegTurned;
+
+	private float _tLegSince, _tLegBest;
 
 	// done for everyone. keep = it stays closed when the plan is made again (not for a depth read from the ground)
 	private void TSpotDone(TSpot q, string why, bool keep = false)
@@ -1488,7 +1905,7 @@ public partial class HarvestController
 	}
 
 	// the spot is done: on along the line; at the end, back the other way from the start once; then a new start.
-	// Item B: the next spot has another companion on it - they've met: a new start, the free spot farthest from the others.
+	// Item B: the next spot has another companion on it - they've met: the other way once, else the nearest free spot (A2).
 	private void TNextSpot()
 	{
 		TSpot q = _tQ;
@@ -1527,8 +1944,8 @@ public partial class HarvestController
 		}
 		if (other != null)
 		{
-			if (CompanionsPlugin.LogNormal) LogInfo($"Met {other.MyName} at spot {n.Idx + 1} of line {_tLine + 1} - a new start away from the others");
-			_tPickFar = true;
+			// trench test A2: then the nearest free spot along the ring (A1), not the farthest
+			if (CompanionsPlugin.LogNormal) LogInfo($"Met {other.MyName} at spot {n.Idx + 1} of line {_tLine + 1} - on to the nearest free spot");
 			_tPickWhy = "met " + other.MyName;
 			_tSub = TSubPick;
 			return;
@@ -1559,12 +1976,14 @@ public partial class HarvestController
 		{
 			// part 2 M2: this lap's 2 m; the next lap opens it again
 			q.LapOnly = true;
+			TDugByMe(q);
 			TSpotDone(q, $"down to lap {(_vp != null ? _vp.Lap : 1)}'s depth, {g:F1} (its target is {q.Depth:F1})");
 			TNextSpot();
 			return;
 		}
 		if (g <= q.Depth + 0.05f)
 		{
+			TDugByMe(q);
 			TSpotDone(q, q.AtFloor ? $"as low as the game lets this ground go, {g:F1} (8 m under its first height; the rock's base is lower)" : $"down to its target, {g:F1} (1 m under the vein's lowest part)");
 			TNextSpot();
 			return;
@@ -1585,7 +2004,8 @@ public partial class HarvestController
 			TNextSpot();
 			return;
 		}
-		// a tree marked on the plan right by this spot: the axe first
+		// a tree marked on the plan right by this spot: the axe first (trench test E2: and bushes, stumps, small rocks -
+		// with the tool its own damage table needs)
 		if (q.Tree && TTreeNear(q.P, 2.0f, out GameObject treeGo, out Vector3 treePt))
 		{
 			if (ONoAxeSpot(treeGo, q))
@@ -1594,7 +2014,7 @@ public partial class HarvestController
 			}
 			if (OCan(treeGo))
 			{
-				OBegin(treeGo, OCtx.Trench, "a tree on the trench line");
+				OBegin(treeGo, OCtx.Trench, treeGo.GetComponentInParent<TreeBase>() != null || treeGo.GetComponentInParent<TreeLog>() != null ? "a tree on the trench line" : "in the trench line");
 				return;
 			}
 		}
@@ -1613,16 +2033,31 @@ public partial class HarvestController
 		}
 		if (Flat(me, q.P) > TReach)
 		{
-			// fix 3: the spot is up above it (it's down in a pit or its own trench): get out toward the spot first, once
-			if (!My(q).ExitTried && g >= me.y + TExitDepth)
+			// trench test B1 (log of 11-17: 35 climbs out "to reach the next spot" - John: "if you are digging why climb to
+			// start digging 2 steps forward. Just keep digging"): the next spot is up a wall in front - no getting-out. From
+			// the trench floor, within TFwdReach of the spot, it swings at the wall toward the spot (the facing check, a dirt
+			// hit within 1.5 m of the spot) and steps on as the wall goes (the walk below, once the ground 0.7 m ahead is
+			// no more than 1.0 m above its feet). The swing's progress is measured where it lands.
+			if (g >= me.y + TExitDepth && Flat(me, q.P) <= TFwdReach)
 			{
-				My(q).ExitTried = true;
-				if (XBegin("to reach the next spot", new Vector3(q.P.x, g, q.P.z)))
+				Vector3 fwd = FlatNorm(q.P - me, base.transform.forward);
+				if (GroundAt(me + fwd * 0.7f) > me.y + 1.0f && TPickFacing(fwd, q.P, 1.5f, q.LapDepth, out Vector3 wallFace))
 				{
+					_ai.StopMoving();
+					_tWalkSince = _tClock;
+					_tStepInQ = null;
+					_tKey = q.P;
+					if (CompanionsPlugin.LogDetailed && !My(q).ExitTried) Log($"Spot {q.Idx + 1} is {g - me.y:F1} m up the wall in front - digging toward it from the trench floor");
+					My(q).ExitTried = true;
+					TDigSwing(wallFace, _tCheckOff ? me + wallFace * 1.2f : _tPredPt, TFor.Dig);
 					return;
 				}
 			}
 			if (TRest())
+			{
+				return;
+			}
+			if (DCheck(q))
 			{
 				return;
 			}
@@ -1638,7 +2073,6 @@ public partial class HarvestController
 			return;
 		}
 		_ai.StopMoving();
-		_tWalkSince = _tClock;
 		Vector3 baseDir = q.P - me;
 		baseDir.y = 0f;
 		if (baseDir.sqrMagnitude < 0.09f)
@@ -1654,13 +2088,89 @@ public partial class HarvestController
 				OBegin(_tPredGo, OCtx.Trench, "a straight swing meets it before the dirt");
 				return;
 			}
-			TSpotDone(q, $"rock in front ({VRockWhat(_tPredGo, _tPredCol)}): no way to face it that meets dirt first - left for the mining", keep: true);
-			TNextSpot();
-			return;
+			// trench test D1/D2 (log of 11-17: 33 spots closed as "rock in front" - 22 had met dirt, 11 nothing at all):
+			// what the straight swing really met decides
+			switch (_tFaceWhy)
+			{
+			case TFaceNothing:
+			case TFaceFar:
+			case TFaceNone:
+			{
+				// nothing in reach, or dirt too far from the spot: a step toward the spot and look again, for TStepTime;
+				// then the blocked rule (turn round, or give the spot up for itself and a new start) - not closed for all
+				if (_tStepInQ != q)
+				{
+					_tStepInQ = q;
+					_tStepInSince = _tClock;
+					if (CompanionsPlugin.LogDetailed) Log($"Spot {q.Idx + 1}: {TFaceText()} - a step closer");
+				}
+				if (_tClock - _tStepInSince > TStepTime)
+				{
+					_tStepInQ = null;
+					_tWalkSince = _tClock;
+					TBlockStart(q);
+					return;
+				}
+				Vector3 toward = Flat(me, q.P) > 0.35f ? q.P : me + FlatNorm(baseDir, base.transform.forward) * 0.5f;
+				TWalkLevel(toward, 0.2f);
+				return;
+			}
+			case TFaceDepth:
+				_tStepInQ = null;
+				q.LapOnly = q.LapDepth > q.Depth + 0.05f;
+				TSpotDone(q, $"{TFaceText()} - counts as dug for this lap");
+				TNextSpot();
+				return;
+			case TFaceWater:
+				_tStepInQ = null;
+				TSpotDone(q, $"{TFaceText()} - counts as dug down (the water rule)");
+				TNextSpot();
+				return;
+			default:
+				// over a vein part, the vein's own rock, or a thing it can't clear: closed for good, as before
+				_tStepInQ = null;
+				TSpotDone(q, $"{TFaceText()}: no way to face it that meets dirt first - left for the mining", keep: true);
+				TNextSpot();
+				return;
+			}
 		}
+		_tStepInQ = null;
+		_tWalkSince = _tClock;
 		_tKey = q.P;
 		TDigSwing(facing, q.P, TFor.Dig);
 	}
+
+	// trench test D1: the closing line says what the straight swing really met
+	private string TFaceText()
+	{
+		switch (_tFaceWhy)
+		{
+		case TFaceNothing:
+			return "nothing in reach straight ahead";
+		case TFaceFar:
+			return $"dirt, but the hit lands {_tFaceFar:F1} m from the spot";
+		case TFaceDepth:
+			return "dirt, already at this lap's depth";
+		case TFaceWater:
+			return "dirt, under the water line";
+		case TFaceOverRock:
+			return "dirt, over a vein part";
+		case TFaceVein:
+			return $"rock in front ({VRockWhat(_tFaceGo, _tFaceCol)})";
+		case TFaceOther:
+			return $"in front: {(_tFaceGo != null ? _tFaceGo.name : "something")} it can't clear";
+		default:
+			return "no swing from here meets dirt first";
+		}
+	}
+
+	// trench test B1: within this of the next spot it digs toward it from the trench floor
+	private const float TFwdReach = 2.5f;
+
+	// trench test D2: the spot it is stepping in toward, and since when
+	private TSpot _tStepInQ;
+
+	private float _tStepInSince;
 
 	private bool TTreeNear(Vector3 p, float r, out GameObject go, out Vector3 pt)
 	{
@@ -1671,8 +2181,20 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		for (int i = 0; i < k; i++)
 		{
+			// trench test E2: trees and logs as before, and anything else the obstacle rule takes (bushes, stumps, small
+			// rocks); one already left (no tool hurts it) is skipped, so the next one is cleared - one left for want of an
+			// axe still counts, so the spot is left for an axe as before
 			Component t = (Component)buf[i].GetComponentInParent<TreeBase>() ?? buf[i].GetComponentInParent<TreeLog>();
+			if (t == null && OIsThing(buf[i].gameObject))
+			{
+				t = (Component)buf[i].GetComponentInParent<Destructible>() ?? buf[i].GetComponentInParent<MineRock>();
+			}
 			if (t == null)
+			{
+				continue;
+			}
+			GameObject root = ORoot(t.gameObject);
+			if (root != null && !OCan(root) && !_oNoAxe.Contains(root.GetInstanceID()))
 			{
 				continue;
 			}
@@ -1989,6 +2511,17 @@ public partial class HarvestController
 		}
 		TSpotGave(q, "blocked: " + why);
 		TNewStart(why);
+	}
+
+	// trench test A5 (log of 11-17: Comp used its 3 new starts up three times and the trench was called done with 13 to
+	// 67 of 114 spots dug): a spot this companion dug down itself (its last dig swing was at it) puts the count back to 0
+	private void TDugByMe(TSpot q)
+	{
+		if (_tNewStarts > 0 && _tKey == q.P)
+		{
+			if (CompanionsPlugin.LogDetailed) Log($"Spot {q.Idx + 1} dug - the new starts count from 0 again (was {_tNewStarts})");
+			_tNewStarts = 0;
+		}
 	}
 
 	private void TNewStart(string why, bool quiet = false)
@@ -2942,6 +3475,9 @@ public partial class HarvestController
 		case TFor.Obstacle:
 			OJudge();
 			break;
+		case TFor.StairDown:
+			_dSwings++;   // trench test G5: judged by its feet getting lower (DTick)
+			break;
 		case TFor.Dig:
 		{
 			bool prog = digProg || lowered2 >= VDigMin || rock;
@@ -3103,6 +3639,22 @@ public partial class HarvestController
 
 	private const int XMine = 6;
 
+	// trench test G2: walking to a saved stair's bottom
+	private const int XStairWalk = 7;
+
+	// trench test G2: at most this many stairs a vein, used when its bottom is within this (flat)
+	private const int XMaxStairs = 4;
+
+	private const float XStairNear = 15f;
+
+	private VStair _xStair;
+
+	private bool _xStairTried;
+
+	private Vector3 _xStepsFrom;
+
+	private bool _xStepsFromSet;
+
 	private const string XTag = "VeinOut";
 
 	// fix 4: the height it has to get up to. The place it's heading for, but never above the highest ground in the first
@@ -3169,10 +3721,11 @@ public partial class HarvestController
 			return false;
 		}
 		MHR_Mover.Release(_ai);   // the walk that gave up is over - the mover starts clean after the getting-out
-		return XBeginAt(why, me, outDir, rim, me + outDir * 3f);
+		// trench test G1: the mover has already had its one climb on this walk (or found none) - straight to the steps
+		return XBeginAt(why, me, outDir, rim, me + outDir * 3f, steps: true);
 	}
 
-	private bool XBeginAt(string why, Vector3 me, Vector3 outDir, float rimY, Vector3 dest)
+	private bool XBeginAt(string why, Vector3 me, Vector3 outDir, float rimY, Vector3 dest, bool steps = false)
 	{
 		_xOut = outDir;
 		_xRimY = rimY;
@@ -3190,30 +3743,129 @@ public partial class HarvestController
 		_xDirsTried = 0;
 		_xFinalPick = false;
 		_xSince = _tClock;
-		_xStage = XRestFull;
+		_xStage = steps ? XSteps : XRestFull;
+		_xWatchUntil = 0f;
+		_xStairTried = false;
+		_xStair = null;
+		_xStepsFromSet = false;
 		_ai.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Getting out {why}: at {MHR_Mover.Fmt(me)}, {depth:F1} m below where it has to get up to (height {_xRimY:F1}, heading for {MHR_Mover.Fmt(dest)}) - resting to full, then the climb");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Getting out {why}: at {MHR_Mover.Fmt(me)}, {depth:F1} m below where it has to get up to (height {_xRimY:F1}, heading for {MHR_Mover.Fmt(dest)}) - {(steps ? "cutting steps" : "one climb, else steps")}");
 		return true;
 	}
+
+	private float XStairTime(VStair st)
+	{
+		return TStartTime + 5f + Flat(_xStepsFromSet ? _xStepsFrom : base.transform.position, st.Bottom);
+	}
+
+	// trench test G2: a stair that got it out at least TExitDepth is saved for everyone on the vein. One that ends within
+	// 3 m of a saved stair's top is that stair (used again, or made longer at the bottom): its bottom moves to the lower.
+	private void XSaveStair(Vector3 top)
+	{
+		if (_vp == null || !_xStepsFromSet || top.y - _xStepsFrom.y < TExitDepth)
+		{
+			return;
+		}
+		Vector3 bottom = _xStepsFrom;
+		_xStepsFromSet = false;
+		foreach (VStair st in _vp.Stairs)
+		{
+			if (Flat(st.Top, top) <= 3f)
+			{
+				if (bottom.y < st.Bottom.y - 0.05f)
+				{
+					st.Bottom = bottom;
+					if (CompanionsPlugin.LogDetailed) Log($"The stair up to {MHR_Mover.Fmt(st.Top)} now starts lower, at {MHR_Mover.Fmt(bottom)}");
+				}
+				return;
+			}
+		}
+		if (_vp.Stairs.Count >= XMaxStairs)
+		{
+			return;
+		}
+		_vp.Stairs.Add(new VStair { Bottom = bottom, Top = top });
+		if (CompanionsPlugin.LogNormal) LogInfo($"A stair for everyone on this vein: from {MHR_Mover.Fmt(bottom)} up to {MHR_Mover.Fmt(top)} ({_vp.Stairs.Count} of {XMaxStairs})");
+	}
+
+	// out: the getting-out ends and the walk to the spot starts its time again; trench test G1f: watched for a slide back
+	private void XOut(Vector3 me, string msg)
+	{
+		_xActive = false;
+		_tWalkSince = _tClock;
+		if (CompanionsPlugin.LogNormal) LogInfo(msg);
+		XWatch(me);
+	}
+
+	// trench test G1f (John: "Is there a check to see if they have gone backwards and are no longer within that
+	// distance?"): for XWatchTime after it counts as out, feet XSlidBack or more under where they were = not out
+	private void XWatch(Vector3 me)
+	{
+		_xWatchUntil = Time.time + XWatchTime;
+		_xWatchY = me.y;
+		_xWatchP = me;
+	}
+
+	// true = it slid back: the same getting-out goes on, with the steps from where it stands (no new climb)
+	private bool XSlidBack()
+	{
+		if (_xActive || Time.time > _xWatchUntil)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		// a slide is down the face where it stood: not a walk on that goes down somewhere else (1.5 m or more away)
+		if (me.y > _xWatchY - XSlideLimit || Flat(me, _xWatchP) > XWatchNear)
+		{
+			return false;
+		}
+		_xWatchUntil = 0f;
+		_xActive = true;
+		_xStage = XSteps;
+		_xSince = _tClock;
+		_ai.StopMoving();
+		if (CompanionsPlugin.LogDetailed) Log($"Slid back {_xWatchY - me.y:F1} m after getting out - cutting steps");
+		return true;
+	}
+
+	private const float XWatchTime = 5f;
+
+	private const float XSlideLimit = 0.5f;
+
+	private const float XWatchNear = 1.5f;
+
+	private float _xWatchUntil, _xWatchY;
+
+	private Vector3 _xWatchP;
 
 	private void XTick()
 	{
 		Vector3 me = base.transform.position;
 		if (me.y >= _xRimY - 0.5f && _xStage != XStepsRunning)
 		{
-			_xActive = false;
-			_tWalkSince = _tClock;   // the walk to the spot starts its time again
-			if (CompanionsPlugin.LogNormal) LogInfo($"Out at {MHR_Mover.Fmt(me)} (the height to reach was {_xRimY:F1})");
+			XOut(me, $"Out at {MHR_Mover.Fmt(me)} (the height to reach was {_xRimY:F1})");
 			return;
 		}
 		switch (_xStage)
 		{
 		case XRestFull:
+			// trench test G1a/G1d (John: "If the wall is taller than 1.5x their height just carve your way out"; they slid
+			// back while standing on the face waiting for their stamina): higher than 1.5 x its height - steps; otherwise
+			// one climb at once if it has the stamina for a jump, else steps. No rest to full first.
 			_ai.StopMoving();
-			if (_stamina == null || _stamina.Stamina >= 0.99f * Mathf.Max(1f, _stamina.MaxStamina))
+			if (_xRimY - me.y > MHR_Mover.VeinClimbMax(_character))
 			{
-				_xStage = XClimbTry;
+				if (CompanionsPlugin.LogNormal) LogInfo($"{_xRimY - me.y:F1} m up is more than 1.5 x its height ({MHR_Mover.VeinClimbMax(_character):F1} m) - cutting steps");
+				_xStage = XSteps;
+				return;
 			}
+			if (_character != null && !MHR_Jump.CanAfford(_character))
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo("Not the stamina for a jump - cutting steps");
+				_xStage = XSteps;
+				return;
+			}
+			_xStage = XClimbTry;
 			return;
 		case XClimbTry:
 			// test review B4: one try of the general climb, then the steps (log ceead815: it stopped short 20 times in 24)
@@ -3228,34 +3880,61 @@ public partial class HarvestController
 				_xTries++;
 				_xSince = _tClock;
 				_xStage = XClimbing;
-				if (CompanionsPlugin.LogNormal) LogInfo("Climbing out (the general climb, one try)");
+				if (CompanionsPlugin.LogNormal) LogInfo("Climbing out (the general climb, one try; at the first struggle it cuts steps)");
 				return;
 			}
 			if (CompanionsPlugin.LogNormal) LogInfo(_xTries == 0 ? "The general climb finds no way up from here (too deep or rock all round for it) - cutting steps" : "The general climb has no other way up - cutting steps");
 			_xStage = XSteps;
 			return;
 		case XClimbing:
+			// trench test G1b: the mover ends the climb at the first struggle (MHR_Mover.Climb, the vein rules)
 			if (MHR_Mover.ForcedClimbing(_ai) && _tClock - _xSince < 25f)
 			{
 				MHR_Mover.Go(_ai, Time.deltaTime, _xRim, 1.0f, true, XTag);
 				return;
 			}
-			// part 1 G1: after the climb it's out when it's less than TExitDepth below the height to reach - the number
-			// that starts a getting-out (log 97d599fc: 1.0 m below a spot 15 m away sent Gunter cutting steps on open ground)
-			if (_xRimY - me.y < TExitDepth)
-			{
-				_xActive = false;
-				_tWalkSince = _tClock;
-				_ai.StopMoving();
-				if (CompanionsPlugin.LogNormal) LogInfo($"Out after the climb at {MHR_Mover.Fmt(me)}: {_xRimY - me.y:F1} m below the height to reach ({_xRimY:F1}), under {TExitDepth:F1} m - walking on");
-				return;
-			}
-			if (CompanionsPlugin.LogNormal) LogInfo($"The climb didn't get it out (feet {me.y:F1}, the rim {_xRimY:F1}) - resting to full first");
-			_xStage = XRestFull;
+			// trench test G1c (log of 11-17: "out" at 1.5 m under the rim left it partway up the face 24 times): out is
+			// within 0.5 m of the rim (the check at the top); not out = steps from where it stands
+			MHR_Mover.Release(_ai);
+			if (CompanionsPlugin.LogNormal) LogInfo($"The climb didn't get it out (feet {me.y:F1}, the rim {_xRimY:F1}) - cutting steps");
+			_xStage = XSteps;
 			return;
 		case XSteps:
 			XStartSteps(me);
 			return;
+		case XStairWalk:
+		{
+			// trench test G2/G3: to the stair's bottom by the normal route (15 s and 1 s a metre), then up it with the step
+			// cutting toward its top - it walks up the steps that are there and cuts any that are missing (a floor dug
+			// lower since, G3). Out = within 0.5 m of the stair's top.
+			VStair st = _xStair;
+			if (st == null)
+			{
+				_xStage = XSteps;
+				return;
+			}
+			if (Flat(me, st.Bottom) <= 1.0f)
+			{
+				MHR_Mover.Release(_ai);
+				_xRimY = st.Top.y;
+				_xRim = st.Top;
+				_xStepsFrom = me;
+				_xStepsFromSet = true;
+				_xStage = XStepsRunning;
+				PitBegin(FlatNorm(st.Top - st.Bottom, base.transform.forward), vein: true, st.Top.y);
+				return;
+			}
+			if (_tClock - _xSince > XStairTime(st))
+			{
+				MHR_Mover.Release(_ai);
+				if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to the stair at {MHR_Mover.Fmt(st.Bottom)} in {XStairTime(st):F0}s - cutting steps here");
+				_xStair = null;
+				_xStage = XSteps;
+				return;
+			}
+			MHR_Mover.Go(_ai, Time.deltaTime, st.Bottom, 0.8f, false, XTag);
+			return;
+		}
 		case XStepsRunning:
 			if (!_pitActive)
 			{
@@ -3269,6 +3948,11 @@ public partial class HarvestController
 				}
 				_xActive = false;   // out (PitStep said so), or stuck and waiting (PitStuck)
 				_tWalkSince = _tClock;
+				if (me.y >= _xRimY - 0.5f)
+				{
+					XWatch(me);   // trench test G1f
+					XSaveStair(me);
+				}
 			}
 			return;
 		default:
@@ -3294,6 +3978,30 @@ public partial class HarvestController
 			}
 			EquipTool(pick);
 			return;
+		}
+		// trench test G2: a saved stair first - the nearest whose bottom is within XStairNear (flat), once per getting-out
+		if (!_xStairTried && _vp != null && _vp.Stairs.Count > 0)
+		{
+			_xStairTried = true;
+			VStair near = null;
+			float nd = float.MaxValue;
+			foreach (VStair st in _vp.Stairs)
+			{
+				float d = Flat(me, st.Bottom);
+				if (d <= XStairNear && d < nd)
+				{
+					nd = d;
+					near = st;
+				}
+			}
+			if (near != null)
+			{
+				_xStair = near;
+				_xSince = _tClock;
+				_xStage = XStairWalk;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Getting out by the stair at {MHR_Mover.Fmt(near.Bottom)} ({nd:F1} m off, up to {MHR_Mover.Fmt(near.Top)})");
+				return;
+			}
 		}
 		// item D: after the one more pick that follows mining, there's nothing else to try
 		if (_xFinalPick && _xDirsTried != 0)
@@ -3386,6 +4094,11 @@ public partial class HarvestController
 		{
 			_xDirsTried |= 1 << bestK;
 			_xStage = XStepsRunning;
+			if (!_xStepsFromSet)
+			{
+				_xStepsFrom = me;   // trench test G2: where this stair begins
+				_xStepsFromSet = true;
+			}
 			if (CompanionsPlugin.LogDetailed) Log($"Step direction {bestK * 22.5f:F0} deg: away from the nearest rock{(haveRock ? $" ({rockD:F1} m off)" : " (none left)")}, nearest of those to where it's heading ({nTried} tried before, {nToward} point at the rock, {nBlocked} no head room or not dirt first)");
 			PitBegin(best, vein: true, Mathf.Min(bestRim, _xRimY));
 			return;
@@ -3438,7 +4151,7 @@ public partial class HarvestController
 	// after a vein (all broken, or given up) and the ore is picked up: out of the trench first, before anything else
 	internal bool VeinExitTick()
 	{
-		if (!_xPendingAfter && !_xActive)
+		if (!_xPendingAfter && !_xActive && Time.time > _xWatchUntil)
 		{
 			return false;
 		}
@@ -3450,8 +4163,12 @@ public partial class HarvestController
 		{
 			return true;
 		}
-		if (!_xActive)
+		if (!_xActive && !XSlidBack())
 		{
+			if (!_xPendingAfter)
+			{
+				return false;   // only the slide watch was left (G1f)
+			}
 			// list v2 H6: the same order as a walk to a spot - whatever moves it next walks first (the normal route, the
 			// mover's own climb); its own getting-out only once the mover has given up, up to the outer rim beside it.
 			// Over once it is XAfterClear outside the vein's box.
