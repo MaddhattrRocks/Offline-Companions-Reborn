@@ -53,6 +53,12 @@
   - L5: SayGaveUp is silent (log only) while a part is being mined; the vein blacklist was already undone in OvResume.
   - L6: the P5 wall check uses the part's box (Physics.ClosestPoint fails on the vein's non-convex mesh).
   - L7: the stretch log names the companions.
+- Test-6 fixes N1-N5 (John's OK 2026-11-18 19:47Z, reviews/1.5.98-test6-review.md; still 1.5.98): clearing digs like a player.
+  - N1: OvTick no longer ticks a clearing dig point (_dgClear); OvClRound ticks it and sees how it ended (test 6 restarted the same point every frame). Every point started counts toward the cap (metres + 2).
+  - N2: the clearing uses the trench dig swing (OvDigBegin/OvDigTick) at a point 1 m further in toward the part; the game's swing hits dirt or any vein rock in front. Removed from clearing: the Ore job's pinned attack (OvMinePart, OvPartBack, _ovPart/_ovPin, OvPinSkip/OvPinGone and their hooks in HarvestController), the L2 reach test and stand-point override, L5's quiet give-up.
+  - N3 (OvDigJudge, _dgClear): a swing on the vein's rock or the ground going down = progress; done = a swing with no rock hit and the ground at its feet (or the game's limit), then it steps onto the point; 3 swings with neither = closed = a round.
+  - N4: the point's 30 s clock restarts when the ground goes down or a part breaks (c.Alive at the 2 s look).
+  - N5: the round's part gone = mined (count, log) and the existing drop pickup at its centre (8 m scan), then the chooser.
 
 ### 1.5.97 - a vein mined the way a player does: trench round it, clear under it, pop it (John, 2026-11-14: 1.5.96 dug straight down into the water; approved plan reviews/1.5.97-vein-trench-plan.md T1-T8 + answers Q1-Q4)
 - T1 (HarvestTrench.cs TOutline): a part is "visible" if a ray down onto its own collider (0.5 m grid over its box, max 12x12) lands more than 5 cm above the ground. From the visible parts' centre, 16 level rays (22.5 deg) start 20 m out at ground + 0.5 m (if that misses, at the centre's ground + 0.5 m) and hit only visible parts: the edge points. No visible part = all parts used. Trench line 0.75 m outside the edge points, a point about every 1 m. Start = the trench point nearest the companion. Normal log: visible/held counts, bearings found, trench size; Detailed: the 16 edge points.

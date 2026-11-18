@@ -324,8 +324,6 @@ public partial class HarvestController
 
 	private bool _dgReached;
 
-	private bool _dgOre;
-
 	// C5: the ramp
 	private bool _rpActive;
 
@@ -508,18 +506,6 @@ public partial class HarvestController
 			OvLeave("the vein is gone", quiet: true);
 			return;
 		}
-		if (_ovPart != null)
-		{
-			// build 2: back from mining a part; the attack's own give-ups blacklist the vein - not while it works it
-			OvPartBack();
-			foreach (MineRock5 r in _vp.Rocks)
-			{
-				if (r != null)
-				{
-					_blacklist.Remove(r.gameObject.GetInstanceID());
-				}
-			}
-		}
 		if (_ovHandMode != 0)
 		{
 			GameObject thing = _ovHand;
@@ -590,10 +576,6 @@ public partial class HarvestController
 	// build 2: lets go of the part it holds or mines
 	private void OvPartRelease()
 	{
-		if (_ovPart != null && _ovPart.Holder == this)
-		{
-			_ovPart.Holder = null;
-		}
 		if (_rpPart != null && _rpPart.Holder == this)
 		{
 			_rpPart.Holder = null;
@@ -602,9 +584,7 @@ public partial class HarvestController
 		{
 			_clFor.Holder = null;
 		}
-		_ovPart = null;
 		_rpPart = null;
-		_ovPin = null;
 		OvClOff();
 	}
 
@@ -1347,7 +1327,8 @@ public partial class HarvestController
 			OvWayOutTick();
 			return;
 		}
-		if (_dgActive)
+		// N1: a clearing dig point is ticked by the clearing itself (OvClRound), which then sees how it ended
+		if (_dgActive && !_dgClear)
 		{
 			OvDigTick();
 			return;
@@ -2146,7 +2127,6 @@ public partial class HarvestController
 		_dgHwTime = 0f;
 		_dgClear = false;
 		_dgReached = false;
-		_dgOre = false;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
@@ -2381,17 +2361,11 @@ public partial class HarvestController
 				return;
 			}
 		}
-		if (_dgClear && g <= _dgGoalY + OvDigGain)
-		{
-			OvDigOff();
-			_dgReached = true;
-			return;
-		}
-		if (g <= OvFloor(_dgPoint) + OvDigGain)
+		// N3: a clearing point always gets its swing first (OvDigJudge decides when it's done)
+		if (!_dgClear && g <= OvFloor(_dgPoint) + OvDigGain)
 		{
 			OvDigOff();
 			_dgLastProg = false;
-			_dgReached = _dgClear;
 			if (_dgSpot != null && !_dgRamp)
 			{
 				OvSpotDone(_dgSpot, "at the floor (the game's 8 m limit or the water)");
@@ -2511,12 +2485,23 @@ public partial class HarvestController
 		}
 		// H1 / H5: a swing that landed on this vein's ore is progress (it keeps hitting through it); only a swing that hit
 		// nothing it could deal with and left the ground as it was counts as "no change"
-		if (_dgClear && hitOre && !prog)
+		if (_dgClear)
 		{
-			// L4: the vein is in the way of the dig toward the part - it mines that (OvClRound)
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (toward a part) hit the vein's rock - mining it");
-			OvDigOff();
-			_dgOre = true;
+			// N3: a clearing point - a swing on the vein's rock or the ground going down is progress; done = a swing that
+			// met no rock with the ground at its feet (or at the game's limit); 3 swings with neither close it
+			bool done = !hitOre && (after <= _dgGoalY + OvDigGain || after <= OvFloor(_dgPoint) + OvDigGain);
+			bool cProg = prog || hitOre;
+			_dgNoProg = cProg ? 0 : _dgNoProg + 1;
+			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)}: ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{(done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (done)
+			{
+				OvDigOff();
+				_dgReached = true;
+			}
+			else if (_dgNoProg >= OvNoProgSwings)
+			{
+				OvDigOff();
+			}
 			return;
 		}
 		bool oreProg = !prog && hitOre;
@@ -2546,12 +2531,6 @@ public partial class HarvestController
 		{
 			OvDigOff();
 			OvSpotDone(_dgSpot, "down to this lap's depth");
-			return;
-		}
-		if (_dgClear && after <= _dgGoalY + OvDigGain)
-		{
-			OvDigOff();
-			_dgReached = true;
 			return;
 		}
 		if (_dgNoProg >= OvNoProgSwings)

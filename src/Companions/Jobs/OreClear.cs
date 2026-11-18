@@ -6,8 +6,9 @@ namespace Companions;
 // 1.5.98 build 2 (John's approved list reviews/1.5.98-clearing-pop-build-list.md, revised 2026-11-18 01:26Z): clearing and
 // the pop. After the trench (and its way out) the companions mine the "roots" - the parts that hold the vein up by the
 // game's own rule (MineRock5.UpdateSupport / GetSupport, same box and layer mask) - lowest first. Parts held only by other
-// parts are never touched: when the last root breaks the game's CheckSupport drops them all at once. Mining a part is the
-// Ore job's existing MineRock5 attack, pinned to that part (_ovPin).
+// parts are never touched: when the last root breaks the game's CheckSupport drops them all at once. 1.5.98 N1-N5 (test 6):
+// a part is reached the way a player does it - the trench's dig swing at a point 1 m further in toward it, hitting
+// whatever is in front (dirt or the vein's rock), from the trench spot nearest it.
 public partial class HarvestController
 {
 	private sealed class OvPart
@@ -41,12 +42,8 @@ public partial class HarvestController
 
 	private const int OvPopFails = 2;              // P7: 2 pops in a row that break nothing stop the vein work
 
-	// the part it is mining (the hand-off) and the pinned collider the attack aims at
-	private OvPart _ovPart;
-
 	private OvPart _rpPart;
 
-	internal Collider _ovPin;
 
 	// 1.5.98 L1-L4: the round on one part - the part it is for, where it stands (a trench spot, then each dug point), the
 	// way in toward the part, how many points it dug and may dig, and the dig point's 30 s clock
@@ -67,6 +64,8 @@ public partial class HarvestController
 	private float _clBestG;
 
 	private float _clIdle;
+
+	private int _clAlive;
 
 	// shared per plan (kept in a side table so OvPlan stays as it is)
 	private sealed class OvClear
@@ -226,7 +225,7 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		if (h._vp != _vp || (h._ovPart != part && h._rpPart != part && h._clFor != part))
+		if (h._vp != _vp || (h._rpPart != part && h._clFor != part))
 		{
 			part.Holder = null;
 			return false;
@@ -352,20 +351,6 @@ public partial class HarvestController
 		return best;
 	}
 
-	// L2: in reach from where it stands - the box within the pickaxe's reach of its feet (flat) and overlapping its feet
-	// to 2 m above them
-	private bool OvClReach(OvPart part)
-	{
-		Vector3 me = base.transform.position;
-		if (Flat(me, OvBoxNear(part, me)) > GetAttackRange())
-		{
-			return false;
-		}
-		return part.Centre.y - part.Half.y <= me.y + OvClBand && part.Centre.y + part.Half.y >= me.y;
-	}
-
-	private const float OvClBand = 2f;             // L2: from its feet to 2 m above them
-
 	private const float OvClAt = 0.8f;             // L2: on the spot it walks to (flat)
 
 	private const int OvClCapMore = 2;             // L4: dig points = metres from the trench spot to the part + 2
@@ -399,40 +384,52 @@ public partial class HarvestController
 		}
 	}
 
-	// L2-L4: one frame of the round (from OvClearTick while _clFor is set)
+	// N1-N5: one frame of the round (from OvClearTick while _clFor is set; only this ticks its dig points)
 	private void OvClRound(OvClear c)
 	{
 		OvPart part = _clFor;
 		if (part.C == null || !part.C.gameObject.activeSelf)
 		{
-			// it broke or fell while it walked or dug toward it (another companion, or the pop)
-			if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(part.C != null ? part.C.name : "?")}\" it was going for is gone - looking again");
+			// N5: the part it was going for broke (its swings, another companion's, or the pop): mined, the drops around
+			// it (the pickup scans 8 m, so the parts it broke on the way in too), then the chooser
+			if (part.C != null)
+			{
+				c.ById.Remove(part.C.GetInstanceID());
+			}
+			c.Mined++;
+			if (_clPop)
+			{
+				c.PopFails = 0;
+			}
 			if (part.Holder == this)
 			{
 				part.Holder = null;
 			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"Mined the part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" - picking up, then looking at what still holds it up");
 			OvClOff();
 			OvPartsLook(c, true);
+			OvPartDrops(part.Centre);
 			return;
 		}
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
 		if (_dgActive && _dgClear)
 		{
-			// L4: the dig point's 30 s clock - the ground going down starts it again
+			// N4: the point's 30 s clock - the ground there going down or a part of the vein breaking starts it again
 			float g = GroundAt(_dgPoint);
-			if (g < _clBestG - OvDigGain)
+			if (g < _clBestG - OvDigGain || c.Alive < _clAlive)
 			{
-				_clBestG = g;
+				_clBestG = Mathf.Min(_clBestG, g);
 				_clIdle = 0f;
 			}
 			else
 			{
 				_clIdle += dt;
 			}
+			_clAlive = c.Alive;
 			if (_clIdle >= OvSpotIdle)
 			{
-				OvClFail($"{OvSpotIdle:F0} s of work on the dirt at {MHR_Mover.Fmt(_dgPoint)} without it going down");
+				OvClFail($"{OvSpotIdle:F0} s at {MHR_Mover.Fmt(_dgPoint)} without the ground going down or a part breaking");
 				return;
 			}
 			OvDigTick();
@@ -441,29 +438,15 @@ public partial class HarvestController
 				return;
 			}
 			_dgClear = false;
-			if (_dgOre)
-			{
-				// L4: the vein's rock is in the way - the part of it nearest the dig point
-				OvPart inWay = OvClNearestPart(c, _dgPoint);
-				if (inWay == null)
-				{
-					OvClFail("the dig toward it hit rock and no part of the vein is there");
-					return;
-				}
-				if (CompanionsPlugin.LogNormal) LogInfo($"The vein's rock is in the way at {MHR_Mover.Fmt(_dgPoint)} - mining the part \"{inWay.C.name}\" first");
-				OvMinePart(inWay, false);
-				return;
-			}
 			if (!_dgReached)
 			{
-				OvClFail($"the dirt at {MHR_Mover.Fmt(_dgPoint)} won't go lower (or it couldn't get to it)");
+				OvClFail($"{OvNoProgSwings} swings at {MHR_Mover.Fmt(_dgPoint)} did nothing (or it couldn't get to it)");
 				return;
 			}
 			_clStand = new Vector3(_dgPoint.x, GroundAt(_dgPoint), _dgPoint.z);
-			_clStep++;
 			_clWalk = true;
 			_moveTimer = 0f;
-			if (CompanionsPlugin.LogDetailed) Log($"Dug point {_clStep} of {_clCap} toward \"{part.C.name}\" - stepping onto it");
+			if (CompanionsPlugin.LogDetailed) Log($"Point {_clStep} of {_clCap} toward \"{part.C.name}\" is clear - stepping onto it");
 			return;
 		}
 		if (_clWalk)
@@ -482,47 +465,23 @@ public partial class HarvestController
 			_clWalk = false;
 			_ai?.StopMoving();
 		}
-		if (OvClReach(part))
-		{
-			// L3: in reach - the Ore job's attack on it, from here
-			OvMinePart(part, _clPop);
-			return;
-		}
+		// N1: every point started counts toward the cap
 		if (_clStep >= _clCap || _clDir == Vector3.zero)
 		{
-			OvClFail($"dug {_clStep} point(s) toward it and it's still out of reach");
+			OvClFail($"{_clStep} point(s) toward it and it's still standing");
 			return;
 		}
-		// L4: the next point 1 m further in, down to its feet (never under the game's limit)
+		// N2: the trench's dig swing at a point 1 m further in - the game's swing hits what is in front, dirt or rock
 		Vector3 pt = _clStand + _clDir * 1f;
 		pt.y = GroundAt(pt);
+		_clStep++;
 		OvDigBegin(pt, null, ramp: false);
 		_dgClear = true;
 		_dgGoalY = me.y;
 		_clBestG = pt.y;
 		_clIdle = 0f;
-		if (CompanionsPlugin.LogDetailed) Log($"\"{part.C.name}\" is out of reach from {MHR_Mover.Fmt(me)} - digging toward it at {MHR_Mover.Fmt(pt)} (ground {pt.y:F2}, down to {me.y:F2}), point {_clStep + 1} of {_clCap}");
-	}
-
-	// L4: the standing part (not buried out of reach) whose box is nearest the point
-	private OvPart OvClNearestPart(OvClear c, Vector3 p)
-	{
-		OvPart best = null;
-		float bd = float.MaxValue;
-		foreach (OvPart part in c.Parts)
-		{
-			if (part.Out || part.C == null || !part.C.gameObject.activeSelf)
-			{
-				continue;
-			}
-			float d = Vector3.Distance(p, OvBoxNear(part, p));
-			if (d < bd)
-			{
-				bd = d;
-				best = part;
-			}
-		}
-		return best;
+		_clAlive = c.Alive;
+		if (CompanionsPlugin.LogDetailed) Log($"Toward \"{part.C.name}\": swinging at {MHR_Mover.Fmt(pt)} (ground {pt.y:F2}, its feet {me.y:F2}), point {_clStep} of {_clCap}");
 	}
 
 	// the round on _clFor ended without it breaking: a round (2 = left), and the 2-tries stop rule
@@ -558,95 +517,6 @@ public partial class HarvestController
 			OvClearSay(c);
 		}
 		OvPartsLook(c, true);
-	}
-
-	// P3 / P5: the part goes to the Ore job's own MineRock5 attack, pinned to it
-	private void OvMinePart(OvPart part, bool pop)
-	{
-		ItemDrop.ItemData tool = FindBestTool(3);
-		if (tool == null)
-		{
-			OvDigOff();
-			_noToolRock = _vFor;
-			_noToolNext = Time.time + 1f;
-			OvLeaveOut(base.transform.position, "no working pickaxe");
-			return;
-		}
-		_ovPart = part;
-		_ovPin = part.C;
-		_ai?.StopMoving();
-		_target = part.Rock.gameObject;
-		_targetType = "MineRock5";
-		_swingCount = 0;
-		_totalAttempts = 0;
-		_consecutiveFailures = 0;
-		_reapproach = false;
-		_rock5ActiveSections = -1;
-		_rock5CurrentSegment = part.C;
-		EquipTool(tool);
-		_moveTimer = 0f;
-		_moveLogTimer = 0f;
-		_moveTargetLocked = false;
-		_attackFaceLocked = false;
-		_clWalk = false;
-		EnterAttacking();   // L3: from where it stands (the walk to "the ground above" never runs)
-		if (CompanionsPlugin.LogNormal) LogInfo($"Mining the part \"{part.C.name}\" of \"{_vp.Name}\" from {MHR_Mover.Fmt(base.transform.position)}{(part != _clFor ? " (it's in the way)" : "")}");
-	}
-
-	// the attack on the pinned part ended (it broke, the attack gave up, or the part fell): back to the chooser
-	private void OvPartBack()
-	{
-		OvPart part = _ovPart;
-		_ovPart = null;
-		_ovPin = null;
-		if (part == null || _vp == null)
-		{
-			OvClOff();
-			return;
-		}
-		OvClear c = OvC();
-		bool broke = part.C == null || !part.C.gameObject.activeSelf;
-		if (part.Holder == this && part != _clFor)
-		{
-			part.Holder = null;
-		}
-		if (broke)
-		{
-			if (part.C != null)
-			{
-				c.ById.Remove(part.C.GetInstanceID());
-			}
-			c.Mined++;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Mined the part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" - looking at what still holds it up");
-			if (part == _clFor || _clFor == null)
-			{
-				if (_clPop)
-				{
-					c.PopFails = 0;
-				}
-				if (part.Holder == this)
-				{
-					part.Holder = null;
-				}
-				OvClOff();
-			}
-			// L4: a part in the way broke - the round on the part it is for goes on from where it stands
-			OvPartsLook(c, true);
-			return;
-		}
-		OvClFail(part == _clFor ? "the attack on it ended" : $"the part \"{part.C.name}\" in the way didn't break");
-	}
-
-	// the walk to a part, or the attack on it, while the part broke or fell under it: the hand-off ends (Update)
-	internal bool OvPinGone()
-	{
-		return _ovPart != null && (_ovPin == null || !_ovPin.gameObject.activeSelf);
-	}
-
-	// the attack's segment choice only takes the pinned part while one is pinned
-	private bool OvPinSkip(Collider c)
-	{
-		return _ovPin != null && _ovPin.gameObject.activeSelf && c != _ovPin;
 	}
 
 	// P8 / P7: said once per vein
@@ -702,10 +572,10 @@ public partial class HarvestController
 		OvClearSay(c);
 	}
 
-	// the pinned part broke (or fell): the drops are picked up the existing way, then back to the chooser (OvResume)
-	private void OvPartDrops()
+	// N5: the drops are picked up the existing way, then back to the chooser (OvResume)
+	private void OvPartDrops(Vector3 at)
 	{
-		_lastDestroyPos = _ovPart != null ? _ovPart.Centre : base.transform.position;
+		_lastDestroyPos = at;
 		_currentDrop = null;
 		_dropTimer = 0f;
 		_dropScanDelayTimer = 0.5f;

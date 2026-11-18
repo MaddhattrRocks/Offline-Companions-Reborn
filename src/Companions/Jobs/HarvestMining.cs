@@ -93,12 +93,6 @@ public partial class HarvestController
 			_ => "no working tool left"
 		};
 		_lastGiveUpText = what + (string.IsNullOrEmpty(detail) ? "" : " (" + detail + ")");
-		// 1.5.98 L5: the vein clearing - the try on that part ends (a round), nothing said, it stays on the vein
-		if (_ovPart != null && _vFor != null)
-		{
-			if (CompanionsPlugin.LogNormal) LogInfo("The try on the part \"" + (_ovPin != null ? _ovPin.name : "?") + "\" ended - " + _lastGiveUpText);
-			return;
-		}
 		if (CompanionsPlugin.LogNormal) LogInfo("Leaving \"" + thing + "\" - " + what);
 		if (CompanionsPlugin.LogDetailed && !string.IsNullOrEmpty(detail)) Log("  (" + detail + ")");
 		if (why == GiveUpWhy.NoTool)
