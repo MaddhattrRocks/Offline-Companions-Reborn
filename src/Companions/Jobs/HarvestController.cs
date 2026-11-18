@@ -1335,6 +1335,12 @@ public partial class HarvestController : MonoBehaviour
 	{
 		float num7 = Vector3.Distance(base.transform.position, lockedMoveTarget);
 		_shouldRun = run;
+		// 1.5.98 AA6: on a vein (the Ore job, and the Wood / Stone flow working for it) - the vein's board: its walk goal,
+		// the side step when another is in the way (no shoving), the detour round one working on the line
+		if (_vp != null && _vFor != null)
+		{
+			OvBoardWalk(lockedMoveTarget, deltaTime);
+		}
 		// 1.4.77 (movement phase 3): MHR_Mover instead of MoveToPoint.
 		bool flag8 = MHR_Mover.Go(_ai, deltaTime, MHR_GatherRules.ApproachPoint(this, lockedMoveTarget), stopDist, run, "Gather");
 		if (!flag8 && num7 < 4f && (_character?.GetVelocity().magnitude ?? 0f) < 1f)
@@ -2667,10 +2673,8 @@ public partial class HarvestController : MonoBehaviour
 			if (_ovHandMode != 0 && _target == _ovHand && OvThingBox(_target, out Bounds lb))
 			{
 				Vector3 lp = lb.ClosestPoint(base.transform.position);
-				if (Vector3.Distance(base.transform.position, lp) <= GetAttackRange() + 0.5f)
-				{
-					return lp;
-				}
+				// AA1 / AA6: not a point over the vein it rests on, nor one another companion stands on or walks to
+				return OvHandLogPoint(lb, Vector3.Distance(base.transform.position, lp) <= GetAttackRange() + 0.5f ? lp : LogReachPoint());
 			}
 			return LogReachPoint();
 		}

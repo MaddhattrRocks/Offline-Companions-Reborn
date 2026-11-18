@@ -1581,6 +1581,20 @@ namespace Companions
             Sidestep(ai, c, s, pos, dir.normalized, now, tag, "someone in the way", true);
         }
 
+        // 1.5.98 AA6: the Ore job's board - go round a companion working on the straight line to its goal: the walking
+        // code's own detour (a waypoint walked to first, dropped when reached or after secs). Not while it has a detour,
+        // a ladder or a vein way out of its own. True = set.
+        internal static bool DetourNow(CompanionAI ai, Vector3 via, float secs)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null || s.HasDetour || s.UseLadder != null || s.LadderPending || s.VeinOut != 0 || s.RouteDoor != null) return false;
+            float now = Time.time;
+            s.HasDetour = true; s.Detour = via; s.DetourUntil = now + secs;
+            Plan(ai, c, s, ai.transform.position, now);
+            return true;
+        }
+
         // nothing but ladder within `height` above a spot
         static bool HeadRoom(Vector3 spot, float height)
         {

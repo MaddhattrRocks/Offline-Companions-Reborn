@@ -108,6 +108,10 @@ public partial class HarvestController
 		public string Name;
 
 		public Bounds Box;
+
+		public readonly List<Bounds> PartBoxes = new List<Bounds>();   // AA1 / AA2: the live parts' boxes (OvVeinBoxes)
+
+		public float PartBoxesAt = -100f;
 	}
 
 	private const float OvRingOut = 1.0f;          // C2.2: the ring 1 m outside the seen parts
@@ -595,6 +599,7 @@ public partial class HarvestController
 		_ovHand = null;
 		_ovHandSpot = null;
 		_ovHandMode = 0;
+		_ovHandAtOn = false;
 		if (_rpActive)
 		{
 			// a thing cleared from a ramp step (H1 / H2): the ramp's 60 s clock starts again from here
@@ -1256,6 +1261,7 @@ public partial class HarvestController
 			return;
 		}
 		p.Lap++;
+		p.PitLeft.Clear();   // AA5: "left twice" is per lap - a left thing is tried again on the next lap (the laps are capped)
 		int open = 0;
 		foreach (OvSpot s in p.Spots)
 		{
@@ -1813,6 +1819,10 @@ public partial class HarvestController
 		_ovHandSpot = q;
 		_ovHandMode = bestMode;
 		_hdSince = Time.time;   // Y6e: after a way up toward it (Y6d) the clock starts here again
+		_hdClock = 0f;          // AA4
+		_hdHitSeen = _hdSince;
+		_ovHandAtOn = false;    // AA1 / AA6: the reach point is looked at again
+		_ovHandAtNext = 0f;
 		_hdRamped = _hdRampNext;
 		_hdRampNext = false;
 		_hdBest = float.MaxValue;
@@ -1865,7 +1875,15 @@ public partial class HarvestController
 			// V4 / Y6a: a thing whose bottom is more than 2 m above the trench floor at its nearest spot is on the wall top,
 			// not in the trench - left alone
 			OvSpot fs = q ?? OvNearest(p);
-			if (s_ovThingBuf[i].bounds.min.y > (fs != null ? GroundAt(fs.P) : base.transform.position.y) + OvThingAbove)
+			bool haveBox = OvThingBox(go, out Bounds tb);
+			// AA7: one whose box hangs over the spot is in the trench however high it is
+			bool overP = haveBox && p.x >= tb.min.x && p.x <= tb.max.x && p.z >= tb.min.z && p.z <= tb.max.z;
+			if (!overP && s_ovThingBuf[i].bounds.min.y > (fs != null ? GroundAt(fs.P) : base.transform.position.y) + OvThingAbove)
+			{
+				continue;
+			}
+			// AA1: all of it over the vein's parts, resting on them: it comes down with the vein
+			if (haveBox && OvOnVein(go, tb, base.transform.position, out _) == 2)
 			{
 				continue;
 			}
@@ -1982,9 +2000,9 @@ public partial class HarvestController
 	}
 
 	// R3: a saved ramp is a way out only if its top reached the ground outside as it was when it began
-	private static bool OvRampOut(OvRamp r)
+	private bool OvRampOut(OvRamp r)
 	{
-		return r.Top.y >= r.Need - OvStepUp;
+		return r.Top.y >= r.Need - OvStepUp && !OvCrossesVein(r.Bottom, r.Top);   // AA2: never one through the vein
 	}
 
 	// R5: the nearest way out of this vein's trench (a saved ramp that is really out, R3) not tried on this trip, for the
@@ -2243,6 +2261,8 @@ public partial class HarvestController
 		_dgReached = false;
 		_dgLimit = false;
 		_dgPart = false;
+		_bdWaitFrom = -1f;   // AA6: a new point - its own wait
+		_bdNextPick = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
@@ -2423,12 +2443,11 @@ public partial class HarvestController
 				{
 					_dgHwTime += dt;
 				}
-				// H4: another companion right ahead and no headway for 1 s: the walking code's own side step (once a second)
-				if (_dgHwTime >= OvSideAfter && Time.time - _dgSideAt >= OvSideAfter && OvOtherAhead(me, _dgPoint))
+				// H4: the side step when another companion is in the way is in WalkGo now (AA6, every walk on a vein)
+				// AA6 (a): a trench point another companion stands on or walks to - it waits up to 5 s, then the spot is skipped
+				if (q != null && !_dgBushOn && !_dgClear && OvBoardTrenchWait())
 				{
-					_dgSideAt = Time.time;
-					if (CompanionsPlugin.LogDetailed) Log($"Another companion is in the way to {MHR_Mover.Fmt(_dgPoint)} - side step");
-					MHR_Mover.SidestepNow(_ai, MHR_GatherRules.ApproachPoint(this, _dgPoint), "Gather");
+					return;
 				}
 				if (!_dgBushOn && q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && _dgHwTime >= OvNoHeadway)
 				{
@@ -2677,6 +2696,16 @@ public partial class HarvestController
 			return;
 		}
 		bool oreProg = !prog && hitOre;
+		// AA5: a trench swing that hit a thing (one it left, another's, or one it has no tool for) and changed nothing isn't
+		// "can't go lower": the spot is skipped this lap (a left thing is on it) and the next lap comes back to it
+		if (hitThing && !prog && !oreProg && !dug && !_dgRamp && _dgSpot != null)
+		{
+			OvSpot ts = _dgSpot;
+			string tn = _ovThingHitGo != null ? _ovThingHitGo.name : "?";
+			OvDigOff();
+			OvSkip(ts, $"its swing hit \"{tn}\", a thing it left, and changed nothing", normal: true);
+			return;
+		}
 		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
 		// vein's ore restarts the spot's 30 s clock
 		_dgLastProg = prog || oreProg || dug;
@@ -2776,11 +2805,19 @@ public partial class HarvestController
 		{
 			spot.RampTried = true;
 		}
+		// AA2 (John: "the way out should never be through the ore vein"): the flat line from here to its goal, every 0.5 m,
+		// within 0.5 m of a part's box = no ramp: a way out tries the next place (R4 / E2), a spot is skipped this lap, a
+		// thing is left once (OvRampFail's own branches). Not the way up toward a part (P5): its goal is at that part's box.
+		if (_vp != null && _rpPart == null && OvCrossesVein(me, _rpGoal))
+		{
+			OvRampFail($"the line from {MHR_Mover.Fmt(me)} to {MHR_Mover.Fmt(_rpGoal)} goes through the vein ({why})", refused: true);
+			return;
+		}
 		if (_vp != null)
 		{
 			foreach (OvRamp r in _vp.Ramps)
 			{
-				if (!_rpTried.Contains(r) && (!_rpWay || OvRampOut(r)) && Flat(r.Bottom, me) <= OvRampNear && Vector3.Distance(r.Top, goal) <= OvRampTopNear)
+				if (!_rpTried.Contains(r) && (!_rpWay || OvRampOut(r)) && !OvCrossesVein(r.Bottom, r.Top) && Flat(r.Bottom, me) <= OvRampNear && Vector3.Distance(r.Top, goal) <= OvRampTopNear)
 				{
 					_rpSaved = r;
 					break;
@@ -2953,7 +2990,7 @@ public partial class HarvestController
 		_rpActive = false;
 		OvDigOff();
 		_ai?.StopMoving();
-		if (_vp != null && _rpSaved == null && rise >= OvRampSave)
+		if (_vp != null && _rpSaved == null && rise >= OvRampSave && !OvCrossesVein(_rpStart, me))   // AA2
 		{
 			OvRamp same = null;
 			foreach (OvRamp r in _vp.Ramps)
@@ -2964,7 +3001,11 @@ public partial class HarvestController
 					break;
 				}
 			}
-			if (same != null)
+			if (same != null && OvCrossesVein(same.Bottom.y <= _rpStart.y ? same.Bottom : _rpStart, me))
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"The ramp at {MHR_Mover.Fmt(same.Bottom)} is not made longer: its line up to {MHR_Mover.Fmt(me)} would go through the vein");   // AA2
+			}
+			else if (same != null)
 			{
 				if (_rpStart.y < same.Bottom.y)
 				{
@@ -3003,14 +3044,26 @@ public partial class HarvestController
 		}
 	}
 
-	private void OvRampFail(string why)
+	private void OvRampFail(string why, bool refused = false)
 	{
 		_rpActive = false;
 		OvDigOff();
 		_ai?.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
+		if (CompanionsPlugin.LogNormal) LogInfo(refused ? $"No way up: {why}" : $"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
 		if (_rpThing != null)
 		{
+			if (refused)
+			{
+				// AA2: a way up toward a thing through the vein - the thing is left once (Y6e)
+				GameObject t = _rpThing;
+				OvRampThingDrop();
+				if (t != null)
+				{
+					_blacklist[t.GetInstanceID()] = Time.time;
+					OvPitLeftNote(t);
+				}
+				return;
+			}
 			OvRampThingBack();   // Y6d: the thing gets its try from here (V5's clock)
 			return;
 		}
@@ -3153,7 +3206,9 @@ public partial class HarvestController
 				continue;
 			}
 			OvSpot n = OvNearest(b.center);
-			if (n == null || b.min.y > GroundAt(n.P) + OvThingAbove)
+			// AA7: one whose box hangs over a trench spot is taken however high it is (AA3's way up reaches it)
+			bool overSpot = OvOverSpot(b);
+			if (n == null || (!overSpot && b.min.y > GroundAt(n.P) + OvThingAbove))
 			{
 				continue;   // on the wall top
 			}
@@ -3163,7 +3218,7 @@ public partial class HarvestController
 			}
 			Vector3 np = b.ClosestPoint(new Vector3(n.P.x, b.center.y, n.P.z));
 			bool under = b.center.x >= p.Box.min.x && b.center.x <= p.Box.max.x && b.center.z >= p.Box.min.z && b.center.z <= p.Box.max.z;
-			if (Flat(np, n.P) > OvThingRadius && !under)
+			if (Flat(np, n.P) > OvThingRadius && !under && !overSpot)
 			{
 				continue;
 			}
@@ -3171,7 +3226,14 @@ public partial class HarvestController
 			{
 				continue;   // no tool for it: nothing to do about it here
 			}
-			float d = Flat(me, b.ClosestPoint(new Vector3(me.x, b.center.y, me.z)));
+			// AA1: resting on the vein - all of it over the parts: it comes down with the vein (left alone); one end off it:
+			// taken, from that end
+			int on = OvOnVein(go, b, me, out Vector3 offAt);
+			if (on == 2)
+			{
+				continue;
+			}
+			float d = on == 1 ? Flat(me, offAt) : Flat(me, b.ClosestPoint(new Vector3(me.x, b.center.y, me.z)));
 			if (d < bd)
 			{
 				bd = d;
@@ -3211,28 +3273,36 @@ public partial class HarvestController
 	// handed back. Once per try. True = the way up started.
 	private bool OvHandLedge()
 	{
-		if (_hdRamped || _state != HarvestState.Moving || _ovHand == null || _vp == null || !OvThingBox(_ovHand, out Bounds b))
+		if (_hdRamped || (_state != HarvestState.Moving && _state != HarvestState.Attacking) || _ovHand == null || _vp == null || !OvThingBox(_ovHand, out Bounds b))
 		{
 			return false;
 		}
 		Vector3 me = base.transform.position;
-		if (b.min.y <= me.y + OvStepUp)
-		{
-			_hdHwTime = 0f;
-			return false;
-		}
-		Vector3 np = b.ClosestPoint(new Vector3(me.x, b.center.y, me.z));
+		// AA1: a log resting on the vein - toward its end off the vein
+		Vector3 np = _ovHandAtOn ? _ovHandAt : b.ClosestPoint(new Vector3(me.x, b.center.y, me.z));
 		float d = Flat(me, np);
-		if (d < _hdBest - OvHeadwayGain)
+		// AA3: within the tool's range (flat) and its box bottom higher above its feet than the tool's swing reaches: the
+		// way up toward it at once (no 3 s headway wait; swinging or walking)
+		float reach = OvToolReach(_ovHandMode, out float range);
+		bool high = b.min.y > me.y + reach && d <= range;
+		if (!high)
 		{
-			_hdBest = d;
-			_hdHwTime = 0f;
-			return false;
-		}
-		_hdHwTime += Time.deltaTime;
-		if (_hdHwTime < OvNoHeadway)
-		{
-			return false;
+			if (_state != HarvestState.Moving || b.min.y <= me.y + OvStepUp)
+			{
+				_hdHwTime = 0f;
+				return false;
+			}
+			if (d < _hdBest - OvHeadwayGain)
+			{
+				_hdBest = d;
+				_hdHwTime = 0f;
+				return false;
+			}
+			_hdHwTime += Time.deltaTime;
+			if (_hdHwTime < OvNoHeadway)
+			{
+				return false;
+			}
 		}
 		// the ground beside the thing on its side: 0.5 m short of its box, toward it
 		Vector3 dir = np - me;
@@ -3257,7 +3327,8 @@ public partial class HarvestController
 		s_claimedTargets.Add(_rpThingClaim);
 		_ai?.StopMoving();
 		_state = HarvestState.Vein;
-		OvRampBegin(goal, null, outOfTrench: false, $"\"{name}\" is {b.min.y - me.y:F1} m up and the walk gets no closer");
+		_ovHandAtOn = false;
+		OvRampBegin(goal, null, outOfTrench: false, high ? $"\"{name}\" is {b.min.y - me.y:F1} m up, more than its swing reaches ({reach:F1} m)" : $"\"{name}\" is {b.min.y - me.y:F1} m up and the walk gets no closer");
 		return true;
 	}
 
@@ -3337,14 +3408,26 @@ public partial class HarvestController
 		{
 			return true;   // Y6d
 		}
+		// AA4: the clock counts only while it is in range swinging at the thing (and stepping in again after a swing, the
+		// re-approach, so swing / step / swing can't run on for ever) - not on the walk to it (that has its own 10 s), not
+		// catching its breath, not in a fight (this isn't called in one); a hit starts it again
 		bool hit = _lastHitAt >= _hdSince;
-		float idle = Time.time - (hit ? _lastHitAt : _hdSince);
+		if (hit && _lastHitAt > _hdHitSeen)
+		{
+			_hdHitSeen = _lastHitAt;
+			_hdClock = 0f;
+		}
+		if ((_state == HarvestState.Attacking || (_state == HarvestState.Moving && _reapproach)) && !_catchingBreath && !(_ai != null && _ai.IsInCombat))
+		{
+			_hdClock += Time.deltaTime;
+		}
+		float idle = _hdClock;
 		float limit = hit ? OvHandNextHit : OvHandFirstHit;
 		if (idle < limit)
 		{
 			return false;
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"No hit on \"{_ovHand.name}\" in {limit:F0} s{(hit ? " since the last one" : "")} - leaving it");
+		if (CompanionsPlugin.LogNormal) LogInfo($"No hit on \"{_ovHand.name}\" in {limit:F0} s of swinging at it{(hit ? " since the last one" : "")} - leaving it");
 		ResetToIdle();
 		return true;
 	}

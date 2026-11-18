@@ -609,6 +609,10 @@ public partial class HarvestController
 			{
 				continue;
 			}
+			if (OvBoardTaken(q.P) != null)
+			{
+				continue;   // AA6 (a): another companion stands there or is going there - the next nearest
+			}
 			if (d < bd)
 			{
 				bd = d;
@@ -626,7 +630,7 @@ public partial class HarvestController
 		q = OvClSpotFor(part);
 		float dq = q != null ? Flat(q.P, OvBoxNear(part, q.P)) : float.MaxValue;
 		float dm = Flat(me, OvBoxNear(part, me));
-		here = dm < dq && !(part.HasStart && part.Rounds > 0 && Flat(me, part.LastStart) < OvClOtherAngle);
+		here = dm < dq && !(part.HasStart && part.Rounds > 0 && Flat(me, part.LastStart) < OvClOtherAngle) && OvBoardTaken(me) == null;
 	}
 
 	private const float OvClAt = 0.8f;             // L2: on the spot it walks to (flat)

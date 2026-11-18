@@ -58,6 +58,12 @@ public partial class HarvestController
 
 	private bool _lnPushing;
 
+	private bool _lnPushingOrUp => _lnPushing || _lnStage == 4;   // AA6: on the ladder (climbing it, or swinging from it)
+
+	private readonly HashSet<int> _lnSkip = new HashSet<int>();   // AA6: ladders it waited 20 s for this round
+
+	private float _lnWaitFrom = -1f;
+
 	private float _lnStageAt;
 
 	private float _lnBestY;
@@ -104,6 +110,8 @@ public partial class HarvestController
 		_lnLadder = null;
 		_lnBench = false;
 		_lnWood = false;
+		_lnSkip.Clear();
+		_lnWaitFrom = -1f;
 	}
 
 	private void OvLnOff()
@@ -712,6 +720,10 @@ public partial class HarvestController
 			{
 				continue;
 			}
+			if (_lnSkip.Contains(pc.gameObject.GetInstanceID()))
+			{
+				continue;   // AA6: it waited 20 s for this one this round
+			}
 			bool any = false;
 			Bounds wb = default(Bounds);
 			foreach (Collider col in pc.GetComponentsInChildren<Collider>())
@@ -937,6 +949,36 @@ public partial class HarvestController
 		if (!_lnPushing)
 		{
 			float flat = Flat(me, _lnFoot);
+			// AA6: another companion is on this ladder - it waits 2 m from the foot, up to 20 s; then another ladder spot
+			// (the plan again, this ladder left out: one that does, else one it builds)
+			if (OvLnInUse(_lnLadder))
+			{
+				if (_lnWaitFrom < 0f)
+				{
+					_lnWaitFrom = Time.time;
+					if (CompanionsPlugin.LogNormal) LogInfo($"Another companion is on the ladder at {MHR_Mover.Fmt(_lnLadder.transform.position)} - waiting (up to {OvBoardLadderWait:F0} s)");
+				}
+				if (Time.time - _lnWaitFrom >= OvBoardLadderWait)
+				{
+					_lnSkip.Add(_lnLadder.GetInstanceID());
+					_lnWaitFrom = -1f;
+					_lnLadder = null;
+					_lnStage = 0;
+					if (CompanionsPlugin.LogNormal) LogInfo($"The ladder was in use for {OvBoardLadderWait:F0} s - looking for another ladder spot");
+					return;
+				}
+				if (flat > 2.5f)
+				{
+					WalkGo(_lnFoot, 2f, false, dt);
+				}
+				else
+				{
+					_ai?.StopMoving();
+				}
+				_moveTimer = 0f;
+				return;
+			}
+			_lnWaitFrom = -1f;
 			if (flat > 0.5f)
 			{
 				if (WalkTimer(dt, _lnFoot) && _moveTimer > 10f)
