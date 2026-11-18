@@ -23,6 +23,9 @@ namespace Companions
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
             public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
+            // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
+            // tried on this trip (like the ladders it tried)
+            public int VeinOut; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
             public bool GaveUp; public float GaveUpAt;
             public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
@@ -298,6 +301,36 @@ namespace Companions
                     Plan(ai, c, s, pos, now);
                 }
             }
+            else if (s.VeinOut != 0 && s.UseLadder == null)
+            {
+                // R5: the way out of a vein's trench - its bottom by the normal route, then up to its top (10 s each). A side
+                // step of the stuck handling may take the detour for a moment; then it goes on to the way out again.
+                bool there = Flat(pos, s.VeinOutAt) < 1.0f && Mathf.Abs(pos.y - s.VeinOutAt.y) < 1.5f;
+                if (!there && now <= s.VeinOutUntil && (!s.HasDetour || (s.Detour != s.VeinOutAt && Flat(pos, s.Detour) < 1.0f)))
+                {
+                    s.HasDetour = true; s.Detour = s.VeinOutAt; s.DetourUntil = s.VeinOutUntil; Plan(ai, c, s, pos, now);
+                }
+                else if (there && s.VeinOut == 1)
+                {
+                    s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = now + VeinOutTime;
+                    s.HasDetour = true; s.Detour = s.VeinOutTop; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the bottom of the way out of the trench - going up to " + Fmt(s.VeinOutTop));
+                    Plan(ai, c, s, pos, now);
+                }
+                else if (there)
+                {
+                    s.VeinOut = 0; s.HasDetour = false;
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] up the way out of the trench at " + Fmt(pos));
+                    Plan(ai, c, s, pos, now);
+                }
+                else if (now > s.VeinOutUntil)
+                {
+                    s.VeinOutTried.Add(s.VeinOutId);
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the bottom of the way out at " + Fmt(s.VeinOutAt) : "up the way out to " + Fmt(s.VeinOutTop)) + " in " + VeinOutTime.ToString("F0") + " s");
+                    s.VeinOut = 0; s.HasDetour = false;
+                    Plan(ai, c, s, pos, now);
+                }
+            }
             else if (s.HasDetour && s.UseLadder == null && (Flat(pos, s.Detour) < 1.0f || now > s.DetourUntil)) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
             if (s.RouteDoor != null)
             {
@@ -510,6 +543,10 @@ namespace Companions
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             bool keepChain = s.OnChain && s.Tag == tag && (s.ChainDown ? goal.y < pos.y - 1.0f : goal.y > pos.y + 1.0f);
+            // R5: a way out of a vein's trench in use (and the ways out tried) is kept while the goal is still up out of it
+            bool keepVein = s.Tag == tag && goal.y > pos.y + 1.5f;
+            int vOut = keepVein ? s.VeinOut : 0;
+            if (!keepVein) s.VeinOutTried.Clear();
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
             float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, cBottom = s.ClimbBottomY, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
             bool cAuto = s.ClimbAuto; int cId = s.ClimbLadderId;
@@ -533,6 +570,8 @@ namespace Companions
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
             if (keepPending) { s.LadderPending = true; s.HasDetour = true; s.Detour = s.DescendLadder ? dsTop : cBase; s.DetourUntil = dUntil; }
             if (keepLadder) { s.UseLadder = ladder; s.LadderUntil = ladderUntil; s.HasDetour = true; s.Detour = ladder.transform.position; s.DetourUntil = ladderUntil; }
+            s.VeinOut = vOut;
+            if (vOut != 0) { s.HasDetour = true; s.Detour = s.VeinOutAt; s.DetourUntil = s.VeinOutUntil; }
             else s.LaddersUsed.Clear();
         }
 
@@ -2169,6 +2208,7 @@ namespace Companions
             Steer(ai, c, s, dir, false, false);
         }
 
+        const float VeinOutTime = 10f;   // R5: 10 s to the bottom of a way out, 10 s up it
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
@@ -2177,6 +2217,15 @@ namespace Companions
             HarvestController hv = ai.GetComponent<HarvestController>();
             if (hv != null && hv.OnVein)
             {
+                // 1.5.98 R5: the nearest way out of the trench (a ramp cut up to the ground outside) instead, the way a ladder
+                // is used: its bottom, then its top
+                if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
+                {
+                    s.VeinOut = 1; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
+                    s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
+                    return true;
+                }
                 if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
                 return false;
             }

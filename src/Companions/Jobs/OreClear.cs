@@ -27,9 +27,15 @@ public partial class HarvestController
 
 		public string Why;
 
-		public int Rounds;        // P7: mining tries that ended without it breaking (2 = given up)
+		public int Rounds;        // P7: mining tries that ended without it breaking (R2d: 2 = set aside, 3 = given up)
 
 		public bool GaveUp;
+
+		public bool SetAside;     // R2d: 2 rounds failed - it waits until every other root is mined or set aside
+
+		public bool HasStart;     // R2c: where its last round started (the next starts at least 3 m from there)
+
+		public Vector3 LastStart;
 
 		public bool RampTried;    // P5: the way up toward it was cut (once per round)
 
@@ -38,7 +44,11 @@ public partial class HarvestController
 
 	private const float OvPartsEvery = 2f;         // P2: the parts are looked at every 2 s (and after a break)
 
-	private const int OvPartRounds = 2;            // P7: 2 rounds per part
+	private const int OvPartRounds = 2;            // P7 / R2d: 2 rounds per part, then it is set aside ...
+
+	private const int OvPartRoundsMax = 3;         // R2d: ... and gets one more when everything else is done or set aside
+
+	private const float OvClOtherAngle = 3f;       // R2c: the next round starts at least 3 m from where the last one did
 
 	private const int OvPopFails = 2;              // P7: 2 pops in a row that break nothing stop the vein work
 
@@ -256,9 +266,20 @@ public partial class HarvestController
 		List<OvPart> cand = new List<OvPart>();
 		foreach (OvPart part in c.Parts)
 		{
-			if (part.Root && !part.Out && !part.GaveUp)
+			if (part.Root && !part.Out && !part.GaveUp && !part.SetAside)
 			{
 				cand.Add(part);
+			}
+		}
+		if (cand.Count == 0)
+		{
+			// R2d: every root left is set aside - each gets its one more round now
+			foreach (OvPart part in c.Parts)
+			{
+				if (part.Root && !part.Out && !part.GaveUp)
+				{
+					cand.Add(part);
+				}
 			}
 		}
 		bool pop = false;
@@ -281,17 +302,20 @@ public partial class HarvestController
 			OvClearSay(c);
 			return false;
 		}
-		// L1: the nearest to the trench first (whole metres from the part's box to the nearest trench spot), the lowest
-		// first among those at the same distance
-		Dictionary<OvPart, int> fromTrench = new Dictionary<OvPart, int>();
+		// R1 (John: "work from one spot"): the nearest to where it stands first (whole metres, flat, from its feet to the
+		// part's game box), the lowest first among those at the same distance. R2d: fewer failed rounds come first.
+		Dictionary<OvPart, int> fromMe = new Dictionary<OvPart, int>();
 		foreach (OvPart part in cand)
 		{
-			OvSpot q = OvClSpotFor(part);
-			fromTrench[part] = q != null ? Mathf.FloorToInt(Flat(q.P, OvBoxNear(part, q.P))) : 0;
+			fromMe[part] = Mathf.FloorToInt(Flat(me, OvBoxNear(part, me)));
 		}
 		cand.Sort((OvPart a, OvPart b) =>
 		{
-			int da = fromTrench[a], db = fromTrench[b];
+			if (a.Rounds != b.Rounds)
+			{
+				return a.Rounds.CompareTo(b.Rounds);
+			}
+			int da = fromMe[a], db = fromMe[b];
 			if (da != db)
 			{
 				return da.CompareTo(db);
@@ -324,8 +348,59 @@ public partial class HarvestController
 			OvRampBegin(foot, null, outOfTrench: false, $"the part \"{pick.C.name}\" is {foot.y - me.y:F1} m up");
 			return true;
 		}
+		// R4: a way out near where it will work first (the E2 way, from that spot), when there's none within 15 m
+		OvClStandFor(pick, out OvSpot q4, out bool here4);
+		OvSpot ws = here4 ? OvNearest(me) : q4;
+		if (ws != null && OvWayOutNeeded(ws))
+		{
+			pick.Holder = null;
+			OvWayOutHere(ws);
+			return true;
+		}
 		OvClBegin(pick, pop);
 		return true;
+	}
+
+	// R4: no real way out (R3) with its bottom within 15 m (flat) of this spot, no try within 15 m of it, nobody else
+	// cutting one, and the wall outside it 1.5 x its height or more above the floor there
+	private bool OvWayOutNeeded(OvSpot sp)
+	{
+		OvPlan p = _vp;
+		if (p.ExitBy != null && p.ExitBy != this && p.ExitBy._vp == p && OvActive().Contains(p.ExitBy))
+		{
+			return false;
+		}
+		foreach (OvRamp r in p.Ramps)
+		{
+			if (OvRampOut(r) && Flat(r.Bottom, sp.P) <= OvWayNear)
+			{
+				return false;
+			}
+		}
+		foreach (Vector3 t in p.ExitAt)
+		{
+			if (Flat(t, sp.P) <= OvWayNear)
+			{
+				return false;
+			}
+		}
+		float h = _character != null ? _character.GetHeight() : 1.8f;
+		return GroundAt(OvOutside(sp)) - GroundAt(sp.P) >= OvRampRatio * h;
+	}
+
+	// R4: the way out cut from this spot (the E2 walk along the floor, then the ramp straight out; OvWayOutTick)
+	private void OvWayOutHere(OvSpot sp)
+	{
+		OvPlan p = _vp;
+		p.ExitBy = this;
+		_woActive = true;
+		_woOut = false;
+		_woFloor = sp.P;
+		_woFloor.y = GroundAt(sp.P);
+		_woGoal = OvOutside(sp);
+		_moveTimer = 0f;
+		_ai?.StopMoving();
+		if (CompanionsPlugin.LogNormal) LogInfo($"No way out of the trench within {OvWayNear:F0} m of where it works - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({GroundAt(_woGoal) - _woFloor.y:F1} m up)");
 	}
 
 	// the nearest point of a part's box (the game's box, as the support rule uses) to p
@@ -334,21 +409,42 @@ public partial class HarvestController
 		return new Bounds(part.Centre, part.Half * 2f).ClosestPoint(p);
 	}
 
-	// L2: the trench spot nearest the part (flat, to its box)
+	// L2: the trench spot nearest the part (flat, to its box); R2c: after a failed round, the nearest one at least 3 m
+	// from where that round started (none = the nearest)
 	private OvSpot OvClSpotFor(OvPart part)
 	{
-		OvSpot best = null;
-		float bd = float.MaxValue;
+		OvSpot best = null, any = null;
+		float bd = float.MaxValue, ad = float.MaxValue;
 		foreach (OvSpot q in _vp.Spots)
 		{
 			float d = Flat(q.P, OvBoxNear(part, q.P));
+			if (d < ad)
+			{
+				ad = d;
+				any = q;
+			}
+			if (part.HasStart && part.Rounds > 0 && Flat(q.P, part.LastStart) < OvClOtherAngle)
+			{
+				continue;
+			}
 			if (d < bd)
 			{
 				bd = d;
 				best = q;
 			}
 		}
-		return best;
+		return best ?? any;
+	}
+
+	// R1: where the round starts - where it stands when that is nearer (flat) to the part's box than the trench spot is
+	// (R2c: and at least 3 m from where its last round started), else that trench spot
+	private void OvClStandFor(OvPart part, out OvSpot q, out bool here)
+	{
+		Vector3 me = base.transform.position;
+		q = OvClSpotFor(part);
+		float dq = q != null ? Flat(q.P, OvBoxNear(part, q.P)) : float.MaxValue;
+		float dm = Flat(me, OvBoxNear(part, me));
+		here = dm < dq && !(part.HasStart && part.Rounds > 0 && Flat(me, part.LastStart) < OvClOtherAngle);
 	}
 
 	private const float OvClAt = 0.8f;             // L2: on the spot it walks to (flat)
@@ -358,10 +454,12 @@ public partial class HarvestController
 	// L1 / L2: a round on the part starts - it goes to the trench spot nearest it
 	private void OvClBegin(OvPart part, bool pop)
 	{
-		OvSpot q = OvClSpotFor(part);
+		OvClStandFor(part, out OvSpot q, out bool here);
 		_clFor = part;
 		_clPop = pop;
-		_clStand = q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;
+		_clStand = here ? base.transform.position : q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;
+		part.HasStart = true;
+		part.LastStart = _clStand;
 		Vector3 d = part.Centre - _clStand;
 		d.y = 0f;
 		_clDir = d.sqrMagnitude > 0.0001f ? d.normalized : Vector3.zero;
@@ -370,7 +468,7 @@ public partial class HarvestController
 		_clWalk = true;
 		_moveTimer = 0f;
 		_ai?.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {OvPartRounds} - from trench spot {(q != null ? q.Idx + 1 : 0)} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from {(here ? "where it stands" : $"trench spot {(q != null ? q.Idx + 1 : 0)}")} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
 	}
 
 	private void OvClOff()
@@ -438,6 +536,34 @@ public partial class HarvestController
 				return;
 			}
 			_dgClear = false;
+			if (_dgPart)
+			{
+				OvClFail($"{OvNoProgSwings} swings at the part from {MHR_Mover.Fmt(me)} landed on nothing");
+				return;
+			}
+			if (_dgLimit)
+			{
+				// R2 (John: "Any parts that cannot be cleared of dirt from the bottom should be mined out"): the dirt in
+				// front can't go lower and is above a step - the part itself from here when it's within reach (R2a), else
+				// the round ends (R2b)
+				float lg = GroundAt(_dgPoint);
+				Vector3 bp = OvBoxNear(part, me);
+				float reach = GetAttackRange();
+				if (Flat(me, bp) <= reach)
+				{
+					if (CompanionsPlugin.LogNormal) LogInfo($"The dirt toward \"{part.C.name}\" at {MHR_Mover.Fmt(_dgPoint)} is at the game's 8 m dig limit, {lg - me.y:F1} m above its feet - mining the part from here");
+					OvDigBegin(bp, null, ramp: false);
+					_dgClear = true;
+					_dgPart = true;
+					_dgGoalY = me.y;
+					_clBestG = GroundAt(bp);
+					_clIdle = 0f;
+					_clAlive = c.Alive;
+					return;
+				}
+				OvClFail($"the dirt toward it at {MHR_Mover.Fmt(_dgPoint)} is at the game's 8 m dig limit, {lg - me.y:F1} m above its feet, and the part is out of reach ({Flat(me, bp):F1} m, reach {reach:F1} m)");
+				return;
+			}
 			if (!_dgReached)
 			{
 				OvClFail($"{OvNoProgSwings} swings at {MHR_Mover.Fmt(_dgPoint)} did nothing (or it couldn't get to it)");
@@ -504,11 +630,17 @@ public partial class HarvestController
 		{
 			c.PopFails++;
 		}
-		if (root.Rounds >= OvPartRounds)
+		// R2d (John: "clear what else is around them and come back to it later"): 2 failed rounds set it aside, the third
+		// leaves it
+		if (root.Rounds >= OvPartRoundsMax)
 		{
 			root.GaveUp = true;
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(root.C != null ? root.C.name : "?")}\" of \"{_vp.Name}\" didn't break: {why} (round {root.Rounds} of {OvPartRounds}{(root.GaveUp ? ", left" : "")})");
+		else if (root.Rounds >= OvPartRounds)
+		{
+			root.SetAside = true;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(root.C != null ? root.C.name : "?")}\" of \"{_vp.Name}\" didn't break: {why} (round {root.Rounds} of {(root.SetAside ? OvPartRoundsMax : OvPartRounds)}{(root.GaveUp ? ", left" : root.SetAside && root.Rounds == OvPartRounds ? ", set aside until the rest are done" : "")})");
 		if (c.PopFails >= OvPopFails && !c.Stopped)
 		{
 			// P7: John's rule - two tries with nothing broken: stop and wait, with everything we need to find out why

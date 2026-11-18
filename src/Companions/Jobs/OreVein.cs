@@ -52,6 +52,8 @@ public partial class HarvestController
 		public Vector3 Bottom;
 
 		public Vector3 Top;
+
+		public float Need;        // R3: the ground outside the trench there when it began (the top must reach it)
 	}
 
 	private sealed class OvPlan
@@ -157,6 +159,10 @@ public partial class HarvestController
 	private const float OvRampNear = 10f;          // C5: a saved ramp's bottom within 10 m
 
 	private const float OvRampTopNear = 5f;        // C5: ... and its top within 5 m of where it's going
+
+	private const float OvWayMore = 2f;           // R3: a way out's goal is (the height to climb) + 2 m out
+
+	private const float OvWayNear = 15f;          // R4: a way out within 15 m (flat) of where it works is near enough
 
 	private const float OvRampReach = 3f;          // G2: the way up only for a spot within 3 m (flat): the wall in front
 
@@ -323,6 +329,25 @@ public partial class HarvestController
 	private float _dgGoalY;
 
 	private bool _dgReached;
+
+	// 1.5.98 R2: a clearing point at the game's 8 m limit, more than a step above its feet (not "done"); and the part
+	// itself being mined from where it stands (R2a)
+	private bool _dgLimit;
+
+	private bool _dgPart;
+
+	// R6: how much lower than the halfway aim the next swing at this point goes (0.3 m after a swing that met the vein's
+	// rock and left the dirt as it was), the height it aimed at, and the vein whose pickaxe sweep was logged
+	private float _dgAimDrop;
+
+	private float _dgAimY;
+
+	private OvPlan _aimLogVp;
+
+	// R3: a way out (out of the trench): the height it must reach (the ground outside when it began)
+	private bool _rpWay;
+
+	private float _rpNeed;
 
 	// C5: the ramp
 	private bool _rpActive;
@@ -1861,13 +1886,48 @@ public partial class HarvestController
 	{
 		foreach (OvRamp r in _vp.Ramps)
 		{
-			OvSpot s = OvNearest(r.Top);
-			if (s != null && r.Top.y > GroundAt(OvOutside(s)) - OvOutDeep)
+			if (OvRampOut(r))
 			{
 				return true;
 			}
 		}
 		return false;
+	}
+
+	// R3: a saved ramp is a way out only if its top reached the ground outside as it was when it began
+	private static bool OvRampOut(OvRamp r)
+	{
+		return r.Top.y >= r.Need - OvStepUp;
+	}
+
+	// R5: the nearest way out of this vein's trench (a saved ramp that is really out, R3) not tried on this trip, for the
+	// mover when it is stuck below its goal on a vein (where it would otherwise climb). False = none.
+	internal bool VeinWayOut(Vector3 pos, HashSet<int> tried, out Vector3 bottom, out Vector3 top, out int id)
+	{
+		bottom = top = pos;
+		id = -1;
+		if (_vp == null)
+		{
+			return false;
+		}
+		float bd = float.MaxValue;
+		for (int i = 0; i < _vp.Ramps.Count; i++)
+		{
+			OvRamp r = _vp.Ramps[i];
+			if (tried.Contains(i) || !OvRampOut(r))
+			{
+				continue;
+			}
+			float d = Flat(pos, r.Bottom);
+			if (d < bd)
+			{
+				bd = d;
+				bottom = r.Bottom;
+				top = r.Top;
+				id = i;
+			}
+		}
+		return id >= 0;
 	}
 
 	// E2: the nearest spot whose floor is at least 5 m from every place tried before (null = none)
@@ -1942,8 +2002,7 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (OvRamp r in _vp.Ramps)
 		{
-			OvSpot s = OvNearest(r.Top);
-			if (_rpTried.Contains(r) || s == null || r.Top.y <= GroundAt(OvOutside(s)) - OvOutDeep)
+			if (_rpTried.Contains(r) || !OvRampOut(r))
 			{
 				continue;
 			}
@@ -2003,20 +2062,26 @@ public partial class HarvestController
 			}
 			if (me.y > GroundAt(_woGoal) - OvOutDeep)
 			{
+				_vp.ExitAt.Add(me);   // R4: counted, so no other try is made within 15 m of here
 				_vp.ExitTried = true;
 				_vp.ExitBy = null;
 				if (CompanionsPlugin.LogNormal) LogInfo("The trench is shallow here - no way out needed");
 				return;
 			}
+			bool near = _vp.ExitTried;   // R4: the way out near where it works (E2's before "done" is over by then)
 			_vp.ExitAt.Add(me);
 			_exTry = true;
-			OvRampBegin(_woGoal, null, outOfTrench: false, $"a way out of the trench before it's done, try {_vp.ExitAt.Count} of {OvWayOutTries}");
+			OvRampBegin(_woGoal, null, outOfTrench: false, near ? "a way out near where it works" : $"a way out of the trench before it's done, try {_vp.ExitAt.Count} of {OvWayOutTries}");
 			return;
 		}
 		if (WalkTimer(dt, _woFloor) && _moveTimer > 10f)
 		{
 			_woActive = false;
 			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(_woFloor)} along the trench in 10 s");
+			if (!_woOut && _vp.ExitBy == this)
+			{
+				_vp.ExitBy = null;
+			}
 			if (_woOut)
 			{
 				_outTried.Add(_woFloor);
@@ -2127,6 +2192,9 @@ public partial class HarvestController
 		_dgHwTime = 0f;
 		_dgClear = false;
 		_dgReached = false;
+		_dgLimit = false;
+		_dgPart = false;
+		_dgAimDrop = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
@@ -2236,7 +2304,15 @@ public partial class HarvestController
 		{
 			if (busy || Time.time - _dgSwungAt < 0.35f)
 			{
-				OvFace(_dgBushOn && _dgBush != null ? _dgBush.transform.position : _dgPoint);
+				// R6: the look is held through the swing (the game takes the arc's tilt from it when the swing lands)
+				if (_dgBushOn && _dgBush != null)
+				{
+					OvFace(_dgBush.transform.position);
+				}
+				else
+				{
+					OvDigAim(false);
+				}
 				return;
 			}
 			OvDigJudge();
@@ -2383,8 +2459,8 @@ public partial class HarvestController
 				return;
 			}
 		}
-		OvFace(_dgPoint);
-		int sw = SwingNow(out _, out _);
+		OvDigAim(true);
+		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
 		{
 			OvDigOff();
@@ -2398,7 +2474,89 @@ public partial class HarvestController
 			_dgSwung = true;
 			_dgSwungAt = Time.time;
 			_dgBefore = g;
+			OvSweepLog(swItem);
 		}
+	}
+
+	// R6: a dig swing is aimed like a player looking at the dirt wall in front: halfway between its feet and the lower of
+	// the dirt's top there and the bottom of the lowest vein part above that point (no part above: halfway to the dirt's
+	// top), never higher than its feet + 1.2 m, and _dgAimDrop lower after a swing that met the vein's rock (down to its
+	// feet at the lowest). The game tilts the pickaxe's arc toward the look (up to the tool's m_maxYAngle). R2a: the part
+	// itself is faced level, like the Ore job's own swing.
+	private const float OvAimMax = 1.2f;
+
+	private const float OvAimDrop = 0.3f;
+
+	private const float OvAimAbove = 1.0f;         // R6: a part whose box is within 1 m (flat) of the point is "above" it
+
+	private void OvDigAim(bool fresh)
+	{
+		if (_ai == null || _character == null)
+		{
+			return;
+		}
+		if (_dgPart)
+		{
+			OvFace(_dgPoint);
+			return;
+		}
+		Vector3 me = base.transform.position;
+		if (fresh)
+		{
+			float top = GroundAt(_dgPoint);
+			float pb = OvPartBottomAbove(_dgPoint, me.y);
+			float lower = Mathf.Min(top, pb);
+			float y = me.y + (lower - me.y) * 0.5f;
+			y = Mathf.Min(y, me.y + OvAimMax);
+			y = Mathf.Max(y - _dgAimDrop, Mathf.Min(y, me.y));
+			_dgAimY = y;
+		}
+		Vector3 a = new Vector3(_dgPoint.x, _dgAimY, _dgPoint.z);
+		_ai.LookAtPoint(a);   // the game's BaseAI.LookAt: from its eye to the point, tilt included
+		Vector3 d = a - me;
+		d.y = 0f;
+		if (d.sqrMagnitude > 0.001f)
+		{
+			MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(d.normalized));
+		}
+	}
+
+	// R6: the bottom of the lowest standing part of this vein whose box is within 1 m (flat) of p and whose bottom is above
+	// feetY (+infinity = none)
+	private float OvPartBottomAbove(Vector3 p, float feetY)
+	{
+		if (_vp == null)
+		{
+			return float.PositiveInfinity;
+		}
+		OvClear c = OvC();
+		OvPartsLook(c, false);
+		float best = float.PositiveInfinity;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.C == null || !part.C.gameObject.activeSelf)
+			{
+				continue;
+			}
+			float b = OvPartBottom(part);
+			if (b > feetY && b < best && Flat(p, OvBoxNear(part, p)) <= OvAimAbove)
+			{
+				best = b;
+			}
+		}
+		return best;
+	}
+
+	// R6: the pickaxe's sweep (the game's own attack data, as the combat log prints it), once per vein
+	private void OvSweepLog(ItemDrop.ItemData item)
+	{
+		if (_aimLogVp == _vp || item == null || item.m_shared == null)
+		{
+			return;
+		}
+		_aimLogVp = _vp;
+		Attack a = item.m_shared.m_attack;
+		if (CompanionsPlugin.LogNormal) LogInfo(a != null ? $"Pickaxe swing \"{item.m_shared.m_name}\": sweep {a.m_attackAngle:F0} deg ({a.m_attackType}), tilt up to {a.m_maxYAngle:F0} deg, range {a.m_attackRange:F2} m, hit height {a.m_attackHeight:F2} m, ray width {a.m_attackRayWidth:F2} m" : $"Pickaxe swing \"{item.m_shared.m_name}\": no attack data");
 	}
 
 	// J3: a bush it couldn't cut: given up (like the Wood job's own give-up), and the spot it was for is skipped this lap
@@ -2459,6 +2617,11 @@ public partial class HarvestController
 		bool prog = _dgBefore - after >= OvDigGain;
 		bool hitThing = _ovThingHitAt >= _dgSwungAt && _ovThingHitGo != null && _ovThingHitGo.activeInHierarchy;
 		bool hitOre = _ovOreHitAt >= _dgSwungAt;
+		if (hitOre && !prog)
+		{
+			// R6: the top of the arc met the vein's rock and the dirt stayed: the next swing at this point aims 0.3 m lower
+			_dgAimDrop += OvAimDrop;
+		}
 		if (hitThing)
 		{
 			// H1: it hit a tree, log, stump, bush or a rock that isn't this vein: that goes to the Wood / Stone flow (a bush:
@@ -2485,14 +2648,36 @@ public partial class HarvestController
 		}
 		// H1 / H5: a swing that landed on this vein's ore is progress (it keeps hitting through it); only a swing that hit
 		// nothing it could deal with and left the ground as it was counts as "no change"
+		if (_dgPart)
+		{
+			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress, 3 that land on
+			// nothing end it (its break is seen by OvClRound)
+			_dgNoProg = hitOre ? 0 : _dgNoProg + 1;
+			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : $"nothing ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (_dgNoProg >= OvNoProgSwings)
+			{
+				OvDigOff();
+			}
+			return;
+		}
 		if (_dgClear)
 		{
 			// N3: a clearing point - a swing on the vein's rock or the ground going down is progress; done = a swing that
 			// met no rock with the ground at its feet (or at the game's limit); 3 swings with neither close it
-			bool done = !hitOre && (after <= _dgGoalY + OvDigGain || after <= OvFloor(_dgPoint) + OvDigGain);
+			// R2: at the game's limit but more than a step (0.7 m) above its feet: not done - a shelf it can't dig or step onto
+			float feet = base.transform.position.y;
+			bool atLimit = after <= OvFloor(_dgPoint) + OvDigGain;
+			bool shelf = !hitOre && atLimit && after > feet + OvStepUp;
+			bool done = !hitOre && !shelf && (after <= _dgGoalY + OvDigGain || atLimit);
 			bool cProg = prog || hitOre;
 			_dgNoProg = cProg ? 0 : _dgNoProg + 1;
-			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)}: ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{(done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)} (aimed at {_dgAimY:F2}): ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{(shelf ? $" - at the game's 8 m dig limit, {after - feet:F1} m above its feet" : done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {feet:F2}");
+			if (shelf)
+			{
+				_dgLimit = true;
+				OvDigOff();
+				return;
+			}
 			if (done)
 			{
 				OvDigOff();
@@ -2511,7 +2696,7 @@ public partial class HarvestController
 		{
 			OvSpotProgress();
 		}
-		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{(oreProg ? " - hit the vein's ore" : prog ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
+		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")} (aimed at {_dgAimY:F2}): ground {_dgBefore:F2} -> {after:F2}{(oreProg ? " - hit the vein's ore" : prog ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{
 			// E4 (John's way): 2 swings at the wall in front, then it steps in and looks again; a swing that changed
@@ -2568,6 +2753,26 @@ public partial class HarvestController
 		_rpGoal = goal;
 		_rpSpot = spot;
 		_rpOut = outOfTrench;
+		// R3: a way out (getting out, or the way out cut while it works) must reach the ground outside as it is now; its
+		// goal is moved on out along the same line to (that height - its feet) + 2 m away, so its own steps can't dig the
+		// goal down. Any other ramp saves the ground outside its nearest spot as the height a way out needs.
+		_rpWay = outOfTrench || _exTry;
+		if (_rpWay)
+		{
+			_rpNeed = goal.y;
+			Vector3 d = goal - me;
+			d.y = 0f;
+			if (d.sqrMagnitude > 0.0001f)
+			{
+				_rpGoal = me + d.normalized * (Mathf.Max(0f, goal.y - me.y) + OvWayMore);
+				_rpGoal.y = goal.y;
+			}
+		}
+		else
+		{
+			OvSpot ns = _vp != null ? OvNearest(me) : null;
+			_rpNeed = ns != null ? GroundAt(OvOutside(ns)) : goal.y;
+		}
 		_rpStart = me;
 		_rpBestY = me.y;
 		_rpBestAt = Time.time;
@@ -2586,7 +2791,7 @@ public partial class HarvestController
 		{
 			foreach (OvRamp r in _vp.Ramps)
 			{
-				if (!_rpTried.Contains(r) && Flat(r.Bottom, me) <= OvRampNear && Vector3.Distance(r.Top, goal) <= OvRampTopNear)
+				if (!_rpTried.Contains(r) && (!_rpWay || OvRampOut(r)) && Flat(r.Bottom, me) <= OvRampNear && Vector3.Distance(r.Top, goal) <= OvRampTopNear)
 				{
 					_rpSaved = r;
 					break;
@@ -2636,11 +2841,23 @@ public partial class HarvestController
 			WalkGo(_rpSaved.Top, 0.5f, false, dt);
 			return;
 		}
-		float gGoal = GroundAt(_rpGoal);
-		if (gGoal <= me.y + OvStepUp || (Flat(me, _rpGoal) <= reach && gGoal <= me.y + OvStepUp))
+		if (_rpWay)
 		{
-			OvRampFinish("up");
-			return;
+			// R3: up when its feet are within a step of the height the ground outside had when it began
+			if (me.y >= _rpNeed - OvStepUp)
+			{
+				OvRampFinish("up");
+				return;
+			}
+		}
+		else
+		{
+			float gGoal = GroundAt(_rpGoal);
+			if (gGoal <= me.y + OvStepUp || (Flat(me, _rpGoal) <= reach && gGoal <= me.y + OvStepUp))
+			{
+				OvRampFinish("up");
+				return;
+			}
 		}
 		if (me.y > _rpBestY + OvRampRise)
 		{
@@ -2656,6 +2873,12 @@ public partial class HarvestController
 		dir.y = 0f;
 		if (dir.sqrMagnitude < 0.01f)
 		{
+			if (_rpWay)
+			{
+				// R3: at its goal but not up to the ground outside - the try failed
+				OvRampFail($"got to {MHR_Mover.Fmt(_rpGoal)} without getting up to {_rpNeed:F1} (feet at {me.y:F1})");
+				return;
+			}
 			OvRampFinish("there");
 			return;
 		}
@@ -2748,7 +2971,7 @@ public partial class HarvestController
 			}
 			else
 			{
-				_vp.Ramps.Add(new OvRamp { Bottom = _rpStart, Top = me });
+				_vp.Ramps.Add(new OvRamp { Bottom = _rpStart, Top = me, Need = _rpNeed });
 				if (CompanionsPlugin.LogNormal) LogInfo($"A ramp for everyone on this vein: {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)} ({rise:F1} m; {_vp.Ramps.Count} on this vein)");
 			}
 		}
@@ -2790,8 +3013,12 @@ public partial class HarvestController
 		}
 		if (_exTry)
 		{
-			// E2: the try is counted (ExitAt); the next one comes from OvExitTick
+			// E2: the try is counted (ExitAt); the next one comes from OvExitTick (R4: the next round's check)
 			_exTry = false;
+			if (_vp != null && _vp.ExitBy == this)
+			{
+				_vp.ExitBy = null;
+			}
 			return;
 		}
 		OvSkip(_rpSpot, "the way up to it failed: " + why, normal: true);
