@@ -2418,6 +2418,11 @@ public partial class HarvestController : MonoBehaviour
 	// HarvestHitRegister: the game registered a hit by this companion on `go`
 	internal void OnHitRegistered(GameObject go)
 	{
+		// 1.5.98 H1: on a vein, what each swing hit is noted for the trench work (whatever it was aimed at)
+		if (_vFor != null)
+		{
+			OvNoteHit(go);
+		}
 		if (go == null || _target == null || (go != _target && !_target.transform.IsChildOf(go.transform) && !go.transform.IsChildOf(_target.transform)))
 		{
 			return;

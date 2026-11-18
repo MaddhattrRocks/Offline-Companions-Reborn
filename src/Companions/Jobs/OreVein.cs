@@ -85,6 +85,8 @@ public partial class HarvestController
 
 		public bool ExitTried;   // G10: a way out was cut (or tried) before "done"
 
+		public bool RingCleared;   // J4: lap 1's first pass (the things within 2 m of the ring, nearest first) is over
+
 		public float LastWork;
 
 		public float GrowAt;
@@ -153,6 +155,18 @@ public partial class HarvestController
 	private const float OvOutSide = 3f;            // C6: 3 m outside the ring
 
 	private const float OvDigGate = 2.0f;          // C8
+
+	private const float OvSpotIdle = 30f;          // J1: 30 s of work on a spot without the ground going down: skipped this lap
+
+	private const float OvHeadwayGain = 0.3f;      // J2: getting 0.3 m closer is headway
+
+	private const int OvBushMiss = 3;              // J3: 3 swings at a bush that don't hit it: the spot is skipped
+
+	private const float OvSpread = 2f;             // H3: a spot within 2 m of another companion's spot counts as taken
+
+	private const float OvSideNear = 1.2f;         // H4: another companion within 1.2 m ahead ...
+
+	private const float OvSideAfter = 1f;          // H4: ... and no headway for 1 s: the walking code's side step
 
 	private static readonly List<OvPlan> s_ovPlans = new List<OvPlan>();
 
@@ -224,6 +238,37 @@ public partial class HarvestController
 	private bool _dgLastProg;
 
 	private bool _dgThingChecked;
+
+	// J1: the spot's own clock (work time on it in this lap without the ground going down)
+	private OvSpot _spFor;
+
+	private int _spLap;
+
+	private float _spIdle;
+
+	// J2 / H4: the job's own headway check while walking to dirt (best flat distance, and the walking time since)
+	private float _dgHwBest;
+
+	private float _dgHwTime;
+
+	private float _dgSideAt = -100f;
+
+	// H2: the things around the dirt were looked at for the next swing
+	private bool _dgThingSwing;
+
+	// J3: a bush cut where it stands (the dirt walk and swing, with the axe)
+	private bool _dgBushOn;
+
+	private GameObject _dgBush;
+
+	private int _dgBushMiss;
+
+	// H1: what its swings hit (HarvestHitRegister -> OnHitRegistered)
+	private GameObject _ovThingHitGo;
+
+	private float _ovThingHitAt = -100f;
+
+	private float _ovOreHitAt = -100f;
 
 	// G10: walking down into the trench to cut the way out from its floor
 	private bool _exWalking;   // G5: the things on this spot were looked for once it got within 4 m
@@ -301,6 +346,10 @@ public partial class HarvestController
 	// B3: the mode of what it is working - a thing handed to the Wood (1) or Stone (2) flow, else the job's own
 	private int WorkMode()
 	{
+		if (_vFor != null && _state == HarvestState.Vein && _dgActive && _dgBushOn)
+		{
+			return 1;   // J3: a bush is cut with the axe
+		}
 		return (_vFor != null && _ovHandMode != 0 && _state != HarvestState.Vein) ? _ovHandMode : GetMode();
 	}
 
@@ -412,6 +461,8 @@ public partial class HarvestController
 			OvSpot q = _ovHandSpot;
 			if (thing != null && thing.activeInHierarchy)
 			{
+				// it came back with the thing still there: given up on it (so no check hands the same thing over again)
+				_blacklist[thing.GetInstanceID()] = Time.time;
 				OvSkip(q, "\"" + thing.name + "\" is in the way and it couldn't clear it", normal: true);
 			}
 			else if (CompanionsPlugin.LogNormal)
@@ -422,6 +473,12 @@ public partial class HarvestController
 		_ovHand = null;
 		_ovHandSpot = null;
 		_ovHandMode = 0;
+		if (_rpActive)
+		{
+			// a thing cleared from a ramp step (H1 / H2): the ramp's 60 s clock starts again from here
+			_rpBestY = base.transform.position.y;
+			_rpBestAt = Time.time;
+		}
 		_target = _vFor;
 		_targetType = "MineRock5";
 		ClaimTarget();
@@ -1085,6 +1142,28 @@ public partial class HarvestController
 		return true;
 	}
 
+	// H3: held by another companion, or within 2 m of the spot another companion is working (each works its own stretch)
+	private bool OvTaken(OvSpot s)
+	{
+		if (OvHeldByOther(s))
+		{
+			return true;
+		}
+		foreach (KeyValuePair<HarvestController, float> w in _vp.Workers)
+		{
+			HarvestController h = w.Key;
+			if (h == null || h == this || Time.time - w.Value > 5f || h._vp != _vp || h._ovSpot == null || h._ovSpot.Holder != h)
+			{
+				continue;
+			}
+			if (Flat(h._ovSpot.P, s.P) <= OvSpread)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void OvRelease()
 	{
 		if (_ovSpot != null && _ovSpot.Holder == this)
@@ -1173,6 +1252,11 @@ public partial class HarvestController
 			OvDoneTick();
 			return;
 		}
+		// J4: lap 1 starts with the things within 2 m of the ring, nearest first, while the ground is still level
+		if (p.Lap == 1 && !p.RingCleared && OvRingClear(p))
+		{
+			return;
+		}
 		if (_ovSpot == null || !OvOpen(_ovSpot))
 		{
 			OvRelease();
@@ -1206,6 +1290,32 @@ public partial class HarvestController
 			return;
 		}
 		OvDigBegin(new Vector3(q.P.x, g, q.P.z), q, ramp: false);
+	}
+
+	// J4: the nearest open spot (to where it stands) with a tree, log, stump, bush or rock within 2 m gets it cleared
+	// (OvThing: the Wood / Stone flow, a bush cut here). Nothing left = the first pass is over for everyone. True = busy.
+	private bool OvRingClear(OvPlan p)
+	{
+		Vector3 me = base.transform.position;
+		List<OvSpot> order = new List<OvSpot>();
+		foreach (OvSpot s in p.Spots)
+		{
+			if (OvOpen(s))
+			{
+				order.Add(s);
+			}
+		}
+		order.Sort((OvSpot a, OvSpot b) => Flat(me, a.P).CompareTo(Flat(me, b.P)));
+		foreach (OvSpot s in order)
+		{
+			if (OvThing(s))
+			{
+				return true;
+			}
+		}
+		p.RingCleared = true;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Nothing left within 2 m of the trench ring round \"{p.Name}\" - digging starts");
+		return false;
 	}
 
 	// C3.5: the next spot. True = it has one (_ovSpot)
@@ -1242,12 +1352,12 @@ public partial class HarvestController
 			for (int k = 0; k <= n / 2 && found < 0; k++)
 			{
 				int a = (home + k) % n, b = (home - k + n) % n;
-				if (OvOpen(spots[a]) && !OvHeldByOther(spots[a]))
+				if (OvOpen(spots[a]) && !OvTaken(spots[a]))
 				{
 					found = a;
 					dirFound = k == 0 ? 0 : 1;
 				}
-				else if (OvOpen(spots[b]) && !OvHeldByOther(spots[b]))
+				else if (OvOpen(spots[b]) && !OvTaken(spots[b]))
 				{
 					found = b;
 					dirFound = -1;
@@ -1272,7 +1382,7 @@ public partial class HarvestController
 				_ovTurned = true;
 				_ovDir = -_ovDir;
 				found = OvNextOpen(_ovIdx, _ovDir, out _);
-				if (found >= 0 && CompanionsPlugin.LogDetailed) Log($"Another companion is on the next spot - turned round, on to spot {found + 1}");
+				if (found >= 0 && CompanionsPlugin.LogDetailed) Log($"Another companion is on (or within 2 m of) the next spot - turned round, on to spot {found + 1}");
 			}
 			if (found < 0)
 			{
@@ -1280,11 +1390,11 @@ public partial class HarvestController
 				for (int k = 1; k <= n / 2 + 1 && found < 0; k++)
 				{
 					int a = (_ovIdx + k) % n, b = (_ovIdx - k + n) % n;
-					if (OvOpen(spots[a]) && !OvHeldByOther(spots[a]))
+					if (OvOpen(spots[a]) && !OvTaken(spots[a]))
 					{
 						found = a;
 					}
-					else if (OvOpen(spots[b]) && !OvHeldByOther(spots[b]))
+					else if (OvOpen(spots[b]) && !OvTaken(spots[b]))
 					{
 						found = b;
 					}
@@ -1343,7 +1453,7 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			if (OvHeldByOther(spots[i]))
+			if (OvTaken(spots[i]))
 			{
 				if (first)
 				{
@@ -1358,102 +1468,90 @@ public partial class HarvestController
 	}
 
 	// C3.2: anything within 2 m of the spot that the Wood job (tree, log, stump, bush) or the Stone job (rock) would take is
-	// handed to that job's own flow. True = handed over (or the spot skipped for it).
+	// handed to that job's own flow (a bush: J3, cut where it stands). True = handed over (or the spot skipped for it).
 	private bool OvThing(OvSpot q)
 	{
-		if (s_ovThingMask == 0)
+		return OvThingAt(q.P, q, canSkip: true) != 0;
+	}
+
+	// the thing a collider belongs to, if the Wood job (tree, log, stump; a bush = "Destructible" with mode 1) or the Stone
+	// job (mode 2) would take it; never a vein part, ore, a character or anything built
+	private GameObject OvThingOf(Collider c, out int mode, out string type)
+	{
+		mode = 0;
+		type = null;
+		if (c == null || c.GetComponentInParent<Character>() != null || c.GetComponentInParent<MineRock5>() != null)
 		{
-			s_ovThingMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+			return null;
 		}
-		// G5: centred 1 m above the ground as it is now (the planned height can be 8 m above the dug ground)
-		Vector3 at = q.P;
-		at.y = GroundAt(q.P) + 1.0f;
-		int k = Physics.OverlapSphereNonAlloc(at, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
-		GameObject best = null, blocked = null;
-		string bestType = null;
-		int bestMode = 0;
-		float bd = float.MaxValue;
-		for (int i = 0; i < k; i++)
+		// list v2 V1 (kept): ore the Ore job itself would mine is never "in the way"
+		if (GetHarvestCandidateWithType(c, 3, out _) != null)
 		{
-			Collider c = s_ovThingBuf[i];
-			if (c == null || c.GetComponentInParent<Character>() != null || c.GetComponentInParent<MineRock5>() != null)
+			return null;
+		}
+		mode = 1;
+		GameObject go = GetHarvestCandidateWithType(c, 1, out type);
+		if (go == null)
+		{
+			// a bush: something the axe hurts that isn't a stump
+			Destructible d = c.GetComponentInParent<Destructible>();
+			if (d != null && d.m_damages.m_chop != HitData.DamageModifier.Immune && d.m_damages.m_chop != HitData.DamageModifier.Ignore && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) < 0)
 			{
-				continue;
-			}
-			// list v2 V1 (kept): ore the Ore job itself would mine is never "in the way"
-			if (GetHarvestCandidateWithType(c, 3, out _) != null)
-			{
-				continue;
-			}
-			int mode = 1;
-			GameObject go = GetHarvestCandidateWithType(c, 1, out string type);
-			if (go == null)
-			{
-				// a bush: something the axe hurts that isn't a stump (the Wood flow, with the axe)
-				Destructible d = c.GetComponentInParent<Destructible>();
-				if (d != null && d.m_damages.m_chop != HitData.DamageModifier.Immune && d.m_damages.m_chop != HitData.DamageModifier.Ignore && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) < 0)
-				{
-					go = d.gameObject;
-					type = "Destructible";
-				}
-			}
-			if (go == null)
-			{
-				mode = 2;
-				go = GetHarvestCandidateWithType(c, 2, out type);
-			}
-			if (go == null || !go.activeInHierarchy || IsBuilt(go))
-			{
-				continue;
-			}
-			int id = go.GetInstanceID();
-			if (s_claimedTargets.Contains(id) && id != _claimedTargetId)
-			{
-				continue;   // another companion is on it
-			}
-			if (_blacklist.ContainsKey(id))
-			{
-				// G6: a thing it couldn't clear skips only the spot it was handed over for; for the others it is ignored
-				if (_vp.HandFor.TryGetValue(id, out OvSpot hs) && hs == q)
-				{
-					blocked = go;
-				}
-				continue;
-			}
-			float d2 = Flat(go.transform.position, q.P);
-			if (d2 < bd)
-			{
-				bd = d2;
-				best = go;
-				bestType = type;
-				bestMode = mode;
+				go = d.gameObject;
+				type = "Destructible";
 			}
 		}
-		if (best == null)
+		if (go == null)
 		{
-			if (blocked != null)
-			{
-				OvSkip(q, "\"" + blocked.name + "\" is in the way and it couldn't clear it", normal: true);
-				return true;
-			}
-			return false;
+			mode = 2;
+			go = GetHarvestCandidateWithType(c, 2, out type);
 		}
+		if (go == null || !go.activeInHierarchy || IsBuilt(go))
+		{
+			return null;
+		}
+		return go;
+	}
+
+	// a thing found in the trench (or hit by a dirt swing): a bush is cut where it stands (J3), the rest go to the Wood /
+	// Stone flow. 1 = taken, 2 = the spot was skipped (no tool for it), 0 = left alone (no tool, and canSkip is off).
+	private int OvTake(GameObject best, int bestMode, string bestType, OvSpot q, bool canSkip, string how)
+	{
 		ItemDrop.ItemData tool = FindBestTool(bestMode);
 		if (tool == null)
 		{
+			if (!canSkip)
+			{
+				return 0;
+			}
+			OvDigOff();
 			OvSkip(q, "\"" + best.name + "\" is in the way and it has no " + (bestMode == 1 ? "axe" : "pickaxe") + " for it", normal: true);
-			return true;
+			return 2;
 		}
-		_ovHand = best;
-		_ovHandSpot = q;
-		_ovHandMode = bestMode;
-		if (!_vp.HandFor.ContainsKey(best.GetInstanceID()))
+		if (q != null && !_vp.HandFor.ContainsKey(best.GetInstanceID()))
 		{
 			_vp.HandFor[best.GetInstanceID()] = q;
 		}
+		_dgLastProg = true;   // not a swing that changed nothing (H5)
+		if (bestMode == 1 && bestType == "Destructible")
+		{
+			// J3: a bush - the dirt walk to it, faced, and the dirt swing with the axe; 3 swings that don't hit it skip the spot
+			Vector3 at = best.transform.position;
+			at.y = GroundAt(at);
+			OvDigBegin(at, q, ramp: false);
+			_dgBushOn = true;
+			_dgBush = best;
+			_dgBushMiss = 0;
+			if (CompanionsPlugin.LogNormal) LogInfo($"{how}: the bush \"{best.name}\" at {MHR_Mover.Fmt(best.transform.position)}{(q != null ? $" (spot {q.Idx + 1})" : "")} - cutting it where it stands with {tool.m_shared.m_name}");
+			return 1;
+		}
+		OvDigOff();
+		_ovHand = best;
+		_ovHandSpot = q;
+		_ovHandMode = bestMode;
 		_ai?.StopMoving();
 		_target = best;
-		_targetType = bestMode == 1 && bestType == "Destructible" ? "Destructible" : ClassifyTargetType(best, bestMode);
+		_targetType = ClassifyTargetType(best, bestMode);
 		_swingCount = 0;
 		_totalAttempts = 0;
 		_consecutiveFailures = 0;
@@ -1467,8 +1565,90 @@ public partial class HarvestController
 		_moveTargetLocked = false;
 		_attackFaceLocked = false;
 		_state = HarvestState.Moving;
-		if (CompanionsPlugin.LogNormal) LogInfo($"In the trench at spot {q.Idx + 1}: \"{best.name}\" ({_targetType}) at {MHR_Mover.Fmt(best.transform.position)} - clearing it the {(bestMode == 1 ? "Wood" : "Stone")} job's way with {tool.m_shared.m_name}");
-		return true;
+		if (CompanionsPlugin.LogNormal) LogInfo($"{how}: \"{best.name}\" ({_targetType}) at {MHR_Mover.Fmt(best.transform.position)}{(q != null ? $" (spot {q.Idx + 1})" : "")} - clearing it the {(bestMode == 1 ? "Wood" : "Stone")} job's way with {tool.m_shared.m_name}");
+		return 1;
+	}
+
+	// the nearest thing within 2 m of p (1 m above the ground as it is now), taken with OvTake. With canSkip (a spot's own
+	// check) a thing it gave up on for this spot, or one it has no tool for, skips the spot; without it (H2, before a swing)
+	// those are left alone. 1 = taken, 2 = spot skipped, 0 = nothing.
+	private int OvThingAt(Vector3 p, OvSpot q, bool canSkip)
+	{
+		if (s_ovThingMask == 0)
+		{
+			s_ovThingMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
+		}
+		// G5: centred 1 m above the ground as it is now (the planned height can be 8 m above the dug ground)
+		Vector3 at = p;
+		at.y = GroundAt(p) + 1.0f;
+		int k = Physics.OverlapSphereNonAlloc(at, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
+		GameObject best = null, blocked = null;
+		string bestType = null;
+		int bestMode = 0;
+		float bd = float.MaxValue;
+		for (int i = 0; i < k; i++)
+		{
+			GameObject go = OvThingOf(s_ovThingBuf[i], out int mode, out string type);
+			if (go == null)
+			{
+				continue;
+			}
+			int id = go.GetInstanceID();
+			if (s_claimedTargets.Contains(id) && id != _claimedTargetId)
+			{
+				continue;   // another companion is on it
+			}
+			if (_blacklist.ContainsKey(id))
+			{
+				// G6: a thing it couldn't clear skips only the spot it was handed over for; for the others it is ignored
+				if (canSkip && q != null && _vp.HandFor.TryGetValue(id, out OvSpot hs) && hs == q)
+				{
+					blocked = go;
+				}
+				continue;
+			}
+			float d2 = Flat(go.transform.position, p);
+			if (d2 < bd)
+			{
+				bd = d2;
+				best = go;
+				bestType = type;
+				bestMode = mode;
+			}
+		}
+		if (best == null)
+		{
+			if (blocked != null)
+			{
+				OvDigOff();
+				OvSkip(q, "\"" + blocked.name + "\" is in the way and it couldn't clear it", normal: true);
+				return 2;
+			}
+			return 0;
+		}
+		return OvTake(best, bestMode, bestType, q, canSkip, q != null ? $"In the trench at spot {q.Idx + 1}" : "In the trench");
+	}
+
+	// H1: HarvestHitRegister told it one of its swings hit go (noted whatever the swing was aimed at)
+	private void OvNoteHit(GameObject go)
+	{
+		if (go == null)
+		{
+			return;
+		}
+		MineRock5 m = go.GetComponentInParent<MineRock5>();
+		if (m != null && _vp != null && _vp.Rocks.Contains(m))
+		{
+			_ovOreHitAt = Time.time;
+			return;
+		}
+		_ovThingHitGo = go;
+		_ovThingHitAt = Time.time;
+	}
+
+	private static bool OvSame(GameObject a, GameObject b)
+	{
+		return a != null && b != null && (a == b || a.transform.IsChildOf(b.transform) || b.transform.IsChildOf(a.transform));
 	}
 
 	// G9: what is still within 2 m of a spot that the Wood or Stone job would take (the same tests as OvThing)
@@ -1483,25 +1663,8 @@ public partial class HarvestController
 		int k = Physics.OverlapSphereNonAlloc(at, OvThingRadius, s_ovThingBuf, s_ovThingMask, QueryTriggerInteraction.Ignore);
 		for (int i = 0; i < k; i++)
 		{
-			Collider c = s_ovThingBuf[i];
-			if (c == null || c.GetComponentInParent<Character>() != null || c.GetComponentInParent<MineRock5>() != null || GetHarvestCandidateWithType(c, 3, out _) != null)
-			{
-				continue;
-			}
-			GameObject go = GetHarvestCandidateWithType(c, 1, out _);
-			if (go == null)
-			{
-				Destructible d = c.GetComponentInParent<Destructible>();
-				if (d != null && d.m_damages.m_chop != HitData.DamageModifier.Immune && d.m_damages.m_chop != HitData.DamageModifier.Ignore && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) < 0)
-				{
-					go = d.gameObject;
-				}
-			}
-			if (go == null)
-			{
-				go = GetHarvestCandidateWithType(c, 2, out _);
-			}
-			if (go == null || !go.activeInHierarchy || IsBuilt(go) || into.ContainsKey(go.GetInstanceID()))
+			GameObject go = OvThingOf(s_ovThingBuf[i], out _, out _);
+			if (go == null || into.ContainsKey(go.GetInstanceID()))
 			{
 				continue;
 			}
@@ -1642,6 +1805,13 @@ public partial class HarvestController
 		_dgNoProg = 0;
 		_dgLastProg = false;
 		_dgThingChecked = false;
+		_dgThingSwing = false;
+		_dgBushOn = false;
+		_dgBush = null;
+		_dgBushMiss = 0;
+		_dgHwBest = float.MaxValue;
+		_dgHwTime = 0f;
+		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
 
@@ -1650,6 +1820,8 @@ public partial class HarvestController
 		_dgActive = false;
 		_dgSwung = false;
 		_dgWalking = false;
+		_dgBushOn = false;
+		_dgBush = null;
 	}
 
 	private void OvFace(Vector3 point)
@@ -1668,19 +1840,90 @@ public partial class HarvestController
 		}
 	}
 
+	// J1: work on a spot (walking to it, swinging, catching its breath, cutting a bush on it) counts toward 30 s; the ground
+	// going down (or a swing landing on the vein's ore or on the bush it cuts) starts the 30 s again. True = skipped.
+	private bool OvSpotClock(float dt)
+	{
+		OvSpot q = _dgSpot;
+		if (q == null || _vp == null)
+		{
+			return false;
+		}
+		if (_spFor != q || _spLap != _vp.Lap)
+		{
+			_spFor = q;
+			_spLap = _vp.Lap;
+			_spIdle = 0f;
+		}
+		_spIdle += dt;
+		if (_spIdle < OvSpotIdle)
+		{
+			return false;
+		}
+		OvDigOff();
+		OvSkip(q, $"{OvSpotIdle:F0} s of work on it without the ground going down", normal: true);
+		return true;
+	}
+
+	private void OvSpotProgress()
+	{
+		if (_dgSpot != null && _spFor == _dgSpot)
+		{
+			_spIdle = 0f;
+		}
+	}
+
+	// H4: another companion on this vein within 1.2 m ahead (toward the dirt it walks to)
+	private bool OvOtherAhead(Vector3 me, Vector3 toward)
+	{
+		Vector3 dir = toward - me;
+		dir.y = 0f;
+		if (dir.sqrMagnitude < 0.01f || _vp == null)
+		{
+			return false;
+		}
+		dir.Normalize();
+		foreach (HarvestController h in _vp.Workers.Keys)
+		{
+			if (h == null || h == this)
+			{
+				continue;
+			}
+			Vector3 o = h.transform.position - me;
+			o.y = 0f;
+			if (o.magnitude <= OvSideNear && o.sqrMagnitude > 0.0001f && Vector3.Dot(o.normalized, dir) > 0.5f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private void OvDigTick()
 	{
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
+		if (OvSpotClock(dt))
+		{
+			return;
+		}
 		bool busy = _humanoid != null && (_humanoid.InAttack() || _humanoid.InDodge());
 		if (_dgSwung)
 		{
 			if (busy || Time.time - _dgSwungAt < 0.35f)
 			{
-				OvFace(_dgPoint);
+				OvFace(_dgBushOn && _dgBush != null ? _dgBush.transform.position : _dgPoint);
 				return;
 			}
 			OvDigJudge();
+			return;
+		}
+		if (_dgBushOn && (_dgBush == null || !_dgBush.activeInHierarchy))
+		{
+			// J3: the bush is down
+			if (CompanionsPlugin.LogNormal) LogInfo($"Cut the bush at {MHR_Mover.Fmt(_dgPoint)} - back to the trench");
+			OvDigOff();
+			_dgLastProg = true;
 			return;
 		}
 		float reach = GetAttackRange();
@@ -1688,21 +1931,19 @@ public partial class HarvestController
 		{
 			// walking to it: within reach, and not more than 1.2 m below its feet (then it walks on down to it)
 			float flat = Flat(me, _dgPoint);
-			if (!_dgThingChecked && _dgSpot != null && flat <= OvThingNear)
+			if (!_dgBushOn && !_dgThingChecked && _dgSpot != null && flat <= OvThingNear)
 			{
-				// G5: within 4 m of the spot - anything on it now goes to the Wood / Stone flow first
+				// G5: within 4 m of the spot - anything on it now goes to the Wood / Stone flow (a bush: cut here) first
 				_dgThingChecked = true;
-				OvSpot tq = _dgSpot;
-				if (OvThing(tq))
+				if (OvThing(_dgSpot))
 				{
-					OvDigOff();
 					return;
 				}
 			}
 			bool below = _dgPoint.y < me.y - 1.2f;
 			float upNow = GroundAt(_dgPoint) - me.y;
 			float h = _character != null ? _character.GetHeight() : 1.8f;
-			if (_dgSpot != null && !_dgSpot.RampTried && flat <= OvRampReach && upNow >= OvRampRatio * h)
+			if (!_dgBushOn && _dgSpot != null && !_dgSpot.RampTried && flat <= OvRampReach && upNow >= OvRampRatio * h)
 			{
 				// G2: at the wall in front of the spot (within 3 m) and it is 1.5 x its height up: carve the way up
 				OvSpot rq = _dgSpot;
@@ -1712,21 +1953,41 @@ public partial class HarvestController
 			}
 			if (flat > reach * 0.9f || (below && flat > 0.6f))
 			{
-				if (!_dgWalking)
-				{
-					_dgWalking = true;
-					_moveTimer = 0f;
-				}
+				_dgWalking = true;
 				float up = GroundAt(_dgPoint) - me.y;
 				OvSpot q = _dgSpot;
-				if (q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && MHR_Mover.NoHeadway(_ai) >= OvNoHeadway)
+				// J2: the job's own headway - 0.3 m closer (flat) resets it; only time spent walking counts
+				if (flat < _dgHwBest - OvHeadwayGain)
+				{
+					_dgHwBest = flat;
+					_dgHwTime = 0f;
+				}
+				else
+				{
+					_dgHwTime += dt;
+				}
+				// H4: another companion right ahead and no headway for 1 s: the walking code's own side step (once a second)
+				if (_dgHwTime >= OvSideAfter && Time.time - _dgSideAt >= OvSideAfter && OvOtherAhead(me, _dgPoint))
+				{
+					_dgSideAt = Time.time;
+					if (CompanionsPlugin.LogDetailed) Log($"Another companion is in the way to {MHR_Mover.Fmt(_dgPoint)} - side step");
+					MHR_Mover.SidestepNow(_ai, MHR_GatherRules.ApproachPoint(this, _dgPoint), "Gather");
+				}
+				if (!_dgBushOn && q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && _dgHwTime >= OvNoHeadway)
 				{
 					OvDigOff();
-					OvRampBegin(_dgPoint, q, outOfTrench: false, $"no headway for {OvNoHeadway:F0} s toward spot {q.Idx + 1}, {up:F1} m up");
+					OvRampBegin(_dgPoint, q, outOfTrench: false, $"no headway for {OvNoHeadway:F0} s toward spot {q.Idx + 1} (not 0.3 m closer), {up:F1} m up");
 					return;
 				}
 				if (WalkTimer(dt, _dgPoint) && _moveTimer > 10f)
 				{
+					if (_dgBushOn)
+					{
+						GameObject b = _dgBush;
+						OvDigOff();
+						OvBushGiveUp(b, q, $"couldn't get to it in {10f:F0} s ({flat:F1} m away, {up:F1} m up)");
+						return;
+					}
 					OvDigOff();
 					if (q != null && up > 0f && !q.RampTried && flat <= OvRampReach)
 					{
@@ -1746,6 +2007,25 @@ public partial class HarvestController
 		{
 			_dgWalking = false;
 			_ai?.StopMoving();
+		}
+		if (_dgBushOn)
+		{
+			// J3: the bush, with the axe (WorkMode)
+			OvFace(_dgBush.transform.position);
+			int bw = SwingNow(out _, out _);
+			if (bw == -1)
+			{
+				GameObject b = _dgBush;
+				OvDigOff();
+				OvBushGiveUp(b, _dgSpot, "no axe for it");
+				return;
+			}
+			if (bw == 1)
+			{
+				_dgSwung = true;
+				_dgSwungAt = Time.time;
+			}
+			return;
 		}
 		float g = GroundAt(_dgPoint);
 		if (_dgSpot != null && !_dgRamp)
@@ -1767,6 +2047,17 @@ public partial class HarvestController
 			}
 			return;
 		}
+		// H2: before each dirt or ramp swing, anything within 2 m of the dirt (a tree that fell in, a log that rolled in)
+		// is cleared first. Things it gave up on, or has no tool for, are left alone here.
+		if (!_dgThingSwing)
+		{
+			_dgThingSwing = true;
+			OvSpot hs = _dgSpot ?? (_rpActive ? _rpSpot : null) ?? OvNearest(_dgPoint);
+			if (OvThingAt(_dgPoint, hs, canSkip: false) != 0)
+			{
+				return;
+			}
+		}
 		OvFace(_dgPoint);
 		int sw = SwingNow(out _, out _);
 		if (sw == -1)
@@ -1785,14 +2076,89 @@ public partial class HarvestController
 		}
 	}
 
+	// J3: a bush it couldn't cut: given up (like the Wood job's own give-up), and the spot it was for is skipped this lap
+	private void OvBushGiveUp(GameObject b, OvSpot q, string why)
+	{
+		if (b != null)
+		{
+			_blacklist[b.GetInstanceID()] = Time.time;
+			if (q != null && _vp != null)
+			{
+				_vp.HandFor[b.GetInstanceID()] = q;
+			}
+		}
+		_dgLastProg = true;
+		if (q != null)
+		{
+			OvSkip(q, "the bush \"" + (b != null ? b.name : "?") + "\" is in the way and it couldn't cut it: " + why, normal: true);
+		}
+		else if (CompanionsPlugin.LogNormal)
+		{
+			LogInfo($"Gave up on the bush \"{(b != null ? b.name : "?")}\": {why}");
+		}
+	}
+
 	private void OvDigJudge()
 	{
 		_dgSwung = false;
+		_dgThingSwing = false;
+		if (_dgBushOn)
+		{
+			// J3: did the swing land on the bush?
+			bool hitB = _ovThingHitAt >= _dgSwungAt && OvSame(_ovThingHitGo, _dgBush);
+			_dgBushMiss = hitB ? 0 : _dgBushMiss + 1;
+			if (hitB)
+			{
+				OvSpotProgress();
+			}
+			if (CompanionsPlugin.LogDetailed) Log($"Axe swing at the bush \"{(_dgBush != null ? _dgBush.name : "?")}\": {(hitB ? "hit" : $"didn't hit it ({_dgBushMiss} in a row)")}, {Flat(base.transform.position, _dgPoint):F1} m away, feet {base.transform.position.y:F2}");
+			if (_dgBushMiss >= OvBushMiss)
+			{
+				GameObject b = _dgBush;
+				OvSpot q = _dgSpot;
+				OvDigOff();
+				OvBushGiveUp(b, q, $"{OvBushMiss} swings didn't hit it");
+			}
+			return;
+		}
 		float after = GroundAt(_dgPoint);
 		bool prog = _dgBefore - after >= OvDigGain;
-		_dgLastProg = prog;
-		_dgNoProg = prog ? 0 : _dgNoProg + 1;
-		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{(prog ? "" : $" - no change ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+		bool hitThing = _ovThingHitAt >= _dgSwungAt && _ovThingHitGo != null && _ovThingHitGo.activeInHierarchy;
+		bool hitOre = _ovOreHitAt >= _dgSwungAt;
+		if (hitThing)
+		{
+			// H1: it hit a tree, log, stump, bush or a rock that isn't this vein: that goes to the Wood / Stone flow (a bush:
+			// cut here) - unless it gave up on it, another companion has it, or it has no tool for it
+			GameObject go = _ovThingHitGo;
+			Collider c = go.GetComponentInChildren<Collider>();
+			int mode = 0;
+			string type = null;
+			GameObject thing = c != null ? OvThingOf(c, out mode, out type) : null;
+			if (thing != null)
+			{
+				int id = thing.GetInstanceID();
+				bool free = !_blacklist.ContainsKey(id) && (!s_claimedTargets.Contains(id) || id == _claimedTargetId);
+				if (free)
+				{
+					OvSpot hs = _dgSpot ?? (_rpActive ? _rpSpot : null) ?? OvNearest(_dgPoint);
+					if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} hit \"{thing.name}\"");
+					if (OvTake(thing, mode, type, hs, canSkip: false, "A dirt swing hit it") != 0)
+					{
+						return;
+					}
+				}
+			}
+		}
+		// H1 / H5: a swing that landed on this vein's ore is progress (it keeps hitting through it); only a swing that hit
+		// nothing it could deal with and left the ground as it was counts as "no change"
+		bool oreProg = !prog && hitOre;
+		_dgLastProg = prog || oreProg;
+		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
+		if (_dgLastProg)
+		{
+			OvSpotProgress();
+		}
+		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{(oreProg ? " - hit the vein's ore" : prog ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{
 			OvDigOff();   // one swing per ramp step: the ramp looks again
@@ -2212,7 +2578,7 @@ public partial class HarvestController
 		{
 			return _stuckInHole ? "stuck in a hole, waiting" : "no vein work";
 		}
-		string what = _ovOut ? "getting out of the trench (" + _ovOutWhy + ")" : _rpActive ? (_rpSaved != null ? "walking up a saved ramp" : "cutting a ramp toward " + MHR_Mover.Fmt(_rpGoal)) : _dgActive ? (_dgWalking ? "walking to dirt at " : "digging dirt at ") + MHR_Mover.Fmt(_dgPoint) : _ovHandMode != 0 ? "clearing \"" + (_ovHand != null ? _ovHand.name : "?") + "\" from the trench" : _vp != null && _vp.Done ? "standing by (the trench is done)" : "choosing the next spot";
+		string what = _ovOut ? "getting out of the trench (" + _ovOutWhy + ")" : _rpActive ? (_rpSaved != null ? "walking up a saved ramp" : "cutting a ramp toward " + MHR_Mover.Fmt(_rpGoal)) : _dgActive ? (_dgBushOn ? (_dgWalking ? "walking to a bush at " : "cutting a bush at ") : _dgWalking ? "walking to dirt at " : "digging dirt at ") + MHR_Mover.Fmt(_dgPoint) : _ovHandMode != 0 ? "clearing \"" + (_ovHand != null ? _ovHand.name : "?") + "\" from the trench" : _vp != null && _vp.Done ? "standing by (the trench is done)" : "choosing the next spot";
 		return $"vein \"{_vp?.Name}\" lap {_vp?.Lap ?? 0}, {what}";
 	}
 

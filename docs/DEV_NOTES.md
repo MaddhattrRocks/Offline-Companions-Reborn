@@ -18,6 +18,17 @@
   - G8: too heavy or the bag full on a vein: its stone, then wood, tossed right there (MHR_GatherRules.TossOnVein, the same item again within 5 s is skipped); only otherwise does it leave.
   - G9: the done log lists the trees, bushes and rocks left within 2 m of a spot; the stuck line names the vein.
   - G10: before "done", if no saved ramp reaches out of the trench, one companion walks down to the floor at the nearest spot and cuts one (one try per vein).
+- Fixes after John's third 1.5.98 test (companions stuck; review reviews/1.5.98-test3-stuck-review.md, approved J1-J4 + H1-H5, still 1.5.98):
+  - J1: every spot has a clock: 30 s of work on it (walking, swinging, catching its breath) without the ground going down skips it this lap. The dirt walk's 10 s clock starts only when a dig starts, not each time it goes from swinging back to walking.
+  - J2: "no headway" toward dirt is the job's own check (3 s of walking without getting 0.3 m closer), not MHR_Mover.NoHeadway, which counted the mover's hops as headway.
+  - J3: a bush is cut where it stands with the dirt walk and dirt swing and the axe (WorkMode 1); 3 swings that don't hit it (or a 10 s walk give-up, or no axe) give it up and skip its spot. Bushes are no longer handed to the Wood flow (it walked at them like a rock).
+  - J4: lap 1 starts with every tree, log, stump, bush and rock within 2 m of the ring, nearest spot first (OvPlan.RingCleared once nothing is left).
+  - H1: what a dirt or ramp swing hit (HarvestHitRegister -> OvNoteHit): a tree, log, stump, bush or non-vein rock is taken (Wood / Stone flow, a bush cut here); this vein's ore counts as progress.
+  - H2: before every dirt and ramp swing, things within 2 m of the dirt are looked for and taken (ones it gave up on, or has no tool for, are left).
+  - H3: a spot within 2 m of the spot another companion is working counts as taken (OvTaken).
+  - H4: walking to dirt with another companion within 1.2 m ahead and no headway for 1 s: MHR_Mover.SidestepNow (once a second).
+  - H5: "3 swings with no change" counts only swings that left the ground as it was and hit nothing it could take or this vein's ore.
+  - A thing handed to the Wood / Stone flow that comes back still standing is given up on (blacklisted), so no check hands it over again; a ramp's 60 s clock restarts after a hand-off.
 
 ### 1.5.97 - a vein mined the way a player does: trench round it, clear under it, pop it (John, 2026-11-14: 1.5.96 dug straight down into the water; approved plan reviews/1.5.97-vein-trench-plan.md T1-T8 + answers Q1-Q4)
 - T1 (HarvestTrench.cs TOutline): a part is "visible" if a ray down onto its own collider (0.5 m grid over its box, max 12x12) lands more than 5 cm above the ground. From the visible parts' centre, 16 level rays (22.5 deg) start 20 m out at ground + 0.5 m (if that misses, at the centre's ground + 0.5 m) and hit only visible parts: the edge points. No visible part = all parts used. Trench line 0.75 m outside the edge points, a point about every 1 m. Start = the trench point nearest the companion. Normal log: visible/held counts, bearings found, trench size; Detailed: the 16 edge points.
