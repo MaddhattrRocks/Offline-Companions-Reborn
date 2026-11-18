@@ -316,6 +316,16 @@ public partial class HarvestController
 	// A3: a bush it is cutting is claimed like the Wood / Stone jobs' targets
 	private int _dgBushClaim;
 
+	// 1.5.98 L4: a clearing dig point (toward a part out of reach): down to _dgGoalY; _dgReached = it got there (or to the
+	// floor); _dgOre = a swing landed on the vein instead of the dirt
+	private bool _dgClear;
+
+	private float _dgGoalY;
+
+	private bool _dgReached;
+
+	private bool _dgOre;
+
 	// C5: the ramp
 	private bool _rpActive;
 
@@ -588,9 +598,14 @@ public partial class HarvestController
 		{
 			_rpPart.Holder = null;
 		}
+		if (_clFor != null && _clFor.Holder == this)
+		{
+			_clFor.Holder = null;
+		}
 		_ovPart = null;
 		_rpPart = null;
 		_ovPin = null;
+		OvClOff();
 	}
 
 	// C6: leaving the vein - out of the trench first when it's in it, toward dest
@@ -1533,7 +1548,7 @@ public partial class HarvestController
 		{
 			p.SFrom[act[j]] = from[bestOrder[j]];
 			p.SLen[act[j]] = len[bestOrder[j]];
-			say += (j > 0 ? ", " : "") + (act[j] == this ? "this one" : act[j].name.Replace("(Clone)", "")) + " " + (from[bestOrder[j]] + 1) + "-" + ((from[bestOrder[j]] + len[bestOrder[j]] - 1) % n + 1);
+			say += (j > 0 ? ", " : "") + (act[j] == this ? "this one" : (act[j]._character != null ? act[j]._character.m_name : act[j].name.Replace("(Clone)", ""))) + " " + (from[bestOrder[j]] + 1) + "-" + ((from[bestOrder[j]] + len[bestOrder[j]] - 1) % n + 1);
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"The trench ring round \"{p.Name}\" (lap {p.Lap}, {n} spots) is split into {k} stretch(es), each worked one way round: {say}");
 	}
@@ -2129,6 +2144,9 @@ public partial class HarvestController
 		_dgRampProg = false;
 		_dgHwBest = float.MaxValue;
 		_dgHwTime = 0f;
+		_dgClear = false;
+		_dgReached = false;
+		_dgOre = false;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
@@ -2363,10 +2381,17 @@ public partial class HarvestController
 				return;
 			}
 		}
+		if (_dgClear && g <= _dgGoalY + OvDigGain)
+		{
+			OvDigOff();
+			_dgReached = true;
+			return;
+		}
 		if (g <= OvFloor(_dgPoint) + OvDigGain)
 		{
 			OvDigOff();
 			_dgLastProg = false;
+			_dgReached = _dgClear;
 			if (_dgSpot != null && !_dgRamp)
 			{
 				OvSpotDone(_dgSpot, "at the floor (the game's 8 m limit or the water)");
@@ -2486,6 +2511,14 @@ public partial class HarvestController
 		}
 		// H1 / H5: a swing that landed on this vein's ore is progress (it keeps hitting through it); only a swing that hit
 		// nothing it could deal with and left the ground as it was counts as "no change"
+		if (_dgClear && hitOre && !prog)
+		{
+			// L4: the vein is in the way of the dig toward the part - it mines that (OvClRound)
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (toward a part) hit the vein's rock - mining it");
+			OvDigOff();
+			_dgOre = true;
+			return;
+		}
 		bool oreProg = !prog && hitOre;
 		_dgLastProg = prog || oreProg;
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
@@ -2513,6 +2546,12 @@ public partial class HarvestController
 		{
 			OvDigOff();
 			OvSpotDone(_dgSpot, "down to this lap's depth");
+			return;
+		}
+		if (_dgClear && after <= _dgGoalY + OvDigGain)
+		{
+			OvDigOff();
+			_dgReached = true;
 			return;
 		}
 		if (_dgNoProg >= OvNoProgSwings)

@@ -45,6 +45,14 @@
   - The pinned part breaking (or falling) starts the existing drop pickup, then back to the chooser. The attack's own give-ups count a round (2 rounds, then the part is left) and the vein is taken off the blacklist again.
   - No root left but parts standing: the lowest is mined (its break makes the game check). 2 such tries in a row that break nothing stop the vein work: it says so (hc_speech_vein_clear_stopped), logs every part, and waits by the vein.
   - Done: the summary line, the vein blacklisted for a while, and it leaves by the way out (E3); the ore goes to a chest the existing way. If the last pop removes the vein object, the summary is said and it leaves with the normal movement.
+- Test-5 fixes L1-L7 (John's OK 2026-11-18 03:37Z, reviews/1.5.98-test5-review.md; still 1.5.98): clearing works from the trench.
+  - L1: roots sorted by whole metres from the part's box to the nearest trench spot, then lowest first.
+  - L2: a round walks (WalkTimer/WalkGo) to the trench spot nearest the part; GetEffectiveTargetPosition returns that stand point while clearing, never the ground above the part. In reach = box within the attack range of its feet (flat) and overlapping feet..feet+2 m.
+  - L3: the Ore job's attack starts where it stands (EnterAttacking, extracted from UpdateMoving's two arrival blocks).
+  - L4: out of reach = dig points 1 m apart toward the part's centre with the trench dig (OvDigBegin, _dgClear), each down to its feet (never under the floor), then it steps on; a dig swing on the vein's rock = mine the part nearest the dig point; cap = metres + 2; 30 s clock per point; a closed point or the cap = a round.
+  - L5: SayGaveUp is silent (log only) while a part is being mined; the vein blacklist was already undone in OvResume.
+  - L6: the P5 wall check uses the part's box (Physics.ClosestPoint fails on the vein's non-convex mesh).
+  - L7: the stretch log names the companions.
 
 ### 1.5.97 - a vein mined the way a player does: trench round it, clear under it, pop it (John, 2026-11-14: 1.5.96 dug straight down into the water; approved plan reviews/1.5.97-vein-trench-plan.md T1-T8 + answers Q1-Q4)
 - T1 (HarvestTrench.cs TOutline): a part is "visible" if a ray down onto its own collider (0.5 m grid over its box, max 12x12) lands more than 5 cm above the ground. From the visible parts' centre, 16 level rays (22.5 deg) start 20 m out at ground + 0.5 m (if that misses, at the centre's ground + 0.5 m) and hit only visible parts: the edge points. No visible part = all parts used. Trench line 0.75 m outside the edge points, a point about every 1 m. Start = the trench point nearest the companion. Normal log: visible/held counts, bearings found, trench size; Detailed: the 16 edge points.

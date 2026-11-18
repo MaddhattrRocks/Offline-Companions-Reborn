@@ -1225,34 +1225,7 @@ public partial class HarvestController : MonoBehaviour
 		bool flag = (!(_targetType == "TreeLog") && !(_targetType == "TreeBase")) || num < 3f;
 		if (vector.magnitude <= num2 && flag)
 		{
-			if (_ai != null)
-			{
-				_ai.StopMoving();
-			}
-			if (IsRockLikeTarget())
-			{
-				_lockedAttackFaceTarget = GetRockFacePosition();
-				_attackFaceLocked = true;
-			}
-			else
-			{
-				_attackFaceLocked = false;
-			}
-			FaceTarget();
-			_reapproach = false;
-			_attackTimer = 0.3f;
-			_attackDiagTimer = 0f;
-			_closeInTimer = 0f;
-			_closingIn = false;
-			_state = HarvestState.Attacking;
-			if (IsRockLikeTarget())
-			{
-				_attackNodePos = GetEffectiveTargetPosition();
-			}
-			if (_targetType == "MineRock5")
-			{
-				_rock5ActiveSections = CountActiveRock5Sections();
-			}
+			EnterAttacking();
 			return;
 		}
 		float deltaTime = Time.deltaTime;
@@ -1342,34 +1315,42 @@ public partial class HarvestController : MonoBehaviour
 		}
 		if (num7 <= num11 || magnitude <= num11)
 		{
-			if (_ai != null)
-			{
-				_ai.StopMoving();
-			}
-			if (flag6)
-			{
-				_lockedAttackFaceTarget = GetRockFacePosition();
-				_attackFaceLocked = true;
-			}
-			else
-			{
-				_attackFaceLocked = false;
-			}
-			FaceTarget();
-			_reapproach = false;
-			_attackTimer = 0.3f;
-			_attackDiagTimer = 0f;
-			_closeInTimer = 0f;
-			_closingIn = false;
-			_state = HarvestState.Attacking;
-			if (flag6)
-			{
-				_attackNodePos = GetEffectiveTargetPosition();
-			}
-			if (_targetType == "MineRock5")
-			{
-				_rock5ActiveSections = CountActiveRock5Sections();
-			}
+			EnterAttacking();
+		}
+	}
+
+	// the step from walking to swinging (both arrival checks in UpdateMoving; 1.5.98 L3: the vein clearing starts its
+	// attack with it where it stands)
+	private void EnterAttacking()
+	{
+		if (_ai != null)
+		{
+			_ai.StopMoving();
+		}
+		bool rock = IsRockLikeTarget();
+		if (rock)
+		{
+			_lockedAttackFaceTarget = GetRockFacePosition();
+			_attackFaceLocked = true;
+		}
+		else
+		{
+			_attackFaceLocked = false;
+		}
+		FaceTarget();
+		_reapproach = false;
+		_attackTimer = 0.3f;
+		_attackDiagTimer = 0f;
+		_closeInTimer = 0f;
+		_closingIn = false;
+		_state = HarvestState.Attacking;
+		if (rock)
+		{
+			_attackNodePos = GetEffectiveTargetPosition();
+		}
+		if (_targetType == "MineRock5")
+		{
+			_rock5ActiveSections = CountActiveRock5Sections();
 		}
 	}
 
@@ -2784,6 +2765,11 @@ public partial class HarvestController : MonoBehaviour
 		}
 		if (_targetType == "MineRock5")
 		{
+			// 1.5.98 L2: the vein clearing - where it stands in the trench, never the ground above the part
+			if (_ovPart != null && _clFor != null)
+			{
+				return _clStand;
+			}
 			Collider collider = null;
 			float num = float.MaxValue;
 			// 1.5.95: digging (Ore job, outdoors) - the nearest part, buried or not; it digs to it like a player
