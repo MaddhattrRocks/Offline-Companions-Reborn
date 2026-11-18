@@ -160,6 +160,8 @@ public partial class HarvestController
 
 	private const float OvRampTopNear = 5f;        // C5: ... and its top within 5 m of where it's going
 
+	private const float OvThingAbove = 2f;        // V4: a thing more than 2 m above its feet is on the wall top
+
 	private const float OvWayMore = 2f;           // R3: a way out's goal is (the height to climb) + 2 m out
 
 	private const float OvWayNear = 15f;          // R4: a way out within 15 m (flat) of where it works is near enough
@@ -171,8 +173,6 @@ public partial class HarvestController
 	private const float OvOutDeep = 1.5f;          // C6: 1.5 m under the ground outside the ring: in the trench
 
 	private const float OvOutSide = 3f;            // C6: 3 m outside the ring
-
-	private const float OvDigGate = 2.0f;          // C8
 
 	private const float OvSpotIdle = 30f;          // J1: 30 s of work on a spot without the ground going down: skipped this lap
 
@@ -336,13 +336,15 @@ public partial class HarvestController
 
 	private bool _dgPart;
 
-	// R6: how much lower than the halfway aim the next swing at this point goes (0.3 m after a swing that met the vein's
-	// rock and left the dirt as it was), the height it aimed at, and the vein whose pickaxe sweep was logged
-	private float _dgAimDrop;
+	// V2: when and where the game last dug for one of its swings; the vein whose pickaxe sweep was logged
+	private float _dgDugAt = -100f;
 
-	private float _dgAimY;
+	private Vector3 _dgDugPt;
 
 	private OvPlan _aimLogVp;
+
+	// V5: when the thing handed to the Wood / Stone flow was handed over
+	private float _hdSince;
 
 	// R3: a way out (out of the trench): the height it must reach (the ground outside when it began)
 	private bool _rpWay;
@@ -1742,6 +1744,7 @@ public partial class HarvestController
 		_ovHand = best;
 		_ovHandSpot = q;
 		_ovHandMode = bestMode;
+		_hdSince = Time.time;
 		_ai?.StopMoving();
 		_target = best;
 		_targetType = ClassifyTargetType(best, bestMode);
@@ -1783,6 +1786,11 @@ public partial class HarvestController
 		{
 			GameObject go = OvThingOf(s_ovThingBuf[i], out int mode, out string type);
 			if (go == null)
+			{
+				continue;
+			}
+			// V4: a thing whose base is more than 2 m above its feet is on the wall top, not in the trench - left alone
+			if (go.transform.position.y > base.transform.position.y + OvThingAbove)
 			{
 				continue;
 			}
@@ -1969,8 +1977,7 @@ public partial class HarvestController
 		}
 		if (p.ExitBy != null && p.ExitBy != this && p.ExitBy._vp == p && OvActive().Contains(p.ExitBy))
 		{
-			_ai?.StopMoving();   // another companion is cutting it
-			return true;
+			return false;   // V6: another companion is cutting it - this one goes on to the clearing
 		}
 		OvSpot sp = p.ExitAt.Count < OvWayOutTries ? OvWayOutSpot(p.ExitAt) : null;
 		if (sp == null)
@@ -2194,7 +2201,6 @@ public partial class HarvestController
 		_dgReached = false;
 		_dgLimit = false;
 		_dgPart = false;
-		_dgAimDrop = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
 	}
@@ -2304,15 +2310,7 @@ public partial class HarvestController
 		{
 			if (busy || Time.time - _dgSwungAt < 0.35f)
 			{
-				// R6: the look is held through the swing (the game takes the arc's tilt from it when the swing lands)
-				if (_dgBushOn && _dgBush != null)
-				{
-					OvFace(_dgBush.transform.position);
-				}
-				else
-				{
-					OvDigAim(false);
-				}
+				OvFace(_dgBushOn && _dgBush != null ? _dgBush.transform.position : _dgPoint);
 				return;
 			}
 			OvDigJudge();
@@ -2459,7 +2457,7 @@ public partial class HarvestController
 				return;
 			}
 		}
-		OvDigAim(true);
+		OvFace(_dgPoint);
 		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
 		{
@@ -2478,76 +2476,7 @@ public partial class HarvestController
 		}
 	}
 
-	// R6: a dig swing is aimed like a player looking at the dirt wall in front: halfway between its feet and the lower of
-	// the dirt's top there and the bottom of the lowest vein part above that point (no part above: halfway to the dirt's
-	// top), never higher than its feet + 1.2 m, and _dgAimDrop lower after a swing that met the vein's rock (down to its
-	// feet at the lowest). The game tilts the pickaxe's arc toward the look (up to the tool's m_maxYAngle). R2a: the part
-	// itself is faced level, like the Ore job's own swing.
-	private const float OvAimMax = 1.2f;
-
-	private const float OvAimDrop = 0.3f;
-
-	private const float OvAimAbove = 1.0f;         // R6: a part whose box is within 1 m (flat) of the point is "above" it
-
-	private void OvDigAim(bool fresh)
-	{
-		if (_ai == null || _character == null)
-		{
-			return;
-		}
-		if (_dgPart)
-		{
-			OvFace(_dgPoint);
-			return;
-		}
-		Vector3 me = base.transform.position;
-		if (fresh)
-		{
-			float top = GroundAt(_dgPoint);
-			float pb = OvPartBottomAbove(_dgPoint, me.y);
-			float lower = Mathf.Min(top, pb);
-			float y = me.y + (lower - me.y) * 0.5f;
-			y = Mathf.Min(y, me.y + OvAimMax);
-			y = Mathf.Max(y - _dgAimDrop, Mathf.Min(y, me.y));
-			_dgAimY = y;
-		}
-		Vector3 a = new Vector3(_dgPoint.x, _dgAimY, _dgPoint.z);
-		_ai.LookAtPoint(a);   // the game's BaseAI.LookAt: from its eye to the point, tilt included
-		Vector3 d = a - me;
-		d.y = 0f;
-		if (d.sqrMagnitude > 0.001f)
-		{
-			MHR_Nav.TurnTo(base.transform, Quaternion.LookRotation(d.normalized));
-		}
-	}
-
-	// R6: the bottom of the lowest standing part of this vein whose box is within 1 m (flat) of p and whose bottom is above
-	// feetY (+infinity = none)
-	private float OvPartBottomAbove(Vector3 p, float feetY)
-	{
-		if (_vp == null)
-		{
-			return float.PositiveInfinity;
-		}
-		OvClear c = OvC();
-		OvPartsLook(c, false);
-		float best = float.PositiveInfinity;
-		foreach (OvPart part in c.Parts)
-		{
-			if (part.C == null || !part.C.gameObject.activeSelf)
-			{
-				continue;
-			}
-			float b = OvPartBottom(part);
-			if (b > feetY && b < best && Flat(p, OvBoxNear(part, p)) <= OvAimAbove)
-			{
-				best = b;
-			}
-		}
-		return best;
-	}
-
-	// R6: the pickaxe's sweep (the game's own attack data, as the combat log prints it), once per vein
+	// R6 (kept by W1c): the pickaxe's sweep (the game's own attack data, as the combat log prints it), once per vein
 	private void OvSweepLog(ItemDrop.ItemData item)
 	{
 		if (_aimLogVp == _vp || item == null || item.m_shared == null)
@@ -2617,11 +2546,8 @@ public partial class HarvestController
 		bool prog = _dgBefore - after >= OvDigGain;
 		bool hitThing = _ovThingHitAt >= _dgSwungAt && _ovThingHitGo != null && _ovThingHitGo.activeInHierarchy;
 		bool hitOre = _ovOreHitAt >= _dgSwungAt;
-		if (hitOre && !prog)
-		{
-			// R6: the top of the arc met the vein's rock and the dirt stayed: the next swing at this point aims 0.3 m lower
-			_dgAimDrop += OvAimDrop;
-		}
+		bool dug = _dgDugAt >= _dgSwungAt;   // V2: the game dug where this swing landed
+		string dugAt = dug ? $", dug at {MHR_Mover.Fmt(_dgDugPt)}" : "";
 		if (hitThing)
 		{
 			// H1: it hit a tree, log, stump, bush or a rock that isn't this vein: that goes to the Wood / Stone flow (a bush:
@@ -2652,8 +2578,8 @@ public partial class HarvestController
 		{
 			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress, 3 that land on
 			// nothing end it (its break is seen by OvClRound)
-			_dgNoProg = hitOre ? 0 : _dgNoProg + 1;
-			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : $"nothing ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			_dgNoProg = hitOre || dug ? 0 : _dgNoProg + 1;
+			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : dug ? "dug" : $"nothing ({_dgNoProg} in a row)")}{dugAt}, feet {base.transform.position.y:F2}");
 			if (_dgNoProg >= OvNoProgSwings)
 			{
 				OvDigOff();
@@ -2669,9 +2595,9 @@ public partial class HarvestController
 			bool atLimit = after <= OvFloor(_dgPoint) + OvDigGain;
 			bool shelf = !hitOre && atLimit && after > feet + OvStepUp;
 			bool done = !hitOre && !shelf && (after <= _dgGoalY + OvDigGain || atLimit);
-			bool cProg = prog || hitOre;
+			bool cProg = prog || hitOre || dug;
 			_dgNoProg = cProg ? 0 : _dgNoProg + 1;
-			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)} (aimed at {_dgAimY:F2}): ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{(shelf ? $" - at the game's 8 m dig limit, {after - feet:F1} m above its feet" : done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {feet:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)}: ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{dugAt}{(shelf ? $" - at the game's 8 m dig limit, {after - feet:F1} m above its feet" : done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {feet:F2}");
 			if (shelf)
 			{
 				_dgLimit = true;
@@ -2690,13 +2616,15 @@ public partial class HarvestController
 			return;
 		}
 		bool oreProg = !prog && hitOre;
-		_dgLastProg = prog || oreProg;
+		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
+		// vein's ore restarts the spot's 30 s clock
+		_dgLastProg = prog || oreProg || dug;
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
-		if (_dgLastProg)
+		if (prog || oreProg)
 		{
 			OvSpotProgress();
 		}
-		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")} (aimed at {_dgAimY:F2}): ground {_dgBefore:F2} -> {after:F2}{(oreProg ? " - hit the vein's ore" : prog ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
+		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{dugAt}{(oreProg ? " - hit the vein's ore" : prog || dug ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{
 			// E4 (John's way): 2 swings at the wall in front, then it steps in and looks again; a swing that changed
@@ -3024,20 +2952,36 @@ public partial class HarvestController
 		OvSkip(_rpSpot, "the way up to it failed: " + why, normal: true);
 	}
 
-	// ---------- C8: the dig gate (SpawnOnHitTerrain asks) ----------
-	internal bool AllowDig(Vector3 hitPoint)
+	// ---------- V5: a thing handed to the Wood / Stone flow ----------
+	// John: no hit on it in 10 s - it is left; once it has been hit, 30 s without a hit (only to catch it stuck). Left =
+	// the flow ends (ResetToIdle) and OvResume keeps it out of the picks and skips the spot this lap, as for a bush.
+	private const float OvHandFirstHit = 10f;
+
+	private const float OvHandNextHit = 30f;
+
+	internal bool OvHandClock()
 	{
-		if (!_dgActive || !_dgSwung || _vFor == null)
+		if (_ovHandMode == 0 || _ovHand == null || !_ovHand.activeInHierarchy || (_state != HarvestState.Moving && _state != HarvestState.Attacking) || _target != _ovHand)
 		{
 			return false;
 		}
-		return Vector3.Distance(hitPoint, _dgPoint) <= OvDigGate && hitPoint.y >= OvFloor(hitPoint);
+		bool hit = _lastHitAt >= _hdSince;
+		float idle = Time.time - (hit ? _lastHitAt : _hdSince);
+		float limit = hit ? OvHandNextHit : OvHandFirstHit;
+		if (idle < limit)
+		{
+			return false;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"No hit on \"{_ovHand.name}\" in {limit:F0} s{(hit ? " since the last one" : "")} - leaving it");
+		ResetToIdle();
+		return true;
 	}
 
+	// ---------- W1b / V2: the game dug where this companion's swing landed (SpawnOnHitTerrain, never blocked) ----------
 	internal void NotifyDig(Vector3 hitPoint)
 	{
-		_lastHitAt = Time.time;
-		_noDamageSwings = 0;
+		_dgDugAt = Time.time;
+		_dgDugPt = hitPoint;
 	}
 
 	// ---------- the leash (part 1 G3, kept) ----------

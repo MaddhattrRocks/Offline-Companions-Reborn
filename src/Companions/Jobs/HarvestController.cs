@@ -73,11 +73,7 @@ public partial class HarvestController : MonoBehaviour
 
 	private int _claimedTargetId;
 
-	private int _lastAoeSwing = -1;
-
 	private static readonly HashSet<int> s_claimedTargets = new HashSet<int>();
-
-	internal static bool IsApplyingAoeDamage;
 
 	private ItemDrop.ItemData _pendingToolReequip;
 
@@ -404,15 +400,6 @@ public partial class HarvestController : MonoBehaviour
 
 	internal string CurrentStateName => _state.ToString();
 
-	internal bool IsAttackingRockTarget(GameObject obj)
-	{
-		if (_state == HarvestState.Attacking && _target == obj)
-		{
-			return IsRockLikeTarget();
-		}
-		return false;
-	}
-
 	private Vector3 _lastTargetPos;
 
 	// 1.5.65: the log or tree it just broke, so the pieces that come out of it are finished first (user, log e5d77d02:
@@ -550,45 +537,6 @@ public partial class HarvestController : MonoBehaviour
 		}
 		dist = best;
 		return true;
-	}
-
-	internal void TryApplyRockAoe(HitData hit = null)
-	{
-		if (_state == HarvestState.Attacking && IsRockLikeTarget() && _lastAoeSwing != _swingCount)
-		{
-			_lastAoeSwing = _swingCount;
-			if (_targetType == "MineRock5")
-			{
-				ApplyDirectRock5Damage(hit?.m_hitCollider);
-			}
-			else
-			{
-				ApplyDirectDamage();
-			}
-		}
-	}
-
-	internal bool IsAttackingTreeTarget(GameObject obj)
-	{
-		if (_state == HarvestState.Attacking && _target == obj)
-		{
-			return IsTreeTarget();
-		}
-		return false;
-	}
-
-	internal void TryApplyTreeAoe()
-	{
-		if (_state == HarvestState.Attacking && IsTreeTarget() && _lastAoeSwing != _swingCount)
-		{
-			_lastAoeSwing = _swingCount;
-			ApplyDirectDamage();
-		}
-	}
-
-	public void NotifyTerrainHit()
-	{
-		// 1.5.98: the swing met the ground and wasn't allowed to dig (nothing to do: only a vein dirt swing digs)
 	}
 
 	public void NotifyActionModeChanged()
@@ -822,6 +770,11 @@ public partial class HarvestController : MonoBehaviour
 		NoToolTick(mode);
 		// 1.5.98: stuck in its trench (the ramp out failed) - it waits for you (set a job, or move it 5 m)
 		if (mode == 3 && OvStuckTick())
+		{
+			return;
+		}
+		// 1.5.98 V5: a thing handed to the Wood / Stone flow from the vein - left after 10 s with no hit (30 s once hit)
+		if (mode == 3 && OvHandClock())
 		{
 			return;
 		}
@@ -1893,7 +1846,6 @@ public partial class HarvestController : MonoBehaviour
 		_reapproach = false;
 		_rock5ActiveSections = -1;
 		_rock5CurrentSegment = null;
-		_lastAoeSwing = -1;
 		_scanTimer = 0f;
 		_pendingToolReequip = null;
 		_moveTargetLocked = false;
@@ -1924,135 +1876,6 @@ public partial class HarvestController : MonoBehaviour
 			return _targetType == "Destructible";
 		}
 		return true;
-	}
-
-	private void ApplyDirectRock5Damage(Collider swingHit = null)
-	{
-		if (_target == null)
-		{
-			return;
-		}
-		MineRock5 component = _target.GetComponent<MineRock5>();
-		if (component == null)
-		{
-			return;
-		}
-		ItemDrop.ItemData rightItem = ReflectionHelper.GetRightItem(_humanoid);
-		if (rightItem == null)
-		{
-			return;
-		}
-		Collider collider = null;
-		float num = float.MaxValue;
-		// 1.5.95: the part the swing actually hit, as for a player (it used to be the nearest part above the ground)
-		if (swingHit != null && swingHit.gameObject.activeSelf && swingHit.transform.IsChildOf(_target.transform))
-		{
-			collider = swingHit;
-		}
-		for (int pass = 0; pass < 2 && collider == null; pass++)
-		{
-			foreach (Transform item in _target.transform)
-			{
-				if (!item.gameObject.activeSelf)
-				{
-					continue;
-				}
-				Collider component2 = item.GetComponent<Collider>();
-				if (!(component2 == null) && (pass == 1 || IsSegmentExposed(component2)))
-				{
-					float num2 = Vector3.Distance(base.transform.position, component2.bounds.center);
-					if (num2 < num)
-					{
-						num = num2;
-						collider = component2;
-					}
-				}
-			}
-		}
-		if (collider == null)
-		{
-			return;
-		}
-		Vector3 vector = SafeClosestPoint(collider, base.transform.position);
-		HitData hitData = new HitData();
-		hitData.m_point = vector;
-		hitData.m_dir = (vector - base.transform.position).normalized;
-		hitData.m_hitCollider = collider;
-		hitData.m_toolTier = (short)rightItem.m_shared.m_toolTier;
-		hitData.m_damage = rightItem.GetDamage();
-		hitData.m_hitType = HitData.HitType.PlayerHit;
-		hitData.SetAttacker(_character);
-		float randomSkillFactor = _character.GetRandomSkillFactor(rightItem.m_shared.m_skillType);
-		if (randomSkillFactor != 1f)
-		{
-			hitData.m_damage.Modify(randomSkillFactor);
-		}
-		// 1.5.95: no stamina here - the game's own swing already took it (Attack.Update -> UseStamina, by the weapon skill
-		// like a player's); this charged it a second time (user: "catching its breath every 2-3 swings")
-		IsApplyingAoeDamage = true;
-		component.Damage(hitData);
-		IsApplyingAoeDamage = false;
-	}
-
-	private void ApplyDirectDamage()
-	{
-		if (_target == null)
-		{
-			return;
-		}
-		IDestructible component = _target.GetComponent<IDestructible>();
-		if (component == null)
-		{
-			return;
-		}
-		ItemDrop.ItemData rightItem = ReflectionHelper.GetRightItem(_humanoid);
-		if (rightItem == null)
-		{
-			return;
-		}
-		Vector3 vector = _target.transform.position;
-		Collider collider = null;
-		MineRock component2 = _target.GetComponent<MineRock>();
-		if (component2 != null)
-		{
-			float num = float.MaxValue;
-			Collider[] componentsInChildren = _target.GetComponentsInChildren<Collider>();
-			foreach (Collider collider2 in componentsInChildren)
-			{
-				if (!(collider2 == null) && collider2.gameObject.activeSelf)
-				{
-					float num2 = Vector3.Distance(base.transform.position, collider2.bounds.center);
-					if (num2 < num)
-					{
-						num = num2;
-						collider = collider2;
-					}
-				}
-			}
-			if (collider == null)
-			{
-				return;
-			}
-			vector = collider.bounds.center;
-		}
-		HitData hitData = new HitData();
-		hitData.m_point = vector;
-		hitData.m_dir = (vector - base.transform.position).normalized;
-		hitData.m_hitCollider = collider;
-		hitData.m_toolTier = (short)rightItem.m_shared.m_toolTier;
-		hitData.m_damage = rightItem.GetDamage();
-		hitData.m_hitType = HitData.HitType.PlayerHit;
-		hitData.SetAttacker(_character);
-		float randomSkillFactor = _character.GetRandomSkillFactor(rightItem.m_shared.m_skillType);
-		if (randomSkillFactor != 1f)
-		{
-			hitData.m_damage.Modify(randomSkillFactor);
-		}
-		// 1.5.95: no stamina here - the game's own swing already took it (Attack.Update -> UseStamina, by the weapon skill
-		// like a player's); this charged it a second time (user: "catching its breath every 2-3 swings")
-		IsApplyingAoeDamage = true;
-		component.Damage(hitData);
-		IsApplyingAoeDamage = false;
 	}
 
 	private static bool IsSegmentExposed(Collider col)

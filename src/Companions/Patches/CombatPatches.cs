@@ -147,78 +147,17 @@ public static class CombatPatches
 		}
 	}
 
-	[HarmonyPatch(typeof(Destructible), "Damage")]
-	private static class Destructible_SuppressHarvestPhysical
-	{
-		private static bool Prefix(Destructible __instance, HitData hit)
-		{
-			if (HarvestController.IsApplyingAoeDamage)
-			{
-				return true;
-			}
-			Character attacker = hit.GetAttacker();
-			if (attacker == null)
-			{
-				return true;
-			}
-			HarvestController component = attacker.GetComponent<HarvestController>();
-			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
-			{
-				component.TryApplyRockAoe(hit);
-				return false;
-			}
-			return true;
-		}
-	}
-
-	[HarmonyPatch(typeof(MineRock), "Damage")]
-	private static class MineRock_SuppressHarvestPhysical
-	{
-		private static bool Prefix(MineRock __instance, HitData hit)
-		{
-			if (HarvestController.IsApplyingAoeDamage)
-			{
-				return true;
-			}
-			Character attacker = hit.GetAttacker();
-			if (attacker == null)
-			{
-				return true;
-			}
-			HarvestController component = attacker.GetComponent<HarvestController>();
-			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
-			{
-				component.TryApplyRockAoe(hit);
-				return false;
-			}
-			return true;
-		}
-	}
-
+	// 1.5.98 W1a (John: "use the pickaxe code and the hit code that the game uses"): a companion's swing does what the
+	// game does - its damage on whatever it hits. The original mod's overrides (Destructible / MineRock / MineRock5 /
+	// TreeBase / TreeLog Damage replaced by the job's own damage on its target) are gone. Only the player's own hits on a
+	// vein are still noted for the Ore job's log.
 	[HarmonyPatch(typeof(MineRock5), "Damage")]
-	private static class MineRock5_SuppressHarvestPhysical
+	private static class MineRock5_PlayerHitLog
 	{
-		private static bool Prefix(MineRock5 __instance, HitData hit, out bool __state)
+		private static void Prefix(HitData hit, out bool __state)
 		{
-			__state = false;
-			if (HarvestController.IsApplyingAoeDamage)
-			{
-				return true;
-			}
-			Character attacker = hit.GetAttacker();
-			if (attacker == null)
-			{
-				return true;
-			}
 			// pop test D1: the player's own hits on a vein, logged beside a companion on the Ore job
-			__state = PlayerCombatLog.NotePlayerRockHit(hit);
-			HarvestController component = attacker.GetComponent<HarvestController>();
-			if (component != null && component.IsAttackingRockTarget(__instance.gameObject))
-			{
-				component.TryApplyRockAoe(hit);
-				return false;
-			}
-			return true;
+			__state = hit != null && hit.GetAttacker() != null && PlayerCombatLog.NotePlayerRockHit(hit);
 		}
 
 		private static void Postfix(HitData hit, bool __state)
@@ -230,76 +169,20 @@ public static class CombatPatches
 		}
 	}
 
-	[HarmonyPatch(typeof(TreeBase), "Damage")]
-	private static class TreeBase_SuppressHarvestPhysical
-	{
-		private static bool Prefix(TreeBase __instance, HitData hit)
-		{
-			if (HarvestController.IsApplyingAoeDamage)
-			{
-				return true;
-			}
-			Character attacker = hit.GetAttacker();
-			if (attacker == null)
-			{
-				return true;
-			}
-			HarvestController component = attacker.GetComponent<HarvestController>();
-			if (component != null && component.IsAttackingTreeTarget(__instance.gameObject))
-			{
-				component.TryApplyTreeAoe();
-				return false;
-			}
-			return true;
-		}
-	}
-
-	[HarmonyPatch(typeof(TreeLog), "Damage")]
-	private static class TreeLog_SuppressHarvestPhysical
-	{
-		private static bool Prefix(TreeLog __instance, HitData hit)
-		{
-			if (HarvestController.IsApplyingAoeDamage)
-			{
-				return true;
-			}
-			Character attacker = hit.GetAttacker();
-			if (attacker == null)
-			{
-				return true;
-			}
-			HarvestController component = attacker.GetComponent<HarvestController>();
-			if (component != null && component.IsAttackingTreeTarget(__instance.gameObject))
-			{
-				component.TryApplyTreeAoe();
-				return false;
-			}
-			return true;
-		}
-	}
-
 	[HarmonyPatch(typeof(Attack), "SpawnOnHitTerrain")]
-	private static class SpawnOnHitTerrain_NoNpcTerrain
+	private static class SpawnOnHitTerrain_Note
 	{
-		private static bool Prefix(Vector3 hitPoint, Character character)
+		// 1.5.98 W1b: a companion's pickaxe digs whatever ground its swing hits, under the game's own rules, as a player's
+		// does (the 1.4.150 block and the 1.5.95 "only near the planned point" gate are gone). The Ore job is told a dig
+		// happened (V2); the player's own digs are logged beside a companion on the Ore job.
+		private static void Prefix(Vector3 hitPoint, Character character)
 		{
-			// 1.4.150: companions only - it blocked every creature's ground effects (and Aoe.OnHit uses the result)
 			if (character == null || character.IsPlayer() || character.GetComponent<CompanionSetup>() == null)
 			{
-				// pop test D1: the player's own digs, logged beside a companion on the Ore job
 				PlayerCombatLog.NotePlayerDig(character, hitPoint);
-				return true;
+				return;
 			}
-			HarvestController hc = character.GetComponent<HarvestController>();
-			// 1.5.95: the Ore job digs like a player - only the dirt over and around the vein it's mining (the game's own
-			// dig, with its ward and no-build checks)
-			if (hc != null && hc.AllowDig(hitPoint))
-			{
-				hc.NotifyDig(hitPoint);
-				return true;
-			}
-			hc?.NotifyTerrainHit();
-			return false;
+			character.GetComponent<HarvestController>()?.NotifyDig(hitPoint);
 		}
 	}
 
