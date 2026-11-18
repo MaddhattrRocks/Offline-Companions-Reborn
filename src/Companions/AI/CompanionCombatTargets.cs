@@ -279,6 +279,7 @@ public partial class CompanionCombatAI
 		{
 			maxRange = Mathf.Max(maxRange, 30f);
 		}
+		bool cutting = GetComponent<HarvestController>()?.CuttingWayOut ?? false;   // Y5
 		Character best = null;
 		float bestScore = float.MaxValue;
 		foreach (Character c in Character.GetAllCharacters())
@@ -333,6 +334,12 @@ public partial class CompanionCombatAI
 				bowShot = true;
 			}
 			if (!CanGetAt(c) || (bowShot && !MHR_BowDraw.ClearShot(_character, c)))
+			{
+				continue;
+			}
+			// 1.5.98 Y5: while it cuts a way out of a vein's trench for a fight, no fight with an enemy it can't reach - one
+			// swinging at it or you within 5 m, or one within its melee reach, is fought at once (LiftIgnore's rule)
+			if (cutting && !upClose && !MeleeCanReach(c, out _) && !(c.InAttack() && itsTarget != null && (itsTarget == _character || itsTarget == owner) && Vector3.Distance(c.transform.position, itsTarget.transform.position) < 5f))
 			{
 				continue;
 			}
@@ -433,6 +440,20 @@ public partial class CompanionCombatAI
 		_letGoUnreachable.Remove(c);
 		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[Combat] {c.m_name} {(attacking ? "is attacking " + (after == _character ? "it" : "you") : "came within reach")} - back on it");
 		return true;
+	}
+
+	// 1.5.98 Y5: the Ore job cuts a way out of its trench to get at this enemy - it is let go for 20 s, as the "can't get
+	// at" give-up does
+	internal void LetGoForWayOut()
+	{
+		Character c = _targetCreature;
+		if (c == null)
+		{
+			return;
+		}
+		if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Combat] Can't get up to {c.m_name} - letting it go while it cuts a way out of the trench");
+		LetGo(c, 20f);
+		_letGoUnreachable.Add(c);
 	}
 
 	private void LetGo(Character c, float secs)

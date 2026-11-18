@@ -262,6 +262,11 @@ public partial class HarvestController
 			OvClRound(c);
 			return true;
 		}
+		// Y1 / Y6a: a way out first, then the things in the pit, before the next round
+		if (OvFirst())
+		{
+			return true;
+		}
 		Vector3 me = base.transform.position;
 		List<OvPart> cand = new List<OvPart>();
 		foreach (OvPart part in c.Parts)
@@ -385,22 +390,26 @@ public partial class HarvestController
 			}
 		}
 		float h = _character != null ? _character.GetHeight() : 1.8f;
-		return GroundAt(OvOutside(sp)) - GroundAt(sp.P) >= OvRampRatio * h;
+		return OvWallTop(sp) - GroundAt(sp.P) >= OvRampRatio * h;   // Y2
 	}
 
 	// R4: the way out cut from this spot (the E2 walk along the floor, then the ramp straight out; OvWayOutTick)
-	private void OvWayOutHere(OvSpot sp)
+	private void OvWayOutHere(OvSpot sp, string head = null, string why = "a way out first")
 	{
 		OvPlan p = _vp;
 		p.ExitBy = this;
+		_pitSkipId = 0;   // Y6e: another piece of work started
+		_woWhy = why;
+		_woCombat = false;
 		_woActive = true;
 		_woOut = false;
 		_woFloor = sp.P;
 		_woFloor.y = GroundAt(sp.P);
 		_woGoal = OvOutside(sp);
+		_woGoal.y = OvWallTop(sp);   // Y2
 		_moveTimer = 0f;
 		_ai?.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"No way out of the trench within {OvWayNear:F0} m of where it works - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({GroundAt(_woGoal) - _woFloor.y:F1} m up)");
+		if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({_woGoal.y - _woFloor.y:F1} m up)");
 	}
 
 	// the nearest point of a part's box (the game's box, as the support rule uses) to p
@@ -455,6 +464,7 @@ public partial class HarvestController
 	private void OvClBegin(OvPart part, bool pop)
 	{
 		OvClStandFor(part, out OvSpot q, out bool here);
+		_pitSkipId = 0;   // Y6e: another piece of work started
 		_clFor = part;
 		_clPop = pop;
 		_clStand = here ? base.transform.position : q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;

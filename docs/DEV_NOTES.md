@@ -74,6 +74,18 @@
   - V4: OvThingAt skips things whose base is more than 2 m above its feet (wall top).
   - V5 (OvHandClock): a thing handed to the Wood / Stone flow is left (ResetToIdle -> OvResume blacklists, skips the spot) after 10 s with no hit on it, or 30 s since the last hit once hit.
   - V6: OvExitTick - while another companion cuts the way out before "done", the others go on to the clearing.
+- Test-9 fixes Y1-Y7 (John's OK 2026-11-18 21:48Z, reviews/1.5.98-test9-review.md; still 1.5.98). John: "If there is not a way out they should carve one before doing anything else. Same goes for getting in combat." "Clearing trees, bushes, logs, should take priority."
+  - Y1 (OvFirst / OvWayOutFirst): before every piece of work (next trench spot in OvTick, next clearing round in OvClearTick) the R4 check at the spot nearest it: no real way out within 15 m and the wall 1.5 x its height = cut one there first. E2's before-"done" try (OvExitTick, ExitTried) is gone - this check covers it. Runs at most once a second when it finds nothing.
+  - Y2 (OvWallTop): the wall outside a spot = the highest ground every 1 m out to 8 m; used by the 1.5 x check, the "shallow here" check and the height a way out must reach (R3 Need).
+  - Y3: a way out that reaches its goal point (flat) having risen 1.5 x its height counts as out (saved with Need = its top).
+  - Y4: the ramp's 60 s clock takes a new best height only while it is on the ground.
+  - Y5 (CombatWayOut, MHR_Mover.TryStartClimb, CompanionCombatAI.LetGoForWayOut / PickTarget): in a fight on a vein with no way out to use, the enemy is let go 20 s and a way out is cut at once (spot nearest the enemy if within 15 m of it, else nearest it); one per vein, none within 15 m of an earlier try; while it cuts, combat takes up no enemy it can't reach (one swinging at it / you within 5 m, or in melee reach, is fought).
+  - Y6a (OvPitFirst): after Y1, a tree, log, stump, bush or rock in the pit (box within 2 m of a spot or under the vein, bottom no more than 2 m above the floor at its nearest spot), nearest first, goes to the Wood / Stone flow. V4 in OvThingAt is measured from the floor too.
+  - Y6b: H2's things-near-the-dirt check also runs before the walk to every dig point.
+  - Y6c: a log handed over from the vein is aimed at its game box's nearest point when that is within reach + 0.5 m (else LogReachPoint).
+  - Y6d (OvHandLedge): a handed thing more than 0.7 m above its feet with no headway for 3 s: the way up toward it (ramp, up when its feet are within a step of the thing's base), then handed back (the thing stays claimed). Once per try.
+  - Y6e: V5's clock starts again after that way up; a thing left once waits for one other piece of work (_pitSkipId); left twice = left for this vein (PitLeft).
+  - Y7: R2a part swings count only a hit on the vein's rock (a dig there doesn't).
 - Weapon wear D1-D3 (John's OK 2026-11-18 21:20Z; still 1.5.98): companion tools and weapons wear by the game's own rules.
   - D1: the original mod's per-swing drain on Humanoid.StartAttack (every swing, misses too, no world rate) is gone.
   - D2 (DurabilityPatches.WeaponDurability_Patch): a transpiler on the game's four wear sites (Attack.DoMeleeAttack and DoAreaAttack on a hit, ProjectileAttackTriggered per shot, DoNonAttack per use) lets the game's "m_useDurability && IsPlayer()" check pass for a companion too, so the game's own amount (m_useDurabilityDrain x Game.m_durabilityRate) is drained. Logs a warning if the IL pattern isn't found.

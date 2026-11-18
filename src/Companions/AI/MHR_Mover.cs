@@ -2250,6 +2250,13 @@ namespace Companions
                     if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
                     return true;
                 }
+                // 1.5.98 Y5 (John: "They need to carve a way out to get to the enemies"): in a fight, no way out to use - the
+                // enemy is let go and a way out is cut at once
+                if (tag == CombatTag && s.Goal.y > pos.y + 1.5f && hv.CombatWayOut(s.Goal))
+                {
+                    ai.GetComponent<CompanionCombatAI>()?.LetGoForWayOut();
+                    return false;
+                }
                 if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
                 return false;
             }

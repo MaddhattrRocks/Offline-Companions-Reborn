@@ -2661,6 +2661,17 @@ public partial class HarvestController : MonoBehaviour
 		// log's middle was 3.6 m above it on a slope)
 		if (_targetType == "TreeLog")
 		{
+			// 1.5.98 Y6c: a log handed over from the vein - the point of its game box nearest it, when that is within the
+			// axe's reach + 0.5 m, the way a player chops the part of a log in front of them (test 9: the log a dig swing
+			// hit was aimed at by its far end up on the rim and left at once)
+			if (_ovHandMode != 0 && _target == _ovHand && OvThingBox(_target, out Bounds lb))
+			{
+				Vector3 lp = lb.ClosestPoint(base.transform.position);
+				if (Vector3.Distance(base.transform.position, lp) <= GetAttackRange() + 0.5f)
+				{
+					return lp;
+				}
+			}
 			return LogReachPoint();
 		}
 		if (_targetType == "MineRock")
