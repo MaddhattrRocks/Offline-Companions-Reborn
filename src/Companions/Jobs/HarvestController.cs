@@ -860,8 +860,12 @@ public partial class HarvestController : MonoBehaviour
 		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
 		{
 			// G8: its stone and wood go off to one side right here and it keeps working; only ore (or nothing to toss)
-			// takes it away from the vein
-			if (_humanoid != null && !_humanoid.InAttack() && MHR_GatherRules.TossOnVein(this))
+			// takes it away from the vein. A4: in the middle of a swing it waits for the swing to end first.
+			if (_humanoid != null && _humanoid.InAttack())
+			{
+				return;
+			}
+			if (MHR_GatherRules.TossOnVein(this))
 			{
 				return;
 			}

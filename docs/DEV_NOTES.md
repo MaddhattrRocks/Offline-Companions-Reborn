@@ -29,6 +29,16 @@
   - H4: walking to dirt with another companion within 1.2 m ahead and no headway for 1 s: MHR_Mover.SidestepNow (once a second).
   - H5: "3 swings with no change" counts only swings that left the ground as it was and hit nothing it could take or this vein's ore.
   - A thing handed to the Wood / Stone flow that comes back still standing is given up on (blacklisted), so no check hands it over again; a ramp's 60 s clock restarts after a hand-off.
+- Fixes after John's fourth 1.5.98 test (trench finished; review reviews/1.5.98-test4-review.md, approved A1-A4, E1-E4, B1, still 1.5.98):
+  - A1: the ring is split into equal stretches, one per companion on the vein (made again each lap, when the ring grows, or when one joins or leaves; kept in the plan; handed out for the shortest walks). Each works its own stretch from its first spot forward only. J4's clearing pass looks in its own stretch first.
+  - A2: its stretch done, it takes the nearest open spot 4 m from every other companion and its spot, else stands by until the lap ends. No more helping on a spot another holds.
+  - A3: a bush being cut is claimed (s_claimedTargets) so no other companion cuts it.
+  - A4: overweight on a vein in the middle of a swing: it waits for the swing to end, then G8's toss (it used to leave).
+  - E1: a way-up step at the game's 8 m dig limit that is no higher than its jump (MHR_Mover.JumpUp, TryHopUp's number) is jumped (walked at, the mover's hop); higher ones end the way up as before.
+  - E2: the way out before "done" (one companion, the others stand by) and getting out when leaving get up to 3 tries, each from the floor at a spot 5 m from the earlier places; then "couldn't cut a way out" / stuck as before.
+  - E3: getting out walks along the trench floor to a saved way out of the trench when there is one, and goes up it.
+  - E4 (John's way): every way up walks right up against the wall (the ground 0.5 m ahead more than 0.7 m up, or 1 s without 0.3 m headway), then 2 swings at the ground 0.5 m ahead, then steps in and looks again (a swing that changed nothing ends the step).
+  - B1: a bush that dies from the swing counts as cut, not as a miss.
 
 ### 1.5.97 - a vein mined the way a player does: trench round it, clear under it, pop it (John, 2026-11-14: 1.5.96 dug straight down into the water; approved plan reviews/1.5.97-vein-trench-plan.md T1-T8 + answers Q1-Q4)
 - T1 (HarvestTrench.cs TOutline): a part is "visible" if a ray down onto its own collider (0.5 m grid over its box, max 12x12) lands more than 5 cm above the ground. From the visible parts' centre, 16 level rays (22.5 deg) start 20 m out at ground + 0.5 m (if that misses, at the centre's ground + 0.5 m) and hit only visible parts: the edge points. No visible part = all parts used. Trench line 0.75 m outside the edge points, a point about every 1 m. Start = the trench point nearest the companion. Normal log: visible/held counts, bearings found, trench size; Detailed: the 16 edge points.

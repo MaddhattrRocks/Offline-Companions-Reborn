@@ -1500,6 +1500,9 @@ namespace Companions
         // 1.5.97 (plan v3): the ladder head room check for the Ore job's own jumps and the way it cuts steps out
         internal static bool HeadRoomAt(Vector3 spot, float height) { return HeadRoom(spot, height); }
 
+        // 1.5.98 (E1): how high a jump gets it - the same number TryHopUp uses (with its margin)
+        internal static float JumpUp(Character c) { return c == null ? 1f : c.m_jumpForce * c.m_jumpForce / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f; }
+
         // 1.5.97 (plan v3): the walking code's own side step, for the Ore job when you or another companion stands in its way.
         // The next Go call (same tag and goal) carries it out.
         internal static void SidestepNow(CompanionAI ai, Vector3 toward, string tag)

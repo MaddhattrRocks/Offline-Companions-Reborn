@@ -87,6 +87,18 @@ public partial class HarvestController
 
 		public bool RingCleared;   // J4: lap 1's first pass (the things within 2 m of the ring, nearest first) is over
 
+		// A1: each companion's own stretch of the ring (first spot, how many spots), for the lap / spot count / workers in SKey
+		public readonly Dictionary<HarvestController, int> SFrom = new Dictionary<HarvestController, int>();
+
+		public readonly Dictionary<HarvestController, int> SLen = new Dictionary<HarvestController, int>();
+
+		public string SKey;
+
+		// E2: where a way out before "done" was tried (up to 3, 5 m apart), and who is trying one now
+		public readonly List<Vector3> ExitAt = new List<Vector3>();
+
+		public HarvestController ExitBy;
+
 		public float LastWork;
 
 		public float GrowAt;
@@ -134,7 +146,7 @@ public partial class HarvestController
 
 	private const int OvNoProgSwings = 3;          // C4.4 / C5
 
-	private const float OvRampAhead = 1.0f;        // C5: it looks 1 m ahead
+	private const float OvRampAhead = 0.5f;        // E4 (John's way): right up against the wall, it digs the ground 0.5 m ahead
 
 	private const float OvRampTime = 60f;          // C5: 60 s without 0.3 m higher
 
@@ -168,6 +180,16 @@ public partial class HarvestController
 
 	private const float OvSideAfter = 1f;          // H4: ... and no headway for 1 s: the walking code's side step
 
+	private const float OvApart = 4f;              // A2: its stretch done, an open spot 4 m from every other companion
+
+	private const int OvRampSwings = 2;            // E4: 2 swings at the wall in front, then it steps in and looks again
+
+	private const float OvRampHeadway = 1f;        // E4: walking up to the wall, 1 s without 0.3 m closer = it is against it
+
+	private const int OvWayOutTries = 3;           // E2: up to 3 tries at a way out ...
+
+	private const float OvWayOutApart = 5f;        // E2: ... each 5 m from the places tried before
+
 	private static readonly List<OvPlan> s_ovPlans = new List<OvPlan>();
 
 	// ---------- this companion's state ----------
@@ -182,12 +204,6 @@ public partial class HarvestController
 	private OvSpot _ovSpot;
 
 	private int _ovIdx = -1;
-
-	private int _ovDir;
-
-	private bool _ovTurned;
-
-	private int _ovTurnLap;
 
 	private GameObject _ovHand;
 
@@ -270,8 +286,35 @@ public partial class HarvestController
 
 	private float _ovOreHitAt = -100f;
 
-	// G10: walking down into the trench to cut the way out from its floor
-	private bool _exWalking;   // G5: the things on this spot were looked for once it got within 4 m
+	// E2 / E3: walking along the trench floor to where it tries a way out (a saved ramp's bottom, or a new place)
+	private bool _woActive;
+
+	private Vector3 _woFloor;
+
+	private Vector3 _woGoal;
+
+	private bool _woOut;      // getting out (leaving) rather than the way out before "done"
+
+
+	private bool _exTry;      // E2: the ramp running now is a try at the way out before "done"
+
+	private readonly List<Vector3> _outTried = new List<Vector3>();   // E2: places tried for getting out, this time
+
+	private bool _ovStandSaid;
+
+	private int _ovStandLap;
+
+	// E4: the ramp step being dug (2 swings, then it looks again) and the walk up to the wall
+	private int _dgRampN;
+
+	private bool _dgRampProg;
+
+	private float _rpHwBest;
+
+	private float _rpHwTime;
+
+	// A3: a bush it is cutting is claimed like the Wood / Stone jobs' targets
+	private int _dgBushClaim;
 
 	// C5: the ramp
 	private bool _rpActive;
@@ -428,13 +471,12 @@ public partial class HarvestController
 		_vFirstSide = SideOf(base.transform.position);
 		_ovSpot = null;
 		_ovIdx = -1;
-		_ovDir = 0;
-		_ovTurned = false;
 		_ovDoneSaid = false;
 		_ovHand = null;
 		_ovHandMode = 0;
 		_rpTried.Clear();
-		_exWalking = false;
+		_woActive = false;
+		_exTry = false;
 		OvDigOff();
 		_rpActive = false;
 		_ai?.StopMoving();
@@ -492,6 +534,12 @@ public partial class HarvestController
 		OvRelease();
 		OvDigOff();
 		_rpActive = false;
+		_woActive = false;
+		_exTry = false;
+		if (_vp != null && _vp.ExitBy == this)
+		{
+			_vp.ExitBy = null;
+		}
 		_ovOut = false;
 		if (_vp != null)
 		{
@@ -508,7 +556,6 @@ public partial class HarvestController
 		_ovHandSpot = null;
 		_ovHandMode = 0;
 		_ovIdx = -1;
-		_ovDir = 0;
 		ResetToIdle();
 		if (GetMode() != 3)
 		{
@@ -534,7 +581,7 @@ public partial class HarvestController
 			_ovOutWhy = why;
 			_ai?.SetFollowTarget(null);
 			if (CompanionsPlugin.LogNormal) LogInfo($"Leaving the vein ({why}) - out of the trench first, toward {MHR_Mover.Fmt(goal)}");
-			OvRampBegin(goal, null, outOfTrench: true, why);
+			OvGetOut(goal, why);
 			return;
 		}
 		OvLeave(why);
@@ -560,7 +607,7 @@ public partial class HarvestController
 			_ovOut = true;
 			_ovOutWhy = "the job changed";
 			if (CompanionsPlugin.LogNormal) LogInfo($"The job changed while it's in the trench - getting out first, toward {MHR_Mover.Fmt(goal)}");
-			OvRampBegin(goal, null, outOfTrench: true, "the job changed");
+			OvGetOut(goal, "the job changed");
 			return;
 		}
 		OvRelease();
@@ -621,6 +668,12 @@ public partial class HarvestController
 	// C6: called from Update while it gets out (also after a job change)
 	private void OvOutTick()
 	{
+		if (_woActive)
+		{
+			_ai?.SetFollowTarget(null);
+			OvWayOutTick();
+			return;
+		}
 		if (!_rpActive)
 		{
 			_ovOut = false;
@@ -1241,6 +1294,11 @@ public partial class HarvestController
 			OvRampTick();
 			return;
 		}
+		if (_woActive)
+		{
+			OvWayOutTick();
+			return;
+		}
 		if (_dgActive)
 		{
 			OvDigTick();
@@ -1305,7 +1363,18 @@ public partial class HarvestController
 				order.Add(s);
 			}
 		}
-		order.Sort((OvSpot a, OvSpot b) => Flat(me, a.P).CompareTo(Flat(me, b.P)));
+		// A1: its own stretch first, then the rest; nearest first in each
+		OvStretches();
+		int sf = p.SFrom.TryGetValue(this, out int f0) ? f0 : 0, sl = p.SLen.TryGetValue(this, out int l0) ? l0 : 0, n = p.Spots.Count;
+		order.Sort((OvSpot a, OvSpot b) =>
+		{
+			bool ia = n > 0 && (a.Idx - sf + n) % n < sl, ib = n > 0 && (b.Idx - sf + n) % n < sl;
+			if (ia != ib)
+			{
+				return ia ? -1 : 1;
+			}
+			return Flat(me, a.P).CompareTo(Flat(me, b.P));
+		});
 		foreach (OvSpot s in order)
 		{
 			if (OvThing(s))
@@ -1318,7 +1387,161 @@ public partial class HarvestController
 		return false;
 	}
 
-	// C3.5: the next spot. True = it has one (_ovSpot)
+	// A1: the companions working this vein now (on it, clearing something for its trench included; not getting out or
+	// stuck), in a fixed order
+	private List<HarvestController> OvActive()
+	{
+		List<HarvestController> act = new List<HarvestController>();
+		foreach (KeyValuePair<HarvestController, float> w in _vp.Workers)
+		{
+			if (w.Key != null && (w.Key == this || (w.Key._vp == _vp && w.Key._vFor != null && !w.Key._ovOut && !w.Key._stuckInHole)))
+			{
+				act.Add(w.Key);
+			}
+		}
+		if (!act.Contains(this))
+		{
+			act.Add(this);
+		}
+		act.Sort((HarvestController a, HarvestController b) => a.GetInstanceID().CompareTo(b.GetInstanceID()));
+		return act;
+	}
+
+	private int OvNearestIdx(Vector3 p)
+	{
+		int best = 0;
+		float bd = float.MaxValue;
+		for (int i = 0; i < _vp.Spots.Count; i++)
+		{
+			float d = Flat(p, _vp.Spots[i].P);
+			if (d < bd)
+			{
+				bd = d;
+				best = i;
+			}
+		}
+		return best;
+	}
+
+	// A1: the ring split into equal stretches, one per companion working the vein, made again at each lap, when the ring
+	// grows, or when a companion joins or leaves. Kept in the plan, so all of them use the same split. The stretches are
+	// handed out so that the walk to each one's first spot is shortest in all.
+	private void OvStretches()
+	{
+		OvPlan p = _vp;
+		int n = p.Spots.Count;
+		List<HarvestController> act = OvActive();
+		string key = p.Lap + "|" + n;
+		foreach (HarvestController h in act)
+		{
+			key += "|" + h.GetInstanceID();
+		}
+		if (key == p.SKey && p.SFrom.ContainsKey(this))
+		{
+			return;
+		}
+		p.SKey = key;
+		p.SFrom.Clear();
+		p.SLen.Clear();
+		int k = Mathf.Max(1, Mathf.Min(act.Count, n));
+		int anchor = OvNearestIdx(act[0].transform.position);
+		int[] from = new int[k], len = new int[k];
+		int at = anchor;
+		for (int j = 0; j < k; j++)
+		{
+			from[j] = at % n;
+			len[j] = n / k + (j < n % k ? 1 : 0);
+			at += len[j];
+		}
+		// the hand-out: every order for up to 5 companions, else one by one (each the nearest free stretch)
+		int[] bestOrder = null;
+		float bestCost = float.MaxValue;
+		if (k <= 5)
+		{
+			List<int[]> perms = new List<int[]>();
+			OvPerms(new int[k], new bool[k], 0, perms);
+			foreach (int[] o in perms)
+			{
+				float c = 0f;
+				for (int j = 0; j < k; j++)
+				{
+					c += Flat(act[j].transform.position, p.Spots[from[o[j]]].P);
+				}
+				if (c < bestCost)
+				{
+					bestCost = c;
+					bestOrder = o;
+				}
+			}
+		}
+		else
+		{
+			bestOrder = new int[k];
+			bool[] used = new bool[k];
+			for (int j = 0; j < k; j++)
+			{
+				int bj = 0;
+				float bd = float.MaxValue;
+				for (int a = 0; a < k; a++)
+				{
+					float d = used[a] ? float.MaxValue : Flat(act[j].transform.position, p.Spots[from[a]].P);
+					if (d < bd)
+					{
+						bd = d;
+						bj = a;
+					}
+				}
+				used[bj] = true;
+				bestOrder[j] = bj;
+			}
+		}
+		string say = "";
+		for (int j = 0; j < k; j++)
+		{
+			p.SFrom[act[j]] = from[bestOrder[j]];
+			p.SLen[act[j]] = len[bestOrder[j]];
+			say += (j > 0 ? ", " : "") + (act[j] == this ? "this one" : act[j].name.Replace("(Clone)", "")) + " " + (from[bestOrder[j]] + 1) + "-" + ((from[bestOrder[j]] + len[bestOrder[j]] - 1) % n + 1);
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The trench ring round \"{p.Name}\" (lap {p.Lap}, {n} spots) is split into {k} stretch(es), each worked one way round: {say}");
+	}
+
+	private static void OvPerms(int[] cur, bool[] used, int depth, List<int[]> into)
+	{
+		if (depth == cur.Length)
+		{
+			into.Add((int[])cur.Clone());
+			return;
+		}
+		for (int i = 0; i < cur.Length; i++)
+		{
+			if (!used[i])
+			{
+				used[i] = true;
+				cur[depth] = i;
+				OvPerms(cur, used, depth + 1, into);
+				used[i] = false;
+			}
+		}
+	}
+
+	// A2: at least 4 m from every other companion working the vein and from the spot it is working
+	private bool OvApartFromOthers(Vector3 p)
+	{
+		foreach (HarvestController h in OvActive())
+		{
+			if (h == this)
+			{
+				continue;
+			}
+			if (Flat(h.transform.position, p) < OvApart || (h._ovSpot != null && Flat(h._ovSpot.P, p) < OvApart))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// C3.5 / A1 / A2: the next spot. True = it has one (_ovSpot); false = nothing for it now (it stands by until the lap ends)
 	private bool OvPick()
 	{
 		List<OvSpot> spots = _vp.Spots;
@@ -1327,88 +1550,29 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		if (_ovTurnLap != _vp.Lap)
-		{
-			_ovTurnLap = _vp.Lap;
-			_ovTurned = false;
-		}
+		OvStretches();
 		Vector3 me = base.transform.position;
 		int found = -1;
-		if (_ovIdx < 0 || _ovIdx >= n || _ovDir == 0)
+		// A1: its own stretch, from its first spot forward round the ring
+		if (_vp.SFrom.TryGetValue(this, out int from) && _vp.SLen.TryGetValue(this, out int len))
 		{
-			// the first: the nearest open spot along the ring from where it stands
-			int home = 0;
-			float hd = float.MaxValue;
-			for (int i = 0; i < n; i++)
+			for (int k = 0; k < len && found < 0; k++)
 			{
-				float d = Flat(me, spots[i].P);
-				if (d < hd)
+				int i = (from + k) % n;
+				if (OvOpen(spots[i]) && !OvTaken(spots[i]))
 				{
-					hd = d;
-					home = i;
-				}
-			}
-			int dirFound = 0;
-			for (int k = 0; k <= n / 2 && found < 0; k++)
-			{
-				int a = (home + k) % n, b = (home - k + n) % n;
-				if (OvOpen(spots[a]) && !OvTaken(spots[a]))
-				{
-					found = a;
-					dirFound = k == 0 ? 0 : 1;
-				}
-				else if (OvOpen(spots[b]) && !OvTaken(spots[b]))
-				{
-					found = b;
-					dirFound = -1;
-				}
-			}
-			if (found >= 0)
-			{
-				if (dirFound == 0)
-				{
-					// toward the lower ground next to it
-					dirFound = GroundAt(spots[(found + 1) % n].P) <= GroundAt(spots[(found - 1 + n) % n].P) ? 1 : -1;
-				}
-				_ovDir = dirFound;
-			}
-		}
-		else
-		{
-			found = OvNextOpen(_ovIdx, _ovDir, out bool heldNext);
-			if (found < 0 && heldNext && !_ovTurned)
-			{
-				// the next spot that way is held by another companion: turn round once
-				_ovTurned = true;
-				_ovDir = -_ovDir;
-				found = OvNextOpen(_ovIdx, _ovDir, out _);
-				if (found >= 0 && CompanionsPlugin.LogDetailed) Log($"Another companion is on (or within 2 m of) the next spot - turned round, on to spot {found + 1}");
-			}
-			if (found < 0)
-			{
-				// the nearest free spot anywhere (fewest spots away along the ring)
-				for (int k = 1; k <= n / 2 + 1 && found < 0; k++)
-				{
-					int a = (_ovIdx + k) % n, b = (_ovIdx - k + n) % n;
-					if (OvOpen(spots[a]) && !OvTaken(spots[a]))
-					{
-						found = a;
-					}
-					else if (OvOpen(spots[b]) && !OvTaken(spots[b]))
-					{
-						found = b;
-					}
+					found = i;
 				}
 			}
 		}
-		bool help = false;
+		bool other = false;
 		if (found < 0)
 		{
-			// nothing free: help on the nearest open spot another companion holds (it never waits)
+			// A2: its stretch is done - the nearest open spot 4 m from every other companion and its spot; else it stands by
 			float bd = float.MaxValue;
 			for (int i = 0; i < n; i++)
 			{
-				if (OvOpen(spots[i]))
+				if (OvOpen(spots[i]) && !OvTaken(spots[i]) && OvApartFromOthers(spots[i].P))
 				{
 					float d = Flat(me, spots[i].P);
 					if (d < bd)
@@ -1418,53 +1582,25 @@ public partial class HarvestController
 					}
 				}
 			}
-			help = found >= 0;
+			other = found >= 0;
 		}
 		if (found < 0)
 		{
+			if (!_ovStandSaid || _ovStandLap != _vp.Lap)
+			{
+				_ovStandSaid = true;
+				_ovStandLap = _vp.Lap;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Its stretch of the trench is done for lap {_vp.Lap} and every open spot is within 4 m of another companion - standing by until the lap ends");
+			}
 			return false;
 		}
+		_ovStandSaid = false;
 		OvSpot s = spots[found];
-		if (!help)
-		{
-			s.Holder = this;
-		}
+		s.Holder = this;
 		_ovSpot = s;
 		_ovIdx = found;
-		if (_ovDir == 0)
-		{
-			_ovDir = 1;
-		}
-		if (CompanionsPlugin.LogDetailed) Log($"Trench spot {found + 1}/{n} (lap {_vp.Lap}) at {MHR_Mover.Fmt(s.P)}, {Flat(me, s.P):F1} m away{(help ? " - helping, another companion is on it" : "")}; ground {GroundAt(s.P):F2}, this lap down to {s.LapDepth:F2}");
+		if (CompanionsPlugin.LogDetailed) Log($"Trench spot {found + 1}/{n} (lap {_vp.Lap}) at {MHR_Mover.Fmt(s.P)}, {Flat(me, s.P):F1} m away{(other ? " - its stretch is done, the nearest open spot 4 m from the others" : "")}; ground {GroundAt(s.P):F2}, this lap down to {s.LapDepth:F2}");
 		return true;
-	}
-
-	// the next open spot from idx going dir; heldNext = the first open one that way is held by another
-	private int OvNextOpen(int idx, int dir, out bool heldNext)
-	{
-		heldNext = false;
-		List<OvSpot> spots = _vp.Spots;
-		int n = spots.Count;
-		bool first = true;
-		for (int k = 1; k < n; k++)
-		{
-			int i = ((idx + dir * k) % n + n) % n;
-			if (!OvOpen(spots[i]))
-			{
-				continue;
-			}
-			if (OvTaken(spots[i]))
-			{
-				if (first)
-				{
-					heldNext = true;
-					return -1;
-				}
-				continue;
-			}
-			return i;
-		}
-		return -1;
 	}
 
 	// C3.2: anything within 2 m of the spot that the Wood job (tree, log, stump, bush) or the Stone job (rock) would take is
@@ -1542,6 +1678,9 @@ public partial class HarvestController
 			_dgBushOn = true;
 			_dgBush = best;
 			_dgBushMiss = 0;
+			// A3: claimed, so another companion leaves it alone (the same list the Wood / Stone jobs claim their targets in)
+			_dgBushClaim = best.GetInstanceID();
+			s_claimedTargets.Add(_dgBushClaim);
 			if (CompanionsPlugin.LogNormal) LogInfo($"{how}: the bush \"{best.name}\" at {MHR_Mover.Fmt(best.transform.position)}{(q != null ? $" (spot {q.Idx + 1})" : "")} - cutting it where it stands with {tool.m_shared.m_name}");
 			return 1;
 		}
@@ -1702,44 +1841,163 @@ public partial class HarvestController
 		return false;
 	}
 
-	// G10: before "done", one way out from the trench floor straight up the nearest wall (the ramp logic), cut by the
-	// first companion that gets here. True = busy with it. One try per vein: the ramp's own limits end it.
+	// E2: the nearest spot whose floor is at least 5 m from every place tried before (null = none)
+	private OvSpot OvWayOutSpot(List<Vector3> tried)
+	{
+		Vector3 me = base.transform.position;
+		OvSpot best = null;
+		float bd = float.MaxValue;
+		foreach (OvSpot sp in _vp.Spots)
+		{
+			bool far = true;
+			foreach (Vector3 t in tried)
+			{
+				if (Flat(t, sp.P) < OvWayOutApart)
+				{
+					far = false;
+					break;
+				}
+			}
+			float d = Flat(me, sp.P);
+			if (far && d < bd)
+			{
+				bd = d;
+				best = sp;
+			}
+		}
+		return best;
+	}
+
+	// G10 / E2: before "done", a way out from the trench floor straight up the nearest wall (the ramp, John's way), cut by
+	// one companion while the others stand by: up to 3 tries, each from a place 5 m from the earlier ones. True = busy.
 	private bool OvExitTick()
 	{
-		if (_vp.Spots.Count == 0 || OvHasWayOut())
+		OvPlan p = _vp;
+		if (p.Spots.Count == 0 || OvHasWayOut())
 		{
-			_vp.ExitTried = true;
-			_exWalking = false;
+			p.ExitTried = true;
 			return false;
 		}
-		Vector3 me = base.transform.position;
-		if (OvInTrench(me, out Vector3 goal))
+		if (p.ExitBy != null && p.ExitBy != this && p.ExitBy._vp == p && OvActive().Contains(p.ExitBy))
 		{
-			_vp.ExitTried = true;
-			_exWalking = false;
-			OvRampBegin(goal, null, outOfTrench: false, "a way out of the trench before it's done");
+			_ai?.StopMoving();   // another companion is cutting it
 			return true;
 		}
-		// not in the trench: down to the floor at the nearest spot first (the normal walk, 10 s like any other)
-		OvSpot n = OvNearest(me);
-		Vector3 floor = n.P;
-		floor.y = GroundAt(n.P);
-		if (!_exWalking)
+		OvSpot sp = p.ExitAt.Count < OvWayOutTries ? OvWayOutSpot(p.ExitAt) : null;
+		if (sp == null)
 		{
-			_exWalking = true;
-			_moveTimer = 0f;
-			if (CompanionsPlugin.LogNormal) LogInfo($"The trench is dug - going down to {MHR_Mover.Fmt(floor)} to cut a way out before it's done");
-		}
-		if (Flat(me, floor) <= 0.8f || (WalkTimer(Time.deltaTime, floor) && _moveTimer > 10f))
-		{
-			// there and still not 1.5 m under the outside (a shallow trench needs no ramp), or the walk gave up
-			_vp.ExitTried = true;
-			_exWalking = false;
-			if (CompanionsPlugin.LogNormal) LogInfo(Flat(me, floor) <= 0.8f ? "The trench is shallow here - no way out needed" : "Couldn't get down into the trench to cut a way out");
+			p.ExitTried = true;
+			p.ExitBy = null;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't cut a way out of the trench in {p.ExitAt.Count} tries");
 			return false;
 		}
-		WalkGo(floor, 0.3f, false, Time.deltaTime);
+		p.ExitBy = this;
+		_woActive = true;
+		_woOut = false;
+		_woFloor = sp.P;
+		_woFloor.y = GroundAt(sp.P);
+		_woGoal = OvOutside(sp);
+		_moveTimer = 0f;
+		if (CompanionsPlugin.LogNormal) LogInfo($"The trench is dug - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut a way out before it's done (try {p.ExitAt.Count + 1} of {OvWayOutTries})");
 		return true;
+	}
+
+	// E2 / E3: getting out of the trench (leaving): a saved way out of the trench first (walked to along the floor), else
+	// a new one cut from here
+	private void OvGetOut(Vector3 goal, string why)
+	{
+		_outTried.Clear();
+		_woActive = false;
+		Vector3 me = base.transform.position;
+		OvRamp best = null;
+		float bd = float.MaxValue;
+		foreach (OvRamp r in _vp.Ramps)
+		{
+			OvSpot s = OvNearest(r.Top);
+			if (_rpTried.Contains(r) || s == null || r.Top.y <= GroundAt(OvOutside(s)) - OvOutDeep)
+			{
+				continue;
+			}
+			float d = Flat(me, r.Bottom);
+			if (d < bd)
+			{
+				bd = d;
+				best = r;
+			}
+		}
+		if (best != null)
+		{
+			_woActive = true;
+			_woOut = true;
+			_woFloor = best.Bottom;
+			_woGoal = best.Top;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}) by the way out at {MHR_Mover.Fmt(best.Bottom)} ({bd:F0} m along the trench)");
+			return;
+		}
+		OvRampBegin(goal, null, outOfTrench: true, why);
+	}
+
+	// E2: getting out failed at one place: the next (5 m from the places tried), up to 3; then it is stuck and waits for you
+	private void OvGetOutNext(string why)
+	{
+		OvSpot sp = _outTried.Count < OvWayOutTries ? OvWayOutSpot(_outTried) : null;
+		if (sp == null)
+		{
+			_ovOut = false;
+			_woActive = false;
+			OvStuck($"couldn't cut its way out in {_outTried.Count} tries: " + why);
+			return;
+		}
+		_woActive = true;
+		_woOut = true;
+		_woFloor = sp.P;
+		_woFloor.y = GroundAt(sp.P);
+		_woGoal = OvOutside(sp);
+		_moveTimer = 0f;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Trying another place to get out: {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}, try {_outTried.Count + 1} of {OvWayOutTries}) - {why}");
+	}
+
+	// E2 / E3: the walk along the trench floor to where it tries the way out (the normal walk, 10 s like any other)
+	private void OvWayOutTick()
+	{
+		Vector3 me = base.transform.position;
+		float dt = Time.deltaTime;
+		if (Flat(me, _woFloor) <= 1.0f)
+		{
+			_woActive = false;
+			_ai?.StopMoving();
+			if (_woOut)
+			{
+				OvRampBegin(_woGoal, null, outOfTrench: true, _ovOutWhy ?? "getting out");
+				return;
+			}
+			if (me.y > GroundAt(_woGoal) - OvOutDeep)
+			{
+				_vp.ExitTried = true;
+				_vp.ExitBy = null;
+				if (CompanionsPlugin.LogNormal) LogInfo("The trench is shallow here - no way out needed");
+				return;
+			}
+			_vp.ExitAt.Add(me);
+			_exTry = true;
+			OvRampBegin(_woGoal, null, outOfTrench: false, $"a way out of the trench before it's done, try {_vp.ExitAt.Count} of {OvWayOutTries}");
+			return;
+		}
+		if (WalkTimer(dt, _woFloor) && _moveTimer > 10f)
+		{
+			_woActive = false;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(_woFloor)} along the trench in 10 s");
+			if (_woOut)
+			{
+				_outTried.Add(_woFloor);
+				OvGetOutNext("couldn't get there");
+				return;
+			}
+			_vp.ExitAt.Add(_woFloor);   // counts as a try
+			return;
+		}
+		WalkGo(_woFloor, 0.5f, Flat(me, _woFloor) > 8f, dt);
 	}
 
 	// C7 (build 1): the trench is done - it says so once and stands by the vein
@@ -1796,6 +2054,7 @@ public partial class HarvestController
 	// ---------- C4: dirt ----------
 	private void OvDigBegin(Vector3 point, OvSpot spot, bool ramp)
 	{
+		OvDigOff();
 		_dgActive = true;
 		_dgPoint = point;
 		_dgSpot = spot;
@@ -1809,6 +2068,8 @@ public partial class HarvestController
 		_dgBushOn = false;
 		_dgBush = null;
 		_dgBushMiss = 0;
+		_dgRampN = 0;
+		_dgRampProg = false;
 		_dgHwBest = float.MaxValue;
 		_dgHwTime = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
@@ -1822,6 +2083,14 @@ public partial class HarvestController
 		_dgWalking = false;
 		_dgBushOn = false;
 		_dgBush = null;
+		if (_dgBushClaim != 0)
+		{
+			if (_dgBushClaim != _claimedTargetId)
+			{
+				s_claimedTargets.Remove(_dgBushClaim);
+			}
+			_dgBushClaim = 0;
+		}
 	}
 
 	private void OvFace(Vector3 point)
@@ -2102,6 +2371,15 @@ public partial class HarvestController
 	{
 		_dgSwung = false;
 		_dgThingSwing = false;
+		if (_dgBushOn && (_dgBush == null || !_dgBush.activeInHierarchy))
+		{
+			// B1: the swing took the bush down - cut, not a miss
+			if (CompanionsPlugin.LogNormal) LogInfo($"Cut the bush at {MHR_Mover.Fmt(_dgPoint)} - back to the trench");
+			OvSpotProgress();
+			OvDigOff();
+			_dgLastProg = true;
+			return;
+		}
 		if (_dgBushOn)
 		{
 			// J3: did the swing land on the bush?
@@ -2161,7 +2439,17 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{(oreProg ? " - hit the vein's ore" : prog ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{
-			OvDigOff();   // one swing per ramp step: the ramp looks again
+			// E4 (John's way): 2 swings at the wall in front, then it steps in and looks again; a swing that changed
+			// nothing ends the step at once (the ramp counts it toward its 3)
+			_dgRampN++;
+			_dgRampProg |= _dgLastProg;
+			if (_dgLastProg && _dgRampN < OvRampSwings)
+			{
+				_dgPoint.y = after;
+				return;
+			}
+			_dgLastProg = _dgRampProg;
+			OvDigOff();
 			return;
 		}
 		if (_dgSpot != null && after <= _dgSpot.LapDepth + OvDigGain)
@@ -2211,6 +2499,8 @@ public partial class HarvestController
 		_rpNoProg = 0;
 		_rpSwings = 0;
 		_rpStepPt = new Vector3(float.MaxValue, 0f, 0f);
+		_rpHwBest = float.MaxValue;
+		_rpHwTime = 0f;
 		_rpSaved = null;
 		_moveTimer = 0f;
 		if (spot != null)
@@ -2295,29 +2585,56 @@ public partial class HarvestController
 			return;
 		}
 		dir.Normalize();
+		// E4 (John's way): right up against the wall - the ground 0.5 m in front
 		Vector3 ahead = me + dir * OvRampAhead;
 		float ga = GroundAt(ahead);
-		if (ga > me.y + OvStepUp)
+		ahead.y = ga;
+		bool atLimit = ga <= OvFloor(ahead) + OvDigGain;
+		float jump = MHR_Mover.JumpUp(_character);
+		// E4: walking up to the wall, 1 s without getting 0.3 m closer (flat) to the goal = it is against it
+		float fl = Flat(me, _rpGoal);
+		if (fl < _rpHwBest - OvHeadwayGain)
 		{
-			// the wall in front: dig it (one swing, then look again)
-			ahead.y = ga;
-			if (ga <= OvFloor(ahead) + OvDigGain)
+			_rpHwBest = fl;
+			_rpHwTime = 0f;
+		}
+		else
+		{
+			_rpHwTime += dt;
+		}
+		bool against = _rpHwTime >= OvRampHeadway && ga > me.y + 0.1f;
+		if (ga > me.y + OvStepUp || (against && !atLimit))
+		{
+			if (atLimit)
 			{
-				// G1: the game won't let that ground go any lower - no swing, and no new way up from here this lap
+				if (ga - me.y <= jump)
+				{
+					// E1: it can't be dug any lower but it is no higher than its jump: on toward it, the mover's own hop
+					Vector3 hop = me + dir * 1.5f;
+					hop.y = Mathf.Min(GroundAt(hop), me.y + jump);
+					_moveTimer = 0f;
+					WalkGo(hop, 0.3f, false, dt);
+					return;
+				}
+				// G1: the game won't let that ground go any lower and it is too high to jump - no swing, and no new way up
+				// from here this lap
 				_rpBad.Add(_rpStart);
-				OvRampFail($"the ground in front at {MHR_Mover.Fmt(ahead)} is at the game's 8 m dig limit ({ga - me.y:F1} m above its feet)");
+				OvRampFail($"the ground in front at {MHR_Mover.Fmt(ahead)} is at the game's 8 m dig limit ({ga - me.y:F1} m above its feet, more than its {jump:F1} m jump)");
 				return;
 			}
+			// the wall in front: 2 swings at it (E4), then look again
 			if (Flat(ahead, _rpStepPt) > 0.5f)
 			{
 				_rpStepPt = ahead;
 				_rpNoProg = 0;
 			}
+			_rpHwTime = 0f;
 			_ai?.StopMoving();
 			OvDigBegin(ahead, null, ramp: true);
 			return;
 		}
-		// low enough to walk or hop: on toward the goal, the goal kept on its own level (the mover hops, never climbs)
+		// low enough to walk or hop: on toward the goal (right up to the wall), the goal kept on its own level (the mover
+		// hops, never climbs)
 		Vector3 walk = me + dir * 1.5f;
 		walk.y = Mathf.Min(GroundAt(walk), me.y + OvStepUp);
 		_moveTimer = 0f;
@@ -2361,6 +2678,14 @@ public partial class HarvestController
 			}
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up is done ({how}): rose {rise:F1} m in {_rpSwings} swing(s), feet at {me.y:F1}");
+		if (_exTry && _vp != null)
+		{
+			// E2: it got out - the trench has a way out
+			_exTry = false;
+			_vp.ExitTried = true;
+			_vp.ExitBy = null;
+			if (CompanionsPlugin.LogNormal) LogInfo($"A way out of the trench is cut, from {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)}");
+		}
 		if (_rpOut)
 		{
 			_ovOut = false;
@@ -2376,8 +2701,15 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
 		if (_rpOut)
 		{
-			_ovOut = false;
-			OvStuck("couldn't cut its way out: " + why);
+			// E2: another place, up to 3 tries
+			_outTried.Add(_rpStart);
+			OvGetOutNext(why);
+			return;
+		}
+		if (_exTry)
+		{
+			// E2: the try is counted (ExitAt); the next one comes from OvExitTick
+			_exTry = false;
 			return;
 		}
 		OvSkip(_rpSpot, "the way up to it failed: " + why, normal: true);
