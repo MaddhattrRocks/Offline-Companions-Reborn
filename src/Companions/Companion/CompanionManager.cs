@@ -343,6 +343,11 @@ public static class CompanionManager
 			if (ZoneSystem.instance != null && ZoneSystem.instance.FindFloor(vector2, out var height))
 			{
 				vector2.y = height;
+				// 1.5.98 (W2): not on lava or in water that burns
+				if (MHR_Mover.Burns(vector2))
+				{
+					continue;
+				}
 				return vector2;
 			}
 		}

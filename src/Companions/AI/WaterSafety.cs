@@ -212,7 +212,7 @@ internal static class WaterSafety
 		return num / num2;
 	}
 
-	private static bool TryFindShore(Vector3 from, float waterLevel, out Vector3 shore)
+	internal static bool TryFindShore(Vector3 from, float waterLevel, out Vector3 shore)
 	{
 		ZoneSystem instance = ZoneSystem.instance;
 		shore = from;

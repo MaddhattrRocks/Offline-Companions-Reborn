@@ -363,7 +363,10 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 			{
 				goto IL_01ab;
 			}
-			vector = comp.transform.position + Vector3.up * 0.5f;
+			// 1.5.98 (W2): a revive at the tombstone comes back on a safe, dry spot beside it like the other respawns (it came
+			// back on the tombstone itself - at the edge of the Ashlands sea that is in water that burns: user report "died at
+			// the edge, resurrect and it runs ... right along the water and dies")
+			vector = CompanionManager.FindSpawnPosition(comp.transform.position, 2f);
 		}
 		goto IL_0211;
 		IL_0211:

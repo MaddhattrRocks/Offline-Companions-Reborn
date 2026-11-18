@@ -162,7 +162,8 @@ public partial class CompanionCombatAI
 			r.Why = "it's out in deep water";
 		}
 		// 1.5.74: not into lava after it (Ashlands creatures stand in it) - the bow, or let it go
-		else if (MHR_Mover.Lava(it))
+		// 1.5.98 (W1): nor into water that burns (Ashlands water), unless its gear makes it heat-proof
+		else if (MHR_Mover.Lava(it, _character))
 		{
 			r.Ok = false;
 			r.Why = "it's standing in lava";

@@ -147,6 +147,41 @@ public class CompanionSetup : MonoBehaviour
 
 	private Humanoid _humanoid;
 
+	private static readonly HarmonyLib.AccessTools.FieldRef<Character, HitData> s_lastHit = HarmonyLib.AccessTools.FieldRefAccess<Character, HitData>("m_lastHit");
+
+	// 1.5.98 (W4): the last hit it took (the game keeps it in Character.m_lastHit): its kind, who made it and how much
+	private static string MHR_DeathCause(Character c)
+	{
+		try
+		{
+			HitData hit = (c != null) ? s_lastHit(c) : null;
+			if (hit == null)
+			{
+				return "cause unknown (no hit recorded)";
+			}
+			Character attacker = hit.GetAttacker();
+			string by = (attacker != null) ? (" by " + attacker.m_name) : "";
+			string where = "";
+			if (c != null)
+			{
+				Vector3 p = c.transform.position;
+				if (MHR_Heat.Gradient(p) > 0f && c.InWater())
+				{
+					where = ", in Ashlands water (heat " + MHR_Heat.Level(c).ToString("F2") + ", gear heat resistance " + (MHR_Heat.Resist(c) * 100f).ToString("F0") + "%)";
+				}
+				else if (c.InLava())
+				{
+					where = ", on lava";
+				}
+			}
+			return "last hit: " + hit.m_hitType + by + ", " + hit.GetTotalDamage().ToString("F1") + " damage" + where;
+		}
+		catch (Exception e)
+		{
+			return "cause unknown (" + e.Message + ")";
+		}
+	}
+
 	private ZSyncAnimation _zanim;
 
 	private HarvestController _harvestCached;
@@ -593,6 +628,8 @@ public class CompanionSetup : MonoBehaviour
 				prefabName = gameObject.name;
 			}
 			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} — prefab={prefabName}");
+			// 1.5.98 (W4): what killed it, on the normal log (Ashlands report: was it the water, lava or an enemy?)
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} - {MHR_DeathCause(_humanoid)}");
 			// 1.5.42: tell its player, wherever they are (user: "an announcement, if an NPC dies or is lost or something far away")
 			try
 			{

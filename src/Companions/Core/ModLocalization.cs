@@ -375,6 +375,7 @@ public static class ModLocalization
 			{ "hc_speech_fish_caught", "I caught a {0}!" },
 			{ "hc_speech_fish_full", "My bags are full!" },
 			{ "hc_speech_tomb_found", "My belongings!" },
+			{ "hc_speech_tomb_hot", "My things are in the burning water. I can't reach them." },
 			{ "hc_speech_tomb_recovered", "Got everything back." },
 			{ "hc_speech_tomb_empty", "Nothing left to take." },
 			{ "hc_speech_deposit_done", "All stowed away." },

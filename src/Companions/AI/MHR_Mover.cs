@@ -13,6 +13,7 @@ namespace Companions
     {
         class S
         {
+            public bool HotOk; public float HotCheckAt = -10f;   // W1: this route's hot-water stretch is short enough
             public Vector3 Goal, Dest; public float Dist; public string Tag = "";
             public int Gait = -1; public float GaitAt;   // 1.5.94: walk 0 / jog 1 / run 2 as last set, and when
             public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
@@ -153,13 +154,21 @@ namespace Companions
         public static bool Go(CompanionAI ai, float dt, Vector3 goal, float dist, bool allowRun, string tag, int speed)
         {
             if (ai == null) return false;
-            try { return GoInner(ai, goal, dist, allowRun, tag ?? "", speed); }
+            Character oldCtx = s_ctxChar; bool oldOk = s_ctxHotOk;
+            try
+            {
+                // W1: while it moves, "lava" also means water that burns - unless its gear makes it heat-proof, or the
+                // route's hot-water stretch is short enough (S.HotOk, worked out in AvoidLava)
+                s_ctxChar = ai.GetComponent<Character>();
+                s_ctxHotOk = MHR_Heat.HeatProof(s_ctxChar) || Get(ai).HotOk;
+                return GoInner(ai, goal, dist, allowRun, tag ?? "", speed);
+            }
             catch (Exception e)
             {
                 if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
                 return false;
             }
-            finally { MHR_Cart.HopExempt = null; }
+            finally { MHR_Cart.HopExempt = null; s_ctxChar = oldCtx; s_ctxHotOk = oldOk; }
         }
 
         static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag, int speed)
@@ -187,6 +196,7 @@ namespace Companions
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
             else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
             s.LastGo = now; s.Goal = goal; s.Dist = dist;
+            s_ctxHotOk = MHR_Heat.HeatProof(c) || s.HotOk;   // W1: a fresh route is judged again (Reset cleared HotOk)
             // 1.5.97 (C10, user: "ensure that an NPC can still load items into a cart"): a cart the goal is on or right by
             // (the cart order, the deposit order, a job's drop-off) is never avoided on this walk; looked up when the goal
             // moves and once a second
@@ -245,6 +255,7 @@ namespace Companions
             // 1.5.70: plan again once out - the old route led into it (log 188ac60a: out, then straight back in, 7 times)
             if (EscapeFire(ai)) { s.FireReplan = true; return false; }
             if (EscapeLava(ai)) { s.FireReplan = true; return false; }
+            if (EscapeHotWater(ai)) { s.FireReplan = true; s.HotOk = false; return false; }
             if (s.FireReplan) { s.FireReplan = false; s.HasDetour = false; s.NextPlan = 0f; }
 
             // waiting on the bank until there's stamina for the swim
@@ -443,7 +454,7 @@ namespace Companions
             }
 
             // 1.5.74: lava on the next step (and the goal isn't on it): turn along clear ground, or stop at its edge
-            if (!c.IsSwimming() && WorldGenerator.IsAshlands(pos.x, pos.z) && (Lava(pos + dir * 0.9f) || Lava(pos + dir * 1.6f)) && !Lava(goal))
+            if (!c.IsSwimming() && WorldGenerator.IsAshlands(pos.x, pos.z) && (Lava(pos + dir * 0.9f) || Lava(pos + dir * 1.6f)) && !LavaPaint(goal))
             {
                 Vector3 round; float rd;
                 if (LavaExit(pos + dir * 0.0f, dir, out round, out rd) && Vector3.Dot(round, dir) > -0.2f && LegClearOfLava(pos, pos + round * 1.5f, 0.3f)) dir = round;
@@ -528,6 +539,7 @@ namespace Companions
 
         static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
         {
+            s.HotOk = false; s.HotCheckAt = -10f;   // W1: a new route is judged again
             // 1.5.2: a target that moves about (a skeleton pacing on the tower) mustn't make us forget the ladder on the way to it
             bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
@@ -789,7 +801,19 @@ namespace Companions
         // leaves the errand, following you it keeps to the edge step by step
         static void AvoidLava(S s, Vector3 pos, Vector3 goal, float now)
         {
-            if (s.Path.Count == 0 || !WorldGenerator.IsAshlands(pos.x, pos.z) || Lava(goal)) return;
+            if (s.Path.Count == 0) return;
+            // W1: a route through water that burns is fine if its stretch is short enough (or the gear is heat-proof):
+            // judged on the fresh route, at most once a second
+            if (s_ctxChar != null && now - s.HotCheckAt >= 1f && (MHR_Heat.Gradient(pos) > 0f || MHR_Heat.Gradient(goal) > 0f))
+            {
+                s.HotCheckAt = now;
+                bool was = s.HotOk;
+                s.HotOk = MHR_Heat.HeatProof(s_ctxChar) || (!MHR_Heat.NoGo(s_ctxChar) && MHR_Heat.RouteHeatPeak(s_ctxChar, pos, s.Path, 80f) < MHR_Heat.Threshold(s_ctxChar) * MHR_Heat.RouteMargin);
+                s_ctxHotOk = s.HotOk;
+                if (s.HotOk != was && CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] water that burns on the way: " + (s.HotOk ? "short enough to cross" : "keeping out of it"));
+            }
+            if (MHR_Heat.Gradient(pos) <= 0f && !WorldGenerator.IsAshlands(pos.x, pos.z)) return;
+            if (LavaPaint(goal)) return;
             try
             {
                 Vector3 prev = pos;
@@ -2623,7 +2647,29 @@ namespace Companions
         // (ZoneSystem.IsLava - the heightmap's lava mask), not an object; standing on lava builds heat that burns 10, then 100
         // a tick (Character.UpdateLava/UpdateHeatDamage). Like the game, standing on something built or a rock above it is safe
         // (a ray down that hits a collider that isn't the heightmap). The game's route planner doesn't know about it.
+        // W1 (1.5.98): water that burns (Ashlands water, MHR_Heat) counts as lava too, for whoever is moving (s_ctxChar):
+        // not when its gear makes it heat-proof or its route's hot-water stretch is short enough (s_ctxHotOk). Outside a
+        // move it always counts. Lava(p, c) asks for one companion.
+        static Character s_ctxChar;
+        static bool s_ctxHotOk;
         public static bool Lava(Vector3 p)
+        {
+            return LavaPaint(p) || (!s_ctxHotOk && MHR_Heat.HotWaterAt(p));
+        }
+        public static bool Lava(Vector3 p, Character c)
+        {
+            Character oc = s_ctxChar; bool ok = s_ctxHotOk;
+            s_ctxChar = c; s_ctxHotOk = MHR_Heat.HeatProof(c);
+            try { return Lava(p); }
+            finally { s_ctxChar = oc; s_ctxHotOk = ok; }
+        }
+        // lava or water that burns, for anyone (a spawn spot)
+        public static bool Burns(Vector3 p)
+        {
+            return LavaPaint(p) || MHR_Heat.HotWaterAt(p);
+        }
+        // the ground's lava paint only (1.5.74)
+        public static bool LavaPaint(Vector3 p)
         {
             try
             {
@@ -2677,7 +2723,7 @@ namespace Companions
             if (c == null || c.IsAttached() || c.IsDead() || c.IsSwimming()) return false;
             int id = ai.gameObject.GetInstanceID();
             Vector3 pos = ai.transform.position;
-            if (!WorldGenerator.IsAshlands(pos.x, pos.z) || (!c.InLava() && !Lava(pos))) { s_lavaSince.Remove(id); return false; }
+            if (!WorldGenerator.IsAshlands(pos.x, pos.z) || (!c.InLava() && !LavaPaint(pos))) { s_lavaSince.Remove(id); return false; }
             if (!c.IsOnGround()) return true;   // mid-jump out
             float now = Time.time, since;
             if (!s_lavaSince.TryGetValue(id, out since)) { since = now; s_lavaSince[id] = now; }
@@ -2691,6 +2737,68 @@ namespace Companions
             }
             if (!exit) return false;
             if (now - since > 1.0f && MHR_Jump.CanAfford(c)) { s_lavaSince[id] = now; MHR_Jump.Leap(ai, c, dir); return true; }
+            ai.MoveTowards(dir, true);
+            return true;
+        }
+
+        // W1b (1.5.98): in water that burns (Ashlands water, MHR_Heat) and the game's first hit is under a second away (or
+        // already hitting): get out to the nearest ground that doesn't burn - within 8 m (LavaExit), else the shore
+        // (WaterSafety's search). In the water the heat never goes down, so once this starts it holds until it is out.
+        // Limit: 15 s of trying, then 10 s left to the rest (the mover's own unstick) before it tries again. Once out, no
+        // route through hot water for 60 s (MHR_Heat.NoGo), so a short-swim route can't take it straight back in.
+        static readonly Dictionary<int, float> s_hotSince = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_hotRestUntil = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_hotLog = new Dictionary<int, float>();
+        public static bool EscapeHotWater(CompanionAI ai)
+        {
+            if (ai == null) return false;
+            Character c = ai.GetComponent<Character>();
+            if (c == null || c.IsAttached() || c.IsDead()) return false;
+            int id = ai.gameObject.GetInstanceID();
+            Vector3 pos = ai.transform.position;
+            if (!c.InWater() || MHR_Heat.Gradient(pos) <= 0f || MHR_Heat.HeatProof(c) || ai.IsOnShip || MHR_Board.ShipUnder(c) != null)
+            {
+                s_hotSince.Remove(id);
+                return false;
+            }
+            bool swim = c.IsSwimming();
+            float rate = MHR_Heat.Rate(c, pos, swim);
+            float left = rate > 0f ? (MHR_Heat.Threshold(c) - MHR_Heat.Level(c)) / rate : 999f;
+            if (left > 1f) { s_hotSince.Remove(id); return false; }
+            float now = Time.time, since, rest;
+            if (s_hotRestUntil.TryGetValue(id, out rest) && now < rest) return false;
+            if (!s_hotSince.TryGetValue(id, out since)) { since = now; s_hotSince[id] = now; }
+            if (now - since > 15f)
+            {
+                s_hotSince.Remove(id); s_hotRestUntil[id] = now + 10f;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move] \"" + c.m_name + "\" couldn't get out of the burning water in 15 s at " + Fmt(pos));
+                return false;
+            }
+            MHR_Heat.SetNoGo(c, 60f);
+            Vector3 dir; float dist;
+            bool exit;
+            Character oc = s_ctxChar; bool ok = s_ctxHotOk;
+            s_ctxChar = c; s_ctxHotOk = false;
+            try { exit = LavaExit(pos, ai.transform.forward, out dir, out dist); }
+            finally { s_ctxChar = oc; s_ctxHotOk = ok; }
+            string to = null;
+            if (exit) to = Fmt(pos + dir * dist);
+            else
+            {
+                Vector3 shore;
+                if (WaterSafety.TryFindShore(pos, c.GetLiquidLevel(), out shore))
+                {
+                    dir = shore - pos; dir.y = 0f;
+                    if (dir.sqrMagnitude > 0.01f) { dir.Normalize(); exit = true; to = Fmt(shore); }
+                }
+            }
+            float last;
+            if (!s_hotLog.TryGetValue(id, out last) || now - last > 5f)
+            {
+                s_hotLog[id] = now;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move] \"" + c.m_name + "\" in water that burns at " + Fmt(pos) + " (heat " + MHR_Heat.Level(c).ToString("F2") + ") - " + (exit ? "getting out toward " + to : "no ground close by that doesn't burn"));
+            }
+            if (!exit) return false;
             ai.MoveTowards(dir, true);
             return true;
         }

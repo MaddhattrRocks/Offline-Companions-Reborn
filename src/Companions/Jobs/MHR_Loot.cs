@@ -267,8 +267,8 @@ namespace Companions
                     if (CompanionsPlugin.LogDetailed) LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is in deep water - leaving it");
                     continue;
                 }
-                // 1.5.74: nor on lava
-                if (MHR_Mover.Lava(d.transform.position))
+                // 1.5.74: nor on lava (1.5.98 W1: nor in water that burns, unless heat-proof)
+                if (MHR_Mover.Lava(d.transform.position, self))
                 {
                     k.Skipped.Add(d.GetInstanceID());
                     if (CompanionsPlugin.LogDetailed) LogDebug("  " + Loc(d.m_itemData != null ? d.m_itemData.m_shared.m_name : "?") + " is on lava - leaving it");

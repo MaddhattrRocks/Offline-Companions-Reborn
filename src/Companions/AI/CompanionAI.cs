@@ -963,6 +963,64 @@ public class CompanionAI : BaseAI
 		SetFollowTarget(null);
 	}
 
+	// 1.5.98 (W3): its tombstone in water that burns (Ashlands water; tombstones float). Loot it from ground that doesn't
+	// burn within 3 m of it; with no such ground, after a revive (recovering) it says so once and waits by the player,
+	// looking again every second (it may drift ashore) for up to 5 minutes, then the usual "try again in a minute".
+	// Not recovering (the normal pick-up in range), such a tombstone is passed over.
+	private TombStone _hotTomb;
+	private bool _hotTombDry;
+	private Vector3 _hotTombSpot;
+	private float _hotTombCheckAt = -10f;
+	private float _hotTombSince = -1f;
+	private TombStone _hotTombSaidFor;
+
+	// true = the tombstone is in water that burns for this companion; dry = a spot to loot it from (refreshed every second)
+	private bool HotTomb(TombStone tomb, out bool dry, out Vector3 spot)
+	{
+		dry = false;
+		spot = Vector3.zero;
+		Vector3 at = tomb.transform.position;
+		if (!MHR_Heat.HotWaterAt(at) || MHR_Heat.HeatProof(m_character))
+		{
+			return false;
+		}
+		float now = Time.time;
+		if (_hotTomb == tomb && now - _hotTombCheckAt < 1f)
+		{
+			dry = _hotTombDry;
+			spot = _hotTombSpot;
+			return true;
+		}
+		_hotTomb = tomb;
+		_hotTombCheckAt = now;
+		_hotTombDry = false;
+		float best = float.MaxValue;
+		Vector3 me = base.transform.position;
+		for (float r = 1f; r <= 2.8f; r += 0.9f)
+		{
+			for (int i = 0; i < 12; i++)
+			{
+				float a = i * 30f * Mathf.Deg2Rad;
+				Vector3 p = at + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+				p.y = MHR_Water.GroundAt(p);
+				if (Vector3.Distance(p, at) >= 3f || MHR_Water.DepthAt(p) > 0.05f || MHR_Mover.Lava(p, m_character))
+				{
+					continue;
+				}
+				float d = Vector3.Distance(me, p);
+				if (d < best)
+				{
+					best = d;
+					_hotTombSpot = p;
+					_hotTombDry = true;
+				}
+			}
+		}
+		dry = _hotTombDry;
+		spot = _hotTombSpot;
+		return true;
+	}
+
 	private bool UpdateTombstoneRecovery(float dt)
 	{
 		if (_pendingTombstone != null)
@@ -993,6 +1051,41 @@ public class CompanionAI : BaseAI
 			}
 			Vector3 position = _pendingTombstone.transform.position;
 			float num = Vector3.Distance(base.transform.position, position);
+			// 1.5.98 (W3): in water that burns - loot from dry ground beside it, or wait by the player
+			bool hotTomb = HotTomb(_pendingTombstone, out bool hotDry, out Vector3 hotSpot);
+			if (hotTomb && !hotDry && num >= 3f)
+			{
+				if (_hotTombSaidFor != _pendingTombstone)
+				{
+					_hotTombSaidFor = _pendingTombstone;
+					_hotTombSince = Time.time;
+					if (_talk != null)
+					{
+						_talk.Say(ModLocalization.Loc("hc_speech_tomb_hot"));
+					}
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Recovery] Its tombstone is in water that burns at " + position.ToString("F1") + " with no dry ground within 3 m - waiting by the player");
+				}
+				if (Time.time - _hotTombSince > 300f)
+				{
+					_hotTombSaidFor = null;
+					_pendingTombstone = null;
+					ClearTombstoneId();
+					RestoreFollowOrPatrol();
+					_tombRecoverSnooze = 60f;
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Recovery] Its tombstone stayed in the burning water for 5 minutes; will try again in a minute");
+					return false;
+				}
+				_tombstoneNavTimeout = Mathf.Max(_tombstoneNavTimeout, 10f);   // waiting isn't failing to get there
+				if (!RecoverWait(dt))
+				{
+					StopMoving();
+				}
+				return true;
+			}
+			if (hotTomb && hotDry && num >= 3f && Vector3.Distance(base.transform.position, hotSpot) < 0.8f)
+			{
+				num = 0f;   // on the dry spot beside it: loot it from here
+			}
 			if (num < 3f)
 			{
 				Container component = _pendingTombstone.GetComponent<Container>();
@@ -1034,7 +1127,14 @@ public class CompanionAI : BaseAI
 				_tombstoneScanTimer = TombstoneScanInterval;
 			}
 			bool run = num > 10f;
-			MHR_Go(dt, position, 2.5f, run, "Tombstone");
+			if (hotTomb && hotDry)
+			{
+				MHR_Go(dt, hotSpot, 0.5f, run, "Tombstone");
+			}
+			else
+			{
+				MHR_Go(dt, position, 2.5f, run, "Tombstone");
+			}
 			return true;
 		}
 		if ((object)_pendingTombstone != null)
@@ -1089,6 +1189,11 @@ public class CompanionAI : BaseAI
 				continue;
 			}
 			float num2 = Vector3.Distance(base.transform.position, tombStone.transform.position);
+			// 1.5.98 (W3): the normal pick-up passes over a tombstone in water that burns with no dry ground beside it
+			if (!MHR_Recover.IsRecovering(this) && HotTomb(tombStone, out bool scanDry, out _) && !scanDry)
+			{
+				continue;
+			}
 			// 1.5.44: after a revive (RecoverFirst) at any distance - getting its gear back comes first
 			if (num2 <= ModConfig.TombstoneRecoveryRange.Value || MHR_Recover.IsRecovering(this))
 			{
@@ -1281,6 +1386,12 @@ public class CompanionAI : BaseAI
 			return false;
 		}
 		MHR_Cart.HitchCheck(this);   // 1.5.97 (C2): a hitch is checked a second later
+		// 1.5.98 (W1b): in water that burns with the first hit close, getting out comes before the stamina swim rule
+		if (MHR_Mover.EscapeHotWater(this))
+		{
+			AIGateDiag.Report(_setup, "HotWater");
+			return true;
+		}
 		if (WaterSafety.Tick(this, dt))
 		{
 			AIGateDiag.Report(_setup, "WaterSafety");
@@ -1877,7 +1988,7 @@ public class CompanionAI : BaseAI
 				float num3 = Mathf.Max(liquidLevel, 30f);
 				// 1.5.72: not the rim of a drop (user: "a tar pit could have a large drop next to it") - the ground just beyond
 				// the spot isn't far below it, and it isn't in a fire or against spikes
-				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.Lava(new Vector3(vector3.x, solidHeight, vector3.z)) || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
+				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.Lava(new Vector3(vector3.x, solidHeight, vector3.z), m_character) || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
 				if (solidHeight > num3 && !rim)
 				{
 					float num4 = Vector3.Distance(position, vector3);
@@ -2154,7 +2265,7 @@ public class CompanionAI : BaseAI
 					continue;
 				}
 				// 1.5.72: and dry, not in a fire or against spikes
-				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null || MHR_Mover.Lava(hit.point))
+				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null || MHR_Mover.Burns(hit.point))
 				{
 					continue;
 				}
