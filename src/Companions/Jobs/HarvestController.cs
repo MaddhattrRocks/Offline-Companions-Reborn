@@ -837,6 +837,12 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		// 1.5.98 (C3.2): a thing in the trench handed to the Wood / Stone flow is over (gone or given up): back to the vein
+		// 1.5.98 build 2 (P3): the part it was walking to or mining broke or fell - pick up the drops, then the chooser
+		if (_vFor != null && _ovPart != null && (_state == HarvestState.Moving || _state == HarvestState.Attacking) && OvPinGone())
+		{
+			OvPartDrops();
+			return;
+		}
 		if (_vFor != null && _state == HarvestState.Idle)
 		{
 			if (mode == 3)
@@ -1609,6 +1615,12 @@ public partial class HarvestController : MonoBehaviour
 					int num5 = CountActiveRock5Sections();
 					if (num5 < _rock5ActiveSections)
 					{
+						// 1.5.98 build 2 (P3): a part pinned by the vein clearing - it broke (or others fell): the drops, then back
+						if (_ovPart != null && OvPinGone())
+						{
+							OvPartDrops();
+							return;
+						}
 						if (!DigMode() && CountExposedRock5Sections() == 0 && num5 > 0)
 						{
 							SayGaveUp(GiveUpWhy.Buried, $"{num5} parts left, all more than 1 m under the ground");
@@ -1977,6 +1989,10 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component2 = item.GetComponent<Collider>();
+				if (component2 != null && OvPinSkip(component2))
+				{
+					continue;
+				}
 				if (!(component2 == null) && (pass == 1 || IsSegmentExposed(component2)))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component2.bounds.center);
@@ -2779,6 +2795,10 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
+				if (component != null && OvPinSkip(component))
+				{
+					continue;
+				}
 				if (!(component == null) && (dig || IsSegmentExposed(component)))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component.bounds.center);
@@ -2798,6 +2818,10 @@ public partial class HarvestController : MonoBehaviour
 						continue;
 					}
 					Collider component2 = item2.GetComponent<Collider>();
+					if (component2 != null && OvPinSkip(component2))
+					{
+						continue;
+					}
 					if (!(component2 == null))
 					{
 						float num3 = Vector3.Distance(base.transform.position, component2.bounds.center);
@@ -2921,6 +2945,10 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
+				if (component != null && OvPinSkip(component))
+				{
+					continue;
+				}
 				if (!(component == null) && IsSegmentExposed(component))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component.bounds.center);

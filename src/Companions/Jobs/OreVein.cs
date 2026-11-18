@@ -494,8 +494,21 @@ public partial class HarvestController
 	{
 		if (_vp == null || _vRock == null || _vFor == null)
 		{
+			OvClearGone();
 			OvLeave("the vein is gone", quiet: true);
 			return;
+		}
+		if (_ovPart != null)
+		{
+			// build 2: back from mining a part; the attack's own give-ups blacklist the vein - not while it works it
+			OvPartBack();
+			foreach (MineRock5 r in _vp.Rocks)
+			{
+				if (r != null)
+				{
+					_blacklist.Remove(r.gameObject.GetInstanceID());
+				}
+			}
 		}
 		if (_ovHandMode != 0)
 		{
@@ -531,6 +544,7 @@ public partial class HarvestController
 	// lets go of the vein (the plan stays for the others, and for this one when it comes back)
 	private void OvLeave(string why, bool quiet = false)
 	{
+		OvPartRelease();
 		OvRelease();
 		OvDigOff();
 		_rpActive = false;
@@ -563,6 +577,22 @@ public partial class HarvestController
 		}
 	}
 
+	// build 2: lets go of the part it holds or mines
+	private void OvPartRelease()
+	{
+		if (_ovPart != null && _ovPart.Holder == this)
+		{
+			_ovPart.Holder = null;
+		}
+		if (_rpPart != null && _rpPart.Holder == this)
+		{
+			_rpPart.Holder = null;
+		}
+		_ovPart = null;
+		_rpPart = null;
+		_ovPin = null;
+	}
+
 	// C6: leaving the vein - out of the trench first when it's in it, toward dest
 	private void OvLeaveOut(Vector3 dest, string why)
 	{
@@ -570,6 +600,7 @@ public partial class HarvestController
 		{
 			return;
 		}
+		OvPartRelease();
 		if (_vp != null && OvInTrench(dest, out Vector3 goal))
 		{
 			OvRelease();
@@ -595,6 +626,7 @@ public partial class HarvestController
 		{
 			return;
 		}
+		OvPartRelease();
 		Player owner = MHR_Owner.Of(this);
 		Vector3 dest = owner != null ? owner.transform.position : base.transform.position;
 		if (_vp != null && OvInTrench(dest, out Vector3 goal))
@@ -1272,6 +1304,7 @@ public partial class HarvestController
 	{
 		if (_vp == null || _vRock == null || _vFor == null || !_vFor.activeInHierarchy)
 		{
+			OvClearGone();
 			OvLeave("the vein is gone");
 			return;
 		}
@@ -2008,11 +2041,35 @@ public partial class HarvestController
 		{
 			return;
 		}
-		_ai?.StopMoving();
-		if (_ovDoneSaid)
+		if (!_ovDoneSaid)
+		{
+			OvTrenchDoneSay();
+		}
+		// build 2: clearing and the pop
+		if (OvClearTick())
 		{
 			return;
 		}
+		if (OvC().Stopped)
+		{
+			_ai?.StopMoving();   // P7: it waits by the vein
+			return;
+		}
+		// P8: done - it won't pick this vein again for a while (parts given up or buried may be left), and leaves by the
+		// way out
+		foreach (MineRock5 r in _vp.Rocks)
+		{
+			if (r != null)
+			{
+				_blacklist[r.gameObject.GetInstanceID()] = Time.time;
+			}
+		}
+		OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 dvGoal, out _) ? dvGoal : base.transform.position, "the vein is done");
+	}
+
+	private void OvTrenchDoneSay()
+	{
+		_ai?.StopMoving();
 		_ovDoneSaid = true;
 		int notDug = 0, closed = 0;
 		string where = "";
@@ -2042,7 +2099,7 @@ public partial class HarvestController
 			}
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Left in the trench: {(left.Count == 0 ? "nothing" : left.Count + " thing(s): " + string.Join("; ", new List<string>(left.Values).GetRange(0, Mathf.Min(12, left.Count))) + (left.Count > 12 ? "; ..." : ""))}");
-		if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_vp.Name}\" is done after {_vp.Lap} lap(s): {_vp.Spots.Count} spots, {closed} closed for good, {notDug} more than 0.3 m above the goal{(notDug > 0 ? " (at " + where + (notDug > 6 ? ", ..." : "") + ")" : "")} - clearing comes in build 2; it stands by");
+		if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{_vp.Name}\" is done after {_vp.Lap} lap(s): {_vp.Spots.Count} spots, {closed} closed for good, {notDug} more than 0.3 m above the goal{(notDug > 0 ? " (at " + where + (notDug > 6 ? ", ..." : "") + ")" : "")} - clearing next");
 		if (!_vp.DoneSaid)
 		{
 			_vp.DoneSaid = true;
@@ -2686,6 +2743,7 @@ public partial class HarvestController
 			_vp.ExitBy = null;
 			if (CompanionsPlugin.LogNormal) LogInfo($"A way out of the trench is cut, from {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)}");
 		}
+		_rpPart = null;
 		if (_rpOut)
 		{
 			_ovOut = false;
@@ -2699,6 +2757,12 @@ public partial class HarvestController
 		OvDigOff();
 		_ai?.StopMoving();
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
+		if (_rpPart != null)
+		{
+			_rpPart.Holder = null;   // build 2 (P5): the walk to the part comes next (RampTried is set)
+			_rpPart = null;
+			return;
+		}
 		if (_rpOut)
 		{
 			// E2: another place, up to 3 tries
