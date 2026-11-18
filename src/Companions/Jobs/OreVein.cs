@@ -2300,7 +2300,13 @@ public partial class HarvestController
 		{
 			return false;
 		}
+		// Z1 (test 10): a pit thing it was cutting where it stands counts as left once (two = left for this vein)
+		GameObject bush = _dgBushOn ? _dgBush : null;
 		OvDigOff();
+		if (bush != null)
+		{
+			OvPitLeftNote(bush);
+		}
 		OvSkip(q, $"{OvSpotIdle:F0} s of work on it without the ground going down", normal: true);
 		return true;
 	}
@@ -3150,6 +3156,10 @@ public partial class HarvestController
 			if (n == null || b.min.y > GroundAt(n.P) + OvThingAbove)
 			{
 				continue;   // on the wall top
+			}
+			if (n.Skip && !p.Done)
+			{
+				continue;   // Z1 (test 10): its spot is skipped this lap - it waits for the next lap (after the trench: any)
 			}
 			Vector3 np = b.ClosestPoint(new Vector3(n.P.x, b.center.y, n.P.z));
 			bool under = b.center.x >= p.Box.min.x && b.center.x <= p.Box.max.x && b.center.z >= p.Box.min.z && b.center.z <= p.Box.max.z;

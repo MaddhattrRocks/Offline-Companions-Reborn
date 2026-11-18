@@ -39,6 +39,24 @@ public partial class HarvestController
 
 		public bool RampTried;    // P5: the way up toward it was cut (once per round)
 
+		public GameObject HoldThing;   // Z2: the tree / log / stump / rock it rests on (the Wood or Stone job takes it)
+
+		public int HoldMode;
+
+		public string HoldType;
+
+		public bool OutOfReach;   // Z3: its box bottom is more than the pickaxe's reach above the floor under it
+
+		public bool Chain;        // Z5: made a root because the root it rests on couldn't be broken (once, never cleared)
+
+		public string ChainWhy;
+
+		public bool ChainCut;     // Z5: the parts resting on it were made roots (once)
+
+		public bool LadderTried;  // Z4: one try at building a ladder for it
+
+		public int LadderTrees;   // Z4: trees taken for its ladder's wood (at most 3)
+
 		public HarvestController Holder;
 	}
 
@@ -176,6 +194,7 @@ public partial class HarvestController
 				part.Out = part.Centre.y + part.Half.y < OvFloor(part.Centre);
 				part.Root = false;
 				part.Why = null;
+				part.HoldThing = null;
 				c.Parts.Add(part);
 				alive++;
 			}
@@ -186,6 +205,34 @@ public partial class HarvestController
 				{
 					continue;
 				}
+				OvPartRoot(part, rock, origin, c);
+			}
+		}
+		// Z5: parts made roots because the root under them couldn't be broken stay roots
+		// Z3: and whether each part can be hit from the floor under it
+		float reach = OvPickReach();
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Out)
+			{
+				continue;
+			}
+			if (part.Chain && !part.Root)
+			{
+				part.Root = true;
+				part.Why = part.ChainWhy;
+			}
+			part.OutOfReach = OvPartBottom(part) - GroundAt(part.Centre) > reach;
+		}
+		c.Popped += popped;
+		c.Alive = alive;
+	}
+
+	// the game's support test for one part (MineRock5.UpdateSupport / GetSupport, same box and layer mask)
+	private void OvPartRoot(OvPart part, MineRock5 rock, Vector3 origin, OvClear c)
+	{
+		{
+			{
 				int n = Physics.OverlapBoxNonAlloc(part.Centre, part.Half, s_cBuf, Quaternion.identity, s_cMask);
 				for (int j = 0; j < n && !part.Root; j++)
 				{
@@ -219,13 +266,19 @@ public partial class HarvestController
 					else if (o.transform.position.y < origin.y)
 					{
 						part.Root = true;
-						part.Why = "rests on \"" + o.name + "\" (lower than the vein's centre)";
+						// Z2: a tree, log, stump or rock the Wood / Stone job would take: that is cleared, not the part
+						GameObject t = OvThingOf(o, out int tm, out string tt);
+						if (t != null)
+						{
+							part.HoldThing = t;
+							part.HoldMode = tm;
+							part.HoldType = tt;
+						}
+						part.Why = "rests on \"" + o.name + "\"" + (t != null ? $" ({t.name} at {MHR_Mover.Fmt(t.transform.position)})" : "") + " (lower than the vein's centre)";
 					}
 				}
 			}
 		}
-		c.Popped += popped;
-		c.Alive = alive;
 	}
 
 	private bool OvPartHeldByOther(OvPart part)
@@ -267,11 +320,30 @@ public partial class HarvestController
 		{
 			return true;
 		}
+		// Z5: a root it couldn't break - the parts resting on it become roots (each root's once)
+		bool cut = false;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Root && part.GaveUp && !part.ChainCut && !part.Out)
+			{
+				OvChainCut(c, part);
+				cut = true;
+			}
+		}
+		if (cut)
+		{
+			OvPartsLook(c, true);
+		}
+		// Z2: a tree, log, stump or rock a root rests on is cleared first, the Wood / Stone job's way
+		if (OvHoldFirst(c))
+		{
+			return true;
+		}
 		Vector3 me = base.transform.position;
 		List<OvPart> cand = new List<OvPart>();
 		foreach (OvPart part in c.Parts)
 		{
-			if (part.Root && !part.Out && !part.GaveUp && !part.SetAside)
+			if (part.Root && !part.Out && !part.GaveUp && !part.SetAside && !part.OutOfReach && !OvHeldByThing(part))
 			{
 				cand.Add(part);
 			}
@@ -281,13 +353,31 @@ public partial class HarvestController
 			// R2d: every root left is set aside - each gets its one more round now
 			foreach (OvPart part in c.Parts)
 			{
-				if (part.Root && !part.Out && !part.GaveUp)
+				if (part.Root && !part.Out && !part.GaveUp && !part.OutOfReach && !OvHeldByThing(part))
 				{
 					cand.Add(part);
 				}
 			}
 		}
+		// Z3 / Z4: the roots too high to hit from the floor get their rounds from a ladder - after every root in reach
+		bool ladder = false;
+		if (cand.Count == 0)
+		{
+			foreach (OvPart part in c.Parts)
+			{
+				if (part.Root && !part.Out && !part.GaveUp && part.OutOfReach && !OvHeldByThing(part))
+				{
+					cand.Add(part);
+				}
+			}
+			ladder = cand.Count > 0;
+		}
 		bool pop = false;
+		if (cand.Count == 0 && OvAnyHeldByThing(c))
+		{
+			_ai?.StopMoving();   // Z2: only roots on a thing another companion is clearing are left - it stands by
+			return true;
+		}
 		if (cand.Count == 0)
 		{
 			// P6: no root left but parts still stand (held by nothing we can see): the lowest one is mined - its break
@@ -346,7 +436,7 @@ public partial class HarvestController
 		Vector3 near = OvBoxNear(pick, me);   // L6: the part's game box (a vein part's mesh can't be asked)
 		Vector3 foot = new Vector3(near.x, GroundAt(near), near.z);
 		float h = _character != null ? _character.GetHeight() : 1.8f;
-		if (!pick.RampTried && Flat(me, near) <= OvRampReach && foot.y >= me.y + OvRampRatio * h)
+		if (!ladder && !pick.RampTried && Flat(me, near) <= OvRampReach && foot.y >= me.y + OvRampRatio * h)
 		{
 			pick.RampTried = true;
 			_rpPart = pick;
@@ -362,8 +452,91 @@ public partial class HarvestController
 			OvWayOutHere(ws);
 			return true;
 		}
-		OvClBegin(pick, pop);
+		OvClBegin(pick, pop, ladder);
 		return true;
+	}
+
+	// Z2: the root rests on a tree / log / stump / rock that isn't left (the Y6e count) - that thing comes first
+	private bool OvHeldByThing(OvPart part)
+	{
+		GameObject t = part.HoldThing;
+		// not one it just left (Y6e: it waits for one other piece of work - a round on a part is one), nor one it has no tool for
+		return part.Root && t != null && t.activeInHierarchy && t.GetInstanceID() != _pitSkipId && !(_vp.PitLeft.TryGetValue(t.GetInstanceID(), out int left) && left >= 2) && FindBestTool(part.HoldMode) != null;
+	}
+
+	private bool OvAnyHeldByThing(OvClear c)
+	{
+		foreach (OvPart part in c.Parts)
+		{
+			if (!part.Out && !part.GaveUp && OvHeldByThing(part))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Z2: the nearest such thing it can take (not one another companion is on, not one it just left, with a tool for it),
+	// handed to the Wood / Stone flow like the things in the pit (OvTake). True = taken.
+	private bool OvHoldFirst(OvClear c)
+	{
+		Vector3 me = base.transform.position;
+		GameObject best = null;
+		OvPart bp = null;
+		float bd = float.MaxValue;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Out || part.GaveUp || !OvHeldByThing(part))
+			{
+				continue;
+			}
+			GameObject t = part.HoldThing;
+			int id = t.GetInstanceID();
+			if (s_claimedTargets.Contains(id) && id != _claimedTargetId)
+			{
+				continue;
+			}
+			float d = Flat(me, t.transform.position);
+			if (d < bd)
+			{
+				bd = d;
+				best = t;
+				bp = part;
+			}
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		OvRelease();
+		return OvTake(best, bp.HoldMode, bp.HoldType, OvNearest(best.transform.position), canSkip: false, $"It holds the vein up (the part \"{bp.C.name}\" rests on it)") == 1;
+	}
+
+	// Z5: the parts whose game box takes in the root's rock (the game's own test: a part touching a held-up part is held
+	// up through it) become roots, once each
+	private void OvChainCut(OvClear c, OvPart root)
+	{
+		root.ChainCut = true;
+		int made = 0;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part == root || part.Out || part.GaveUp || part.Chain || part.Root || part.C == null)
+			{
+				continue;
+			}
+			int n = Physics.OverlapBoxNonAlloc(part.Centre, part.Half, s_cBuf, Quaternion.identity, s_cMask);
+			for (int j = 0; j < n; j++)
+			{
+				if (s_cBuf[j] == root.C)
+				{
+					part.Chain = true;
+					part.ChainWhy = $"rests on \"{root.C.name}\", which it couldn't break";
+					made++;
+					break;
+				}
+			}
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't break \"{(root.C != null ? root.C.name : "?")}\" of \"{_vp.Name}\" - {made} part(s) resting on it are next");
 	}
 
 	// R4: no real way out (R3) with its bottom within 15 m (flat) of this spot, no try within 15 m of it, nobody else
@@ -461,7 +634,7 @@ public partial class HarvestController
 	private const int OvClCapMore = 2;             // L4: dig points = metres from the trench spot to the part + 2
 
 	// L1 / L2: a round on the part starts - it goes to the trench spot nearest it
-	private void OvClBegin(OvPart part, bool pop)
+	private void OvClBegin(OvPart part, bool pop, bool ladder = false)
 	{
 		OvClStandFor(part, out OvSpot q, out bool here);
 		_pitSkipId = 0;   // Y6e: another piece of work started
@@ -478,13 +651,15 @@ public partial class HarvestController
 		_clWalk = true;
 		_moveTimer = 0f;
 		_ai?.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from {(here ? "where it stands" : $"trench spot {(q != null ? q.Idx + 1 : 0)}")} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
+		OvLnBegin(ladder);
+		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(ladder ? $"a part too high to hit from the floor ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up) - from a ladder" : pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from {(here ? "where it stands" : $"trench spot {(q != null ? q.Idx + 1 : 0)}")} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
 	}
 
 	private void OvClOff()
 	{
 		_clFor = null;
 		_clWalk = false;
+		OvLnOff();
 		if (_dgClear)
 		{
 			OvDigOff();
@@ -517,6 +692,11 @@ public partial class HarvestController
 			OvClOff();
 			OvPartsLook(c, true);
 			OvPartDrops(part.Centre);
+			return;
+		}
+		// Z4: a round from a ladder - planning, wood, building and the climb, then the part swing below
+		if (_clLadder && OvLnTick(c, part))
+		{
 			return;
 		}
 		Vector3 me = base.transform.position;
@@ -687,7 +867,7 @@ public partial class HarvestController
 			if (CompanionsPlugin.LogNormal) LogInfo($"Stopping on \"{_vp.Name}\": {OvPopFails} tries in a row broke nothing - every part as it stands:");
 			foreach (OvPart part in c.Parts)
 			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : "hanging on other parts")}, rounds {part.Rounds}{(part.GaveUp ? ", given up" : "")}");
+				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : "hanging on other parts")}{(part.OutOfReach && !part.Out ? $", out of reach ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up)" : "")}, rounds {part.Rounds}{(part.GaveUp ? ", given up" : "")}");
 			}
 			_talk?.SayProblem("vein:clear_stopped", string.Format(ModLocalization.Loc("hc_speech_vein_clear_stopped"), MHR_Items.NiceName(_vFor)));
 			return;

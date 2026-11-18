@@ -323,29 +323,8 @@ public partial class UpkeepController
 	private void PlacePile(PileKind k, ItemDrop.ItemData hammer, float stamina)
 	{
 		Inventory bag = _humanoid.GetInventory();
-		TerrainModifier.SetTriggerOnPlaced(trigger: true);
-		GameObject go = UnityEngine.Object.Instantiate(k.Prefab, _pileSpot, _pileRot);
-		TerrainModifier.SetTriggerOnPlaced(trigger: false);
+		GameObject go = MHR_Build.Place(this, k.Prefab, _pileSpot, _pileRot, hammer);   // 1.5.98 Z4: shared with the Ore job
 		Piece piece = go.GetComponent<Piece>();
-		if (piece != null)
-		{
-			PlatformUserID user = default(PlatformUserID);
-			try
-			{
-				user = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
-			}
-			catch
-			{
-			}
-			piece.SetCreator(MHR_Owner.CreatorId(this), user);   // 1.4.152: built for its own player
-		}
-		go.GetComponent<WearNTear>()?.OnPlaced();
-		string anim = hammer.m_shared.m_attack?.m_attackAnimation;
-		GetComponent<ZSyncAnimation>()?.SetTrigger(!string.IsNullOrEmpty(anim) ? anim : "swing_hammer");
-		if (piece != null)
-		{
-			piece.m_placeEffect.Create(_pileSpot, _pileRot, go.transform, 1f, -1, _character.GetZDOID());
-		}
 		bag.RemoveItem(k.Shared, k.Cost);
 		Took(k.Shared, -k.Cost);
 		_stamina?.UseStamina(stamina);

@@ -321,6 +321,7 @@ namespace Companions
                 if (list == null) return true;
                 string name = drop.m_itemData.m_dropPrefab != null ? drop.m_itemData.m_dropPrefab.name : drop.gameObject.name.Replace("(Clone)", "");
                 if (mode == 3 && name == "Stone") return true;   // 1.4.73: cleared up into a pile out of the way
+                if (mode == 3 && name == "Wood" && h.OvWantsWood) return true;   // 1.5.98 Z4: wood for a ladder it is short of
                 return list.Allows(name, MHR_List.Local(drop.m_itemData.m_shared.m_name));
             }
             catch { return true; }

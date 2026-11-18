@@ -346,6 +346,8 @@ public static class ModLocalization
 			{ "hc_speech_vein_trench_done", "The trench round this {0} is done." },
 			{ "hc_speech_vein_trench_done_gaps", "The trench round this {0} is done, but I couldn't dig {1} spots of it." },
 			{ "hc_speech_vein_clear_stopped", "I can't get this {0} to come loose. I'll wait here." },
+			{ "hc_speech_vein_ladder_need", "I need {0} to build a ladder here." },
+			{ "hc_speech_vein_ladder_wood", "I need {0} more wood to build a ladder here and there are no trees close by." },
 			{ "hc_speech_vein_cant_dig", "I can't dig here to get at this {0}." },
 			{ "hc_speech_vein_out_of_reach", "I can't reach that {0}." },
 			{ "hc_speech_vein_too_hard", "This {0} is too hard for my pickaxe." },
