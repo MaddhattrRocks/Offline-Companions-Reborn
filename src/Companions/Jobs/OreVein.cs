@@ -86,6 +86,18 @@ public partial class HarvestController
 
 		public readonly HashSet<int> PitIgnore = new HashSet<int>();   // GG1: neither the axe nor the pickaxe hurt it - ignored on this vein
 
+		// P1 (John, 2026-11-19 19:47Z: "The pit should be measured as anything inside the trench including the trench. Its a
+		// literal giant hole in the ground. It should not be measured from the ore vein"): the pit's ground, 1 m cells -
+		// inside the ring, the trench spots, and every cell joined to them that the game's terrain record shows dug 0.5 m or
+		// more below its original height (out to where the dug ground ends: the outer wall, at most 20 m past the ring)
+		public readonly HashSet<long> PitCells = new HashSet<long>();
+
+		public float PitX0, PitX1, PitZ0, PitZ1;
+
+		public readonly HashSet<int> ScanSaid = new HashSet<int>();   // P2: things the pit scan has logged once
+
+		public int PitCellsSaid = -1;   // P1: the pit's size at the last log line (logged when it changes)
+
 		// FF3 / Q1: the vein's one ore dump, on the trench floor (set by the first companion that needs it)
 		public bool DumpHas;
 
@@ -137,6 +149,10 @@ public partial class HarvestController
 	private const float OvPitScanAfter = 10f;     // ... every 10 s after
 
 	private const float OvPitCool = 60f;          // FF1: a thing someone couldn't clear waits 60 s
+
+	private const float OvPitDug = 0.5f;          // P1: a cell dug this far below its original height is pit ground
+
+	private const float OvPitGrow = 20f;          // P1: the pit reaches at most 20 m past the ring
 
 	private const float OvJoin = 4.0f;             // C2.1: deposits within 4 m join
 
@@ -1526,6 +1542,12 @@ public partial class HarvestController
 			OvWayOutTick();
 			return;
 		}
+		// P2: digging the ground at a thing's base (OvHandLedge) - in the trench or the clearing alike
+		if (_drForThing && _drSpot != null)
+		{
+			OvDrTick(OvC());
+			return;
+		}
 		// N1: a clearing dig point is ticked by the clearing itself (OvClRound), which then sees how it ended
 		if (_dgActive && !_dgClear)
 		{
@@ -2813,6 +2835,13 @@ public partial class HarvestController
 			int mode = 0;
 			string type = null;
 			GameObject thing = c != null ? OvThingOf(c, out mode, out type) : null;
+			if (thing != null && _drForThing && thing == _rpThing)
+			{
+				// P2: the swing at the ground under a thing reached the thing itself - it is within reach now: handed back
+				_dgReached = true;
+				OvDigOff();
+				return;
+			}
 			if (thing != null)
 			{
 				int id = thing.GetInstanceID();
@@ -2843,12 +2872,16 @@ public partial class HarvestController
 			ItemDrop.ItemData pk = rk != null ? FindBestTool(2) : null;
 			bool carve = rk != null && pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false);
 			// HH1 (John: "it was ok to hit the ore"): a swing that hit the vein's rock is work too (the game damages the part)
-			_dgNoProg = drop || carve || hitOre ? 0 : _dgNoProg + 1;
-			if (drop && _vp != null)
+			// P4: a dirt point higher than its swing reaches is cut from below - the game dug into the bank between it and
+			// the point, 0.3 m or more above its feet (not the floor), is work too
+			Vector3 ft = base.transform.position;
+			bool bank = dug && _dgDugPt.y >= ft.y + 0.3f && Flat(ft, _dgDugPt) <= Flat(ft, _dgPoint) + 0.3f;
+			_dgNoProg = drop || bank || carve || hitOre ? 0 : _dgNoProg + 1;
+			if ((drop || bank) && _vp != null)
 			{
 				OvC().ProgAt = Time.time;
 			}
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || carve || hitOre ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? ", cut into the bank toward it" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || hitOre ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
 			if (after <= _dgGoalY + OvDigGain)
 			{
 				_dgReached = true;
@@ -3360,27 +3393,59 @@ public partial class HarvestController
 		{
 			s_ovThingMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid");
 		}
-		float x0 = float.MaxValue, x1 = float.MinValue, z0 = float.MaxValue, z1 = float.MinValue, y0 = float.MaxValue, y1 = float.MinValue;
+		// P1: the pit's ground first (the same scan, the same companion)
+		OvPitBuild(p);
+		float y0 = float.MaxValue, y1 = float.MinValue;
 		foreach (OvSpot sp in p.Spots)
 		{
 			float g = GroundAt(sp.P);
-			x0 = Mathf.Min(x0, sp.P.x);
-			x1 = Mathf.Max(x1, sp.P.x);
-			z0 = Mathf.Min(z0, sp.P.z);
-			z1 = Mathf.Max(z1, sp.P.z);
 			y0 = Mathf.Min(y0, g);
 			y1 = Mathf.Max(y1, Mathf.Max(g, sp.P.y));
 		}
 		y1 = Mathf.Max(y1, p.Box.max.y);
-		// the whole column over the pit (a standing tree's trunk starts at the ground), from 1 m under the lowest floor
+		// P2: the whole pit (P1's cells) plus 2 m, the whole column over it (a standing tree's trunk starts at the ground),
+		// from 1 m under the lowest trench floor
+		float x0 = p.PitX0 - 0.5f, x1 = p.PitX1 + 0.5f, z0 = p.PitZ0 - 0.5f, z1 = p.PitZ1 + 0.5f;
 		Vector3 c0 = new Vector3((x0 + x1) * 0.5f, (y0 - 1f + y1 + 2f) * 0.5f, (z0 + z1) * 0.5f);
 		Vector3 half = new Vector3((x1 - x0) * 0.5f + OvThingRadius, (y1 + 2f - (y0 - 1f)) * 0.5f, (z1 - z0) * 0.5f + OvThingRadius);
 		int k = Physics.OverlapBoxNonAlloc(c0, half, s_ovPitBuf, Quaternion.identity, s_ovThingMask, QueryTriggerInteraction.Ignore);
 		HashSet<int> seen = new HashSet<int>();
 		for (int i = 0; i < k; i++)
 		{
-			GameObject go = OvThingOf(s_ovPitBuf[i], out int mode, out string type);
-			if (go == null || !seen.Add(go.GetInstanceID()) || !OvThingBox(go, out Bounds b) || !OvInPit(p, b))
+			Collider col = s_ovPitBuf[i];
+			if (col == null || col.GetComponentInParent<Character>() != null)
+			{
+				continue;
+			}
+			GameObject root = MHR_Drops.Root(col);
+			if (root == null || !seen.Add(root.GetInstanceID()))
+			{
+				continue;
+			}
+			GameObject go = OvThingOf(col, out int mode, out string type);
+			string off = null;
+			if (go == null)
+			{
+				off = OvThingWhyNot(p, col, root);
+			}
+			else if (!OvThingBox(go, out Bounds b))
+			{
+				off = "it has no solid collider";
+			}
+			else if (!OvInPit(p, b))
+			{
+				off = "it is not on the pit's ground";
+			}
+			// P2: once per thing per vein - on the list, or why not (the vein's own deposits are not logged)
+			if (off != OvThisVein && p.ScanSaid.Add(root.GetInstanceID()))
+			{
+				if (p.ScanSaid.Count > 2000)
+				{
+					p.ScanSaid.Clear();
+				}
+				if (CompanionsPlugin.LogNormal) LogInfo($"Pit scan: \"{MHR_Drops.Tooltip(root)}\" ({root.name}) at {MHR_Mover.Fmt(root.transform.position)}, drops {MHR_Drops.DropList(root)} - " + (off == null ? $"on the list ({MHR_Drops.KindName(MHR_Drops.KindOf(root))}, the {(mode == 1 ? "axe" : "pickaxe")})" : "left off: " + off));
+			}
+			if (off != null)
 			{
 				continue;
 			}
@@ -3390,10 +3455,172 @@ public partial class HarvestController
 		}
 	}
 
-	// FF1: inside the trench's outer walls - a corner or the centre of the box (flat) inside the ring, or the box within 2 m
-	// (flat) of a trench spot
+	private const string OvThisVein = "this vein";
+
+	// P2: why OvThingOf left a thing off (for the scan's log)
+	private string OvThingWhyNot(OvPlan p, Collider c, GameObject root)
+	{
+		MineRock5 m5 = c.GetComponentInParent<MineRock5>();
+		if (m5 != null)
+		{
+			return p.Rocks.Contains(m5) ? OvThisVein : "a big rock (MineRock5) - carved through where it is in the way, never taken";
+		}
+		if (!root.activeInHierarchy)
+		{
+			return "not active";
+		}
+		if (IsBuilt(root))
+		{
+			return "built by a player";
+		}
+		if (MHR_Drops.KindOf(root) == MHR_Drops.Ore)
+		{
+			return "it drops ore";
+		}
+		if (p.PitIgnore.Contains(root.GetInstanceID()))
+		{
+			return "ignored on this vein (neither the axe nor the pickaxe hurt it)";
+		}
+		return "neither the axe nor the pickaxe can hurt it (the game's damage rules)";
+	}
+
+	// P1: the cell key of a point (1 m cells, centred on whole metres)
+	private static long OvPitKey(float x, float z)
+	{
+		long ix = Mathf.RoundToInt(x), iz = Mathf.RoundToInt(z);
+		return (ix << 32) ^ (iz & 0xffffffffL);
+	}
+
+	private static Heightmap s_pdHm;
+
+	private static float[] s_pdLevel;
+
+	private static float[] s_pdSmooth;
+
+	// P1: how far the ground at p is below its original height, from the game's own terrain record (TerrainComp's level
+	// and smooth deltas - the record the game's 8 m dig limit reads); 0 where nothing is recorded. The last heightmap is
+	// kept while the points stay on it.
+	private static float OvDugDepth(Vector3 p)
+	{
+		if (s_pdHm != null)
+		{
+			s_pdHm.WorldToVertex(p, out int x, out int y);
+			int w = s_pdHm.m_width + 1;
+			if (x >= 0 && y >= 0 && x < w && y < w)
+			{
+				int i = y * w + x;
+				return i < s_pdLevel.Length && i < s_pdSmooth.Length ? Mathf.Max(0f, -Mathf.Clamp(s_pdLevel[i] + s_pdSmooth[i], -8f, 8f)) : 0f;
+			}
+		}
+		s_pdHm = null;
+		Heightmap hm = Heightmap.FindHeightmap(p);
+		TerrainComp tc = TerrainComp.FindTerrainCompiler(p);
+		if (hm == null || tc == null)
+		{
+			return 0f;
+		}
+		float[] level = s_tLevelDelta?.GetValue(tc) as float[], smooth = s_tSmoothDelta?.GetValue(tc) as float[];
+		if (level == null || smooth == null)
+		{
+			return 0f;
+		}
+		hm.WorldToVertex(p, out int vx, out int vy);
+		int vw = hm.m_width + 1;
+		if (vx < 0 || vy < 0 || vx >= vw || vy >= vw)
+		{
+			return 0f;
+		}
+		s_pdHm = hm;
+		s_pdLevel = level;
+		s_pdSmooth = smooth;
+		int vi = vy * vw + vx;
+		return vi < level.Length && vi < smooth.Length ? Mathf.Max(0f, -Mathf.Clamp(level[vi] + smooth[vi], -8f, 8f)) : 0f;
+	}
+
+	private static readonly Queue<Vector2Int> s_pitOpen = new Queue<Vector2Int>();
+
+	// P1: the pit's ground - every 1 m cell inside the ring and every trench spot's cell, then out from them to each
+	// neighbouring cell (4 ways) the game shows dug 0.5 m or more below its original height, at most 20 m past the ring
+	private void OvPitBuild(OvPlan p)
+	{
+		p.PitCells.Clear();
+		s_pdHm = null;
+		s_pitOpen.Clear();
+		float rx0 = float.MaxValue, rx1 = float.MinValue, rz0 = float.MaxValue, rz1 = float.MinValue;
+		foreach (OvSpot sp in p.Spots)
+		{
+			rx0 = Mathf.Min(rx0, sp.P.x);
+			rx1 = Mathf.Max(rx1, sp.P.x);
+			rz0 = Mathf.Min(rz0, sp.P.z);
+			rz1 = Mathf.Max(rz1, sp.P.z);
+		}
+		if (p.Poly.Count >= 3)
+		{
+			for (int x = Mathf.FloorToInt(rx0); x <= Mathf.CeilToInt(rx1); x++)
+			{
+				for (int z = Mathf.FloorToInt(rz0); z <= Mathf.CeilToInt(rz1); z++)
+				{
+					if (OvInside(p.Poly, new Vector2(x, z)))
+					{
+						OvPitAdd(p, x, z);
+					}
+				}
+			}
+		}
+		foreach (OvSpot sp in p.Spots)
+		{
+			OvPitAdd(p, Mathf.RoundToInt(sp.P.x), Mathf.RoundToInt(sp.P.z));
+		}
+		float gx0 = rx0 - OvPitGrow, gx1 = rx1 + OvPitGrow, gz0 = rz0 - OvPitGrow, gz1 = rz1 + OvPitGrow;
+		float px0 = rx0, px1 = rx1, pz0 = rz0, pz1 = rz1;
+		while (s_pitOpen.Count > 0)
+		{
+			Vector2Int cell = s_pitOpen.Dequeue();
+			px0 = Mathf.Min(px0, cell.x);
+			px1 = Mathf.Max(px1, cell.x);
+			pz0 = Mathf.Min(pz0, cell.y);
+			pz1 = Mathf.Max(pz1, cell.y);
+			for (int n = 0; n < 4; n++)
+			{
+				int nx = cell.x + (n == 0 ? 1 : n == 1 ? -1 : 0);
+				int nz = cell.y + (n == 2 ? 1 : n == 3 ? -1 : 0);
+				if (nx < gx0 || nx > gx1 || nz < gz0 || nz > gz1 || p.PitCells.Contains(OvPitKey(nx, nz)))
+				{
+					continue;
+				}
+				if (OvDugDepth(new Vector3(nx, 0f, nz)) >= OvPitDug)
+				{
+					OvPitAdd(p, nx, nz);
+				}
+			}
+		}
+		p.PitX0 = px0;
+		p.PitX1 = px1;
+		p.PitZ0 = pz0;
+		p.PitZ1 = pz1;
+		if (p.PitCells.Count != p.PitCellsSaid)
+		{
+			p.PitCellsSaid = p.PitCells.Count;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The pit of \"{p.Name}\": {p.PitCells.Count} m2 of ground (inside the trench ring, the trench, and the dug ground joined to it), x {px0:F0} to {px1:F0}, z {pz0:F0} to {pz1:F0}");
+		}
+	}
+
+	private static void OvPitAdd(OvPlan p, int x, int z)
+	{
+		if (p.PitCells.Add(OvPitKey(x, z)))
+		{
+			s_pitOpen.Enqueue(new Vector2Int(x, z));
+		}
+	}
+
+	// P1 / P2: on the pit's ground - the box's centre or any of its bottom corners (flat) in a pit cell. Before the pit's
+	// ground is first worked out: inside the ring or within 2 m of a trench spot (the old test).
 	private static bool OvInPit(OvPlan p, Bounds b)
 	{
+		if (p.PitCells.Count > 0)
+		{
+			return p.PitCells.Contains(OvPitKey(b.center.x, b.center.z)) || p.PitCells.Contains(OvPitKey(b.min.x, b.min.z)) || p.PitCells.Contains(OvPitKey(b.max.x, b.min.z)) || p.PitCells.Contains(OvPitKey(b.max.x, b.max.z)) || p.PitCells.Contains(OvPitKey(b.min.x, b.max.z));
+		}
 		if (p.Poly.Count >= 3)
 		{
 			if (OvInside(p.Poly, new Vector2(b.center.x, b.center.z)) || OvInside(p.Poly, new Vector2(b.min.x, b.min.z)) || OvInside(p.Poly, new Vector2(b.max.x, b.min.z)) || OvInside(p.Poly, new Vector2(b.max.x, b.max.z)) || OvInside(p.Poly, new Vector2(b.min.x, b.max.z)))
@@ -3505,9 +3732,13 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't clear \"{thing.name}\" at {MHR_Mover.Fmt(thing.transform.position)} - any companion may try it again in {OvPitCool:F0} s");
 	}
 
-	// Y6d: the thing handed to the Wood / Stone flow sits more than a step above its feet and the walk gets no closer (3 s
-	// without getting 0.3 m closer): the way up toward it first (the ramp the clearing uses toward a part), then it is
-	// handed back. Once per try. True = the way up started.
+	// P2 (John, 2026-11-19: trees, plants and rocks drop down as the dirt under them is removed): the thing handed to the
+	// Wood / Stone flow sits more than 0.8 m above its feet (the axe swings flat, about 1 m up) and the walk gets no closer
+	// (3 s without getting 0.3 m closer): back in the vein, it stands at the bottom of the pit (P3) and digs the ground at
+	// the thing's base from there (P4) until the thing has come down to 0.8 m above that place, then it is handed back to
+	// the Wood / Stone flow (the same try). Once per try. True = started.
+	private const float OvThingLow = 0.8f;
+
 	private bool OvHandLedge()
 	{
 		if (_hdRamped || _state != HarvestState.Moving || _ovHand == null || _vp == null || !OvThingBox(_ovHand, out Bounds b))
@@ -3515,7 +3746,7 @@ public partial class HarvestController
 			return false;
 		}
 		Vector3 me = base.transform.position;
-		if (b.min.y <= me.y + OvStepUp)
+		if (b.min.y <= me.y + OvThingLow)
 		{
 			_hdHwTime = 0f;
 			return false;
@@ -3533,12 +3764,22 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		// the ground beside the thing on its side: 0.5 m short of its box, toward it
-		Vector3 dir = np - me;
-		dir.y = 0f;
-		dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : base.transform.forward;
-		Vector3 goal = np - dir * 0.5f;
-		goal.y = GroundAt(goal);
+		// the ground at its base, on its side toward the companion
+		Vector3 bp = b.ClosestPoint(new Vector3(me.x, b.min.y, me.z));
+		bp.y = GroundAt(bp);
+		OvClear c = OvC();
+		if (OvStandFor(c, bp, null, out Vector3 stand, out string why) != 0)
+		{
+			_hdRamped = true;   // no pit ground within its swing of the base: the walk goes on, the hand clock decides
+			if (CompanionsPlugin.LogNormal) LogInfo($"\"{_ovHand.name}\" is {b.min.y - me.y:F1} m up and the walk gets no closer; its base can't be dug from the pit: {why}");
+			return false;
+		}
+		float need = b.min.y - (stand.y + OvThingLow);
+		if (need <= 0f)
+		{
+			_hdRamped = true;   // from the bottom of the pit it is within reach: only the walk; the hand clock decides
+			return false;
+		}
 		_rpThing = _ovHand;
 		_rpThingMode = _ovHandMode;
 		_rpThingType = _targetType;
@@ -3556,7 +3797,12 @@ public partial class HarvestController
 		s_claimedTargets.Add(_rpThingClaim);
 		_ai?.StopMoving();
 		_state = HarvestState.Vein;
-		OvRampBegin(goal, null, outOfTrench: false, $"\"{name}\" is {b.min.y - me.y:F1} m up and the walk gets no closer");
+		_drSpot = new OvDirt { Key = 0L, P = bp, Goal = Mathf.Max(bp.y - need, OvFloor(bp) + OvDigGain) };
+		_drForThing = true;
+		_drStand = stand;
+		_drWalk = true;
+		_moveTimer = 0f;
+		if (CompanionsPlugin.LogNormal) LogInfo($"\"{name}\" sits {b.min.y - stand.y:F1} m above the bottom of the pit beside it - digging the ground at its base {MHR_Mover.Fmt(bp)} down to {_drSpot.Goal:F2} from {MHR_Mover.Fmt(stand)} so it comes down into reach");
 		return true;
 	}
 
