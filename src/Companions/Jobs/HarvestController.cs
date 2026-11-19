@@ -3148,6 +3148,12 @@ public partial class HarvestController : MonoBehaviour
 			{
 				continue;
 			}
+			// F2 (John, 2026-11-19: "They should ignore anything that has something to pick"): the Wood job leaves berry
+			// bushes and the like alone (a vein's pit is cleared through its own list, not this scan)
+			if (mode == 1 && harvestCandidateWithType.GetComponentInChildren<Pickable>() != null)
+			{
+				continue;
+			}
 			int minToolTier = GetMinToolTier(harvestCandidateWithType);
 			if (minToolTier > bestToolTier)
 			{
@@ -3486,9 +3492,31 @@ public partial class HarvestController : MonoBehaviour
 	}
 
 	// part of a building: a placed piece (yours or a location's) or anything named as a wall
+	// F2 (test 17): built = a piece the game says a player placed (Piece.IsPlacedByPlayer: it has a creator), a thing with
+	// wear and tear (WearNTear), or "wall" in its name. A Piece alone isn't enough: PlantEverything puts one on wild plants
+	// (FirTree_small, shrub_2, BlueberryBush) so they can be planted.
 	private static bool IsBuilt(GameObject go)
 	{
-		return go.GetComponentInParent<Piece>() != null || go.GetComponentInParent<WearNTear>() != null || go.name.IndexOf("wall", StringComparison.OrdinalIgnoreCase) >= 0;
+		return BuiltWhy(go) != null;
+	}
+
+	// F2: why it counts as built (null = it doesn't)
+	private static string BuiltWhy(GameObject go)
+	{
+		Piece pc = go.GetComponentInParent<Piece>();
+		if (pc != null && pc.IsPlacedByPlayer())
+		{
+			return "built by a player (the game says a player placed it)";
+		}
+		if (go.GetComponentInParent<WearNTear>() != null)
+		{
+			return "a building piece (it has wear and tear)";
+		}
+		if (go.name.IndexOf("wall", StringComparison.OrdinalIgnoreCase) >= 0)
+		{
+			return "a wall (by its name)";
+		}
+		return null;
 	}
 
 	// 1.5.98 GG4 (John, 2026-11-19: "everything should base the logic off what is dropped by the object"): the Wood job

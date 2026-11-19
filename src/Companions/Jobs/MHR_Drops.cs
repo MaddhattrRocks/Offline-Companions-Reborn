@@ -13,7 +13,7 @@ namespace Companions;
 // The drops are gathered the way the game drops them: a tree's own table plus the log it falls into (and that log's
 // pieces); a log's table plus its pieces; a Destructible's DropOnDestroyed table plus what it turns into
 // (m_spawnWhenDestroyed); a rock's m_dropItems. A thing that drops more than one kind counts as ore first, then wood,
-// then stone. Cached per prefab name.
+// then stone. Kept per game prefab id (F1: never per name).
 internal static class MHR_Drops
 {
 	internal const int Unknown = 0, Wood = 1, Stone = 2, Ore = 3;
@@ -26,9 +26,21 @@ internal static class MHR_Drops
 
 	private static readonly HashSet<string> s_stone = new HashSet<string>(StoneItems, StringComparer.OrdinalIgnoreCase);
 
-	private static readonly Dictionary<string, int> s_kind = new Dictionary<string, int>();
+	// F1 (test 17): kept by the game's prefab id (the ZDO's prefab hash), never by the object's name - every cracked rock,
+	// a vein or a plain stone one, is named "___MineRock5 m_meshFilter"
+	private static readonly Dictionary<int, int> s_kind = new Dictionary<int, int>();
 
-	private static readonly Dictionary<string, string> s_names = new Dictionary<string, string>();
+	private static readonly Dictionary<int, string> s_names = new Dictionary<int, string>();
+
+	// F1: the game's prefab id of the thing (0 = it has no saved game data: worked out every time, not kept)
+	private static int PrefabId(GameObject go)
+	{
+		ZNetView nv = go.GetComponent<ZNetView>() ?? go.GetComponentInParent<ZNetView>();
+		ZDO z = nv != null && nv.IsValid() ? nv.GetZDO() : null;
+		return z != null ? z.GetPrefab() : 0;
+	}
+
+	private static string s_lastNames;
 
 	private static bool WoodReady()
 	{
@@ -80,8 +92,8 @@ internal static class MHR_Drops
 		{
 			return Unknown;
 		}
-		string key = Utils.GetPrefabName(go);
-		if (s_kind.TryGetValue(key, out int k))
+		int key = PrefabId(go);
+		if (key != 0 && s_kind.TryGetValue(key, out int k))
 		{
 			return k;
 		}
@@ -105,8 +117,12 @@ internal static class MHR_Drops
 			stone |= s_stone.Contains(n);
 		}
 		k = ore ? Ore : wood ? Wood : stone ? Stone : Unknown;
-		s_kind[key] = k;
-		s_names[key] = names.Count > 0 ? string.Join(", ", names) : "nothing";
+		s_lastNames = names.Count > 0 ? string.Join(", ", names) : "nothing";
+		if (key != 0)
+		{
+			s_kind[key] = k;
+			s_names[key] = s_lastNames;
+		}
 		return k;
 	}
 
@@ -117,8 +133,14 @@ internal static class MHR_Drops
 		{
 			return "?";
 		}
+		int key = PrefabId(go);
+		if (key != 0 && s_names.TryGetValue(key, out string s))
+		{
+			return s;
+		}
+		s_lastNames = null;
 		KindOf(go);
-		return s_names.TryGetValue(Utils.GetPrefabName(go), out string s) ? s : "?";
+		return s_lastNames ?? "?";
 	}
 
 	internal static string KindName(int k)

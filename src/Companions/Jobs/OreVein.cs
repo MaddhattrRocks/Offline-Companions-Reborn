@@ -559,6 +559,98 @@ public partial class HarvestController
 		return g - Mathf.Max(0f, 8f + Mathf.Clamp(level[i] + smooth[i], -8f, 8f));
 	}
 
+	// ---------- F3 (John, 2026-11-19: record the vein's progress between sessions) ----------
+	// Kept in the vein's own saved game data (each deposit's ZDO, so it goes when the vein does): the trench done, its lap,
+	// and the plan's ramps (the ways up and out that were cut - bottom, top, the height outside it needed). Written when
+	// one of them changes; read when a plan is made for the vein (after a load, or an hour after everyone left it).
+	private const string OvKeyDone = "MHR_OvDone";
+
+	private const string OvKeyLap = "MHR_OvLap";
+
+	private const string OvKeyWays = "MHR_OvWays";
+
+	private static void OvSave(OvPlan p)
+	{
+		if (p == null)
+		{
+			return;
+		}
+		System.Globalization.CultureInfo ic = System.Globalization.CultureInfo.InvariantCulture;
+		StringBuilder sb = new StringBuilder();
+		foreach (OvRamp r in p.Ramps)
+		{
+			if (sb.Length > 0)
+			{
+				sb.Append(';');
+			}
+			float[] v = { r.Bottom.x, r.Bottom.y, r.Bottom.z, r.Top.x, r.Top.y, r.Top.z, r.Need };
+			for (int i = 0; i < v.Length; i++)
+			{
+				if (i > 0)
+				{
+					sb.Append(',');
+				}
+				sb.Append(v[i].ToString("F2", ic));
+			}
+		}
+		string ways = sb.ToString();
+		foreach (MineRock5 rock in p.Rocks)
+		{
+			ZNetView nv = rock != null ? rock.GetComponent<ZNetView>() : null;
+			ZDO z = nv != null && nv.IsValid() ? nv.GetZDO() : null;
+			if (z == null)
+			{
+				continue;
+			}
+			z.Set(OvKeyDone, p.Done ? 1 : 0);
+			z.Set(OvKeyLap, p.Lap);
+			z.Set(OvKeyWays, ways);
+		}
+	}
+
+	private void OvLoad(OvPlan p)
+	{
+		System.Globalization.CultureInfo ic = System.Globalization.CultureInfo.InvariantCulture;
+		foreach (MineRock5 rock in p.Rocks)
+		{
+			ZNetView nv = rock != null ? rock.GetComponent<ZNetView>() : null;
+			ZDO z = nv != null && nv.IsValid() ? nv.GetZDO() : null;
+			if (z == null)
+			{
+				continue;
+			}
+			int lap = z.GetInt(OvKeyLap, 0);
+			if (lap <= 0)
+			{
+				continue;   // nothing saved on this deposit
+			}
+			p.Lap = Mathf.Clamp(lap, 1, OvMaxLaps);
+			p.Done = z.GetInt(OvKeyDone, 0) == 1;
+			p.RingFixed = p.RingFixed || p.Done || p.Lap > 1;
+			p.Ramps.Clear();
+			foreach (string w in z.GetString(OvKeyWays, "").Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries))
+			{
+				string[] f = w.Split(',');
+				if (f.Length != 7)
+				{
+					continue;
+				}
+				float[] v = new float[7];
+				bool ok = true;
+				for (int i = 0; i < 7 && ok; i++)
+				{
+					ok = float.TryParse(f[i], System.Globalization.NumberStyles.Float, ic, out v[i]);
+				}
+				if (ok)
+				{
+					p.Ramps.Add(new OvRamp { Bottom = new Vector3(v[0], v[1], v[2]), Top = new Vector3(v[3], v[4], v[5]), Need = v[6] });
+				}
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{p.Name}\" carries on from its saved progress: {(p.Done ? "the trench is done" : $"trench lap {p.Lap}")}, {p.Ramps.Count} way(s) up / out cut before");
+			return;
+		}
+	}
+
 	private static float OvFloor(Vector3 p)
 	{
 		return Mathf.Max(TFloorAt(p) + OvFloorMargin, OvWaterFloor);
@@ -1033,6 +1125,7 @@ public partial class HarvestController
 		}
 		p.LastWork = now;
 		s_ovPlans.Add(p);
+		OvLoad(p);   // F3: the vein's saved progress (a plan made after a load)
 		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for the vein \"{p.Name}\": {p.Rocks.Count} deposit(s), {p.Seen} part(s) seen, a ring of {p.Spots.Count} spots 1 m out from them; the trench goal is {p.Goal:F1} (1 m under the vein's lowest part, never under the floor); lap 1 takes each spot down 2 m at most{joined}");
 		return p;
 	}
@@ -1367,9 +1460,11 @@ public partial class HarvestController
 		if (p.Lap >= OvMaxLaps || best < OvLapMinGain)
 		{
 			p.Done = true;
+			OvSave(p);   // F3
 			return;
 		}
 		p.Lap++;
+		OvSave(p);   // F3
 		int open = 0;
 		foreach (OvSpot s in p.Spots)
 		{
@@ -1400,6 +1495,7 @@ public partial class HarvestController
 		if (open == 0)
 		{
 			p.Done = true;
+			OvSave(p);   // F3
 			return;
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Lap {p.Lap} of the trench round \"{p.Name}\": {open} spots still above the goal, each down 2 m at most this lap");
@@ -3249,10 +3345,12 @@ public partial class HarvestController
 					same.Top = me;
 				}
 				if (CompanionsPlugin.LogNormal) LogInfo($"The ramp at {MHR_Mover.Fmt(same.Bottom)} now goes to {MHR_Mover.Fmt(same.Top)}");
+				OvSave(_vp);   // F3
 			}
 			else
 			{
 				_vp.Ramps.Add(new OvRamp { Bottom = _rpStart, Top = me, Need = _rpNeed });
+				OvSave(_vp);   // F3
 				if (CompanionsPlugin.LogNormal) LogInfo($"A ramp for everyone on this vein: {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)} ({rise:F1} m; {_vp.Ramps.Count} on this vein)");
 			}
 		}
@@ -3469,9 +3567,10 @@ public partial class HarvestController
 		{
 			return "not active";
 		}
-		if (IsBuilt(root))
+		string built = BuiltWhy(root);
+		if (built != null)
 		{
-			return "built by a player";
+			return built;
 		}
 		if (MHR_Drops.KindOf(root) == MHR_Drops.Ore)
 		{
