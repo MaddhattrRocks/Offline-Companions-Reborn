@@ -167,12 +167,11 @@ public partial class HarvestController
 		}
 	}
 
-	// the part is given up: no ladder for it (the round ends as its last one)
+	// GG3a: no ladder for it now (no hammer, no spot, short of materials) - not held against the part: it waits 1 min and
+	// the stuck rule doesn't count it
 	private void OvLnGiveUp(OvPart part, string why)
 	{
-		part.LadderTried = true;
-		part.Rounds = Mathf.Max(part.Rounds, OvPartRoundsMax - 1);
-		OvClFail(why);
+		OvClFail(why, wait: true);
 	}
 
 	private void OvLnSay(string text)
@@ -240,7 +239,11 @@ public partial class HarvestController
 		ItemDrop.ItemData hammer = OvLnHammer(prefab, bench ? station.gameObject : null);
 		if (hammer == null)
 		{
-			OvLnSay(string.Format(ModLocalization.Loc("hc_speech_vein_ladder_need"), "a hammer"));
+			// GG3a: said once on this vein
+			if (OvC().HammerSaid.Add(this))
+			{
+				OvLnSay(string.Format(ModLocalization.Loc("hc_speech_vein_ladder_need"), "a hammer"));
+			}
 			OvLnGiveUp(part, "no hammer in its bag");
 			return;
 		}
@@ -1011,9 +1014,6 @@ public partial class HarvestController
 			_dgClear = true;
 			_dgPart = true;
 			_dgGoalY = me.y;
-			_clBestG = GroundAt(bp);
-			_clIdle = 0f;
-			_clAlive = c.Alive;
 			_lnStage = 4;
 			_lnLowFor = 0f;
 			return;

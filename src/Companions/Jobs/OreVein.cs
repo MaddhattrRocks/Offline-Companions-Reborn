@@ -82,6 +82,10 @@ public partial class HarvestController
 
 		public float PitScanAt;
 
+		public readonly HashSet<int> PitAxeNo = new HashSet<int>();    // GG1: a thing that drops nothing known whose axe hits did nothing - the pickaxe next
+
+		public readonly HashSet<int> PitIgnore = new HashSet<int>();   // GG1: neither the axe nor the pickaxe hurt it - ignored on this vein
+
 		// FF3 / Q1: the vein's one ore dump, on the trench floor (set by the first companion that needs it)
 		public bool DumpHas;
 
@@ -315,6 +319,10 @@ public partial class HarvestController
 
 	private int _dgBushMiss;
 
+	private float _dgBushHp;      // GG1: the bush's health at the last hit that lowered it
+
+	private int _dgBushNoDmg;     // GG1: axe hits in a row that didn't lower it
+
 	// H1: what its swings hit (HarvestHitRegister -> OnHitRegistered)
 	private GameObject _ovThingHitGo;
 
@@ -361,6 +369,8 @@ public partial class HarvestController
 	private float _dgGoalY;
 
 	private bool _dgReached;
+
+	private bool _dgDirt;         // GG2: a dirt point of the vein's dirt list - only the ground there going down counts
 
 	// 1.5.98 R2: a clearing point at the game's 8 m limit, more than a step above its feet (not "done"); and the part
 	// itself being mined from where it stands (R2a)
@@ -615,7 +625,12 @@ public partial class HarvestController
 		{
 			GameObject thing = _ovHand;
 			OvSpot q = _ovHandSpot;
-			if (thing != null && thing.activeInHierarchy)
+			if (thing != null && thing.activeInHierarchy && _hdNoCool)
+			{
+				// GG1: left for the pickaxe (or ignored on this vein) - no cooldown, no skip
+				_hdNoCool = false;
+			}
+			else if (thing != null && thing.activeInHierarchy)
 			{
 				// it came back with the thing still there: given up on it (so no check hands the same thing over again)
 				_blacklist[thing.GetInstanceID()] = Time.time;
@@ -695,6 +710,7 @@ public partial class HarvestController
 		}
 		_rpPart = null;
 		OvClOff();
+		OvDrOff();   // GG2: and the dirt point it had
 	}
 
 	// C6: leaving the vein - out of the trench first when it's in it, toward dest
@@ -1792,8 +1808,12 @@ public partial class HarvestController
 		return OvThingAt(q.P, q, canSkip: true) != 0;
 	}
 
-	// the thing a collider belongs to, if the Wood job (tree, log, stump; a bush = "Destructible" with mode 1) or the Stone
-	// job (mode 2) would take it; never a vein part, ore, a character or anything built
+	// GG1 (John, 2026-11-19: "everything should base the logic off what is dropped by the object"): the thing a collider
+	// belongs to, by what it drops (MHR_Drops) - wood = the Wood job's way with the axe (mode 1), stone / flint = the Stone
+	// job's way with the pickaxe (mode 2), anything else = the hit test: the axe first, cut where it stands ("Destructible"
+	// with mode 1, the J3 way), then the pickaxe (mode 2) once 3 axe hits didn't lower its health or the game says the axe
+	// does nothing to it. Never ore (the Ore job mines it), a rock of several parts (carved through), a character, anything
+	// built, or a thing neither tool hurt (ignored on this vein).
 	private GameObject OvThingOf(Collider c, out int mode, out string type)
 	{
 		mode = 0;
@@ -1802,39 +1822,89 @@ public partial class HarvestController
 		{
 			return null;
 		}
-		// list v2 V1 (kept): ore the Ore job itself would mine is never "in the way"
-		if (GetHarvestCandidateWithType(c, 3, out _) != null)
-		{
-			return null;
-		}
-		mode = 1;
-		GameObject go = GetHarvestCandidateWithType(c, 1, out type);
-		if (go == null)
-		{
-			// a bush: something the axe hurts that isn't a stump
-			Destructible d = c.GetComponentInParent<Destructible>();
-			if (d != null && d.m_damages.m_chop != HitData.DamageModifier.Immune && d.m_damages.m_chop != HitData.DamageModifier.Ignore && d.gameObject.name.IndexOf("stub", System.StringComparison.OrdinalIgnoreCase) < 0)
-			{
-				go = d.gameObject;
-				type = "Destructible";
-			}
-		}
-		if (go == null)
-		{
-			mode = 2;
-			go = GetHarvestCandidateWithType(c, 2, out type);
-		}
+		GameObject go = MHR_Drops.Root(c);
 		if (go == null || !go.activeInHierarchy || IsBuilt(go))
 		{
 			return null;
 		}
+		int kind = MHR_Drops.KindOf(go);
+		bool rock = go.GetComponent<MineRock>() != null;
+		switch (kind)
+		{
+		case MHR_Drops.Ore:
+			return null;
+		case MHR_Drops.Wood:
+			mode = 1;
+			type = go.GetComponent<TreeBase>() != null ? "TreeBase" : go.GetComponent<TreeLog>() != null ? "TreeLog" : rock ? "MineRock" : "Stump";
+			return go;
+		case MHR_Drops.Stone:
+			mode = 2;
+			type = rock ? "MineRock" : "Destructible";
+			return go;
+		}
+		int id = go.GetInstanceID();
+		if (_vp != null && _vp.PitIgnore.Contains(id))
+		{
+			return null;
+		}
+		bool axeNo = (_vp != null && _vp.PitAxeNo.Contains(id)) || !MHR_Drops.ToolHurts(go, axe: true);
+		if (!axeNo)
+		{
+			mode = 1;
+			type = "Destructible";
+			return go;
+		}
+		if (!MHR_Drops.ToolHurts(go, axe: false))
+		{
+			OvPitIgnore(go, "the game's own damage rules say neither the axe nor the pickaxe hurts it");
+			return null;
+		}
+		mode = 2;
+		type = rock ? "MineRock" : "Destructible";
 		return go;
 	}
+
+	// GG1: neither tool hurt it - left for the rest of this vein (John: "If both do no dmg then ignore it")
+	private void OvPitIgnore(GameObject go, string why)
+	{
+		if (_vp == null || go == null || !_vp.PitIgnore.Add(go.GetInstanceID()))
+		{
+			return;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Ignoring \"{MHR_Drops.Tooltip(go)}\" ({go.name}) at {MHR_Mover.Fmt(go.transform.position)} on this vein: {why}");
+	}
+
+	// GG1: the axe did nothing to a thing that drops nothing known - the pickaxe next (no cooldown)
+	private void OvPitAxeNo(GameObject go, string why)
+	{
+		if (_vp == null || go == null || !_vp.PitAxeNo.Add(go.GetInstanceID()))
+		{
+			return;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"\"{MHR_Drops.Tooltip(go)}\" ({go.name}): {why} - trying the pickaxe on it");
+	}
+
+	private static readonly HashSet<int> s_ovSeenThing = new HashSet<int>();
 
 	// a thing found in the trench (or hit by a dirt swing): a bush is cut where it stands (J3), the rest go to the Wood /
 	// Stone flow. 1 = taken, 2 = the spot was skipped (no tool for it), 0 = left alone (no tool, and canSkip is off).
 	private int OvTake(GameObject best, int bestMode, string bestType, OvSpot q, bool canSkip, string how)
 	{
+		// GG1: wherever the thing came from (the pit list, a part resting on it, a swing that hit it), its hit test so far
+		// decides the tool: ignored on this vein = left alone; the axe did nothing = the pickaxe
+		if (_vp != null && best != null)
+		{
+			int bid = best.GetInstanceID();
+			if (_vp.PitIgnore.Contains(bid))
+			{
+				return 0;
+			}
+			if (bestMode == 1 && bestType == "Destructible" && _vp.PitAxeNo.Contains(bid))
+			{
+				bestMode = 2;
+				bestType = best.GetComponent<MineRock>() != null ? "MineRock" : "Destructible";
+			}
+		}
 		ItemDrop.ItemData tool = FindBestTool(bestMode);
 		if (tool == null)
 		{
@@ -1844,6 +1914,36 @@ public partial class HarvestController
 			}
 			OvDigOff();
 			OvSkip(q, "\"" + best.name + "\" is in the way and it has no " + (bestMode == 1 ? "axe" : "pickaxe") + " for it", normal: true);
+			return 2;
+		}
+		// GG1: the first time a thing is taken - what the game calls it, its prefab and its drops
+		if (s_ovSeenThing.Add(best.GetInstanceID()))
+		{
+			if (s_ovSeenThing.Count > 2000)
+			{
+				s_ovSeenThing.Clear();
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"Thing \"{MHR_Drops.Tooltip(best)}\" ({best.name}, {bestType}) at {MHR_Mover.Fmt(best.transform.position)}: drops {MHR_Drops.DropList(best)} = {MHR_Drops.KindName(MHR_Drops.KindOf(best))} - the {(bestMode == 1 ? "axe" : "pickaxe")}");
+		}
+		// GG1: the game's tool tier check first (the thing's m_minToolTier against the tool's m_toolTier, as HitData.CheckToolTier)
+		int need = GetMinToolTier(best);
+		if (tool.m_shared.m_toolTier < need)
+		{
+			if (bestMode == 1 && bestType == "Destructible" && MHR_Drops.KindOf(best) == MHR_Drops.Unknown)
+			{
+				OvPitAxeNo(best, $"too hard for its {tool.m_shared.m_name} (needs tier {need}, the axe is {tool.m_shared.m_toolTier})");
+			}
+			else if (_vp != null && !OvPitCooling(best.GetInstanceID()))
+			{
+				_vp.PitCool[best.GetInstanceID()] = Time.time + OvPitCool;
+				if (CompanionsPlugin.LogNormal) LogInfo($"\"{MHR_Drops.Tooltip(best)}\" ({best.name}) is too hard for its {tool.m_shared.m_name} (needs tier {need}, it is {tool.m_shared.m_toolTier}) - any companion may look at it again in {OvPitCool:F0} s");
+			}
+			if (!canSkip)
+			{
+				return 0;
+			}
+			OvDigOff();
+			OvSkip(q, "\"" + best.name + "\" is in the way and it is too hard for its " + tool.m_shared.m_name, normal: true);
 			return 2;
 		}
 		if (q != null && !_vp.HandFor.ContainsKey(best.GetInstanceID()))
@@ -1860,6 +1960,8 @@ public partial class HarvestController
 			_dgBushOn = true;
 			_dgBush = best;
 			_dgBushMiss = 0;
+			_dgBushHp = MHR_Drops.Health(best);   // GG1: the hit test - its health now
+			_dgBushNoDmg = 0;
 			// A3: claimed, so another companion leaves it alone (the same list the Wood / Stone jobs claim their targets in)
 			_dgBushClaim = best.GetInstanceID();
 			s_claimedTargets.Add(_dgBushClaim);
@@ -1873,6 +1975,10 @@ public partial class HarvestController
 		_hdSince = Time.time;   // Y6e: after a way up toward it (Y6d) the clock starts here again
 		_hdClock = 0f;          // AA4
 		_hdHitSeen = _hdSince;
+		_hdHp = MHR_Drops.Health(best);   // GG1: the hit test - its health now
+		_hdNoDmg = 0;
+		_hdJudgeAt = -1f;
+		_hdNoCool = false;
 		_hdRamped = _hdRampNext;
 		_hdRampNext = false;
 		_hdBest = float.MaxValue;
@@ -2305,6 +2411,7 @@ public partial class HarvestController
 		_dgReached = false;
 		_dgLimit = false;
 		_dgPart = false;
+		_dgDirt = false;
 		_bdWaitFrom = -1f;   // AA6: a new point - its own wait
 		_bdNextPick = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
@@ -2472,7 +2579,9 @@ public partial class HarvestController
 				OvRampBegin(_dgPoint, rq, outOfTrench: false, $"spot {rq.Idx + 1} is {upNow:F1} m up, {flat:F1} m away (1.5 x its height is {OvRampRatio * h:F1} m)");
 				return;
 			}
-			if (flat > reach * 0.9f || (below && flat > 0.6f))
+			// GG2: a dirt point of the dirt list, or a part, is swung at from where it stands (its place was chosen outside
+			// the parts' boxes) - never walked closer
+			if (!_dgDirt && !_dgPart && (flat > reach * 0.9f || (below && flat > 0.6f)))
 			{
 				_dgWalking = true;
 				float up = GroundAt(_dgPoint) - me.y;
@@ -2653,7 +2762,27 @@ public partial class HarvestController
 			_dgBushMiss = hitB ? 0 : _dgBushMiss + 1;
 			if (hitB)
 			{
-				OvSpotProgress();
+				// GG1: the hit test - a hit that doesn't lower its health (the game's s_health) isn't progress; 3 in a row =
+				// the axe does nothing to it, the pickaxe next
+				float hp = MHR_Drops.Health(_dgBush);
+				if (hp >= 0f && _dgBushHp >= 0f && hp >= _dgBushHp - 0.01f)
+				{
+					_dgBushNoDmg++;
+				}
+				else
+				{
+					_dgBushNoDmg = 0;
+					_dgBushHp = hp;
+					OvSpotProgress();
+				}
+				if (_dgBushNoDmg >= OvBushMiss)
+				{
+					GameObject nb = _dgBush;
+					OvDigOff();
+					_dgLastProg = true;
+					OvPitAxeNo(nb, $"{OvBushMiss} axe hits didn't lower its health ({hp:F0})");
+					return;
+				}
 			}
 			if (CompanionsPlugin.LogDetailed) Log($"Axe swing at the bush \"{(_dgBush != null ? _dgBush.name : "?")}\": {(hitB ? "hit" : $"didn't hit it ({_dgBushMiss} in a row)")}, {Flat(base.transform.position, _dgPoint):F1} m away, feet {base.transform.position.y:F2}");
 			if (_dgBushMiss >= OvBushMiss)
@@ -2701,6 +2830,40 @@ public partial class HarvestController
 		}
 		// H1 / H5: a swing that landed on this vein's ore is progress (it keeps hitting through it); only a swing that hit
 		// nothing it could deal with and left the ground as it was counts as "no change"
+		if (_dgDirt)
+		{
+			// GG2 (John: "It should be like 2-3 swings of the pickaxe"): a swing that lowered the ground at the point is
+			// progress; down to its goal (0.3 m under the part's bottom) = done; 3 swings in a row that didn't lower it = the
+			// point waits 1 min. A swing that hit the vein's rock instead lowers nothing - it counts as one of the 3.
+			bool drop = _dgBefore - after >= OvDigGain;
+			bool atFloor = after <= OvFloor(_dgPoint) + OvDigGain;
+			// DD3 (kept): a swing that hit a plain rock (not this vein) carves through it - not one of the 3
+			// (only one its pickaxe can hurt: the game's tier check and damage rules - else it would never end)
+			GameObject rk = rockHit ? _ovThingHitGo.GetComponentInParent<MineRock5>()?.gameObject : null;
+			ItemDrop.ItemData pk = rk != null ? FindBestTool(2) : null;
+			bool carve = rk != null && pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false);
+			_dgNoProg = drop || carve ? 0 : _dgNoProg + 1;
+			if (drop && _vp != null)
+			{
+				OvC().ProgAt = Time.time;
+			}
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(hitOre ? ", hit the vein's rock first (the game's pickaxe doesn't dig after that)" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || carve ? "" : $" - no lower ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (after <= _dgGoalY + OvDigGain)
+			{
+				_dgReached = true;
+				OvDigOff();
+			}
+			else if (atFloor)
+			{
+				_dgLimit = true;
+				OvDigOff();
+			}
+			else if (_dgNoProg >= OvNoProgSwings)
+			{
+				OvDigOff();
+			}
+			return;
+		}
 		if (_dgPart)
 		{
 			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress, 3 that don't hit it
@@ -3273,11 +3436,18 @@ public partial class HarvestController
 				continue;
 			}
 			int id = go.GetInstanceID();
-			if (OvPitCooling(id) || (s_claimedTargets.Contains(id) && id != _claimedTargetId))
+			if (OvPitCooling(id) || (s_claimedTargets.Contains(id) && id != _claimedTargetId) || p.PitIgnore.Contains(id))
 			{
-				continue;   // cooling down, or another companion is on it
+				continue;   // cooling down, another companion is on it, or ignored (GG1)
 			}
-			if (FindBestTool(p.PitModes[i]) == null || !OvThingBox(go, out Bounds b))
+			int mode = p.PitModes[i];
+			string type = p.PitTypes[i];
+			if (mode == 1 && type == "Destructible" && p.PitAxeNo.Contains(id))
+			{
+				mode = 2;   // GG1: the axe did nothing - the pickaxe now (the list is from the last scan)
+				type = go.GetComponent<MineRock>() != null ? "MineRock" : "Destructible";
+			}
+			if (FindBestTool(mode) == null || !OvThingBox(go, out Bounds b))
 			{
 				continue;   // no tool for it: nothing to do about it here
 			}
@@ -3286,8 +3456,8 @@ public partial class HarvestController
 			{
 				bd = d;
 				best = go;
-				bestType = p.PitTypes[i];
-				bestMode = p.PitModes[i];
+				bestType = type;
+				bestMode = mode;
 				bestBox = b;
 			}
 		}
@@ -3297,7 +3467,7 @@ public partial class HarvestController
 		}
 		if (stopWork)
 		{
-			if (CompanionsPlugin.LogNormal) LogInfo($"Stopping its {(_clFor != null ? "clearing round" : "trench dig")} - \"{best.name}\" is in the pit");
+			if (CompanionsPlugin.LogNormal) LogInfo($"Stopping its {(_clFor != null ? "round on a part" : _drSpot != null ? "dirt dig" : "trench dig")} - \"{best.name}\" is in the pit");
 			OvDigOff();
 			OvPartRelease();
 		}
@@ -3455,6 +3625,14 @@ public partial class HarvestController
 
 	private const float OvHandNextHit = 30f;
 
+	private float _hdHp;          // GG1: the thing's health at the last hit that lowered it (-1 = the game keeps none)
+
+	private int _hdNoDmg;         // GG1: hits in a row that didn't lower it
+
+	private float _hdJudgeAt;     // GG1: a hit to judge 0.5 s after it landed (the game's damage is in by then)
+
+	private bool _hdNoCool;       // GG1: left for the next tool, not for a cooldown
+
 	internal bool OvHandClock()
 	{
 		if (_ovHandMode == 0 || _ovHand == null || !_ovHand.activeInHierarchy || (_state != HarvestState.Moving && _state != HarvestState.Attacking) || _target != _ovHand)
@@ -3473,6 +3651,48 @@ public partial class HarvestController
 		{
 			_hdHitSeen = _lastHitAt;
 			_hdClock = 0f;
+			_hdJudgeAt = _lastHitAt + 0.5f;
+		}
+		// GG1 (John: "go up to it and hit it with an axe, if dmg is done, clear it, if not, switch to a pickaxe"): each hit is
+		// judged by the game's own health value 0.5 s after it lands; 3 hits in a row that don't lower it = this tool does
+		// nothing to it. A thing that drops nothing known: the axe -> the pickaxe next, the pickaxe -> ignored on this vein.
+		// A tree, log, stump or rock (known drops): left with the 60 s cooldown.
+		if (_hdJudgeAt > 0f && Time.time >= _hdJudgeAt)
+		{
+			_hdJudgeAt = -1f;
+			float hp = MHR_Drops.Health(_ovHand);
+			if (hp >= 0f && _hdHp >= 0f && hp >= _hdHp - 0.01f)
+			{
+				_hdNoDmg++;
+			}
+			else
+			{
+				_hdNoDmg = 0;
+				_hdHp = hp;
+			}
+			if (_hdNoDmg >= OvNoProgSwings)
+			{
+				GameObject t = _ovHand;
+				string w = $"{OvNoProgSwings} hits with its {(_ovHandMode == 1 ? "axe" : "pickaxe")} didn't lower its health ({hp:F0})";
+				if (MHR_Drops.KindOf(t) == MHR_Drops.Unknown)
+				{
+					_hdNoCool = true;
+					if (_ovHandMode == 1)
+					{
+						OvPitAxeNo(t, w);
+					}
+					else
+					{
+						OvPitIgnore(t, w + ", and the axe did nothing either");
+					}
+				}
+				else if (CompanionsPlugin.LogNormal)
+				{
+					LogInfo($"\"{MHR_Drops.Tooltip(t)}\" ({t.name}): {w} - leaving it");
+				}
+				ResetToIdle();
+				return true;
+			}
 		}
 		if ((_state == HarvestState.Attacking || (_state == HarvestState.Moving && _reapproach)) && !_catchingBreath && !(_ai != null && _ai.IsInCombat))
 		{

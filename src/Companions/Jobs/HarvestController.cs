@@ -554,39 +554,34 @@ public partial class HarvestController : MonoBehaviour
 		ResetToIdle();
 	}
 
+	// GG4: a thing you point at goes to the job its drops say (MHR_Drops): wood = Wood, ore = Ore, stone / flint = Stone (a
+	// big plain rock too, as before); one that drops none of them goes to the tool the game lets hurt it (axe first)
 	internal static int DetermineHarvestModeStatic(GameObject target)
 	{
-		if (target.GetComponent<TreeBase>() != null)
+		if (target == null)
+		{
+			return -1;
+		}
+		switch (MHR_Drops.KindOf(target))
+		{
+		case MHR_Drops.Wood:
+			return 1;
+		case MHR_Drops.Ore:
+			return 3;
+		case MHR_Drops.Stone:
+			return 2;
+		}
+		if (target.GetComponent<MineRock5>() != null || target.GetComponent<MineRock>() != null)
+		{
+			return 2;
+		}
+		if (MHR_Drops.ToolHurts(target, axe: true))
 		{
 			return 1;
 		}
-		if (target.GetComponent<TreeLog>() != null)
+		if (MHR_Drops.ToolHurts(target, axe: false))
 		{
-			return 1;
-		}
-		Destructible component = target.GetComponent<Destructible>();
-		if (component != null && target.name.IndexOf("stub", StringComparison.OrdinalIgnoreCase) >= 0)
-		{
-			return 1;
-		}
-		// DD6: an ore vein by the game's own drops (MHR_Ore); a plain rock is the Stone job's
-		MineRock5 m5 = target.GetComponent<MineRock5>();
-		if (m5 != null)
-		{
-			return MHR_Ore.IsVein(m5) ? 3 : 2;
-		}
-		MineRock component2 = target.GetComponent<MineRock>();
-		if (component2 != null)
-		{
-			return MHR_Ore.IsVein(component2) ? 3 : 2;
-		}
-		if (component != null && component.m_damages.m_pickaxe != HitData.DamageModifier.Immune && (component.m_damages.m_chop == HitData.DamageModifier.Immune || component.m_damages.m_chop == HitData.DamageModifier.Ignore))
-		{
-			return MHR_Ore.IsVein(component) ? 3 : 2;
-		}
-		if (component != null && component.m_damages.m_chop != HitData.DamageModifier.Immune)
-		{
-			return 1;
+			return 2;
 		}
 		return -1;
 	}
@@ -1993,8 +1988,8 @@ public partial class HarvestController : MonoBehaviour
 			{
 				return "TreeLog";
 			}
-			Destructible component = target.GetComponent<Destructible>();
-			if (component != null && target.name.IndexOf("stub", StringComparison.OrdinalIgnoreCase) >= 0)
+			// GG4: a Destructible that drops wood (a stump, a small fir) is chopped the stump way
+			if (target.GetComponent<Destructible>() != null && target.GetComponent<MineRock5>() == null && target.GetComponent<MineRock>() == null)
 			{
 				return "Stump";
 			}
@@ -3147,8 +3142,9 @@ public partial class HarvestController : MonoBehaviour
 			{
 				continue;
 			}
-			// 1.5.61: Stone and Ore leave buildings alone - built pieces and walls (player report: mining stone walls for stone)
-			if ((mode == 2 || mode == 3) && IsBuilt(harvestCandidateWithType))
+			// 1.5.61: Stone and Ore leave buildings alone - built pieces and walls (player report: mining stone walls for stone).
+			// GG4: Wood too, now that anything dropping wood is the Wood job's (a wooden piece of a building or a village)
+			if (IsBuilt(harvestCandidateWithType))
 			{
 				continue;
 			}
@@ -3495,80 +3491,46 @@ public partial class HarvestController : MonoBehaviour
 		return go.GetComponentInParent<Piece>() != null || go.GetComponentInParent<WearNTear>() != null || go.name.IndexOf("wall", StringComparison.OrdinalIgnoreCase) >= 0;
 	}
 
+	// 1.5.98 GG4 (John, 2026-11-19: "everything should base the logic off what is dropped by the object"): the Wood job
+	// takes what drops wood, the Ore job what drops ore, the Stone job what drops stone or flint (MHR_Drops) - and only where
+	// the game lets that tool hurt it (its damage modifiers). The type labels stay the flows' own: a Destructible that drops
+	// wood (a stump, a small fir / pine / beech) is chopped the stump way; the Stone job still leaves the big rocks (a
+	// MineRock5 that isn't ore) to the Ore job's carving, as before.
 	private static GameObject GetHarvestCandidateWithType(Collider col, int mode, out string type)
 	{
 		type = null;
+		GameObject go = MHR_Drops.Root(col);
+		if (go == null)
+		{
+			return null;
+		}
+		int kind = MHR_Drops.KindOf(go);
+		bool isTree = go.GetComponent<TreeBase>() != null, isLog = go.GetComponent<TreeLog>() != null;
+		bool is5 = go.GetComponent<MineRock5>() != null, isRock = go.GetComponent<MineRock>() != null;
 		switch (mode)
 		{
 		case 1:
-		{
-			TreeBase componentInParent6 = col.GetComponentInParent<TreeBase>();
-			if (componentInParent6 != null)
+			if (kind != MHR_Drops.Wood || !MHR_Drops.ToolHurts(go, axe: true))
 			{
-				type = "TreeBase";
-				return componentInParent6.gameObject;
+				return null;
 			}
-			TreeLog componentInParent7 = col.GetComponentInParent<TreeLog>();
-			if (componentInParent7 != null)
-			{
-				type = "TreeLog";
-				return componentInParent7.gameObject;
-			}
-			Destructible componentInParent8 = col.GetComponentInParent<Destructible>();
-			if (componentInParent8 != null && componentInParent8.m_damages.m_chop != HitData.DamageModifier.Immune && componentInParent8.gameObject.name.IndexOf("stub", StringComparison.OrdinalIgnoreCase) >= 0)
-			{
-				type = "Stump";
-				return componentInParent8.gameObject;
-			}
-			break;
-		}
+			type = isTree ? "TreeBase" : isLog ? "TreeLog" : is5 ? "MineRock5" : isRock ? "MineRock" : "Stump";
+			return go;
 		case 3:
-		{
-			// DD6 (test 13: any MineRock5 counted as ore, plain stone boulders too): only an ore vein by its game drops
-			MineRock5 componentInParent3 = col.GetComponentInParent<MineRock5>();
-			if (componentInParent3 != null && MHR_Ore.IsVein(componentInParent3))
+			if (kind != MHR_Drops.Ore || isTree || isLog || !MHR_Drops.ToolHurts(go, axe: false))
 			{
-				type = "MineRock5";
-				return componentInParent3.gameObject;
+				return null;
 			}
-			MineRock componentInParent4 = col.GetComponentInParent<MineRock>();
-			if (componentInParent4 != null)
-			{
-				if (MHR_Ore.IsVein(componentInParent4))
-				{
-					type = "MineRock";
-					return componentInParent4.gameObject;
-				}
-			}
-			Destructible componentInParent5 = col.GetComponentInParent<Destructible>();
-			if (componentInParent5 != null && componentInParent5.m_damages.m_pickaxe != HitData.DamageModifier.Immune && (componentInParent5.m_damages.m_chop == HitData.DamageModifier.Immune || componentInParent5.m_damages.m_chop == HitData.DamageModifier.Ignore))
-			{
-				if (MHR_Ore.IsVein(componentInParent5))
-				{
-					type = "Destructible";
-					return componentInParent5.gameObject;
-				}
-			}
-			break;
-		}
+			type = is5 ? "MineRock5" : isRock ? "MineRock" : "Destructible";
+			return go;
 		default:
-		{
-			MineRock componentInParent = col.GetComponentInParent<MineRock>();
-			if (componentInParent != null && !MHR_Ore.IsVein(componentInParent))
+			if (kind != MHR_Drops.Stone || isTree || isLog || is5 || !MHR_Drops.ToolHurts(go, axe: false))
 			{
-				type = "MineRock";
-				return componentInParent.gameObject;
+				return null;
 			}
-			Destructible componentInParent2 = col.GetComponentInParent<Destructible>();
-			if (componentInParent2 != null && componentInParent2.m_damages.m_pickaxe != HitData.DamageModifier.Immune && (componentInParent2.m_damages.m_chop == HitData.DamageModifier.Immune || componentInParent2.m_damages.m_chop == HitData.DamageModifier.Ignore))
-			{
-				type = "Destructible";
-				return componentInParent2.gameObject;
-			}
-			break;
+			type = isRock ? "MineRock" : "Destructible";
+			return go;
 		}
-		}
-		return null;
 	}
 
 	internal static bool MHR_ForageAllowed(Pickable p)

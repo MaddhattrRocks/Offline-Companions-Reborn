@@ -4,11 +4,20 @@ using UnityEngine;
 namespace Companions;
 
 // 1.5.98 build 2 (John's approved list reviews/1.5.98-clearing-pop-build-list.md, revised 2026-11-18 01:26Z): clearing and
-// the pop. After the trench (and its way out) the companions mine the "roots" - the parts that hold the vein up by the
-// game's own rule (MineRock5.UpdateSupport / GetSupport, same box and layer mask) - lowest first. Parts held only by other
-// parts are never touched: when the last root breaks the game's CheckSupport drops them all at once. 1.5.98 N1-N5 (test 6):
-// a part is reached the way a player does it - the trench's dig swing at a point 1 m further in toward it, hitting
-// whatever is in front (dirt or the vein's rock), from the trench spot nearest it.
+// the pop, by the game's own support rule (MineRock5.UpdateSupport / GetSupport: a part's box touching the terrain, a solid
+// thing, a lower breakable thing or a supported part of the same vein is held up; CheckSupport runs after a part breaks).
+// 1.5.98 GG2 / GG3 (John, test 15, 2026-11-19): after the trench and the things in the pit -
+//   1. the dirt step: ONE dirt list per vein (in the shared plan) - every point of a 0.5 m grid under each standing part's
+//      own game box where the ground is higher than that part's bottom (that ground is what the game's support rule
+//      sees). Each companion takes the nearest point no one has, stands on the pit ground outside every part's box, feet
+//      at most 0.7 m above the point, within its swing, and digs it down to 0.3 m under the part's bottom. 3 swings that
+//      don't lower the ground there: the point waits 1 min. A point too high to swing at from anywhere near: steps are cut
+//      toward a place to stand (never under a part). No ore is mined while the dirt list has a point.
+//   2. the ore step (the dirt list is empty): the lowest standing part is mined from the pit ground beside it (a break
+//      makes the game check the rest); a part too high to hit from the ground: from a ladder (hammer from its bag).
+//   3. a part that didn't break waits 1 min (never given up); no hammer / no ladder spot doesn't count against it.
+//      "Done" = no dirt left and every part gone or buried under the game's 8 m dig limit. Every point and part left
+//      having failed since the last thing that broke or went down = stuck: they stop and say why, part by part.
 public partial class HarvestController
 {
 	private sealed class OvPart
@@ -27,31 +36,21 @@ public partial class HarvestController
 
 		public string Why;
 
-		public int Rounds;        // P7: mining tries that ended without it breaking (R2d: 2 = set aside, 3 = given up)
+		public float CoolUntil;   // GG3c: a try that didn't break it - it waits 1 min
 
-		public bool GaveUp;
+		public float FailAt = -1f;   // GG3d: when a try last failed (the stuck rule); -1 = never
 
-		public bool SetAside;     // R2d: 2 rounds failed - it waits until every other root is mined or set aside
+		public bool Wait;         // GG3a: waiting for a hammer / a ladder spot - doesn't count toward stuck
 
-		public bool HasStart;     // R2c: where its last round started (the next starts at least 3 m from there)
+		public string CoolWhy;
 
-		public Vector3 LastStart;
-
-		public bool RampTried;    // P5: the way up toward it was cut (once per round)
+		public bool OutOfReach;   // Z3: too high to hit from the pit ground beside it (the last look)
 
 		public GameObject HoldThing;   // Z2: the tree / log / stump / rock it rests on (the Wood or Stone job takes it)
 
 		public int HoldMode;
 
 		public string HoldType;
-
-		public bool OutOfReach;   // Z3: its box bottom is more than the pickaxe's reach above the floor under it
-
-		public bool Chain;        // Z5: made a root because the root it rests on couldn't be broken (once, never cleared)
-
-		public string ChainWhy;
-
-		public bool ChainCut;     // Z5: the parts resting on it were made roots (once)
 
 		public bool LadderTried;  // Z4: one try at building a ladder for it
 
@@ -60,40 +59,55 @@ public partial class HarvestController
 		public HarvestController Holder;
 	}
 
+	// GG2: one point of the dirt list
+	private sealed class OvDirt
+	{
+		public long Key;          // its grid cell (0.5 m)
+
+		public Vector3 P;         // x, z of the cell; y = the ground there at the last look
+
+		public float Goal;        // 0.3 m under the part's bottom (not under the game's dig limit)
+
+		public OvPart Part;
+
+		public HarvestController Holder;
+	}
+
 	private const float OvPartsEvery = 2f;         // P2: the parts are looked at every 2 s (and after a break)
 
-	private const int OvPartRounds = 2;            // P7 / R2d: 2 rounds per part, then it is set aside ...
+	private const float OvCool = 60f;              // GG2 / GG3: a point or part that failed waits 1 min
 
-	private const int OvPartRoundsMax = 3;         // R2d: ... and gets one more when everything else is done or set aside
+	private const float OvDirtGrid = 0.5f;         // GG2: the dirt grid under each part's box
 
-	private const float OvClOtherAngle = 3f;       // R2c: the next round starts at least 3 m from where the last one did
+	private const float OvDirtUnder = 0.3f;        // GG2: dug to 0.3 m under the part's bottom
 
-	private const int OvPopFails = 2;              // P7: 2 pops in a row that break nothing stop the vein work
+	private const float OvDirtEvery = 10f;         // GG2: the dirt list is made again every 10 s (and right after a point is done)
+
+	private const float OvBodyPad = 0.35f;         // GG2: its body's half width - a stand point this close to a part's box is in it
+
+	private const float OvStandAt = 0.5f;          // GG2: at its place to stand = within 0.5 m of it (flat)
 
 	private OvPart _rpPart;
 
-
-	// 1.5.98 L1-L4: the round on one part - the part it is for, where it stands (a trench spot, then each dug point), the
-	// way in toward the part, how many points it dug and may dig, and the dig point's 30 s clock
+	// the round on one part (ore step): the part, where it stands, walking there
 	private OvPart _clFor;
-
-	private bool _clPop;
 
 	private Vector3 _clStand;
 
-	private Vector3 _clDir;
-
 	private bool _clWalk;
 
-	private int _clStep;
+	private bool _clRamped;
 
-	private int _clCap;
+	// GG2: the dirt point it digs, where it stands, walking there, one way up per point
+	private OvDirt _drSpot;
 
-	private float _clBestG;
+	private Vector3 _drStand;
 
-	private float _clIdle;
+	private bool _drWalk;
 
-	private int _clAlive;
+	private bool _drRamped;
+
+	private float _clNextPick;    // GG2: standing by - the lists are looked at again once a second
 
 	// shared per plan (kept in a side table so OvPlan stays as it is)
 	private sealed class OvClear
@@ -106,8 +120,6 @@ public partial class HarvestController
 
 		public int Alive = -1;
 
-		public int PopFails;
-
 		public int Mined;
 
 		public int Popped;
@@ -117,6 +129,22 @@ public partial class HarvestController
 		public bool Stopped;
 
 		public bool Said;
+
+		// GG2: the dirt list and its points' cooldowns (kept across looks by grid cell)
+		public readonly List<OvDirt> Dirt = new List<OvDirt>();
+
+		public float DirtAt = -100f;
+
+		public readonly Dictionary<long, float> DirtCool = new Dictionary<long, float>();
+
+		public readonly Dictionary<long, float> DirtFail = new Dictionary<long, float>();
+
+		public readonly Dictionary<long, string> DirtWhy = new Dictionary<long, string>();
+
+		// GG3d: the last time something broke or the ground at a dirt point went down
+		public float ProgAt;
+
+		public readonly HashSet<HarvestController> HammerSaid = new HashSet<HarvestController>();
 	}
 
 	private static readonly Dictionary<OvPlan, OvClear> s_ovClear = new Dictionary<OvPlan, OvClear>();
@@ -137,7 +165,7 @@ public partial class HarvestController
 			{
 				s_ovClear.Clear();
 			}
-			c = new OvClear();
+			c = new OvClear { ProgAt = Time.time };
 			s_ovClear[_vp] = c;
 		}
 		return c;
@@ -177,7 +205,12 @@ public partial class HarvestController
 				int id = ha.Collider.GetInstanceID();
 				if (ha.Health <= 0f || !ha.Collider.gameObject.activeSelf)
 				{
-					if (c.ById.TryGetValue(id, out OvPart gone) && gone.Holder == null && !gone.GaveUp)
+					if (c.ById.ContainsKey(id))
+					{
+						c.ProgAt = Time.time;    // GG3: a part broke - progress (the stuck rule)
+						c.DirtAt = -100f;        // GG2: the dirt list is looked at again
+					}
+					if (c.ById.TryGetValue(id, out OvPart gone) && gone.Holder == null)
 					{
 						popped++;   // it was standing at the last look and nobody was mining it
 					}
@@ -207,22 +240,6 @@ public partial class HarvestController
 				}
 				OvPartRoot(part, rock, origin, c);
 			}
-		}
-		// Z5: parts made roots because the root under them couldn't be broken stay roots
-		// Z3: and whether each part can be hit from the floor under it
-		float reach = OvPickReach();
-		foreach (OvPart part in c.Parts)
-		{
-			if (part.Out)
-			{
-				continue;
-			}
-			if (part.Chain && !part.Root)
-			{
-				part.Root = true;
-				part.Why = part.ChainWhy;
-			}
-			part.OutOfReach = OvPartBottom(part) - GroundAt(part.Centre) > reach;
 		}
 		c.Popped += popped;
 		c.Alive = alive;
@@ -320,144 +337,787 @@ public partial class HarvestController
 			OvClRound(c);
 			return true;
 		}
-		// Y1 / Y6a: a way out first, then the things in the pit, before the next round
+		if (_drSpot != null)
+		{
+			if (OvPitBetween())
+			{
+				return true;
+			}
+			OvDrTick(c);
+			return true;
+		}
+		// Y1 / Y6a: a way out first, then the things in the pit
 		if (OvFirst())
 		{
 			return true;
 		}
-		// Z5: a root it couldn't break - the parts resting on it become roots (each root's once)
-		bool cut = false;
-		foreach (OvPart part in c.Parts)
-		{
-			if (part.Root && part.GaveUp && !part.ChainCut && !part.Out)
-			{
-				OvChainCut(c, part);
-				cut = true;
-			}
-		}
-		if (cut)
-		{
-			OvPartsLook(c, true);
-		}
-		// Z2: a tree, log, stump or rock a root rests on is cleared first, the Wood / Stone job's way
+		// Z2: a tree, log, stump or rock a part rests on is cleared first, the Wood / Stone job's way
 		if (OvHoldFirst(c))
 		{
 			return true;
 		}
-		Vector3 me = base.transform.position;
-		List<OvPart> cand = new List<OvPart>();
+		float now = Time.time;
+		if (now < _clNextPick)
+		{
+			return true;   // standing by: looked again once a second
+		}
+		OvDirtScan(c, false);
+		if (c.Dirt.Count > 0)
+		{
+			return OvDrChoose(c);
+		}
+		return OvOreChoose(c);
+	}
+
+	// ---------- GG2: the dirt list ----------
+	private static long OvDirtKey(float x, float z)
+	{
+		long ix = Mathf.RoundToInt(x / OvDirtGrid), iz = Mathf.RoundToInt(z / OvDirtGrid);
+		return (ix << 32) ^ (iz & 0xffffffffL);
+	}
+
+	// the vein's dirt list: made by whichever companion finds it due (every 10 s, or right after a point is done or a
+	// part breaks), read by the others
+	private void OvDirtScan(OvClear c, bool force)
+	{
+		float now = Time.time;
+		if (!force && now - c.DirtAt < OvDirtEvery)
+		{
+			return;
+		}
+		c.DirtAt = now;
+		Dictionary<long, HarvestController> held = new Dictionary<long, HarvestController>();
+		foreach (OvDirt d in c.Dirt)
+		{
+			if (d.Holder != null && d.Holder._drSpot == d && d.Holder._vp == _vp)
+			{
+				held[d.Key] = d.Holder;
+			}
+		}
+		Dictionary<long, OvDirt> byKey = new Dictionary<long, OvDirt>();
 		foreach (OvPart part in c.Parts)
 		{
-			if (part.Root && !part.Out && !part.GaveUp && !part.SetAside && !part.OutOfReach && !OvHeldByThing(part))
+			if (part.Out || part.C == null || !part.C.gameObject.activeSelf)
 			{
-				cand.Add(part);
+				continue;
 			}
-		}
-		if (cand.Count == 0)
-		{
-			// R2d: every root left is set aside - each gets its one more round now
-			foreach (OvPart part in c.Parts)
+			float bottom = OvPartBottom(part);
+			float x0 = Mathf.Ceil((part.Centre.x - part.Half.x) / OvDirtGrid) * OvDirtGrid, x1 = part.Centre.x + part.Half.x;
+			float z0 = Mathf.Ceil((part.Centre.z - part.Half.z) / OvDirtGrid) * OvDirtGrid, z1 = part.Centre.z + part.Half.z;
+			bool any = false;
+			for (float x = x0; x <= x1 + 0.001f; x += OvDirtGrid)
 			{
-				if (part.Root && !part.Out && !part.GaveUp && !part.OutOfReach && !OvHeldByThing(part))
+				for (float z = z0; z <= z1 + 0.001f; z += OvDirtGrid)
 				{
-					cand.Add(part);
+					any = true;
+					OvDirtAt(part, bottom, x, z, byKey);
 				}
 			}
-		}
-		// Z3 / Z4: the roots too high to hit from the floor get their rounds from a ladder - after every root in reach
-		bool ladder = false;
-		if (cand.Count == 0)
-		{
-			foreach (OvPart part in c.Parts)
+			if (!any)
 			{
-				if (part.Root && !part.Out && !part.GaveUp && part.OutOfReach && !OvHeldByThing(part))
-				{
-					cand.Add(part);
-				}
+				OvDirtAt(part, bottom, part.Centre.x, part.Centre.z, byKey);   // a box narrower than the grid: its middle
 			}
-			ladder = cand.Count > 0;
 		}
-		bool pop = false;
-		if (cand.Count == 0 && OvAnyHeldByThing(c))
+		// a point that has gone (dug down, or its part broke) frees whoever had it
+		foreach (KeyValuePair<long, HarvestController> kv in held)
 		{
-			_ai?.StopMoving();   // Z2: only roots on a thing another companion is clearing are left - it stands by
+			if (byKey.TryGetValue(kv.Key, out OvDirt nd))
+			{
+				nd.Holder = kv.Value;
+				kv.Value._drSpot = nd;
+			}
+		}
+		c.Dirt.Clear();
+		c.Dirt.AddRange(byKey.Values);
+	}
+
+	private void OvDirtAt(OvPart part, float bottom, float x, float z, Dictionary<long, OvDirt> byKey)
+	{
+		Vector3 pt = new Vector3(x, 0f, z);
+		float g = GroundAt(pt);
+		if (g <= bottom + OvDigGain)
+		{
+			return;   // the ground is under the part's bottom here: it doesn't hold it
+		}
+		float floor = OvFloor(pt);
+		if (floor >= bottom)
+		{
+			return;   // the game won't let this ground go under the part's bottom: the part waits for the ore step
+		}
+		float goal = Mathf.Max(bottom - OvDirtUnder, floor + OvDigGain);
+		long key = OvDirtKey(x, z);
+		if (byKey.TryGetValue(key, out OvDirt had))
+		{
+			if (goal < had.Goal)
+			{
+				had.Goal = goal;
+				had.Part = part;
+			}
+			return;
+		}
+		pt.y = g;
+		byKey[key] = new OvDirt { Key = key, P = pt, Goal = goal, Part = part };
+	}
+
+	private bool OvDirtCooling(OvClear c, OvDirt d)
+	{
+		return c.DirtCool.TryGetValue(d.Key, out float until) && Time.time < until;
+	}
+
+	// GG2: the nearest point no one has and that isn't waiting - with a place to stand
+	private bool OvDrChoose(OvClear c)
+	{
+		Vector3 me = base.transform.position;
+		List<OvDirt> free = new List<OvDirt>();
+		bool others = false;
+		foreach (OvDirt d in c.Dirt)
+		{
+			if (OvDirtCooling(c, d))
+			{
+				continue;
+			}
+			if (d.Holder != null && d.Holder != this && d.Holder._drSpot == d && d.Holder._vp == _vp)
+			{
+				others = true;
+				continue;
+			}
+			free.Add(d);
+		}
+		free.Sort((OvDirt a, OvDirt b) => Flat(me, a.P).CompareTo(Flat(me, b.P)));
+		int tries = 0;
+		foreach (OvDirt d in free)
+		{
+			if (tries++ >= 6)
+			{
+				break;   // the rest next second
+			}
+			int r = OvStandFor(c, new Vector3(d.P.x, GroundAt(d.P), d.P.z), null, out Vector3 stand, out string why);
+			if (r != 0)
+			{
+				OvDirtCool(c, d, why);
+				continue;
+			}
+			// R4: a way out near where it will work first, when there's none within 15 m
+			OvSpot ws = OvNearest(d.P);
+			if (ws != null && OvWayOutNeeded(ws))
+			{
+				OvWayOutHere(ws);
+				return true;
+			}
+			d.Holder = this;
+			_drSpot = d;
+			_drStand = stand;
+			_drWalk = true;
+			_drRamped = false;
+			_moveTimer = 0f;
+			_ai?.StopMoving();
+			if (CompanionsPlugin.LogNormal) LogInfo($"Dirt holding up \"{d.Part.C.name}\" of \"{_vp.Name}\" at {MHR_Mover.Fmt(d.P)} (ground {GroundAt(d.P):F2}, the part's bottom {OvPartBottom(d.Part):F2}) - digging it to {d.Goal:F2} from {MHR_Mover.Fmt(stand)}; {c.Dirt.Count} dirt point(s) on the list");
 			return true;
 		}
-		if (cand.Count == 0)
+		if (free.Count > 6)
 		{
-			// P6: no root left but parts still stand (held by nothing we can see): the lowest one is mined - its break
-			// makes the game check them all
-			foreach (OvPart part in c.Parts)
+			_clNextPick = Time.time + 1f;
+			return true;
+		}
+		_clNextPick = Time.time + 1f;
+		_ai?.StopMoving();
+		if (others)
+		{
+			return true;   // the rest are other companions' - it stands by
+		}
+		OvStuckCheck(c);
+		return true;
+	}
+
+	private void OvDirtCool(OvClear c, OvDirt d, string why)
+	{
+		float now = Time.time;
+		c.DirtCool[d.Key] = now + OvCool;
+		c.DirtFail[d.Key] = now;
+		c.DirtWhy[d.Key] = why;
+		if (d.Holder == this)
+		{
+			d.Holder = null;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} (under \"{(d.Part.C != null ? d.Part.C.name : "?")}\") waits {OvCool:F0} s: {why}");
+	}
+
+	private void OvDrOff()
+	{
+		if (_drSpot != null && _drSpot.Holder == this)
+		{
+			_drSpot.Holder = null;
+		}
+		_drSpot = null;
+		_drWalk = false;
+		if (_dgDirt)
+		{
+			OvDigOff();
+			_dgDirt = false;
+			_dgClear = false;
+		}
+	}
+
+	private void OvDrFail(OvClear c, string why)
+	{
+		OvDirt d = _drSpot;
+		OvDrOff();
+		if (d != null)
+		{
+			OvDirtCool(c, d, why);
+		}
+	}
+
+	// one frame of digging a dirt point (from OvClearTick while _drSpot is set)
+	private void OvDrTick(OvClear c)
+	{
+		OvDirt d = _drSpot;
+		if (!c.Dirt.Contains(d))
+		{
+			// the list was made again without it: the ground there is down (or its part is gone)
+			if (CompanionsPlugin.LogDetailed) Log($"The dirt at {MHR_Mover.Fmt(d.P)} is off the list now");
+			OvDrOff();
+			return;
+		}
+		Vector3 me = base.transform.position;
+		float dt = Time.deltaTime;
+		if (_dgActive && _dgDirt)
+		{
+			OvDigTick();
+			if (_dgActive)
 			{
-				if (!part.Out && !part.GaveUp)
+				return;
+			}
+			bool reached = _dgReached, limit = _dgLimit;
+			_dgDirt = false;
+			_dgClear = false;
+			if (_state != HarvestState.Vein)
+			{
+				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the point stays its own, no fail
+			}
+			if (reached)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} is down to {GroundAt(d.P):F2} (under \"{d.Part.C.name}\"'s bottom {OvPartBottom(d.Part):F2})");
+				OvDrOff();
+				c.DirtAt = Mathf.Min(c.DirtAt, Time.time - OvDirtEvery + 0.5f);   // the list again in 0.5 s
+				return;
+			}
+			OvDrFail(c, limit ? "it is at the game's 8 m dig limit" : $"{OvNoProgSwings} swings didn't lower the ground there");
+			return;
+		}
+		if (_drWalk)
+		{
+			float flat = Flat(me, _drStand);
+			if (flat > OvStandAt)
+			{
+				float up = _drStand.y - me.y;
+				float hh = _character != null ? _character.GetHeight() : 1.8f;
+				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
+				if ((tooHigh || (WalkTimer(dt, _drStand) && _moveTimer > 10f)))
 				{
-					cand.Add(part);
+					if (!_drRamped && up >= OvStepUp && flat <= OvRampReach && OvLineClear(c, me, _drStand))
+					{
+						// GG2: the place to stand is up a wall - steps toward it (the existing way up), never under a part
+						_drRamped = true;
+						OvRampBegin(_drStand, null, outOfTrench: false, $"the place to stand for the dirt at {MHR_Mover.Fmt(d.P)} is {up:F1} m up");
+						return;
+					}
+					OvDrFail(c, $"couldn't get to {MHR_Mover.Fmt(_drStand)} to dig it ({flat:F1} m away, {up:F1} m up)");
+					return;
+				}
+				WalkGo(_drStand, 0.25f, flat > 8f, dt);
+				return;
+			}
+			_drWalk = false;
+			_ai?.StopMoving();
+		}
+		else if (Flat(me, _drStand) > 1.2f)
+		{
+			_drWalk = true;   // pushed off its place (or back from clearing a thing): back to it
+			_moveTimer = 0f;
+			return;
+		}
+		float g = GroundAt(d.P);
+		if (g <= d.Goal + OvDigGain)
+		{
+			OvDrOff();
+			c.DirtAt = Mathf.Min(c.DirtAt, Time.time - OvDirtEvery + 0.5f);
+			return;
+		}
+		OvDigBegin(new Vector3(d.P.x, g, d.P.z), null, ramp: false);
+		_dgClear = true;
+		_dgDirt = true;
+		_dgGoalY = d.Goal;
+	}
+
+	// GG2: a place to stand for work at `aim` (the ring closest to it that has one, the nearest to the companion in it) (a dirt point: its ground; a part: its box, aim.y = its bottom) - on the pit
+	// ground (inside the trench's outer walls), outside every standing part's box, within its swing (flat), aim.y no higher
+	// than its swing reaches, and its feet no higher than one step (0.7 m) above a dirt point / than a part's top (the
+	// pickaxe swing reaches about half a metre under its feet); the nearest to it. 0 = found, 1 = only too high (a part:
+	// from a ladder), 2 = none.
+	private int OvStandFor(OvClear c, Vector3 aim, OvPart part, out Vector3 stand, out string why)
+	{
+		float maxFeet = part != null ? part.Centre.y + part.Half.y : aim.y + OvStepUp;
+		stand = Vector3.zero;
+		why = null;
+		Vector3 me = base.transform.position;
+		// within its pickaxe's range once there (the walk stops within 0.5 m of the place), never walked closer by the swing
+		float range = FindBestTool(2)?.m_shared?.m_attack != null ? FindBestTool(2).m_shared.m_attack.m_attackRange : 2f;
+		float reach = Mathf.Max(0.8f, range - OvStandAt);
+		float up = OvPickReach();
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		bool high = false, any = false;
+		float bd = float.MaxValue;
+		Bounds box = part != null ? new Bounds(part.Centre, part.Half * 2f) : default;
+		for (int ri = 0; ri < 4; ri++)
+		{
+			float r = 0.8f + ri * 0.25f;
+			if ((ri > 0 && r > reach) || bd < float.MaxValue)
+			{
+				break;   // the closest ring with a place wins (the nearer, the likelier its swing meets that dirt first)
+			}
+			for (int k = 0; k < 16; k++)
+			{
+				float a = k * (Mathf.PI * 2f / 16f);
+				Vector3 dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+				Vector3 pt;
+				if (part != null)
+				{
+					// out from the box's edge along dir
+					float tx = Mathf.Abs(dir.x) > 0.001f ? part.Half.x / Mathf.Abs(dir.x) : float.MaxValue;
+					float tz = Mathf.Abs(dir.z) > 0.001f ? part.Half.z / Mathf.Abs(dir.z) : float.MaxValue;
+					pt = part.Centre + dir * (Mathf.Min(tx, tz) + r);
+				}
+				else
+				{
+					pt = aim + dir * r;
+				}
+				float g = GroundAt(pt);
+				pt.y = g;
+				Vector3 near = part != null ? box.ClosestPoint(pt) : aim;
+				if (Flat(pt, near) > reach + 0.01f || !OvInPitPt(pt) || OvInAnyBox(c, pt, hh))
+				{
+					continue;
+				}
+				any = true;
+				if (g > maxFeet)
+				{
+					continue;   // never standing above it (a dirt point: more than a step)
+				}
+				if (aim.y - g > up)
+				{
+					high = true;
+					continue;
+				}
+				float d = Flat(me, pt) + Mathf.Abs(me.y - g);
+				if (d < bd)
+				{
+					bd = d;
+					stand = pt;
 				}
 			}
-			pop = true;
 		}
-		if (cand.Count == 0)
+		if (bd < float.MaxValue)
 		{
+			return 0;
+		}
+		if (high)
+		{
+			why = $"it is more than its swing reaches ({up:F1} m) above any place to stand beside it";
+			return 1;
+		}
+		why = any ? (part != null ? "every place to stand within its swing is higher than its top" : "every place to stand within its swing is more than a step (0.7 m) above it") : "no place to stand within its swing that is inside the pit and outside the parts";
+		return 2;
+	}
+
+	// GG2: on the pit ground - inside the trench ring, or within 2 m (flat) of a trench spot (the floor of the trench)
+	private bool OvInPitPt(Vector3 pt)
+	{
+		OvPlan p = _vp;
+		if (p.Poly.Count >= 3 && OvInside(p.Poly, new Vector2(pt.x, pt.z)))
+		{
+			return true;
+		}
+		foreach (OvSpot sp in p.Spots)
+		{
+			if (Flat(sp.P, pt) <= OvThingRadius)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// GG2: a body standing on the ground at pt (its width, its height) would be inside a standing part's box
+	private static bool OvInAnyBox(OvClear c, Vector3 pt, float hh)
+	{
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Out || part.C == null || !part.C.gameObject.activeSelf)
+			{
+				continue;
+			}
+			if (Mathf.Abs(pt.x - part.Centre.x) <= part.Half.x + OvBodyPad && Mathf.Abs(pt.z - part.Centre.z) <= part.Half.z + OvBodyPad && part.Centre.y - part.Half.y < pt.y + hh && part.Centre.y + part.Half.y > pt.y - 0.1f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// GG2: steps cut from a to b never go under (or into) a part's box - checked every 0.5 m along the line
+	private bool OvLineClear(OvClear c, Vector3 a, Vector3 b)
+	{
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		float len = Flat(a, b);
+		int n = Mathf.Max(1, Mathf.CeilToInt(len / 0.5f));
+		for (int i = 1; i <= n; i++)
+		{
+			Vector3 pt = Vector3.Lerp(a, b, (float)i / n);
+			pt.y = GroundAt(pt);
+			if (OvInAnyBox(c, pt, hh))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// ---------- GG2 2.: the ore step ----------
+	private bool OvPartCooling(OvPart part)
+	{
+		return Time.time < part.CoolUntil;
+	}
+
+	// no dirt left: the lowest standing part (no one else's, not waiting), from the pit ground beside it, or from a ladder
+	// when it is too high for that
+	private bool OvOreChoose(OvClear c)
+	{
+		Vector3 me = base.transform.position;
+		List<OvPart> cand = new List<OvPart>();
+		bool standing = false, others = false;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Out)
+			{
+				continue;
+			}
+			standing = true;
+			if (OvPartCooling(part))
+			{
+				continue;
+			}
+			if (OvPartHeldByOther(part))
+			{
+				others = true;
+				continue;
+			}
+			cand.Add(part);
+		}
+		if (!standing)
+		{
+			// GG3d: no dirt left and every part gone or buried under the game's dig limit
 			c.Done = true;
 			OvClearSay(c);
 			return false;
 		}
-		// R1 (John: "work from one spot"): the nearest to where it stands first (whole metres, flat, from its feet to the
-		// part's game box), the lowest first among those at the same distance. R2d: fewer failed rounds come first.
-		Dictionary<OvPart, int> fromMe = new Dictionary<OvPart, int>();
-		foreach (OvPart part in cand)
-		{
-			fromMe[part] = Mathf.FloorToInt(Flat(me, OvBoxNear(part, me)));
-		}
 		cand.Sort((OvPart a, OvPart b) =>
 		{
-			if (a.Rounds != b.Rounds)
-			{
-				return a.Rounds.CompareTo(b.Rounds);
-			}
-			int da = fromMe[a], db = fromMe[b];
-			if (da != db)
-			{
-				return da.CompareTo(db);
-			}
-			return OvPartBottom(a).CompareTo(OvPartBottom(b));
+			int bc = OvPartBottom(a).CompareTo(OvPartBottom(b));
+			return bc != 0 ? bc : Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me)));
 		});
-		OvPart pick = null;
-		foreach (OvPart part in cand)
+		int tries = 0;
+		foreach (OvPart pick in cand)
 		{
-			if (!OvPartHeldByOther(part))
+			if (tries++ >= 4)
 			{
-				pick = part;
 				break;
 			}
-		}
-		if (pick == null)
-		{
-			_ai?.StopMoving();   // P4: every part left is another companion's - it stands by
+			int r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out Vector3 stand, out string why);
+			pick.OutOfReach = r == 1;
+			if (r == 2)
+			{
+				OvPartCool(pick, why, wait: false);
+				continue;
+			}
+			OvSpot ws = OvClSpotFor(pick);
+			if (ws != null && OvWayOutNeeded(ws))
+			{
+				OvWayOutHere(ws);
+				return true;
+			}
+			OvClBegin(pick, stand, ladder: r == 1);
 			return true;
 		}
-		pick.Holder = this;
-		// P5: up a wall within 3 m and 1.5 x its height above its feet: the way up toward it first (once a round)
-		Vector3 near = OvBoxNear(pick, me);   // L6: the part's game box (a vein part's mesh can't be asked)
-		Vector3 foot = new Vector3(near.x, GroundAt(near), near.z);
-		float h = _character != null ? _character.GetHeight() : 1.8f;
-		if (!ladder && !pick.RampTried && Flat(me, near) <= OvRampReach && foot.y >= me.y + OvRampRatio * h)
+		_clNextPick = Time.time + 1f;
+		_ai?.StopMoving();
+		if (cand.Count > 4 || others)
 		{
-			pick.RampTried = true;
-			_rpPart = pick;
-			OvRampBegin(foot, null, outOfTrench: false, $"the part \"{pick.C.name}\" is {foot.y - me.y:F1} m up");
 			return true;
 		}
-		// R4: a way out near where it will work first (the E2 way, from that spot), when there's none within 15 m
-		OvSpot ws = OvClSpotFor(pick);
-		if (ws != null && OvWayOutNeeded(ws))
-		{
-			pick.Holder = null;
-			OvWayOutHere(ws);
-			return true;
-		}
-		OvClBegin(pick, pop, ladder);
+		OvStuckCheck(c);
 		return true;
+	}
+
+	// GG3c / GG3a: a part that didn't break (or can't get its ladder) waits 1 min; wait = not counted by the stuck rule
+	private void OvPartCool(OvPart part, string why, bool wait)
+	{
+		float now = Time.time;
+		part.CoolUntil = now + OvCool;
+		part.CoolWhy = why;
+		part.Wait = wait;
+		if (!wait)
+		{
+			part.FailAt = now;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" waits {OvCool:F0} s: {why}");
+	}
+
+	// GG3d (John's rule: two tries with nothing broken = stop and wait): nothing to take now, nothing another companion is
+	// on - when every dirt point and part waiting has failed since the last thing that broke or went down (and not just
+	// for a hammer or a ladder spot), the vein work stops here and says why, point by point and part by part
+	private void OvStuckCheck(OvClear c)
+	{
+		float now = Time.time;
+		bool failed = false;
+		foreach (OvDirt d in c.Dirt)
+		{
+			if (!OvDirtCooling(c, d) || !c.DirtFail.TryGetValue(d.Key, out float f) || f <= c.ProgAt)
+			{
+				return;   // one that will come back after the last progress: it waits
+			}
+			failed = true;
+		}
+		if (c.Dirt.Count == 0)
+		{
+			foreach (OvPart part in c.Parts)
+			{
+				if (part.Out)
+				{
+					continue;
+				}
+				if (!OvPartCooling(part))
+				{
+					return;
+				}
+				if (part.Wait)
+				{
+					continue;
+				}
+				if (part.FailAt <= c.ProgAt)
+				{
+					return;
+				}
+				failed = true;
+			}
+		}
+		if (!failed || c.Stopped)
+		{
+			return;   // only waiting for a hammer or a ladder spot: it stands by (it said so once)
+		}
+		c.Stopped = true;
+		c.Done = true;
+		OvClearSay(c);
+	}
+
+	// the trench spot nearest the part (flat, to its box) that no other companion stands on or walks to (the way-out check)
+	private OvSpot OvClSpotFor(OvPart part)
+	{
+		OvSpot best = null, any = null;
+		float bd = float.MaxValue, ad = float.MaxValue;
+		foreach (OvSpot q in _vp.Spots)
+		{
+			float d = Flat(q.P, OvBoxNear(part, q.P));
+			if (d < ad)
+			{
+				ad = d;
+				any = q;
+			}
+			if (OvBoardTaken(q.P) != null)
+			{
+				continue;
+			}
+			if (d < bd)
+			{
+				bd = d;
+				best = q;
+			}
+		}
+		return best ?? any;
+	}
+
+	// a round on the part starts: to the place to stand beside it (or the ladder's way)
+	private void OvClBegin(OvPart part, Vector3 stand, bool ladder)
+	{
+		_clFor = part;
+		part.Holder = this;
+		_clStand = stand;
+		_clWalk = !ladder;
+		_clRamped = false;
+		_moveTimer = 0f;
+		_ai?.StopMoving();
+		OvLnBegin(ladder);
+		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\" (no dirt holds it up now): {(ladder ? $"a part too high to hit from the ground beside it - from a ladder" : "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Root ? "" : " (it rests on other parts)")}{(ladder ? "" : $" - from {MHR_Mover.Fmt(stand)}")}");
+	}
+
+	private void OvClOff()
+	{
+		_clFor = null;
+		_clWalk = false;
+		OvLnOff();
+		if (_dgClear)
+		{
+			OvDigOff();
+			_dgClear = false;
+		}
+	}
+
+	// one frame of the round on a part (from OvClearTick while _clFor is set)
+	private void OvClRound(OvClear c)
+	{
+		OvPart part = _clFor;
+		if (part.C == null || !part.C.gameObject.activeSelf)
+		{
+			// N5: the part it was going for broke (its swings, another companion's, or the pop): mined, the drops around
+			// it, then the chooser
+			if (part.C != null)
+			{
+				c.ById.Remove(part.C.GetInstanceID());
+			}
+			c.Mined++;
+			c.ProgAt = Time.time;
+			c.DirtAt = -100f;
+			if (part.Holder == this)
+			{
+				part.Holder = null;
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"Mined the part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" - picking up, then looking at what still holds it up");
+			OvClOff();
+			OvPartsLook(c, true);
+			OvPartDrops(part.Centre);
+			return;
+		}
+		// Z4: a round from a ladder - planning, wood, building and the climb, then the part swing below
+		if (_clLadder && OvLnTick(c, part))
+		{
+			return;
+		}
+		Vector3 me = base.transform.position;
+		float dt = Time.deltaTime;
+		if (_dgActive && _dgClear)
+		{
+			OvDigTick();
+			if (_dgActive)
+			{
+				return;
+			}
+			_dgClear = false;
+			if (_state != HarvestState.Vein)
+			{
+				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the round goes on after it
+			}
+			OvClFail($"{OvNoProgSwings} swings at it from {MHR_Mover.Fmt(me)} didn't hit it");
+			return;
+		}
+		if (_clLadder)
+		{
+			OvClFail("its swings from the ladder were cut short");
+			return;
+		}
+		if (_clWalk)
+		{
+			float flat = Flat(me, _clStand);
+			if (flat > OvStandAt)
+			{
+				float up = _clStand.y - me.y;
+				float hh = _character != null ? _character.GetHeight() : 1.8f;
+				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
+				if (tooHigh || (WalkTimer(dt, _clStand) && _moveTimer > 10f))
+				{
+					if (!_clRamped && up >= OvStepUp && flat <= OvRampReach && OvLineClear(c, me, _clStand))
+					{
+						_clRamped = true;
+						OvRampBegin(_clStand, null, outOfTrench: false, $"the place to stand beside \"{part.C.name}\" is {up:F1} m up");
+						return;
+					}
+					OvClFail($"couldn't get to {MHR_Mover.Fmt(_clStand)} beside it ({flat:F1} m away, {up:F1} m up)");
+					return;
+				}
+				WalkGo(_clStand, 0.25f, flat > 8f, dt);
+				return;
+			}
+			_clWalk = false;
+			_ai?.StopMoving();
+		}
+		else if (Flat(me, _clStand) > 1.2f)
+		{
+			_clWalk = true;   // pushed off its place (or back from clearing a thing): back to it
+			_moveTimer = 0f;
+			return;
+		}
+		// R2a's swing at the part itself: the nearest point of its game box; 3 swings that don't hit it end the round
+		Vector3 bp = OvBoxNear(part, me);
+		OvDigBegin(bp, null, ramp: false);
+		_dgClear = true;
+		_dgPart = true;
+		_dgGoalY = me.y;
+	}
+
+	// the round on _clFor ended without it breaking: it waits 1 min (GG3c, never given up)
+	private void OvClFail(string why, bool wait = false)
+	{
+		OvPart root = _clFor;
+		OvClOff();
+		if (root == null || _vp == null)
+		{
+			return;
+		}
+		if (root.Holder == this)
+		{
+			root.Holder = null;
+		}
+		OvPartCool(root, why, wait);
+		OvPartsLook(OvC(), true);
+	}
+
+	// P8 / GG3d: said once per vein
+	private void OvClearSay(OvClear c)
+	{
+		if (c.Said)
+		{
+			return;
+		}
+		c.Said = true;
+		int left = 0, outN = 0;
+		foreach (OvPart part in c.Parts)
+		{
+			left++;
+			if (part.Out)
+			{
+				outN++;
+			}
+		}
+		if (c.Stopped)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Stuck on \"{_vp.Name}\": every dirt point and part left has failed since the last thing broke or went down - stopping. {c.Dirt.Count} dirt point(s) left:");
+			int n = 0;
+			foreach (OvDirt d in c.Dirt)
+			{
+				if (n++ >= 40)
+				{
+					if (CompanionsPlugin.LogNormal) LogInfo($"  ... and {c.Dirt.Count - 40} more");
+					break;
+				}
+				if (CompanionsPlugin.LogNormal) LogInfo($"  dirt at {MHR_Mover.Fmt(d.P)} under \"{(d.Part.C != null ? d.Part.C.name : "?")}\": ground {GroundAt(d.P):F2}, goal {d.Goal:F2} - {(c.DirtWhy.TryGetValue(d.Key, out string w) ? w : "?")}");
+			}
+			foreach (OvPart part in c.Parts)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : "hanging on other parts")}{(part.OutOfReach && !part.Out ? ", too high to hit from the ground beside it" : "")}{(part.CoolWhy != null ? ", last try: " + part.CoolWhy : "")}");
+			}
+			_talk?.SayProblem("vein:clear_stopped", string.Format(ModLocalization.Loc("hc_speech_vein_clear_stopped"), MHR_Items.NiceName(_vFor)));
+			return;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{_vp.Name}\" is done: {c.Mined} part(s) mined, {c.Popped} fell by themselves, {left} left ({outN} buried out of reach)");
 	}
 
 	// Z2: the root rests on a tree / log / stump / rock that isn't left (the Y6e count) - that thing comes first
@@ -472,7 +1132,7 @@ public partial class HarvestController
 	{
 		foreach (OvPart part in c.Parts)
 		{
-			if (!part.Out && !part.GaveUp && OvHeldByThing(part))
+			if (!part.Out && OvHeldByThing(part))
 			{
 				return true;
 			}
@@ -490,7 +1150,7 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (OvPart part in c.Parts)
 		{
-			if (part.Out || part.GaveUp || !OvHeldByThing(part))
+			if (part.Out || !OvHeldByThing(part))
 			{
 				continue;
 			}
@@ -514,33 +1174,6 @@ public partial class HarvestController
 		}
 		OvRelease();
 		return OvTake(best, bp.HoldMode, bp.HoldType, OvNearest(best.transform.position), canSkip: false, $"It holds the vein up (the part \"{bp.C.name}\" rests on it)") == 1;
-	}
-
-	// Z5: the parts whose game box takes in the root's rock (the game's own test: a part touching a held-up part is held
-	// up through it) become roots, once each
-	private void OvChainCut(OvClear c, OvPart root)
-	{
-		root.ChainCut = true;
-		int made = 0;
-		foreach (OvPart part in c.Parts)
-		{
-			if (part == root || part.Out || part.GaveUp || part.Chain || part.Root || part.C == null)
-			{
-				continue;
-			}
-			int n = Physics.OverlapBoxNonAlloc(part.Centre, part.Half, s_cBuf, Quaternion.identity, s_cMask);
-			for (int j = 0; j < n; j++)
-			{
-				if (s_cBuf[j] == root.C)
-				{
-					part.Chain = true;
-					part.ChainWhy = $"rests on \"{root.C.name}\", which it couldn't break";
-					made++;
-					break;
-				}
-			}
-		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't break \"{(root.C != null ? root.C.name : "?")}\" of \"{_vp.Name}\" - {made} part(s) resting on it are next");
 	}
 
 	// R4: no real way out (R3) with its bottom within 15 m (flat) of this spot, no try within 15 m of it, nobody else
@@ -594,284 +1227,6 @@ public partial class HarvestController
 		return new Bounds(part.Centre, part.Half * 2f).ClosestPoint(p);
 	}
 
-	// L2: the trench spot nearest the part (flat, to its box); R2c: after a failed round, the nearest one at least 3 m
-	// from where that round started (none = the nearest)
-	private OvSpot OvClSpotFor(OvPart part)
-	{
-		OvSpot best = null, any = null;
-		float bd = float.MaxValue, ad = float.MaxValue;
-		foreach (OvSpot q in _vp.Spots)
-		{
-			float d = Flat(q.P, OvBoxNear(part, q.P));
-			if (d < ad)
-			{
-				ad = d;
-				any = q;
-			}
-			if (part.HasStart && part.Rounds > 0 && Flat(q.P, part.LastStart) < OvClOtherAngle)
-			{
-				continue;
-			}
-			if (OvBoardTaken(q.P) != null)
-			{
-				continue;   // AA6 (a): another companion stands there or is going there - the next nearest
-			}
-			if (d < bd)
-			{
-				bd = d;
-				best = q;
-			}
-		}
-		return best ?? any;
-	}
-
-	private const float OvClAt = 0.8f;             // L2: on the spot it walks to (flat)
-
-	private const int OvClCapMore = 2;             // L4: dig points = metres from the trench spot to the part + 2
-
-	// L1 / L2: a round on the part starts - it goes to the trench spot nearest it
-	private void OvClBegin(OvPart part, bool pop, bool ladder = false)
-	{
-		// FF2 (John, test 14: "Just have them work from inside the trench"): every round starts on the trench floor at the
-		// trench spot nearest the part (L2); R1's "from where it stands" is gone (Gunter climbed the ore pile and worked from it)
-		OvSpot q = OvClSpotFor(part);
-		_clFor = part;
-		_clPop = pop;
-		_clStand = q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;
-		part.HasStart = true;
-		part.LastStart = _clStand;
-		Vector3 d = part.Centre - _clStand;
-		d.y = 0f;
-		_clDir = d.sqrMagnitude > 0.0001f ? d.normalized : Vector3.zero;
-		_clStep = 0;
-		_clCap = Mathf.CeilToInt(d.magnitude) + OvClCapMore;
-		_clWalk = true;
-		_moveTimer = 0f;
-		_ai?.StopMoving();
-		OvLnBegin(ladder);
-		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(ladder ? $"a part too high to hit from the floor ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up) - from a ladder" : pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from trench spot {(q != null ? q.Idx + 1 : 0)} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
-	}
-
-	private void OvClOff()
-	{
-		_clFor = null;
-		_clWalk = false;
-		OvLnOff();
-		if (_dgClear)
-		{
-			OvDigOff();
-			_dgClear = false;
-		}
-	}
-
-	// N1-N5: one frame of the round (from OvClearTick while _clFor is set; only this ticks its dig points)
-	private void OvClRound(OvClear c)
-	{
-		OvPart part = _clFor;
-		if (part.C == null || !part.C.gameObject.activeSelf)
-		{
-			// N5: the part it was going for broke (its swings, another companion's, or the pop): mined, the drops around
-			// it (the pickup scans 8 m, so the parts it broke on the way in too), then the chooser
-			if (part.C != null)
-			{
-				c.ById.Remove(part.C.GetInstanceID());
-			}
-			c.Mined++;
-			if (_clPop)
-			{
-				c.PopFails = 0;
-			}
-			if (part.Holder == this)
-			{
-				part.Holder = null;
-			}
-			if (CompanionsPlugin.LogNormal) LogInfo($"Mined the part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" - picking up, then looking at what still holds it up");
-			OvClOff();
-			OvPartsLook(c, true);
-			OvPartDrops(part.Centre);
-			return;
-		}
-		// Z4: a round from a ladder - planning, wood, building and the climb, then the part swing below
-		if (_clLadder && OvLnTick(c, part))
-		{
-			return;
-		}
-		Vector3 me = base.transform.position;
-		float dt = Time.deltaTime;
-		if (_dgActive && _dgClear)
-		{
-			// N4: the point's 30 s clock - the ground there going down or a part of the vein breaking starts it again
-			float g = GroundAt(_dgPoint);
-			if (g < _clBestG - OvDigGain || c.Alive < _clAlive)
-			{
-				_clBestG = Mathf.Min(_clBestG, g);
-				_clIdle = 0f;
-			}
-			else
-			{
-				_clIdle += dt;
-			}
-			_clAlive = c.Alive;
-			if (_clIdle >= OvSpotIdle)
-			{
-				OvClFail($"{OvSpotIdle:F0} s at {MHR_Mover.Fmt(_dgPoint)} without the ground going down or a part breaking");
-				return;
-			}
-			OvDigTick();
-			if (_dgActive)
-			{
-				return;
-			}
-			_dgClear = false;
-			if (_dgPart)
-			{
-				OvClFail($"{OvNoProgSwings} swings at the part from {MHR_Mover.Fmt(me)} landed on nothing");
-				return;
-			}
-			if (_dgLimit)
-			{
-				// R2 (John: "Any parts that cannot be cleared of dirt from the bottom should be mined out"): the dirt in
-				// front can't go lower and is above a step - the part itself from here when it's within reach (R2a), else
-				// the round ends (R2b)
-				float lg = GroundAt(_dgPoint);
-				Vector3 bp = OvBoxNear(part, me);
-				float reach = GetAttackRange();
-				if (Flat(me, bp) <= reach)
-				{
-					if (CompanionsPlugin.LogNormal) LogInfo($"The dirt toward \"{part.C.name}\" at {MHR_Mover.Fmt(_dgPoint)} is at the game's 8 m dig limit, {lg - me.y:F1} m above its feet - mining the part from here");
-					OvDigBegin(bp, null, ramp: false);
-					_dgClear = true;
-					_dgPart = true;
-					_dgGoalY = me.y;
-					_clBestG = GroundAt(bp);
-					_clIdle = 0f;
-					_clAlive = c.Alive;
-					return;
-				}
-				OvClFail($"the dirt toward it at {MHR_Mover.Fmt(_dgPoint)} is at the game's 8 m dig limit, {lg - me.y:F1} m above its feet, and the part is out of reach ({Flat(me, bp):F1} m, reach {reach:F1} m)");
-				return;
-			}
-			if (!_dgReached)
-			{
-				OvClFail($"{OvNoProgSwings} swings at {MHR_Mover.Fmt(_dgPoint)} did nothing (or it couldn't get to it)");
-				return;
-			}
-			_clStand = new Vector3(_dgPoint.x, GroundAt(_dgPoint), _dgPoint.z);
-			_clWalk = true;
-			_moveTimer = 0f;
-			if (CompanionsPlugin.LogDetailed) Log($"Point {_clStep} of {_clCap} toward \"{part.C.name}\" is clear - stepping onto it");
-			return;
-		}
-		if (_clWalk)
-		{
-			float flat = Flat(me, _clStand);
-			if (flat > OvClAt)
-			{
-				if (WalkTimer(dt, _clStand) && _moveTimer > 10f)
-				{
-					OvClFail($"couldn't get to {MHR_Mover.Fmt(_clStand)} in {10f:F0} s ({flat:F1} m away)");
-					return;
-				}
-				WalkGo(_clStand, 0.3f, flat > 8f, dt);
-				return;
-			}
-			_clWalk = false;
-			_ai?.StopMoving();
-		}
-		// N1: every point started counts toward the cap
-		if (_clStep >= _clCap || _clDir == Vector3.zero)
-		{
-			OvClFail($"{_clStep} point(s) toward it and it's still standing");
-			return;
-		}
-		// N2: the trench's dig swing at a point 1 m further in - the game's swing hits what is in front, dirt or rock
-		Vector3 pt = _clStand + _clDir * 1f;
-		pt.y = GroundAt(pt);
-		_clStep++;
-		OvDigBegin(pt, null, ramp: false);
-		_dgClear = true;
-		_dgGoalY = me.y;
-		_clBestG = pt.y;
-		_clIdle = 0f;
-		_clAlive = c.Alive;
-		if (CompanionsPlugin.LogDetailed) Log($"Toward \"{part.C.name}\": swinging at {MHR_Mover.Fmt(pt)} (ground {pt.y:F2}, its feet {me.y:F2}), point {_clStep} of {_clCap}");
-	}
-
-	// the round on _clFor ended without it breaking: a round (2 = left), and the 2-tries stop rule
-	private void OvClFail(string why)
-	{
-		OvPart root = _clFor;
-		OvClOff();
-		if (root == null || _vp == null)
-		{
-			return;
-		}
-		if (root.Holder == this)
-		{
-			root.Holder = null;
-		}
-		root.RampTried = false;
-		OvClear c = OvC();
-		root.Rounds++;
-		if (_clPop)
-		{
-			c.PopFails++;
-		}
-		// R2d (John: "clear what else is around them and come back to it later"): 2 failed rounds set it aside, the third
-		// leaves it
-		if (root.Rounds >= OvPartRoundsMax)
-		{
-			root.GaveUp = true;
-		}
-		else if (root.Rounds >= OvPartRounds)
-		{
-			root.SetAside = true;
-		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(root.C != null ? root.C.name : "?")}\" of \"{_vp.Name}\" didn't break: {why} (round {root.Rounds} of {(root.SetAside ? OvPartRoundsMax : OvPartRounds)}{(root.GaveUp ? ", left" : root.SetAside && root.Rounds == OvPartRounds ? ", set aside until the rest are done" : "")})");
-		if (c.PopFails >= OvPopFails && !c.Stopped)
-		{
-			// P7: John's rule - two tries with nothing broken: stop and wait, with everything we need to find out why
-			c.Stopped = true;
-			c.Done = true;
-			OvClearSay(c);
-		}
-		OvPartsLook(c, true);
-	}
-
-	// P8 / P7: said once per vein
-	private void OvClearSay(OvClear c)
-	{
-		if (c.Said)
-		{
-			return;
-		}
-		c.Said = true;
-		int left = 0, outN = 0, gave = 0;
-		foreach (OvPart part in c.Parts)
-		{
-			left++;
-			if (part.Out)
-			{
-				outN++;
-			}
-			if (part.GaveUp)
-			{
-				gave++;
-			}
-		}
-		if (c.Stopped)
-		{
-			if (CompanionsPlugin.LogNormal) LogInfo($"Stopping on \"{_vp.Name}\": {OvPopFails} tries in a row broke nothing - every part as it stands:");
-			foreach (OvPart part in c.Parts)
-			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : "hanging on other parts")}{(part.OutOfReach && !part.Out ? $", out of reach ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up)" : "")}, rounds {part.Rounds}{(part.GaveUp ? ", given up" : "")}");
-			}
-			_talk?.SayProblem("vein:clear_stopped", string.Format(ModLocalization.Loc("hc_speech_vein_clear_stopped"), MHR_Items.NiceName(_vFor)));
-			return;
-		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{_vp.Name}\" is done: {c.Mined} part(s) mined, {c.Popped} fell by themselves, {left} left ({outN} buried out of reach, {gave} given up)");
-	}
-
 	// P8: the last parts fell and the vein is gone - the summary still gets said (the parts no one was mining fell)
 	private void OvClearGone()
 	{
@@ -881,7 +1236,7 @@ public partial class HarvestController
 		}
 		foreach (OvPart part in c.ById.Values)
 		{
-			if (part.Holder == null && !part.Out && !part.GaveUp)
+			if (part.Holder == null && !part.Out)
 			{
 				c.Popped++;
 			}
