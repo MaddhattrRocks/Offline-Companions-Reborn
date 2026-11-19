@@ -235,6 +235,16 @@ public partial class HarvestController
 
 	private string _lastGiveUpText = "";
 
+	// DD8: no working pickaxe on a vein - axe work there first (OvAxeTick); done = nothing left for the axe
+	private bool _ovAxeDone;
+
+	private bool _ovPickOk = true;
+
+	private float _ovPickAt;
+
+	// DD8: on a vein with axe work left (MHR_ToolKeeper lets it stay instead of following)
+	internal bool OvAxeWork => _vFor != null && !_ovAxeDone && !_ovOut;
+
 	// no working pickaxe: a working one in the bag sends it back (NoToolTick)
 	private GameObject _noToolRock;
 
@@ -546,6 +556,9 @@ public partial class HarvestController
 		_vFor = _target;
 		_vRock = rock;
 		_vp = p;
+		_ovAxeDone = false;
+		_ovPickOk = true;
+		_ovPickAt = 0f;
 		_vFirstSide = SideOf(base.transform.position);
 		_ovSpot = null;
 		_ovIdx = -1;
@@ -597,7 +610,6 @@ public partial class HarvestController
 		_ovHand = null;
 		_ovHandSpot = null;
 		_ovHandMode = 0;
-		_ovHandAtOn = false;
 		if (_rpActive)
 		{
 			// a thing cleared from a ramp step (H1 / H2): the ramp's 60 s clock starts again from here
@@ -907,7 +919,7 @@ public partial class HarvestController
 				}
 			}
 		}
-		// C2.1 / CC2: the vein, and deposits with a part within 4 m (3D, part box to part box) of a part of it (and of those)
+		// C2.1 / CC2 / DD1: the vein, and deposits of the same ore with a part within 4 m (3D, part box to part box) of a part of it (and of those)
 		OvPlan p = new OvPlan();
 		p.Rocks.Add(rock);
 		p.Name = MHR_Items.NiceName(rock.gameObject);
@@ -928,7 +940,9 @@ public partial class HarvestController
 				foreach (Collider c in Physics.OverlapSphere(b.center, b.extents.magnitude + OvJoin + 2f))
 				{
 					MineRock5 m = c != null ? c.GetComponentInParent<MineRock5>() : null;
-					if (m == null || p.Rocks.Contains(m) || GetHarvestCandidateWithType(c, 3, out _) == null || InDungeonAt(m.transform.position))
+					// DD1 (test 13: plain stone boulders joined): only the same ore - the game's own name for the deposit
+					// (MineRock5.m_name, e.g. the copper deposit's) must match the vein's
+					if (m == null || p.Rocks.Contains(m) || string.IsNullOrEmpty(rock.m_name) || m.m_name != rock.m_name || GetHarvestCandidateWithType(c, 3, out _) == null || InDungeonAt(m.transform.position))
 					{
 						continue;
 					}
@@ -1453,6 +1467,17 @@ public partial class HarvestController
 		{
 			_ai.SetFollowTarget(null);
 		}
+		// DD8: no working pickaxe - only axe work on this vein (looked at once a second)
+		if (now >= _ovPickAt)
+		{
+			_ovPickAt = now + 1f;
+			_ovPickOk = HasWorkingPick();
+		}
+		if (!_ovPickOk)
+		{
+			OvAxeTick();
+			return;
+		}
 		if (_rpActive)
 		{
 			OvRampTick();
@@ -1822,8 +1847,6 @@ public partial class HarvestController
 		_hdSince = Time.time;   // Y6e: after a way up toward it (Y6d) the clock starts here again
 		_hdClock = 0f;          // AA4
 		_hdHitSeen = _hdSince;
-		_ovHandAtOn = false;    // AA6: the reach point is looked at again
-		_ovHandAtNext = 0f;
 		_hdRamped = _hdRampNext;
 		_hdRampNext = false;
 		_hdBest = float.MaxValue;
@@ -2535,10 +2558,10 @@ public partial class HarvestController
 		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
 		{
+			// DD8: no working pickaxe - the next tick goes to the axe work (OvAxeTick)
 			OvDigOff();
-			_noToolRock = _vFor;
-			_noToolNext = Time.time + 1f;
-			OvLeaveOut(base.transform.position, "no working pickaxe");
+			_ovPickOk = false;
+			_ovPickAt = Time.time + 1f;
 			return;
 		}
 		if (sw == 1)
@@ -2622,6 +2645,10 @@ public partial class HarvestController
 		bool hitThing = _ovThingHitAt >= _dgSwungAt && _ovThingHitGo != null && _ovThingHitGo.activeInHierarchy;
 		bool hitOre = _ovOreHitAt >= _dgSwungAt;
 		bool dug = _dgDugAt >= _dgSwungAt;   // V2: the game dug where this swing landed
+		// DD3 (John 2026-11-19: "A rock does not matter and should be carved through"): a swing that hit a plain rock (a
+		// MineRock5 that isn't this vein) is work on the spot - the game breaks its parts until the dirt is reached; it
+		// counts like a dig (the 3-swing rule), not toward the 30 s clock, so a rock that won't break still ends the spot
+		bool rockHit = hitThing && _ovThingHitGo.GetComponentInParent<MineRock5>() != null;
 		string dugAt = dug ? $", dug at {MHR_Mover.Fmt(_dgDugPt)}" : "";
 		if (hitThing)
 		{
@@ -2671,7 +2698,7 @@ public partial class HarvestController
 			bool atLimit = after <= OvFloor(_dgPoint) + OvDigGain;
 			bool shelf = !hitOre && atLimit && after > feet + OvStepUp;
 			bool done = !hitOre && !shelf && (after <= _dgGoalY + OvDigGain || atLimit);
-			bool cProg = prog || hitOre || dug;
+			bool cProg = prog || hitOre || dug || rockHit;
 			_dgNoProg = cProg ? 0 : _dgNoProg + 1;
 			if (CompanionsPlugin.LogDetailed) Log($"Clearing swing at {MHR_Mover.Fmt(_dgPoint)}: ground {_dgBefore:F2} -> {after:F2}{(hitOre ? ", hit the vein's rock" : "")}{dugAt}{(shelf ? $" - at the game's 8 m dig limit, {after - feet:F1} m above its feet" : done ? " - done, down to its feet" : cProg ? "" : $" - nothing ({_dgNoProg} in a row)")}, feet {feet:F2}");
 			if (shelf)
@@ -2694,7 +2721,7 @@ public partial class HarvestController
 		bool oreProg = !prog && hitOre;
 		// AA5: a trench swing that hit a thing (one it left, another's, or one it has no tool for) and changed nothing isn't
 		// "can't go lower": the spot is skipped this lap (a left thing is on it) and the next lap comes back to it
-		if (hitThing && !prog && !oreProg && !dug && !_dgRamp && _dgSpot != null)
+		if (hitThing && !rockHit && !prog && !oreProg && !dug && !_dgRamp && _dgSpot != null)
 		{
 			OvSpot ts = _dgSpot;
 			string tn = _ovThingHitGo != null ? _ovThingHitGo.name : "?";
@@ -2704,13 +2731,13 @@ public partial class HarvestController
 		}
 		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
 		// vein's ore restarts the spot's 30 s clock
-		_dgLastProg = prog || oreProg || dug;
+		_dgLastProg = prog || oreProg || dug || rockHit;
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
 		if (prog || oreProg)
 		{
 			OvSpotProgress();
 		}
-		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{dugAt}{(oreProg ? " - hit the vein's ore" : prog || dug ? "" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
+		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{dugAt}{(oreProg ? " - hit the vein's ore" : prog || dug ? "" : rockHit ? $" - carving through the rock \"{_ovThingHitGo.name}\"" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{
 			// E4 (John's way): 2 swings at the wall in front, then it steps in and looks again; a swing that changed
@@ -3290,7 +3317,6 @@ public partial class HarvestController
 		s_claimedTargets.Add(_rpThingClaim);
 		_ai?.StopMoving();
 		_state = HarvestState.Vein;
-		_ovHandAtOn = false;
 		OvRampBegin(goal, null, outOfTrench: false, $"\"{name}\" is {b.min.y - me.y:F1} m up and the walk gets no closer");
 		return true;
 	}
@@ -3529,6 +3555,29 @@ public partial class HarvestController
 		_noToolRock = null;
 		_scanTimer = 0f;
 		if (CompanionsPlugin.LogNormal) LogInfo("Has a working pickaxe again - back to the vein");
+	}
+
+	// DD8 (test 13: three pickaxes broke and they stood following): with no working pickaxe on a vein it takes the axe
+	// things in the pit near it (the pit pick, 8 m - pickaxe things have no tool and are skipped) through the Wood job;
+	// nothing left = out of the vein, and MHR_ToolKeeper has it follow (a repair station within 30 m comes first there)
+	private void OvAxeTick()
+	{
+		if (_rpActive)
+		{
+			OvRampFail("no working pickaxe");
+		}
+		_woActive = false;
+		OvDigOff();
+		OvPartRelease();
+		if (!_ovAxeDone && FindBestTool(1) != null && OvPitFirst())
+		{
+			return;
+		}
+		if (!_ovAxeDone && CompanionsPlugin.LogNormal) LogInfo("No working pickaxe and nothing near on the vein for its axe");
+		_ovAxeDone = true;
+		_noToolRock = _vFor;
+		_noToolNext = Time.time + 1f;
+		OvLeaveOut(base.transform.position, "no working pickaxe");
 	}
 
 	// ---------- for the stone toss / ore spot (MHR_GatherRules.Yard.cs) ----------

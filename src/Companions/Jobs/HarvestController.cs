@@ -569,27 +569,20 @@ public partial class HarvestController : MonoBehaviour
 		{
 			return 1;
 		}
-		if (target.GetComponent<MineRock5>() != null)
+		// DD6: an ore vein by the game's own drops (MHR_Ore); a plain rock is the Stone job's
+		MineRock5 m5 = target.GetComponent<MineRock5>();
+		if (m5 != null)
 		{
-			return 3;
+			return MHR_Ore.IsVein(m5) ? 3 : 2;
 		}
 		MineRock component2 = target.GetComponent<MineRock>();
 		if (component2 != null)
 		{
-			return (HasOreDrops(component2.m_dropItems) || IsOreNamedRock(target.name)) ? 3 : 2;
+			return MHR_Ore.IsVein(component2) ? 3 : 2;
 		}
 		if (component != null && component.m_damages.m_pickaxe != HitData.DamageModifier.Immune && (component.m_damages.m_chop == HitData.DamageModifier.Immune || component.m_damages.m_chop == HitData.DamageModifier.Ignore))
 		{
-			DropOnDestroyed component3 = component.GetComponent<DropOnDestroyed>();
-			if (component3 != null && HasOreDrops(component3.m_dropWhenDestroyed))
-			{
-				return 3;
-			}
-			if (IsOreNamedRock(component.gameObject.name))
-			{
-				return 3;
-			}
-			return 2;
+			return MHR_Ore.IsVein(component) ? 3 : 2;
 		}
 		if (component != null && component.m_damages.m_chop != HitData.DamageModifier.Immune)
 		{
@@ -768,6 +761,12 @@ public partial class HarvestController : MonoBehaviour
 		}
 		// 1.5.97 (test review A2): left a vein with no working pickaxe - one in the bag again sends it straight back
 		NoToolTick(mode);
+		// 1.5.98 DD8: a trip to repair its pickaxe (MHR_ToolKeeper) - the vein work stops for it
+		if (mode == 3 && _vFor != null && !_ovOut && MHR_ToolKeeper.IsBusy(this))
+		{
+			OvLeave("a trip to repair its pickaxe");
+			return;
+		}
 		// 1.5.98: stuck in its trench (the ramp out failed) - it waits for you (set a job, or move it 5 m)
 		if (mode == 3 && OvStuckTick())
 		{
@@ -2154,35 +2153,6 @@ public partial class HarvestController : MonoBehaviour
 		}
 	}
 
-	private static bool HasOreDrops(DropTable table)
-	{
-		if (table == null || table.m_drops.Count == 0)
-		{
-			return false;
-		}
-		foreach (DropTable.DropData drop in table.m_drops)
-		{
-			if (!(drop.m_item == null))
-			{
-				string text = drop.m_item.name;
-				if (text.IndexOf("Ore", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("Scrap", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("Obsidian", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("Chitin", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("Flametal", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf("BlackMetal", StringComparison.OrdinalIgnoreCase) >= 0)
-				{
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	private static bool IsOreNamedRock(string goName)
-	{
-		if (goName.IndexOf("copper", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("tin", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("silver", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("iron", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("meteorite", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("blackmetal", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("flametal", StringComparison.OrdinalIgnoreCase) < 0 && goName.IndexOf("obsidian", StringComparison.OrdinalIgnoreCase) < 0)
-		{
-			return goName.IndexOf("chitin", StringComparison.OrdinalIgnoreCase) >= 0;
-		}
-		return true;
-	}
-
 	private void LogInfo(string msg)
 	{
 		string text = _character?.m_name ?? "?";
@@ -2667,15 +2637,9 @@ public partial class HarvestController : MonoBehaviour
 		// log's middle was 3.6 m above it on a slope)
 		if (_targetType == "TreeLog")
 		{
-			// 1.5.98 Y6c: a log handed over from the vein - the point of its game box nearest it, when that is within the
-			// axe's reach + 0.5 m, the way a player chops the part of a log in front of them (test 9: the log a dig swing
-			// hit was aimed at by its far end up on the rim and left at once)
-			if (_ovHandMode != 0 && _target == _ovHand && OvThingBox(_target, out Bounds lb))
-			{
-				Vector3 lp = lb.ClosestPoint(base.transform.position);
-				// AA6: not a point another companion stands on or walks to
-				return OvHandLogPoint(lb, Vector3.Distance(base.transform.position, lp) <= GetAttackRange() + 0.5f ? lp : LogReachPoint());
-			}
+			// 1.5.98 DD7 (test 13, John: "It is supposed to be using the wood job for this anyway"): a log handed over from
+			// the vein gets the Wood job's own stand point (Y6c's nearest box point and AA6's point on the log removed: both
+			// could put it under the log; this one refuses any spot with the log overhead)
 			return LogReachPoint();
 		}
 		if (_targetType == "MineRock")
@@ -3549,8 +3513,9 @@ public partial class HarvestController : MonoBehaviour
 		}
 		case 3:
 		{
+			// DD6 (test 13: any MineRock5 counted as ore, plain stone boulders too): only an ore vein by its game drops
 			MineRock5 componentInParent3 = col.GetComponentInParent<MineRock5>();
-			if (componentInParent3 != null)
+			if (componentInParent3 != null && MHR_Ore.IsVein(componentInParent3))
 			{
 				type = "MineRock5";
 				return componentInParent3.gameObject;
@@ -3558,9 +3523,7 @@ public partial class HarvestController : MonoBehaviour
 			MineRock componentInParent4 = col.GetComponentInParent<MineRock>();
 			if (componentInParent4 != null)
 			{
-				bool flag = HasOreDrops(componentInParent4.m_dropItems);
-				bool flag2 = IsOreNamedRock(componentInParent4.gameObject.name);
-				if (flag || flag2)
+				if (MHR_Ore.IsVein(componentInParent4))
 				{
 					type = "MineRock";
 					return componentInParent4.gameObject;
@@ -3569,10 +3532,7 @@ public partial class HarvestController : MonoBehaviour
 			Destructible componentInParent5 = col.GetComponentInParent<Destructible>();
 			if (componentInParent5 != null && componentInParent5.m_damages.m_pickaxe != HitData.DamageModifier.Immune && (componentInParent5.m_damages.m_chop == HitData.DamageModifier.Immune || componentInParent5.m_damages.m_chop == HitData.DamageModifier.Ignore))
 			{
-				DropOnDestroyed component = componentInParent5.GetComponent<DropOnDestroyed>();
-				bool flag3 = component != null && HasOreDrops(component.m_dropWhenDestroyed);
-				bool flag4 = IsOreNamedRock(componentInParent5.gameObject.name);
-				if (flag3 || flag4)
+				if (MHR_Ore.IsVein(componentInParent5))
 				{
 					type = "Destructible";
 					return componentInParent5.gameObject;
@@ -3583,7 +3543,7 @@ public partial class HarvestController : MonoBehaviour
 		default:
 		{
 			MineRock componentInParent = col.GetComponentInParent<MineRock>();
-			if (componentInParent != null && !HasOreDrops(componentInParent.m_dropItems) && !IsOreNamedRock(componentInParent.gameObject.name))
+			if (componentInParent != null && !MHR_Ore.IsVein(componentInParent))
 			{
 				type = "MineRock";
 				return componentInParent.gameObject;

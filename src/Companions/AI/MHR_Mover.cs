@@ -2533,6 +2533,7 @@ namespace Companions
             d /= len;
             Vector3 prev = from;
             float gap = 0f;
+            float steep = 0f;   // DD4: the drop of the steep run it is on (see SteepStep)
             for (float x = 0.5f; x <= len + 0.01f; x += 0.5f)
             {
                 Vector3 p = from + d * Mathf.Min(x, len);
@@ -2557,6 +2558,10 @@ namespace Companions
                     hops++; gap = 0f;
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
+                // 1.5.98 DD4 (test 13: Je walked a straight line down an 8 m face - each 0.5 m was under MaxDrop - and died):
+                // the half-meter steps going down steeper than a player can stand on add up into one fall
+                steep = SteepRun(steep, rise, hit.collider);
+                if (steep > maxDrop) { s_hopWhy = "a steep drop of " + steep.ToString("F1") + " m at " + Fmt(p); return false; }
                 // 1.5.44: not straight through a fire (the hearth)
                 if (NearFire(hit.point, 0.4f) && !InFire(to)) { s_hopWhy = "a fire at " + Fmt(hit.point); return false; }
                 // 1.4.99: with the companion known, only water it would have to swim in rules the line out (it wades or jumps the rest)
@@ -2998,6 +3003,35 @@ namespace Companions
             return true;
         }
 
+        // 1.5.98 DD4 / DD5: a half-meter step down steeper than the game's slide angle for a player (Character.GetSlideAngle,
+        // 38 deg: 0.5 x tan 38 = 0.39 m) is part of one fall; the drops of such steps in a row add up, anything else ends the
+        // run. Built pieces (stairs, ladders) are walked, never a fall.
+        const float SteepStep = 0.39f;
+        static float SteepRun(float run, float rise, Collider on)
+        {
+            if (rise >= -SteepStep || (on != null && on.GetComponentInParent<Piece>() != null)) return 0f;
+            return run - rise;
+        }
+
+        // DD5: the steep run ahead, from a step ahead out to MaxDrop + 1 m: its whole drop (0 = none, or it ends first)
+        static float SteepAhead(Vector3 pos, Vector3 dir, float dist, float maxDrop)
+        {
+            float run = 0f;
+            Vector3 prev = pos;
+            RaycastHit hit;
+            for (float x = dist; x <= dist + maxDrop + 1.01f; x += 0.5f)
+            {
+                Vector3 q = pos + dir * x;
+                if (!Physics.Raycast(new Vector3(q.x, prev.y + 1.5f, q.z), Vector3.down, out hit, 2f + maxDrop, Mask())) break;
+                if (MHR_Water.DepthAt(hit.point) >= 1.0f) break;
+                run = SteepRun(run, hit.point.y - prev.y, hit.collider);
+                if (run <= 0f) break;
+                if (run > maxDrop) return run;
+                prev = hit.point;
+            }
+            return 0f;
+        }
+
         // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)
         // a dry drop of more than a harmless fall (MaxDrop, 3 m) just ahead; deep water below is fine to land in
         static bool LedgeAhead(Vector3 pos, Vector3 dir, float dist, out float drop)
@@ -3008,7 +3042,13 @@ namespace Companions
             RaycastHit hit;
             // 1.5.3: a foot-sized probe, not a line - a stair-like ladder is separate rungs with gaps between (a line slipped
             // between two rungs and read as an edge: "stopping at the edge" in the middle of the user's ruin ladders)
-            if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
+            if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask()))
+            {
+                // DD5 (test 13: falls of 5-5.6 m on the walk at the old pit's edge): ground within MaxDrop a step ahead, but
+                // a steep run going on down - the whole run counts
+                drop = SteepAhead(pos, dir.normalized, 0.5f, maxDrop);
+                return drop > maxDrop;
+            }
             if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask()))
             {
                 // 1.5.97 (W6): the ray started inside the ground - a wall ahead (the bottom of a pit), not a drop. A ray that

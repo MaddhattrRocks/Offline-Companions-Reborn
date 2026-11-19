@@ -223,6 +223,7 @@ public static class ModLocalization
 			{ "hc_status_unloading", "Emptying its bags" },
 			{ "hc_status_repairing_gear", "Repairing its gear" },
 			{ "hc_status_needs_home", "Needs {0} - waiting till we're home" },
+			{ "hc_status_broken_home", "My {0} is broken - following you till we're home" },
 			{ "hc_status_job_wood", "Wood" },
 			{ "hc_status_job_stone", "Stone" },
 			{ "hc_status_job_ore", "Ore" },

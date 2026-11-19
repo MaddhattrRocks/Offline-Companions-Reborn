@@ -8,8 +8,6 @@ namespace Companions;
 // once a second while walking; positions are read from the game when needed.
 public partial class HarvestController
 {
-	private const float OvVeinGrid = 0.5f;       // AA6: the step a thing's box is looked at with
-
 	private const float OvBoardNear = 1.2f;      // AA6 (a): a point within 1.2 m of another's position or goal is not picked
 
 	private const float OvBoardLine = 1.0f;      // AA6 (b): a working companion within 1 m of the straight line: detour
@@ -40,89 +38,6 @@ public partial class HarvestController
 
 	private float _hdHitSeen;
 
-	// AA6: the reach point on a handed-off log (refreshed at most once a second)
-	private Vector3 _ovHandAt;
-
-	private bool _ovHandAtOn;
-
-	private float _ovHandAtNext;
-
-	// a thing's collider is at s (flat, within 0.3 m): the game's closest point; a non-convex mesh by its box
-	private static bool OvThingThere(Collider[] cols, Vector3 s, out Vector3 at)
-	{
-		at = s;
-		foreach (Collider c in cols)
-		{
-			if (c == null || c.isTrigger || !c.enabled || !c.gameObject.activeInHierarchy)
-			{
-				continue;
-			}
-			if (c is MeshCollider mc && !mc.convex)
-			{
-				Bounds cb = c.bounds;
-				if (s.x >= cb.min.x && s.x <= cb.max.x && s.z >= cb.min.z && s.z <= cb.max.z)
-				{
-					return true;
-				}
-				continue;
-			}
-			Vector3 cp = c.ClosestPoint(s);
-			if (Flat(cp, s) <= 0.3f)
-			{
-				at = cp;
-				return true;
-			}
-		}
-		return false;
-	}
-
-	// AA6: the sampled points of a thing (every 0.5 m over its box, at most 24 x 24): 1 = pt is the nearest free on the
-	// board (else the nearest point of it); 0 = no point of it found
-	private int OvThingPoint(GameObject go, Bounds b, Vector3 from, out Vector3 pt)
-	{
-		pt = from;
-		Collider[] cols = go.GetComponentsInChildren<Collider>();
-		float sx = Mathf.Max(OvVeinGrid, b.size.x / 24f), sz = Mathf.Max(OvVeinGrid, b.size.z / 24f);
-		bool anyOff = false, anyFree = false;
-		float bdOff = float.MaxValue, bdFree = float.MaxValue;
-		Vector3 off = from, free = from;
-		for (float x = b.min.x; x <= b.max.x + 0.01f; x += sx)
-		{
-			for (float z = b.min.z; z <= b.max.z + 0.01f; z += sz)
-			{
-				Vector3 s = new Vector3(x, b.center.y, z);
-				if (!OvThingThere(cols, s, out Vector3 at))
-				{
-					continue;
-				}
-				float d = Flat(from, at);
-				if (d < bdOff)
-				{
-					bdOff = d;
-					off = at;
-					anyOff = true;
-				}
-				if (d < bdFree && OvBoardTaken(at) == null)
-				{
-					bdFree = d;
-					free = at;
-					anyFree = true;
-				}
-			}
-		}
-		if (anyFree)
-		{
-			pt = free;
-			return 1;
-		}
-		if (anyOff)
-		{
-			pt = off;
-			return 1;
-		}
-		return 0;
-	}
-
 	// AA7: a thing's box hangs over a trench spot (flat)
 	private bool OvOverSpot(Bounds b)
 	{
@@ -138,23 +53,6 @@ public partial class HarvestController
 			}
 		}
 		return false;
-	}
-
-	// AA6 (Y6c): where it goes for a handed-off log - the Y6c point unless another companion stands or walks within 1.2 m
-	// of it; then the nearest point of the log that is free. Looked at again at most once a second.
-	private Vector3 OvHandLogPoint(Bounds lb, Vector3 want)
-	{
-		if (Time.time >= _ovHandAtNext)
-		{
-			_ovHandAtNext = Time.time + 1f;
-			_ovHandAtOn = false;
-			if (OvBoardTaken(want) != null && OvThingPoint(_target, lb, base.transform.position, out Vector3 fp) == 1 && OvBoardTaken(fp) == null)
-			{
-				_ovHandAt = fp;
-				_ovHandAtOn = true;
-			}
-		}
-		return _ovHandAtOn ? _ovHandAt : want;
 	}
 
 	// ---------- AA6: the board ----------
