@@ -76,6 +76,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<float> WaterStaminaFleeThreshold;
 
+	internal static ConfigEntry<bool> DrowningTeleport;
+
 	internal static ConfigEntry<bool> ShowOverheadBars;
 
 	internal static ConfigEntry<bool> ShowStatus;
@@ -695,7 +697,9 @@ internal static class ModConfig
 		JumpGap = Bind(cfg, "Movement", "JumpGap", 1.5f, "The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.", new AcceptableValueRange<float>(0.5f, 3f));
 		JumpWaterDepth = Bind(cfg, "Movement", "JumpWaterDepth", 0.3f, "Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.", new AcceptableValueRange<float>(0.05f, 2f));
 		JumpWaterWidth = Bind(cfg, "Movement", "JumpWaterWidth", 3f, "The widest stretch of water (meters) a companion jumps over.", new AcceptableValueRange<float>(1f, 4f));
-		WaterStaminaFleeThreshold = Bind(cfg, "Movement", "SwimStaminaShore", 0.25f, "When a swimming companion's stamina drops below this share (0.25 = 25%), it heads for the nearest shore, whatever it was doing.", new AcceptableValueRange<float>(0f, 1f));
+		WaterStaminaFleeThreshold = Bind(cfg, "Movement", "SwimStaminaShore", 0.25f, "When a swimming companion's stamina drops below this share (0.25 = 25%), it heads for the nearest way out of the water (anywhere it can stand or climb out), whatever it was doing.", new AcceptableValueRange<float>(0f, 1f));
+		// 1.5.98 (swim item 4): drowning while following -> next to you at 10% health
+		DrowningTeleport = Bind(cfg, "Movement", "DrowningTeleport", true, "On: a following companion drowning (swimming with no stamina) is brought next to you once its health is down to 10%, so it has time to find a way out first. Off: it drowns like a player would.");
 		// [Combat]
 		EngageOnNotice = Bind(cfg, "Combat", "EngageOnNotice", true, "On: companions attack a creature as soon as it has noticed you or a companion. Off: they wait until it is actually coming for you (alerted). Anything that attacks is always fought back, and Hunt goes after its prey either way.");
 		HealthRetreatPct = Bind(cfg, "Combat", "HealthRetreatPct", 0.3f, "Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.", new AcceptableValueRange<float>(0.05f, 0.9f));

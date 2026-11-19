@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -19,6 +20,38 @@ internal static class WaterSafety
 	private static Hashtable _shoreStartTime = new Hashtable();
 
 	private static int _logs;
+
+	// 1.5.98 (swim items 2 + 3)
+	private static readonly Dictionary<int, float> _offUntil = new Dictionary<int, float>();
+
+	private static readonly Dictionary<int, int> _jumps = new Dictionary<int, int>();
+
+	private static readonly Dictionary<int, float> _nextJump = new Dictionary<int, float>();
+
+	private static readonly Dictionary<int, List<KeyValuePair<Vector3, float>>> _cool = new Dictionary<int, List<KeyValuePair<Vector3, float>>>();
+
+	// a spot within 1.5 m of one that had its 2 tries in the last 60 s
+	private static bool Cooling(int id, Vector3 p, float now)
+	{
+		if (!_cool.TryGetValue(id, out var list))
+		{
+			return false;
+		}
+		list.RemoveAll((KeyValuePair<Vector3, float> e) => e.Value <= now);
+		foreach (KeyValuePair<Vector3, float> e in list)
+		{
+			if (Vector3.Distance(e.Key, p) < 1.5f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static string Fmt(Vector3 v)
+	{
+		return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")";
+	}
 
 	private const float MaxSeekSeconds = 25f;
 
@@ -42,6 +75,8 @@ internal static class WaterSafety
 		_shoreTarget.Remove(id);
 		_shoreRefresh.Remove(id);
 		_shoreStartTime.Remove(id);
+		_jumps.Remove(id);
+		_nextJump.Remove(id);
 	}
 
 	internal static bool Tick(BaseAI ai, float dt)
@@ -80,31 +115,37 @@ internal static class WaterSafety
 				}
 				return false;
 			}
+			// 1.5.98 (swim items 2 + 3): heads for a way out (MHR_Water.FindWayOut: anywhere the swim ends, or within one jump,
+			// nothing in between at the surface) instead of the terrain-only "shore" (it looked through walls: in a sunken tower it
+			// aimed at the swamp outside, and re-armed the update after its 25 s, so drowning, recall and follow never ran).
+			// After 25 s, or with no way out, it lets go for 30 s. At the spot: the game's water jump, 2 tries, then that spot
+			// waits 60 s and the next is taken.
+			float now = Time.time;
 			bool flag = _shoreTarget.ContainsKey(instanceID);
-			if (flag)
-			{
-				float num = ((!_shoreStartTime.ContainsKey(instanceID)) ? Time.time : ((float)_shoreStartTime[instanceID]));
-				if (Time.time - num > 25f)
-				{
-					_shoreTarget.Remove(instanceID);
-					_shoreRefresh.Remove(instanceID);
-					_shoreStartTime.Remove(instanceID);
-					if (CompanionsPlugin.LogNormal) Log("[WaterSafety] giving up on shore-seeking after " + 25f + "s (safety timeout) - resuming normal behavior.");
-					return false;
-				}
-			}
 			if (!character.IsSwimming())
 			{
 				if (flag)
 				{
-					_shoreTarget.Remove(instanceID);
-					_shoreRefresh.Remove(instanceID);
-					_shoreStartTime.Remove(instanceID);
+					Clear(character);
 				}
 				return false;
 			}
-			bool flag2 = flag;
-			if (!flag2)
+			if (_offUntil.TryGetValue(instanceID, out var off) && now < off)
+			{
+				return false;
+			}
+			if (flag)
+			{
+				float num = ((!_shoreStartTime.ContainsKey(instanceID)) ? now : ((float)_shoreStartTime[instanceID]));
+				if (now - num > 25f)
+				{
+					Clear(character);
+					_offUntil[instanceID] = now + 30f;
+					if (CompanionsPlugin.LogNormal) Log("[WaterSafety] \"" + character.m_name + "\" didn't get out of the water in 25 s - letting go for 30 s (follow, recall and jobs run)");
+					return false;
+				}
+			}
+			else
 			{
 				Component component = character.GetComponent("CompanionStamina");
 				if (component == null)
@@ -116,39 +157,67 @@ internal static class WaterSafety
 					return false;
 				}
 			}
-			Vector3 position = character.transform.position;
-			float num2 = ((!_shoreRefresh.ContainsKey(instanceID)) ? 999f : (Time.time - (float)_shoreRefresh[instanceID]));
-			if (!flag2 || num2 > 3f)
-			{
-				float liquidLevel = character.GetLiquidLevel();
-				if (TryFindShore(position, liquidLevel, out var shore))
-				{
-					_shoreTarget[instanceID] = shore;
-					_shoreRefresh[instanceID] = Time.time;
-					if (!flag2)
-					{
-						_shoreStartTime[instanceID] = Time.time;
-						if (CompanionsPlugin.LogNormal) Log("[WaterSafety] stamina low while swimming - heading for the nearest shore.");
-					}
-				}
-				else if (!flag2)
-				{
-					if (CompanionsPlugin.LogNormal) Log("[WaterSafety] stamina low while swimming, but no nearby shore found yet.");
-					return false;
-				}
-			}
-			if (!_shoreTarget.ContainsKey(instanceID))
-			{
-				return false;
-			}
-			Vector3 vector = (Vector3)_shoreTarget[instanceID];
-			// 1.4.141 (movement phase 4 part 2): swims for the bank through MHR_Mover (was the old MoveToPoint by reflection)
 			CompanionAI cai = ai as CompanionAI;
 			if (cai == null)
 			{
 				return false;
 			}
-			MHR_Mover.Go(cai, dt, vector, 1f, true, "Shore");
+			Vector3 position = character.transform.position;
+			float num2 = ((!_shoreRefresh.ContainsKey(instanceID)) ? 999f : (now - (float)_shoreRefresh[instanceID]));
+			if (!flag || num2 > 3f)
+			{
+				if (MHR_Water.FindWayOut(character, position, character.GetLiquidLevel(), (Vector3 p) => Cooling(instanceID, p, now), out var spot, out var why))
+				{
+					if (flag && Vector3.Distance((Vector3)_shoreTarget[instanceID], spot) > 1.5f)
+					{
+						_jumps[instanceID] = 0;
+					}
+					_shoreTarget[instanceID] = spot;
+					_shoreRefresh[instanceID] = now;
+					if (!flag)
+					{
+						_shoreStartTime[instanceID] = now;
+						_jumps[instanceID] = 0;
+						if (CompanionsPlugin.LogNormal) Log("[WaterSafety] \"" + character.m_name + "\" stamina low while swimming - heading for a way out at " + Fmt(spot) + " (" + Vector3.Distance(position, spot).ToString("F1") + " m)");
+					}
+				}
+				else
+				{
+					Clear(character);
+					_offUntil[instanceID] = now + 30f;
+					if (CompanionsPlugin.LogNormal) Log("[WaterSafety] \"" + character.m_name + "\" found no way out of the water at " + Fmt(position) + " - letting go for 30 s (" + why + ")");
+					return false;
+				}
+			}
+			Vector3 vector = (Vector3)_shoreTarget[instanceID];
+			Vector3 d = vector - position;
+			d.y = 0f;
+			float flat = d.magnitude;
+			Vector3 dir = flat > 0.05f ? d / flat : ai.transform.forward;
+			if (flat <= 1.5f && now >= (_nextJump.TryGetValue(instanceID, out var nj) ? nj : 0f))
+			{
+				int jumps = _jumps.TryGetValue(instanceID, out var jn) ? jn : 0;
+				if (jumps >= 2)
+				{
+					List<KeyValuePair<Vector3, float>> list;
+					if (!_cool.TryGetValue(instanceID, out list))
+					{
+						list = new List<KeyValuePair<Vector3, float>>();
+						_cool[instanceID] = list;
+					}
+					list.Add(new KeyValuePair<Vector3, float>(vector, now + 60f));
+					_jumps[instanceID] = 0;
+					_shoreRefresh[instanceID] = -999f;   // a new spot on the next update
+					if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[WaterSafety] \"" + character.m_name + "\" 2 tries at " + Fmt(vector) + " didn't end the swim - that spot waits 60 s");
+					cai.PushDirection(dir, run: true);
+					return true;
+				}
+				MHR_Mover.WaterJump(cai, character, dir);
+				_jumps[instanceID] = jumps + 1;
+				_nextJump[instanceID] = now + 1.5f;
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[WaterSafety] \"" + character.m_name + "\" at the way out " + Fmt(vector) + " - jumping out (try " + (jumps + 1) + ")");
+			}
+			cai.PushDirection(dir, run: true);
 			return true;
 		}
 		catch (Exception ex)

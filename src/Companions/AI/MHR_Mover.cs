@@ -3096,6 +3096,16 @@ namespace Companions
             return MHR_Water.DepthAt(hit.point) >= 1.0f;
         }
 
+        // 1.5.98 (swim item 2): the water jump on its own, also used by swim safety at a way out - the game's own jump
+        // (Character.Jump: a swimmer touching the world can jump, 0.7 force with no stamina)
+        internal static void WaterJump(CompanionAI ai, Character c, Vector3 dir)
+        {
+            Face(ai, dir);
+            c.Jump(false);
+            Rigidbody wrb = ai.GetComponent<Rigidbody>();
+            if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
+        }
+
         static void Hop(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why)
         {
             // 1.5.69: swimming against a bank - jump out like a player (the game lets a swimmer that touches the world jump,
@@ -3103,10 +3113,7 @@ namespace Companions
             // the stake wall, every unstuck step cancelled by the deep water
             if (c.IsSwimming())
             {
-                Face(ai, dir);
-                c.Jump(false);
-                Rigidbody wrb = ai.GetComponent<Rigidbody>();
-                if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
+                WaterJump(ai, c, dir);
                 s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
                 if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
                 return;
@@ -3983,6 +3990,57 @@ namespace Companions
         {
             try { return Floating.GetWaterLevel(p, ref s_wv); } catch { return -10000f; }
         }
+        // 1.5.98 (swim item 2): a way out of the water = anywhere the swim ends: something under the water shallow enough to
+        // stand on (the game's own test, Character.InLiquidSwimDepth: depth > swim depth - 0.4 means swimming) - ground, a rock,
+        // a stair, a sunken ladder, any object - or a top above the water within one jump from where its feet are (the game's
+        // jump: force x (1 + 0.4 x Jump skill), 70% with no stamina). The first thing in the way at the water surface on the line
+        // to a spot is the spot itself (what you'd swim into is what you'd climb onto); so nothing behind a wall counts.
+        // Rings 3, 5, 8, 12, 20, 30, 40, 50 m, 16 bearings; the nearest spot wins.
+        static readonly float[] s_wayRings = { 3f, 5f, 8f, 12f, 20f, 30f, 40f, 50f };
+        public static float JumpRise(Character c)
+        {
+            float skill = 0f;
+            try { skill = c.GetSkillFactor(Skills.SkillType.Jump); } catch { }
+            float v = c.m_jumpForce * (1f + skill * 0.4f) * (MHR_Jump.CanAfford(c) ? 1f : c.m_jumpForceTiredFactor);
+            return v * v / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;   // with the margin the mover's hop uses
+        }
+        public static bool FindWayOut(Character c, Vector3 pos, float water, System.Func<Vector3, bool> skip, out Vector3 best, out string why)
+        {
+            best = Vector3.zero; why = null;
+            float rise = JumpRise(c);
+            float standDepth = Mathf.Max(0f, c.m_swimDepth - 0.4f);
+            float surf = water + 0.3f;
+            int walls = 0, deep = 0, high = 0, cooled = 0;
+            foreach (float rad in s_wayRings)
+            {
+                float bestD = float.MaxValue; bool found = false;
+                for (int k = 0; k < 16; k++)
+                {
+                    float ang = k * 22.5f * Mathf.Deg2Rad;
+                    Vector3 dir = new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang));
+                    Vector3 from = new Vector3(pos.x, surf, pos.z);
+                    Vector3 q = pos + dir * rad;
+                    RaycastHit hit;
+                    if (Physics.Raycast(from, dir, out hit, rad, Mask(), QueryTriggerInteraction.Ignore)) q = hit.point + dir * 0.3f;
+                    // the top there, looked for from one jump above the water; starting inside something = a wall taller than a jump
+                    Vector3 top0 = new Vector3(q.x, water + rise + 0.5f, q.z);
+                    if (Physics.CheckSphere(top0, 0.1f, Mask(), QueryTriggerInteraction.Ignore)) { walls++; continue; }
+                    RaycastHit down;
+                    if (!Physics.Raycast(top0, Vector3.down, out down, rise + 0.5f + standDepth + 0.01f, Mask(), QueryTriggerInteraction.Ignore)) { deep++; continue; }
+                    float top = down.point.y;
+                    if (water - top > standDepth) { deep++; continue; }
+                    if (top - pos.y > rise) { high++; continue; }
+                    Vector3 spot = new Vector3(q.x, top, q.z);
+                    if (skip != null && skip(spot)) { cooled++; continue; }
+                    float d = Vector3.Distance(new Vector3(pos.x, 0f, pos.z), new Vector3(q.x, 0f, q.z));
+                    if (d < bestD) { bestD = d; best = spot; found = true; }
+                }
+                if (found) return true;
+            }
+            why = "walls taller than a jump " + walls + ", too deep " + deep + ", too high " + high + ", cooling down " + cooled + " (jump " + rise.ToString("F1") + " m)";
+            return false;
+        }
+
         public static float GroundAt(Vector3 p)
         {
             RaycastHit hit;

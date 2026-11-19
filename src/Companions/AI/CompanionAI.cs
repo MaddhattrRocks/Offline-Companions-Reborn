@@ -137,6 +137,8 @@ public class CompanionAI : BaseAI
 
 	private float _drownDamageTimer;
 
+	private float _drownTeleportAt;
+
 	private float _hazardRecoveryTimer;
 
 	private static readonly int s_taredHash = "Tared".GetStableHashCode();
@@ -1385,6 +1387,9 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "vanilla BaseAI.UpdateAI() false");
 			return false;
 		}
+		// 1.5.98 (swim item 1): drowning runs first, like Player.OnSwimming - no gate below may skip it (swim safety held every
+		// update, so companions in a sunken tower swam for days at 0 stamina and never drowned)
+		UpdateDrowning(dt);
 		MHR_Cart.HitchCheck(this);   // 1.5.97 (C2): a hitch is checked a second later
 		// 1.5.98 (W1b): in water that burns with the first hit close, getting out comes before the stamina swim rule
 		if (MHR_Mover.EscapeHotWater(this))
@@ -1438,7 +1443,6 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "UI open (panel/radial)");
 			return true;
 		}
-		UpdateDrowning(dt);
 		if (UpdateHazardRecovery(dt))
 		{
 			AIGateDiag.Report(_setup, "HazardRecovery");
@@ -1940,21 +1944,26 @@ public class CompanionAI : BaseAI
 				DrownEffects.Create(position, base.transform.rotation, null, 1f, -1, ZDOID.None);
 			}
 		}
+		// 1.5.98 (swim item 4): following and down to 10% health while drowning -> next to you (toggle Movement/DrowningTeleport).
+		// Replaces hazard recovery's 6 s timer; the health left gives it time to reach a way out first, like a player's long swim.
+		if ((ModConfig.DrowningTeleport?.Value ?? true) && m_follow != null && _setup != null && _setup.GetFollow() && m_character.GetHealth() <= m_character.GetMaxHealth() * 0.1f && !m_character.IsDead() && Time.time >= _drownTeleportAt)
+		{
+			_drownTeleportAt = Time.time + 10f;   // once per 10 s at most (you swimming too would place it back in the water)
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[WaterSafety] \"" + m_character.m_name + "\" drowning at " + m_character.GetHealth().ToString("F0") + "/" + m_character.GetMaxHealth().ToString("F0") + " health - brought to you");
+			WaterSafety.Clear(m_character);
+			_drownDamageTimer = 0f;
+			TeleportToFollowTarget();
+		}
 	}
 
 	private bool UpdateHazardRecovery(float dt)
 	{
 		bool flag = m_character.GetSEMan().HaveStatusEffect(s_taredHash);
 		bool flag2 = m_character.InLava();
-		bool flag3 = m_character.IsSwimming();
-		bool flag4 = false;
-		string text = null;
-		if (flag3 && _companionStamina != null && _companionStamina.Stamina <= 0f)
-		{
-			flag4 = true;
-			text = "DROWNING(no stamina)";
-		}
-		if (!flag && !flag4 && !flag2)
+		// 1.5.98 (swim item 4): drowning is no longer handled here - swim safety (WaterSafety) steers to a way out, the 10%
+		// health teleport is in UpdateDrowning. This was the original mod's "swim out when drowning", with its own terrain-only
+		// shore search (it looked through walls) and a teleport after 6 s. Tar and lava stay.
+		if (!flag && !flag2)
 		{
 			_hazardRecoveryTimer = 0f;
 			return false;
@@ -1962,7 +1971,7 @@ public class CompanionAI : BaseAI
 		_hazardRecoveryTimer += dt;
 		if (_hazardRecoveryTimer < 0.1f || (int)(_hazardRecoveryTimer * 10f) % 20 == 0)
 		{
-			string text2 = (flag ? "TAR" : (flag2 ? "LAVA" : text));
+			string text2 = (flag ? "TAR" : "LAVA");
 		}
 		if (m_targetCreature != null)
 		{
@@ -2013,7 +2022,7 @@ public class CompanionAI : BaseAI
 			Vector3 normalized = (m_follow.transform.position - position).normalized;
 			MoveTowards(normalized, run: true);
 		}
-		float num5 = ((flag3 && _companionStamina != null && _companionStamina.Stamina <= 0f) ? 6f : 10f);
+		float num5 = 10f;
 		if (_hazardRecoveryTimer > num5 && m_follow != null && _setup != null && _setup.GetFollow())
 		{
 			TeleportToFollowTarget();
