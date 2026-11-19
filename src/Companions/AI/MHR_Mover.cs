@@ -272,6 +272,14 @@ namespace Companions
                 if (UseLadderNow(ai, c, s, pos, now, tag)) return false;
                 if (s.UseLadder == null) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
             }
+            // 1.5.98 K6 (test 18: in fights on a vein they walked 40-57 m partial routes round the pit and headed for a
+            // stepladder): in a fight on a vein with the enemy 1.5 m or more up and only a partial route - a way out of the
+            // trench at once, else one cut at once (the R5 / Y5 code TryStartClimb uses after 3 s standing still)
+            else if (tag == CombatTag && OnVeinOf(ai) && s.MainPartial && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && c.IsOnGround() && s.VeinOut == 0 && now >= s.NextLadderSearch && s.Goal.y > pos.y + 1.5f)
+            {
+                s.NextLadderSearch = now + 2f;
+                if (VeinUp(ai, s, pos, now, tag, "no full route in a fight")) return false;
+            }
             else if (s.MainPartial && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && now >= s.NextLadderSearch && s.Goal.y > pos.y + 2f)
             {
                 if (!TryLadder(ai, s, pos, now, tag) && now >= s.NextLadderClimbSearch && TryStartLadderClimb(ai, c, s, pos, now, tag)) return false;
@@ -594,6 +602,7 @@ namespace Companions
         static bool TryLadder(CompanionAI ai, S s, Vector3 pos, float now, string tag)
         {
             s.NextLadderSearch = now + 2f;
+            if (tag == CombatTag && OnVeinOf(ai)) return false;   // K6: in a fight on a vein, no ladders (not ways out of the pit)
             if (s.UseLadder != null || s.Goal.y < pos.y + 1.5f) return false;
             Ladder best = null; float bestScore = float.MaxValue;
             float here = Vector3.Distance(pos, s.Goal);
@@ -1987,6 +1996,7 @@ namespace Companions
         {
             s.NextLadderClimbSearch = now + 2f;
             if (c.IsSwimming() || !c.IsOnGround() || now < s.ClimbUntil) return false;
+            if (tag == CombatTag && OnVeinOf(ai)) return false;   // K6: in a fight on a vein, no ladders (a stepladder in the pit is no way out)
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             // 1.5.3: 1.5 m, not 2 - a skeleton exactly 2.0 m up on the next floor got no ladder search (user log: stepped off
             // the ladder's top instead and fell)
@@ -2247,6 +2257,35 @@ namespace Companions
         }
 
         const float VeinOutTime = 10f;   // R5: 10 s to the bottom of a way out, 10 s up it
+
+        static bool OnVeinOf(CompanionAI ai)
+        {
+            HarvestController hv = ai != null ? ai.GetComponent<HarvestController>() : null;
+            return hv != null && hv.OnVein;
+        }
+
+        // 1.5.98 R5 / Y5 (moved here from TryStartClimb for K6): the nearest way out of the trench (a ramp cut up to the
+        // ground outside, K5: one that still reaches the floor) the way a ladder is used - its bottom, then its top; in a
+        // fight with none to use, the enemy is let go and a way out is cut at once. True = one of them started.
+        static bool VeinUp(CompanionAI ai, S s, Vector3 pos, float now, string tag, string why)
+        {
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv == null || !hv.OnVein) return false;
+            if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
+            {
+                s.VeinOut = 1; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
+                s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
+                return true;
+            }
+            // Y5 (John: "They need to carve a way out to get to the enemies")
+            if (tag == CombatTag && s.Goal.y > pos.y + 1.5f && hv.CombatWayOut(s.Goal))
+            {
+                ai.GetComponent<CompanionCombatAI>()?.LetGoForWayOut();
+                return true;
+            }
+            return false;
+        }
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
@@ -2255,22 +2294,7 @@ namespace Companions
             HarvestController hv = ai.GetComponent<HarvestController>();
             if (hv != null && hv.OnVein)
             {
-                // 1.5.98 R5: the nearest way out of the trench (a ramp cut up to the ground outside) instead, the way a ladder
-                // is used: its bottom, then its top
-                if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
-                {
-                    s.VeinOut = 1; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
-                    s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
-                    return true;
-                }
-                // 1.5.98 Y5 (John: "They need to carve a way out to get to the enemies"): in a fight, no way out to use - the
-                // enemy is let go and a way out is cut at once
-                if (tag == CombatTag && s.Goal.y > pos.y + 1.5f && hv.CombatWayOut(s.Goal))
-                {
-                    ai.GetComponent<CompanionCombatAI>()?.LetGoForWayOut();
-                    return false;
-                }
+                if (VeinUp(ai, s, pos, now, tag, "stuck (" + why + ")")) return s.VeinOut == 1;
                 if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
                 return false;
             }

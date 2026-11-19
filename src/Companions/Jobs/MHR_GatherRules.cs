@@ -579,26 +579,30 @@ namespace Companions
         }
 
         // 1.5.96: the checks DropOff makes on each chest (shared with the Ore job's dungeon-entrance chest)
-        internal static bool UsableChest(HarvestController h, Container c, bool atHome = false)
+        internal static bool UsableChest(HarvestController h, Container c, bool atHome = false) => ChestNo(h, c, atHome) == null;
+
+        // K9: the same checks, saying which one failed (null = usable)
+        internal static string ChestNo(HarvestController h, Container c, bool atHome = false)
         {
-            if (c == null || c.GetInventory() == null || !c.GetInventory().HaveEmptySlot()) return false;
-            if (c.GetComponent<TombStone>() != null || c.GetComponentInParent<TombStone>() != null) return false;
-            if (c.GetComponentInParent<Character>() != null) return false;
+            if (c == null || c.GetInventory() == null) return "no inventory";
+            if (!c.GetInventory().HaveEmptySlot()) return "full";
+            if (c.GetComponent<TombStone>() != null || c.GetComponentInParent<TombStone>() != null) return "a tombstone";
+            if (c.GetComponentInParent<Character>() != null) return "on a creature";
             // 1.5.70: a chest, cart or ship a player built - not a world chest in a hut or camp
             Piece built = c.GetComponentInParent<Piece>();
-            if (built == null || !built.IsPlacedByPlayer()) return false;
+            if (built == null || !built.IsPlacedByPlayer()) return "not built by a player";
             bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
-            if (mobile && atHome) return false;                   // at home, chests only
-            if (MHR_Chests.InUse(c)) return false;   // 1.4.153: also open on another player's game
-            if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) return false;
+            if (mobile && atHome) return "a cart or ship (at home, chests only)";
+            if (MHR_Chests.InUse(c)) return "open (in use)";   // 1.4.153: also open on another player's game
+            if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) return "inside a ward it has no access to";
             ZNetView nv = c.GetComponent<ZNetView>();
-            if (nv == null || !nv.IsValid()) return false;
+            if (nv == null || !nv.IsValid()) return "not loaded";
             if (c.m_privacy == Container.PrivacySetting.Private)
             {
                 Piece pc = c.GetComponent<Piece>();
-                if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) return false;
+                if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) return "private to someone else";
             }
-            return true;
+            return null;
         }
 
         // Replaces HarvestController.TryFindNearbyLog: the nearest log near the fallen tree, and only if the gather

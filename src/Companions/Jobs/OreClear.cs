@@ -480,11 +480,12 @@ public partial class HarvestController
 		return part != null && !part.Out && part.C != null && part.C.gameObject.activeSelf;
 	}
 
+	// K1: a low part that only a ladder reaches (OutOfReach, K2) doesn't count - it is left for the last step
 	private static bool OvLowLeft(OvClear c)
 	{
 		foreach (OvPart part in c.Low)
 		{
-			if (OvLowUp(part))
+			if (OvLowUp(part) && !part.OutOfReach)
 			{
 				return true;
 			}
@@ -503,7 +504,8 @@ public partial class HarvestController
 		bool others = false;
 		foreach (OvDirt d in c.Dirt)
 		{
-			if (OvDirtCooling(c, d))
+			// K4: a point already down to its goal (the dig's own test, OvDrTick) isn't picked - the list is made again soon
+			if (OvDirtCooling(c, d) || GroundAt(d.P) <= d.Goal + OvDigGain)
 			{
 				continue;
 			}
@@ -554,13 +556,20 @@ public partial class HarvestController
 					OvPartCool(lp, lwhy, wait: false);
 					continue;
 				}
+				if (lr == 1)
+				{
+					// K1 (John, 2026-11-19: no ladder until the rest of the dirt and low parts are removed): it waits for the
+					// last step (OvOreChoose), not counted as a failure and not holding that step back (OvLowLeft)
+					OvPartCool(lp, lwhy + " - it waits for the ladder, after the dirt and the other low parts", wait: true);
+					continue;
+				}
 				OvSpot lws = OvClSpotFor(lp);
 				if (lws != null && OvWayOutNeeded(lws))
 				{
 					OvWayOutHere(lws);
 					return true;
 				}
-				OvClBegin(lp, lstand, ladder: lr == 1, low: true);
+				OvClBegin(lp, lstand, ladder: false, low: true);
 				return true;
 			}
 			OvDirt d = (OvDirt)kv.Value;
@@ -670,6 +679,35 @@ public partial class HarvestController
 		OvTake(t, mode, type, sp, canSkip: false, how);
 	}
 
+	// K8 (test 18: the log over the pit - the base dig ended at once and nothing cut a way up to it): the ground at the
+	// thing's base is dug down (P2). If the thing's box bottom is still more than 0.8 m above its feet, a way up is cut with
+	// the pickaxe to the ground beside the thing (the Y6 way up: OvRampBegin toward a point 0.5 m short of the thing's box
+	// on its side, done when its feet are within a step of the box bottom), then the thing goes back to the Wood / Stone
+	// flow ("Up beside it", the same try: no second base dig or way up). Once per try. If the way up gives up, the thing
+	// waits 60 s (OvPitLeftNote, FF1's cooldown). Otherwise it goes straight back as before.
+	private void OvDrThingUp()
+	{
+		GameObject t = _rpThing;
+		Vector3 me = base.transform.position;
+		if (t == null || !t.activeInHierarchy || _vp == null || !OvThingBox(t, out Bounds b) || b.min.y <= me.y + OvThingLow)
+		{
+			OvDrThingBack("The ground at its base is dug down");
+			return;
+		}
+		// the dirt dig ends without letting the thing go (its claim and hand-back details stay for the way up)
+		_drForThing = false;
+		OvDrOff();
+		Vector3 np = b.ClosestPoint(new Vector3(me.x, b.center.y, me.z));
+		Vector3 dir = np - me;
+		dir.y = 0f;
+		dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : base.transform.forward;
+		Vector3 goal = np - dir * 0.5f;
+		goal.y = GroundAt(goal);
+		_rpThingBase = b.min.y;
+		_rpThingUp = true;
+		OvRampBegin(goal, null, outOfTrench: false, $"the ground at the base of \"{t.name}\" is dug down and it is still {b.min.y - me.y:F1} m above its feet - a way up beside it");
+	}
+
 	// one frame of digging a dirt point (from OvClearTick while _drSpot is set)
 	private void OvDrTick(OvClear c)
 	{
@@ -714,7 +752,7 @@ public partial class HarvestController
 			}
 			if (reached && _drForThing)
 			{
-				OvDrThingBack("The ground at its base is dug down");
+				OvDrThingUp();
 				return;
 			}
 			if (reached)
@@ -758,7 +796,7 @@ public partial class HarvestController
 		float g = GroundAt(d.P);
 		if (g <= d.Goal + OvDigGain && _drForThing)
 		{
-			OvDrThingBack("The ground at its base is dug down");
+			OvDrThingUp();
 			return;
 		}
 		if (g <= d.Goal + OvDigGain)
@@ -824,10 +862,25 @@ public partial class HarvestController
 			why = part != null ? "no pit ground within its swing of it outside the parts (and no higher than its top)" : $"no pit ground within its swing ({reach:F1} m) of it";
 			return 2;
 		}
+		// K2 (test 18): for a part, only the pit ground from which its bottom is within its swing (a part in the pit wall is
+		// mined from the bank beside it); the lowest of those. None: the lowest of all, from a ladder (K1: the last step).
+		float lowIn = float.MaxValue;
+		if (part != null)
+		{
+			foreach (Vector3 pt in cand)
+			{
+				if (aim.y - pt.y <= up)
+				{
+					lowIn = Mathf.Min(lowIn, pt.y);
+				}
+			}
+		}
+		bool fromLadder = part != null && lowIn == float.MaxValue;
+		float baseY = part != null && !fromLadder ? lowIn : low;
 		float bd = float.MaxValue;
 		foreach (Vector3 pt in cand)
 		{
-			if (pt.y > low + 0.3f)
+			if (pt.y > baseY + 0.3f || pt.y < baseY - 0.001f || (part != null && !fromLadder && aim.y - pt.y > up))
 			{
 				continue;
 			}
@@ -838,15 +891,15 @@ public partial class HarvestController
 				stand = pt;
 			}
 		}
-		if (part != null && aim.y - stand.y > up)
+		if (fromLadder)
 		{
-			why = $"its bottom is more than its swing reaches ({up:F1} m) above the bottom of the pit beside it";
+			why = $"its bottom is more than its swing reaches ({up:F1} m) above all the pit ground beside it";
 			return 1;
 		}
 		return 0;
 	}
 
-	// P1: on the pit's ground (inside the trench ring, the trench, and the dug ground joined to it). Before the pit's
+	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
 	// ground is first worked out: inside the ring or within 2 m of a trench spot (the old test).
 	private bool OvInPitPt(Vector3 pt)
 	{
@@ -1139,7 +1192,8 @@ public partial class HarvestController
 			{
 				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the round goes on after it
 			}
-			OvClFail($"{OvNoProgSwings} swings at it from {MHR_Mover.Fmt(me)} didn't hit it");
+			// K3: why the round ended
+			OvClFail(_dgLimit ? $"digging toward it from {MHR_Mover.Fmt(me)} reached the game's 8 m dig limit" : _dgPartMiss >= OvPartMissMax ? $"{OvPartMissMax} swings from {MHR_Mover.Fmt(me)} without hitting it" : $"{OvNoProgSwings} swings in a row from {MHR_Mover.Fmt(me)} neither hit it nor dug toward it");
 			return;
 		}
 		if (_clLadder)
@@ -1310,12 +1364,9 @@ public partial class HarvestController
 				return false;
 			}
 		}
-		foreach (Vector3 t in p.ExitAt)
+		if (OvExitTriedNear(sp.P))
 		{
-			if (Flat(t, sp.P) <= OvWayNear)
-			{
-				return false;
-			}
+			return false;
 		}
 		float h = _character != null ? _character.GetHeight() : 1.8f;
 		return OvWallTop(sp) - GroundAt(sp.P) >= OvRampRatio * h;   // Y2

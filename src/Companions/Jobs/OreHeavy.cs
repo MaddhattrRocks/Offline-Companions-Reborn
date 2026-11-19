@@ -125,7 +125,14 @@ public partial class HarvestController
 		return true;
 	}
 
-	// Q1: the vein's one ore dump - the trench floor at the trench spot nearest the first companion that needs it
+	// K9: storage for the ore dump - a chest (cart, ship) within 30 m of the vein's box
+	private const float OvDumpChest = 30f;
+
+	// Q1: the vein's one ore dump - the trench floor at the trench spot nearest the first companion that needs it.
+	// K9: if player-built storage with room (MHR_GatherRules.UsableChest, the checks the drop-off uses) is within 30 m of
+	// the vein's box, the dump is instead the trench spot nearest that storage (the nearest such to the vein), which puts
+	// it within the ore drop's 20 m chest check (FF3). The log names the storage used and why each other one within 30 m
+	// wasn't.
 	private bool OvDumpSpot(out Vector3 dump)
 	{
 		dump = Vector3.zero;
@@ -136,14 +143,50 @@ public partial class HarvestController
 		}
 		if (!p.DumpHas)
 		{
-			OvSpot q = OvNearest(base.transform.position);
+			Container chest = null;
+			float bd = float.MaxValue;
+			List<string> notes = new List<string>();
+			List<Container> near = MHR_Chests.Near(p.Box.center, OvDumpChest + Mathf.Max(p.Box.extents.x, p.Box.extents.z));
+			foreach (Container c in near)
+			{
+				if (c == null)
+				{
+					continue;
+				}
+				Vector3 cp = c.transform.position;
+				float d = Vector3.Distance(p.Box.ClosestPoint(cp), cp);
+				if (d > OvDumpChest)
+				{
+					continue;
+				}
+				string no = MHR_GatherRules.ChestNo(this, c);
+				if (no != null)
+				{
+					notes.Add($"\"{c.m_name}\" at {MHR_Mover.Fmt(cp)} ({d:F0} m): {no}");
+					continue;
+				}
+				if (d < bd)
+				{
+					if (chest != null)
+					{
+						notes.Add($"\"{chest.m_name}\" at {MHR_Mover.Fmt(chest.transform.position)} ({bd:F0} m): farther from the vein");
+					}
+					bd = d;
+					chest = c;
+				}
+				else
+				{
+					notes.Add($"\"{c.m_name}\" at {MHR_Mover.Fmt(cp)} ({d:F0} m): farther from the vein");
+				}
+			}
+			OvSpot q = OvNearest(chest != null ? chest.transform.position : base.transform.position);
 			if (q == null)
 			{
 				return false;
 			}
 			p.Dump = new Vector3(q.P.x, GroundAt(q.P), q.P.z);
 			p.DumpHas = true;
-			if (CompanionsPlugin.LogNormal) LogInfo($"The ore dump for \"{p.Name}\": trench spot {q.Idx + 1} at {MHR_Mover.Fmt(p.Dump)}");
+			if (CompanionsPlugin.LogNormal) LogInfo($"The ore dump for \"{p.Name}\": trench spot {q.Idx + 1} at {MHR_Mover.Fmt(p.Dump)} - " + (chest != null ? $"the trench spot nearest \"{chest.m_name}\" at {MHR_Mover.Fmt(chest.transform.position)} ({bd:F0} m from the vein, {Vector3.Distance(p.Dump, chest.transform.position):F0} m from the dump)" : $"no usable player-built storage within {OvDumpChest:F0} m of the vein, so the spot nearest it") + (notes.Count > 0 ? "; not used: " + string.Join("; ", notes) : ""));
 		}
 		dump = p.Dump;
 		dump.y = GroundAt(dump);

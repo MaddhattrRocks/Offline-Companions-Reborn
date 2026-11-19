@@ -129,6 +129,8 @@ public partial class HarvestController
 		// E2: where a way out before "done" was tried (up to 3, 5 m apart), and who is trying one now
 		public readonly List<Vector3> ExitAt = new List<Vector3>();
 
+		public readonly List<float> ExitTime = new List<float>();   // K5: when each try in ExitAt was made (60 s each)
+
 		public HarvestController ExitBy;
 
 		public float LastWork;
@@ -149,10 +151,6 @@ public partial class HarvestController
 	private const float OvPitScanAfter = 10f;     // ... every 10 s after
 
 	private const float OvPitCool = 60f;          // FF1: a thing someone couldn't clear waits 60 s
-
-	private const float OvPitDug = 0.5f;          // P1: a cell dug this far below its original height is pit ground
-
-	private const float OvPitGrow = 20f;          // P1: the pit reaches at most 20 m past the ring
 
 	private const float OvJoin = 4.0f;             // C2.1: deposits within 4 m join
 
@@ -394,6 +392,10 @@ public partial class HarvestController
 
 	private bool _dgPart;
 
+	private int _dgPartMiss;   // K3: swings at a part that didn't hit it (digging toward it included), 20 at most
+
+	private const int OvPartMissMax = 20;
+
 	// V2: when and where the game last dug for one of its swings; the vein whose pickaxe sweep was logged
 	private float _dgDugAt = -100f;
 
@@ -428,10 +430,13 @@ public partial class HarvestController
 
 	private int _rpThingClaim;
 
+	private bool _rpThingUp;      // K8: the way up toward this thing came after its base dig (if it gives up: 60 s wait)
+
 	// Y6d: the way up toward a thing is over or dropped: its claim goes
 	private void OvRampThingDrop()
 	{
 		_rpThing = null;
+		_rpThingUp = false;
 		if (_rpThingClaim != 0 && _rpThingClaim != _claimedTargetId)
 		{
 			s_claimedTargets.Remove(_rpThingClaim);
@@ -2267,10 +2272,57 @@ public partial class HarvestController
 		return false;
 	}
 
-	// R3: a saved ramp is a way out only if its top reached the ground outside as it was when it began
-	private static bool OvRampOut(OvRamp r)
+	// R3: a saved ramp is a way out only if its top reached the ground outside as it was when it began. K5 (test 18: ways
+	// out cut in laps 1-2 were still counted after the trench went 5 m deeper): and only while its bottom is less than
+	// 1.5 x its height above the trench floor now (the ground at the trench spot nearest its bottom)
+	private bool OvRampOut(OvRamp r)
 	{
-		return r.Top.y >= r.Need - OvStepUp;
+		if (r.Top.y < r.Need - OvStepUp)
+		{
+			return false;
+		}
+		OvSpot q = _vp != null ? OvNearest(r.Bottom) : null;
+		if (q == null)
+		{
+			return true;
+		}
+		float h = _character != null ? _character.GetHeight() : 1.8f;
+		return r.Bottom.y - GroundAt(q.P) < OvRampRatio * h;
+	}
+
+	// K5 (John: cooldowns, never permanent skips): a try at a way out within 15 m of p in the last 60 s
+	private bool OvExitTriedNear(Vector3 p)
+	{
+		OvPlan v = _vp;
+		float now = Time.time;
+		for (int i = v.ExitAt.Count - 1; i >= 0; i--)
+		{
+			float t = i < v.ExitTime.Count ? v.ExitTime[i] : 0f;
+			if (now - t >= OvPitCool)
+			{
+				v.ExitAt.RemoveAt(i);
+				if (i < v.ExitTime.Count)
+				{
+					v.ExitTime.RemoveAt(i);
+				}
+				continue;
+			}
+			if (Flat(v.ExitAt[i], p) <= OvWayNear)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void OvExitTry(Vector3 p)
+	{
+		while (_vp.ExitTime.Count < _vp.ExitAt.Count)
+		{
+			_vp.ExitTime.Add(Time.time);
+		}
+		_vp.ExitAt.Add(p);
+		_vp.ExitTime.Add(Time.time);
 	}
 
 	// R5: the nearest way out of this vein's trench (a saved ramp that is really out, R3) not tried on this trip, for the
@@ -2402,12 +2454,12 @@ public partial class HarvestController
 			}
 			if (me.y > _woGoal.y - OvOutDeep)   // Y2: the wall top along the line out
 			{
-				_vp.ExitAt.Add(me);   // R4: counted, so no other try is made within 15 m of here
+				OvExitTry(me);   // R4: counted, so no other try is made within 15 m of here
 				_vp.ExitBy = null;
 				if (CompanionsPlugin.LogNormal) LogInfo("The trench is shallow here - no way out needed");
 				return;
 			}
-			_vp.ExitAt.Add(me);
+			OvExitTry(me);
 			_exTry = true;
 			OvRampBegin(_woGoal, null, outOfTrench: false, _woWhy);
 			return;
@@ -2426,7 +2478,7 @@ public partial class HarvestController
 				OvGetOutNext("couldn't get there");
 				return;
 			}
-			_vp.ExitAt.Add(_woFloor);   // counts as a try
+			OvExitTry(_woFloor);   // counts as a try
 			return;
 		}
 		WalkGo(_woFloor, 0.5f, Flat(me, _woFloor) > 8f, dt);
@@ -2514,6 +2566,7 @@ public partial class HarvestController
 		_dgWalking = false;
 		_dgSwung = false;
 		_dgNoProg = 0;
+		_dgPartMiss = 0;
 		_dgLastProg = false;
 		_dgThingChecked = false;
 		_dgThingSwing = false;
@@ -2996,12 +3049,27 @@ public partial class HarvestController
 		}
 		if (_dgPart)
 		{
-			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress, 3 that don't hit it
-			// end it (its break is seen by OvClRound). Y7: a dig doesn't count here - the dirt there is at the 8 m limit, so
-			// the dig lands somewhere else (test 9: the floor at its own feet, 30 s at a time)
-			_dgNoProg = hitOre ? 0 : _dgNoProg + 1;
-			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : $"didn't hit the rock ({_dgNoProg} in a row)")}{dugAt}, feet {base.transform.position.y:F2}");
-			if (_dgNoProg >= OvNoProgSwings)
+			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress (its break is seen by
+			// OvClRound). K3 (test 18: 403 of 416 misses dug the dirt bank in front of the part): a swing the game dug into the
+			// dirt between it and the part, 0.3 m or more above its feet (P4's bank test - not the floor at its own feet, Y7),
+			// is work too. Ends: 3 swings in a row that did neither, the game's 8 m limit at that dig, or 20 swings that
+			// didn't hit the part.
+			Vector3 pf = base.transform.position;
+			bool toward = !hitOre && dug && _dgDugPt.y >= pf.y + 0.3f && Flat(pf, _dgDugPt) <= Flat(pf, _dgPoint) + 0.3f;
+			bool pLimit = toward && GroundAt(_dgDugPt) <= OvFloor(_dgDugPt) + OvDigGain;
+			_dgNoProg = hitOre || (toward && !pLimit) ? 0 : _dgNoProg + 1;
+			_dgPartMiss = hitOre ? _dgPartMiss : _dgPartMiss + 1;
+			if (toward && !pLimit && _vp != null)
+			{
+				OvC().ProgAt = Time.time;
+			}
+			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : toward ? (pLimit ? "dug toward it, at the game's 8 m dig limit there" : "dug the dirt toward it") : $"didn't hit the rock ({_dgNoProg} in a row)")}{dugAt}, {_dgPartMiss} swing(s) without hitting it, feet {pf.y:F2}");
+			if (pLimit)
+			{
+				_dgLimit = true;
+				OvDigOff();
+			}
+			else if (_dgNoProg >= OvNoProgSwings || _dgPartMiss >= OvPartMissMax)
 			{
 				OvDigOff();
 			}
@@ -3381,6 +3449,14 @@ public partial class HarvestController
 		OvDigOff();
 		_ai?.StopMoving();
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
+		if (_rpThing != null && _rpThingUp)
+		{
+			// K8: the way up after the base dig gave up - the thing waits 60 s, any companion may try it again then
+			GameObject t = _rpThing;
+			OvRampThingDrop();
+			OvPitLeftNote(t);
+			return;
+		}
 		if (_rpThing != null)
 		{
 			OvRampThingBack();   // Y6d: the thing gets its try from here (V5's clock)
@@ -3590,61 +3666,12 @@ public partial class HarvestController
 		return (ix << 32) ^ (iz & 0xffffffffL);
 	}
 
-	private static Heightmap s_pdHm;
-
-	private static float[] s_pdLevel;
-
-	private static float[] s_pdSmooth;
-
-	// P1: how far the ground at p is below its original height, from the game's own terrain record (TerrainComp's level
-	// and smooth deltas - the record the game's 8 m dig limit reads); 0 where nothing is recorded. The last heightmap is
-	// kept while the points stay on it.
-	private static float OvDugDepth(Vector3 p)
-	{
-		if (s_pdHm != null)
-		{
-			s_pdHm.WorldToVertex(p, out int x, out int y);
-			int w = s_pdHm.m_width + 1;
-			if (x >= 0 && y >= 0 && x < w && y < w)
-			{
-				int i = y * w + x;
-				return i < s_pdLevel.Length && i < s_pdSmooth.Length ? Mathf.Max(0f, -Mathf.Clamp(s_pdLevel[i] + s_pdSmooth[i], -8f, 8f)) : 0f;
-			}
-		}
-		s_pdHm = null;
-		Heightmap hm = Heightmap.FindHeightmap(p);
-		TerrainComp tc = TerrainComp.FindTerrainCompiler(p);
-		if (hm == null || tc == null)
-		{
-			return 0f;
-		}
-		float[] level = s_tLevelDelta?.GetValue(tc) as float[], smooth = s_tSmoothDelta?.GetValue(tc) as float[];
-		if (level == null || smooth == null)
-		{
-			return 0f;
-		}
-		hm.WorldToVertex(p, out int vx, out int vy);
-		int vw = hm.m_width + 1;
-		if (vx < 0 || vy < 0 || vx >= vw || vy >= vw)
-		{
-			return 0f;
-		}
-		s_pdHm = hm;
-		s_pdLevel = level;
-		s_pdSmooth = smooth;
-		int vi = vy * vw + vx;
-		return vi < level.Length && vi < smooth.Length ? Mathf.Max(0f, -Mathf.Clamp(level[vi] + smooth[vi], -8f, 8f)) : 0f;
-	}
-
-	private static readonly Queue<Vector2Int> s_pitOpen = new Queue<Vector2Int>();
-
-	// P1: the pit's ground - every 1 m cell inside the ring and every trench spot's cell, then out from them to each
-	// neighbouring cell (4 ways) the game shows dug 0.5 m or more below its original height, at most 20 m past the ring
+	// K7 (John, 2026-11-19 19:47Z: the pit is everything inside the trench's outer wall, nothing more): the pit's ground -
+	// every 1 m cell inside the ring and every trench spot's cell. (P1's spread out into joined dug ground is removed: it
+	// pulled the hillside in through their own ways out and base digs in test 18.)
 	private void OvPitBuild(OvPlan p)
 	{
 		p.PitCells.Clear();
-		s_pdHm = null;
-		s_pitOpen.Clear();
 		float rx0 = float.MaxValue, rx1 = float.MinValue, rz0 = float.MaxValue, rz1 = float.MinValue;
 		foreach (OvSpot sp in p.Spots)
 		{
@@ -3666,32 +3693,15 @@ public partial class HarvestController
 				}
 			}
 		}
+		float px0 = rx0, px1 = rx1, pz0 = rz0, pz1 = rz1;
 		foreach (OvSpot sp in p.Spots)
 		{
-			OvPitAdd(p, Mathf.RoundToInt(sp.P.x), Mathf.RoundToInt(sp.P.z));
-		}
-		float gx0 = rx0 - OvPitGrow, gx1 = rx1 + OvPitGrow, gz0 = rz0 - OvPitGrow, gz1 = rz1 + OvPitGrow;
-		float px0 = rx0, px1 = rx1, pz0 = rz0, pz1 = rz1;
-		while (s_pitOpen.Count > 0)
-		{
-			Vector2Int cell = s_pitOpen.Dequeue();
-			px0 = Mathf.Min(px0, cell.x);
-			px1 = Mathf.Max(px1, cell.x);
-			pz0 = Mathf.Min(pz0, cell.y);
-			pz1 = Mathf.Max(pz1, cell.y);
-			for (int n = 0; n < 4; n++)
-			{
-				int nx = cell.x + (n == 0 ? 1 : n == 1 ? -1 : 0);
-				int nz = cell.y + (n == 2 ? 1 : n == 3 ? -1 : 0);
-				if (nx < gx0 || nx > gx1 || nz < gz0 || nz > gz1 || p.PitCells.Contains(OvPitKey(nx, nz)))
-				{
-					continue;
-				}
-				if (OvDugDepth(new Vector3(nx, 0f, nz)) >= OvPitDug)
-				{
-					OvPitAdd(p, nx, nz);
-				}
-			}
+			int sx = Mathf.RoundToInt(sp.P.x), sz = Mathf.RoundToInt(sp.P.z);
+			OvPitAdd(p, sx, sz);
+			px0 = Mathf.Min(px0, sx);
+			px1 = Mathf.Max(px1, sx);
+			pz0 = Mathf.Min(pz0, sz);
+			pz1 = Mathf.Max(pz1, sz);
 		}
 		p.PitX0 = px0;
 		p.PitX1 = px1;
@@ -3700,16 +3710,13 @@ public partial class HarvestController
 		if (p.PitCells.Count != p.PitCellsSaid)
 		{
 			p.PitCellsSaid = p.PitCells.Count;
-			if (CompanionsPlugin.LogNormal) LogInfo($"The pit of \"{p.Name}\": {p.PitCells.Count} m2 of ground (inside the trench ring, the trench, and the dug ground joined to it), x {px0:F0} to {px1:F0}, z {pz0:F0} to {pz1:F0}");
+			if (CompanionsPlugin.LogNormal) LogInfo($"The pit of \"{p.Name}\": {p.PitCells.Count} m2 of ground (inside the trench ring and the trench), x {px0:F0} to {px1:F0}, z {pz0:F0} to {pz1:F0}");
 		}
 	}
 
 	private static void OvPitAdd(OvPlan p, int x, int z)
 	{
-		if (p.PitCells.Add(OvPitKey(x, z)))
-		{
-			s_pitOpen.Enqueue(new Vector2Int(x, z));
-		}
+		p.PitCells.Add(OvPitKey(x, z));
 	}
 
 	// P1 / P2: on the pit's ground - the box's centre or any of its bottom corners (flat) in a pit cell. Before the pit's
@@ -3949,12 +3956,9 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		foreach (Vector3 t in p.ExitAt)
+		if (OvExitTriedNear(sp.P))
 		{
-			if (Flat(t, sp.P) <= OvWayNear)
-			{
-				return false;
-			}
+			return false;
 		}
 		OvDigOff();
 		OvPartRelease();
