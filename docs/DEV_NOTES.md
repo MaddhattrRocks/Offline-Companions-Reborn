@@ -74,6 +74,12 @@
   - V4: OvThingAt skips things whose base is more than 2 m above its feet (wall top).
   - V5 (OvHandClock): a thing handed to the Wood / Stone flow is left (ResetToIdle -> OvResume blacklists, skips the spot) after 10 s with no hit on it, or 30 s since the last hit once hit.
   - V6: OvExitTick - while another companion cuts the way out before "done", the others go on to the clearing.
+- Test-12 fixes CC1-CC5 (John's OK 2026-11-19 00:25Z, agreed in the thread; still 1.5.98). John: "AA items making it worse... We had to many layer causing issues", "It should measure to actual ore vein parts, not the damn box."
+  - CC1: AA1 (leave a thing resting on the vein), AA2 (no ramp whose line passes the vein - it counted its own start point) and AA3 (way up at once past the swing's reach - 0.8 m axe reach from the feet) removed; out-of-reach things use the Y6d way up again. OvHandLogPoint keeps only AA6's free-point part.
+  - CC2 (OvPlanFor, OvPartBoxes, OvGap3D): deposits join when a live part's own box (the part collider's bounds, the game's support box from MineRock5.SetupColliders) is within 4 m in 3D of a part of the plan, buried parts included, chained part to part; the plan line names each joined deposit, its position and the gap. Was: one world-aligned box round each whole deposit, flat.
+  - CC3: J4's separate first pass round the ring (OvRingClear, RingCleared) removed; things on a spot are cleared when the spot is reached, pit things by the pit pick.
+  - CC4 (OvPitFirst): the pit pick takes only things within 8 m in a straight line (OvPitNear).
+  - CC5 (MHR_Mover.TryDropDown): a stuck drop-down must land nearer the goal (flat) than where it stands (was: up to 4 m farther).
 - Test-11 fixes AA1-AA7 (John's OK 2026-11-18 23:35Z, reviews/1.5.98-test11-review.md with its updates; still 1.5.98). John: "the way out should never be through the ore vein", "They should walk around each other rather than through each other", "We want this to be performance friendly."
   - New OreBoard.cs: OvVeinBoxes (the live parts' support boxes, read at most every 2 s per vein, OvPlan.PartBoxes), OvCrossesVein, OvOnVein / OvThingPoint, OvToolReach, the board (OvBoardTaken, OvBoardOnLine, OvBoardWalk, OvBoardTrenchWait, OvLnInUse).
   - AA1 (OvPitFirst, OvThingAt, Y6c via OvHandLogPoint, OvHandLedge): a thing whose box is within 0.2 m of a part's box rests on the vein; all of it over the parts (flat, every 0.5 m, parts grown 0.5 m) = left alone; one end off = taken, from the nearest point of it off the vein.

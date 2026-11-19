@@ -3090,7 +3090,7 @@ namespace Companions
                     if (drop > maxDrop) break;                                             // too far down this way
                     if (MHR_Water.DepthAt(hit.point) > 1.0f) break;
                     float flatAfter = Flat(hit.point, goal);
-                    if (flatAfter > here + 4f) break;                                      // takes us well away from it
+                    if (flatAfter >= here) break;                                          // 1.5.98 CC5 (test 12: a 1.7 m drop that landed 2.2 m farther, 4 times): only a drop that lands nearer it (flat)
                     float score = Mathf.Abs(hit.point.y - goal.y) * 2f + flatAfter * 0.3f + drop * 0.2f;
                     if (score < bestScore) { bestScore = score; bestDir = dir; bestLand = hit.point; bestEdge = d; }
                     break;

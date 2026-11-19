@@ -2673,7 +2673,7 @@ public partial class HarvestController : MonoBehaviour
 			if (_ovHandMode != 0 && _target == _ovHand && OvThingBox(_target, out Bounds lb))
 			{
 				Vector3 lp = lb.ClosestPoint(base.transform.position);
-				// AA1 / AA6: not a point over the vein it rests on, nor one another companion stands on or walks to
+				// AA6: not a point another companion stands on or walks to
 				return OvHandLogPoint(lb, Vector3.Distance(base.transform.position, lp) <= GetAttackRange() + 0.5f ? lp : LogReachPoint());
 			}
 			return LogReachPoint();
