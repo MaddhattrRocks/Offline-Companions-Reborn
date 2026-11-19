@@ -2832,9 +2832,9 @@ public partial class HarvestController
 		// nothing it could deal with and left the ground as it was counts as "no change"
 		if (_dgDirt)
 		{
-			// GG2 (John: "It should be like 2-3 swings of the pickaxe"): a swing that lowered the ground at the point is
-			// progress; down to its goal (0.3 m under the part's bottom) = done; 3 swings in a row that didn't lower it = the
-			// point waits 1 min. A swing that hit the vein's rock instead lowers nothing - it counts as one of the 3.
+			// GG2 (John: "It should be like 2-3 swings of the pickaxe"): a swing that lowered the ground at the point, hit the
+			// vein's rock (HH1) or carved a plain rock is work; down to its goal (0.3 m under the part's bottom) = done; 3
+			// swings in a row that did none of those = the point waits 1 min.
 			bool drop = _dgBefore - after >= OvDigGain;
 			bool atFloor = after <= OvFloor(_dgPoint) + OvDigGain;
 			// DD3 (kept): a swing that hit a plain rock (not this vein) carves through it - not one of the 3
@@ -2842,12 +2842,13 @@ public partial class HarvestController
 			GameObject rk = rockHit ? _ovThingHitGo.GetComponentInParent<MineRock5>()?.gameObject : null;
 			ItemDrop.ItemData pk = rk != null ? FindBestTool(2) : null;
 			bool carve = rk != null && pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false);
-			_dgNoProg = drop || carve ? 0 : _dgNoProg + 1;
+			// HH1 (John: "it was ok to hit the ore"): a swing that hit the vein's rock is work too (the game damages the part)
+			_dgNoProg = drop || carve || hitOre ? 0 : _dgNoProg + 1;
 			if (drop && _vp != null)
 			{
 				OvC().ProgAt = Time.time;
 			}
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(hitOre ? ", hit the vein's rock first (the game's pickaxe doesn't dig after that)" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || carve ? "" : $" - no lower ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || carve || hitOre ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
 			if (after <= _dgGoalY + OvDigGain)
 			{
 				_dgReached = true;

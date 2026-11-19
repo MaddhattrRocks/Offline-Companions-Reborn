@@ -608,16 +608,18 @@ public partial class HarvestController
 		if (_drWalk)
 		{
 			float flat = Flat(me, _drStand);
-			if (flat > OvStandAt)
+			// HH2: there = within 0.5 m (flat) and on that ground - feet no more than a step above the ground there now (standing on a part above the
+			// place is not there: it goes on, and the 10 s walk limit ends it)
+			if (flat > OvStandAt || me.y - GroundAt(_drStand) > OvStepUp)
 			{
 				float up = _drStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
 				if ((tooHigh || (WalkTimer(dt, _drStand) && _moveTimer > 10f)))
 				{
-					if (!_drRamped && up >= OvStepUp && flat <= OvRampReach && OvLineClear(c, me, _drStand))
+					if (!_drRamped && up >= OvStepUp && flat <= OvRampReach && OvStepsOut(me, _drStand))
 					{
-						// GG2: the place to stand is up a wall - steps toward it (the existing way up), never under a part
+						// GG2 / HH3: the place to stand is up a wall - steps toward it (the existing way up), only heading outward
 						_drRamped = true;
 						OvRampBegin(_drStand, null, outOfTrench: false, $"the place to stand for the dirt at {MHR_Mover.Fmt(d.P)} is {up:F1} m up");
 						return;
@@ -631,7 +633,7 @@ public partial class HarvestController
 			_drWalk = false;
 			_ai?.StopMoving();
 		}
-		else if (Flat(me, _drStand) > 1.2f)
+		else if (Flat(me, _drStand) > 1.2f || me.y - GroundAt(_drStand) > OvStepUp + 0.5f)
 		{
 			_drWalk = true;   // pushed off its place (or back from clearing a thing): back to it
 			_moveTimer = 0f;
@@ -651,7 +653,7 @@ public partial class HarvestController
 	}
 
 	// GG2: a place to stand for work at `aim` (the ring closest to it that has one, the nearest to the companion in it) (a dirt point: its ground; a part: its box, aim.y = its bottom) - on the pit
-	// ground (inside the trench's outer walls), outside every standing part's box, within its swing (flat), aim.y no higher
+	// ground (inside the trench's outer walls), a part round outside every standing part's box (HH2: not for dirt), within its swing (flat), aim.y no higher
 	// than its swing reaches, and its feet no higher than one step (0.7 m) above a dirt point / than a part's top (the
 	// pickaxe swing reaches about half a metre under its feet); the nearest to it. 0 = found, 1 = only too high (a part:
 	// from a ladder), 2 = none.
@@ -695,7 +697,9 @@ public partial class HarvestController
 				float g = GroundAt(pt);
 				pt.y = g;
 				Vector3 near = part != null ? box.ClosestPoint(pt) : aim;
-				if (Flat(pt, near) > reach + 0.01f || !OvInPitPt(pt) || OvInAnyBox(c, pt, hh))
+				// HH2 (John: "I did not like this rule anyway"): for dirt work any pit ground will do - the game's own collision
+				// decides whether it fits; a part round still stands beside the part's box
+				if (Flat(pt, near) > reach + 0.01f || !OvInPitPt(pt) || (part != null && OvInAnyBox(c, pt, hh)))
 				{
 					continue;
 				}
@@ -765,22 +769,13 @@ public partial class HarvestController
 		return false;
 	}
 
-	// GG2: steps cut from a to b never go under (or into) a part's box - checked every 0.5 m along the line
-	private bool OvLineClear(OvClear c, Vector3 a, Vector3 b)
+	// HH3 (John, 2026-11-19 19:22Z: "fine as long as they are headed outside of the pit / trench"): steps toward a place to
+	// stand are cut only when that place is farther (flat) from the vein's centre than where it starts - toward the trench
+	// and out, never in under the vein
+	private bool OvStepsOut(Vector3 from, Vector3 to)
 	{
-		float hh = _character != null ? _character.GetHeight() : 1.8f;
-		float len = Flat(a, b);
-		int n = Mathf.Max(1, Mathf.CeilToInt(len / 0.5f));
-		for (int i = 1; i <= n; i++)
-		{
-			Vector3 pt = Vector3.Lerp(a, b, (float)i / n);
-			pt.y = GroundAt(pt);
-			if (OvInAnyBox(c, pt, hh))
-			{
-				return false;
-			}
-		}
-		return true;
+		Vector3 vc = _vp.Box.center;
+		return Flat(to, vc) > Flat(from, vc);
 	}
 
 	// ---------- GG2 2.: the ore step ----------
@@ -1034,7 +1029,7 @@ public partial class HarvestController
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
 				if (tooHigh || (WalkTimer(dt, _clStand) && _moveTimer > 10f))
 				{
-					if (!_clRamped && up >= OvStepUp && flat <= OvRampReach && OvLineClear(c, me, _clStand))
+					if (!_clRamped && up >= OvStepUp && flat <= OvRampReach && OvStepsOut(me, _clStand))
 					{
 						_clRamped = true;
 						OvRampBegin(_clStand, null, outOfTrench: false, $"the place to stand beside \"{part.C.name}\" is {up:F1} m up");
