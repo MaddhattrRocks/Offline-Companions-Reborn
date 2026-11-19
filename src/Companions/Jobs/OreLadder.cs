@@ -353,7 +353,7 @@ public partial class HarvestController
 				continue;
 			}
 			int id = go.GetInstanceID();
-			if (Flat(go.transform.position, vc) > OvLnWoodRange || id == _pitSkipId || _blacklist.ContainsKey(id) || (_vp.PitLeft.TryGetValue(id, out int left) && left >= 2) || (s_claimedTargets.Contains(id) && id != _claimedTargetId))
+			if (Flat(go.transform.position, vc) > OvLnWoodRange || _blacklist.ContainsKey(id) || OvPitCooling(id) || (s_claimedTargets.Contains(id) && id != _claimedTargetId))
 			{
 				continue;
 			}

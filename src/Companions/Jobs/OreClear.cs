@@ -312,6 +312,11 @@ public partial class HarvestController
 		OvPartsLook(c, false);
 		if (_clFor != null)
 		{
+			// FF1: between swings of the round, the pit list first
+			if (OvPitBetween())
+			{
+				return true;
+			}
 			OvClRound(c);
 			return true;
 		}
@@ -444,8 +449,7 @@ public partial class HarvestController
 			return true;
 		}
 		// R4: a way out near where it will work first (the E2 way, from that spot), when there's none within 15 m
-		OvClStandFor(pick, out OvSpot q4, out bool here4);
-		OvSpot ws = here4 ? OvNearest(me) : q4;
+		OvSpot ws = OvClSpotFor(pick);
 		if (ws != null && OvWayOutNeeded(ws))
 		{
 			pick.Holder = null;
@@ -460,8 +464,8 @@ public partial class HarvestController
 	private bool OvHeldByThing(OvPart part)
 	{
 		GameObject t = part.HoldThing;
-		// not one it just left (Y6e: it waits for one other piece of work - a round on a part is one), nor one it has no tool for
-		return part.Root && t != null && t.activeInHierarchy && t.GetInstanceID() != _pitSkipId && !(_vp.PitLeft.TryGetValue(t.GetInstanceID(), out int left) && left >= 2) && FindBestTool(part.HoldMode) != null;
+		// not one cooling down (FF1: 60 s after someone couldn't clear it), nor one it has no tool for
+		return part.Root && t != null && t.activeInHierarchy && !OvPitCooling(t.GetInstanceID()) && FindBestTool(part.HoldMode) != null;
 	}
 
 	private bool OvAnyHeldByThing(OvClear c)
@@ -571,7 +575,6 @@ public partial class HarvestController
 	{
 		OvPlan p = _vp;
 		p.ExitBy = this;
-		_pitSkipId = 0;   // Y6e: another piece of work started
 		_woWhy = why;
 		_woCombat = false;
 		_woActive = true;
@@ -622,17 +625,6 @@ public partial class HarvestController
 		return best ?? any;
 	}
 
-	// R1: where the round starts - where it stands when that is nearer (flat) to the part's box than the trench spot is
-	// (R2c: and at least 3 m from where its last round started), else that trench spot
-	private void OvClStandFor(OvPart part, out OvSpot q, out bool here)
-	{
-		Vector3 me = base.transform.position;
-		q = OvClSpotFor(part);
-		float dq = q != null ? Flat(q.P, OvBoxNear(part, q.P)) : float.MaxValue;
-		float dm = Flat(me, OvBoxNear(part, me));
-		here = dm < dq && !(part.HasStart && part.Rounds > 0 && Flat(me, part.LastStart) < OvClOtherAngle) && OvBoardTaken(me) == null;
-	}
-
 	private const float OvClAt = 0.8f;             // L2: on the spot it walks to (flat)
 
 	private const int OvClCapMore = 2;             // L4: dig points = metres from the trench spot to the part + 2
@@ -640,11 +632,12 @@ public partial class HarvestController
 	// L1 / L2: a round on the part starts - it goes to the trench spot nearest it
 	private void OvClBegin(OvPart part, bool pop, bool ladder = false)
 	{
-		OvClStandFor(part, out OvSpot q, out bool here);
-		_pitSkipId = 0;   // Y6e: another piece of work started
+		// FF2 (John, test 14: "Just have them work from inside the trench"): every round starts on the trench floor at the
+		// trench spot nearest the part (L2); R1's "from where it stands" is gone (Gunter climbed the ore pile and worked from it)
+		OvSpot q = OvClSpotFor(part);
 		_clFor = part;
 		_clPop = pop;
-		_clStand = here ? base.transform.position : q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;
+		_clStand = q != null ? new Vector3(q.P.x, GroundAt(q.P), q.P.z) : base.transform.position;
 		part.HasStart = true;
 		part.LastStart = _clStand;
 		Vector3 d = part.Centre - _clStand;
@@ -656,7 +649,7 @@ public partial class HarvestController
 		_moveTimer = 0f;
 		_ai?.StopMoving();
 		OvLnBegin(ladder);
-		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(ladder ? $"a part too high to hit from the floor ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up) - from a ladder" : pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from {(here ? "where it stands" : $"trench spot {(q != null ? q.Idx + 1 : 0)}")} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Clearing \"{_vp.Name}\": {(ladder ? $"a part too high to hit from the floor ({OvPartBottom(part) - GroundAt(part.Centre):F1} m up) - from a ladder" : pop ? "no part holds it up any more but some still stand - the lowest" : "a part that holds it up")}: \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : "")}, round {part.Rounds + 1} of {(part.SetAside ? OvPartRoundsMax : OvPartRounds)} - from trench spot {(q != null ? q.Idx + 1 : 0)} at {MHR_Mover.Fmt(_clStand)}, {d.magnitude:F1} m from its centre");
 	}
 
 	private void OvClOff()

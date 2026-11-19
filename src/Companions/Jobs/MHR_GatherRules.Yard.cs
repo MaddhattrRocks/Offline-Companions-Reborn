@@ -125,6 +125,14 @@ namespace Companions
         // the same spot while it's within 25 m
         static void EnsureOreSpot(HarvestController h, Per p)
         {
+            // FF3 / Q1 (John: "the ore dump should be inside of the 'pit'"): the vein's one ore dump on the trench floor
+            Vector3 dump;
+            if (h.PitDumpFor(out dump))
+            {
+                int f0, s0;
+                p.OreSpot = dump; p.OreHas = true; p.YardFor = VeinBounds(h, out f0, out s0).center;
+                return;
+            }
             if (p.OreHas && Vector3.Distance(h.transform.position, p.OreSpot) <= YardReuse) return;
             int first, side;
             Bounds b = VeinBounds(h, out first, out side);
@@ -339,9 +347,51 @@ namespace Companions
             return true;
         }
 
+        internal static bool HasOre(Humanoid hum)
+        {
+            Inventory inv = hum != null ? hum.GetInventory() : null;
+            if (inv == null) return false;
+            foreach (ItemDrop.ItemData it in inv.GetAllItems()) if (IsOreItem(it)) return true;
+            return false;
+        }
+
+        // FF3: ore dropped the player's way, the biggest stacks first, only as many as take it to `limit` or under. The drops
+        // are added to `into` when it is given. Returns how many it dropped.
+        internal static int DropOreTo(Humanoid hum, float limit, List<ItemDrop> into)
+        {
+            Inventory inv = hum != null ? hum.GetInventory() : null;
+            if (inv == null) return 0;
+            List<ItemDrop.ItemData> ore = new List<ItemDrop.ItemData>();
+            foreach (ItemDrop.ItemData it in inv.GetAllItems()) if (IsOreItem(it)) ore.Add(it);
+            ore.Sort((a, b) => b.GetWeight().CompareTo(a.GetWeight()));
+            int n = 0;
+            foreach (ItemDrop.ItemData it in ore)
+            {
+                float over = inv.GetTotalWeight() - limit;
+                if (over <= 0f) break;
+                float unit = Mathf.Max(0.01f, it.GetWeight() / Mathf.Max(1, it.m_stack));
+                int count = Mathf.Clamp(Mathf.CeilToInt(over / unit), 1, it.m_stack);
+                s_dropInto = into;
+                try { if (PlayerDrop(hum, it, count)) n += count; }
+                finally { s_dropInto = null; }
+            }
+            return n;
+        }
+
+        // FF3: the walk to the vein's ore dump (the ore trip; 60 s, then it drops it where it is, as the ore trip does)
+        internal static void StartPitDump(HarvestController h, Vector3 dump, Vector3 vein)
+        {
+            Per p = P(h);
+            p.Trip = YardTrip.Ore; p.PitDump = true;
+            p.OreSpot = dump; p.OreHas = true; p.YardFor = vein;
+            p.PilePoint = dump; p.PileActive = true; p.PileUntil = Time.time + 60f;
+            if (CompanionsPlugin.LogNormal) Info("Too heavy with ore - taking it to the ore dump at " + MHR_Mover.Fmt(dump));
+        }
+
         // ---- the player's own drop (Humanoid.DropItem), with the player's no-auto-pickup mark (ItemDrop.OnPlayerDrop):
         // the game only marks it when the dropper is a player, so the postfix below adds it for this call ----
         [ThreadStatic] static bool s_playerDrop;
+        [ThreadStatic] static List<ItemDrop> s_dropInto;   // FF3: where the drops of one call are kept (null = not kept)
 
         internal static bool PlayerDrop(Humanoid hum, ItemDrop.ItemData item, int amount)
         {
@@ -357,7 +407,11 @@ namespace Companions
         {
             static void Postfix(ItemDrop __result)
             {
-                if (s_playerDrop && __result != null) __result.OnPlayerDrop();
+                if (s_playerDrop && __result != null)
+                {
+                    __result.OnPlayerDrop();
+                    s_dropInto?.Add(__result);
+                }
             }
         }
 
@@ -379,6 +433,12 @@ namespace Companions
                 }
                 if (popped) { p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = Time.time + 60f; }
                 p.OreDue = true;
+                // Q2: a popped vein with an ore dump - its ore is carried to storage after what it carries itself
+                Vector3 dump;
+                if (popped && HarvestController.PitDumpNear(h.transform.position, out dump))
+                {
+                    p.Collect = true; p.CollectAt = dump; p.CollectUntil = Time.time + CollectMax; p.CollectGot = false; p.CollectWalkUntil = 0f;
+                }
             }
             catch (Exception e) { Warn("AfterVein: " + e.Message); }
         }
@@ -387,13 +447,81 @@ namespace Companions
         internal static bool OreDue(HarvestController h)
         {
             Per p = P(h);
-            if (!p.OreDue || p.PileActive) return false;
+            if (p.PileActive || h.OnVein) return false;   // FF3: the ore to the storage waits until it is off the vein
             CompanionAI ai = h.GetComponent<CompanionAI>();
             Humanoid hum = h.GetComponent<Humanoid>();
             if (ai == null || hum == null || ai.PendingDepositContainer != null) return false;
+            if (!p.OreDue) return p.Collect && CollectTick(h, p, ai, hum);
             p.OreDue = false;
+            bool store = p.OreStore; p.OreStore = false;
             if (Mode(h) != 3 || InDungeon(h)) return false;
-            return OreLoad(h, p, ai, hum, afterVein: true);
+            return OreLoad(h, p, ai, hum, afterVein: !store);
+        }
+
+        // Q2 (John: "after the vein 'pops' and yes only to their limit"): with player-built storage with room within 20 m
+        // of the ore dump, it walks to the dump, picks up the ore lying within 2.5 m of it the way a player presses E,
+        // until the next stack would take it over what it can carry, and takes it to the storage; again until the dump is
+        // empty or the storage full. Each walk 30 s at most, the whole of it 10 minutes at most; a trip that picks up
+        // nothing ends it.
+        const float CollectNear = 2.5f, CollectWalk = 30f, CollectMax = 600f;
+        static readonly Collider[] s_collectBuf = new Collider[64];
+
+        static bool CollectTick(HarvestController h, Per p, CompanionAI ai, Humanoid hum)
+        {
+            float now = Time.time;
+            if (Mode(h) != 3 || now >= p.CollectUntil) { CollectEnd(p, "out of time"); return false; }
+            Container store = DropOff(h, p.CollectAt, 20f);
+            if (store == null) { CollectEnd(p, "no storage with room near it"); return false; }
+            ItemDrop next = null; float bd = float.MaxValue;
+            int k = Physics.OverlapSphereNonAlloc(p.CollectAt + Vector3.up, CollectNear, s_collectBuf, LayerMask.GetMask("item"));
+            Inventory inv = hum.GetInventory();
+            float carry = CompanionTierData.CarryLimit(h);
+            bool any = false;
+            for (int i = 0; i < k; i++)
+            {
+                Collider c = s_collectBuf[i];
+                ItemDrop d = c != null && c.attachedRigidbody != null ? c.attachedRigidbody.GetComponent<ItemDrop>() : null;
+                if (d == null || d.m_itemData == null) continue;
+                d.Load();
+                if (!IsOreItem(d.m_itemData)) continue;
+                any = true;
+                if (inv.GetTotalWeight() + d.m_itemData.GetWeight() > carry || !inv.CanAddItem(d.m_itemData)) continue;
+                float dd = Vector3.Distance(h.transform.position, d.transform.position);
+                if (dd < bd) { bd = dd; next = d; }
+            }
+            if (next == null)
+            {
+                // nothing more it can take: what it carries goes in; nothing carried = done
+                if (HasOre(hum) && p.CollectGot)
+                {
+                    p.CollectGot = false;
+                    if (CompanionsPlugin.LogNormal) Info("Taking the ore from the ore dump to \"" + store.m_name + "\"");
+                    h.ResetToIdle();
+                    ai.SetPendingDeposit(store, hum, IsOreItem);
+                    p.CollectWalkUntil = 0f;
+                    return true;
+                }
+                CollectEnd(p, any ? "it can't carry any of what is left" : "the ore dump is empty");
+                return false;
+            }
+            if (p.CollectWalkUntil <= 0f) p.CollectWalkUntil = now + CollectWalk;
+            if (now >= p.CollectWalkUntil && !p.CollectGot) { CollectEnd(p, "it couldn't get to the ore dump"); return false; }
+            Vector3 me = h.transform.position, at = next.transform.position;
+            if (new Vector2(me.x - at.x, me.z - at.z).magnitude <= 1.2f && Mathf.Abs(me.y - at.y) <= 2f)
+            {
+                ai.StopMoving();
+                if (!next.CanPickup(false)) { next.RequestOwn(); return true; }
+                if (hum.Pickup(next.gameObject, false, false)) p.CollectGot = true;
+                return true;
+            }
+            ai.MHR_Go(Time.deltaTime, at, 1.0f, false, "Collect");
+            return true;
+        }
+
+        static void CollectEnd(Per p, string why)
+        {
+            if (p.Collect && CompanionsPlugin.LogNormal) Info("Done carrying from the ore dump (" + why + ")");
+            p.Collect = false; p.CollectGot = false; p.CollectWalkUntil = 0f;
         }
 
         // where to stand to build at a spot: 2 m back toward where it is now
@@ -592,7 +720,8 @@ namespace Companions
             if (name == "Stone") return false;
             MHR_List list = Parse(3);
             if (list != null) return list.Allows(name, ItemLocal(name));
-            return name.IndexOf("Ore", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Scrap", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Obsidian", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("Flametal", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("BlackMetal", StringComparison.OrdinalIgnoreCase) >= 0;
+            // H6: the game's own ore list (MHR_Ore: what the coal smelters take, plus obsidian, chitin, black marble, soft tissue)
+            return MHR_Ore.IsOre(name);
         }
 
         // 1.5.97 (fix 4): where it goes next after a vein - what "in a hole" is measured against. A chest within 20 m if
@@ -652,6 +781,18 @@ namespace Companions
             Inventory inv = hum.GetInventory();
             Vector3 away = h.transform.position - p.YardFor; away.y = 0f;
             if (away.sqrMagnitude > 0.01f) h.transform.rotation = Quaternion.LookRotation(away.normalized);
+            // FF3: on the vein's ore dump with player-built storage (chest, cart, ship) with room within 20 m: only enough to
+            // get under its weight limit, then the rest goes out to the storage; no storage: all of it
+            bool pit = p.PitDump; p.PitDump = false;
+            Container store = pit ? DropOff(h, h.transform.position, 20f) : null;
+            if (store != null)
+            {
+                int k = DropOreTo(hum, h.HeavyLimit, null);
+                p.PackFull = false;
+                if (CompanionsPlugin.LogNormal) Info("On the ore dump: left " + k + " ore to get under its weight limit - taking the rest to \"" + store.m_name + "\"");
+                if (HasOre(hum)) { p.OreDue = true; p.OreStore = true; h.OvToStorage(store); }
+                return;
+            }
             List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>(inv.GetAllItems());
             int n = 0;
             for (int i = 0; i < items.Count; i++)

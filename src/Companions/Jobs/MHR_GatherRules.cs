@@ -31,6 +31,9 @@ namespace Companions
             public bool TossToCap; public float NoCapTossUntil;
             // pop test E2: a pile was left because it would take it over what it can carry
             public bool CapFull; public float NextCapLog;
+            // 1.5.98 FF3 / Q2: the ore trip is to the vein's ore dump; the ore goes to storage once off the vein; carrying the
+            // ore dump to storage after a pop
+            public bool PitDump, OreStore, Collect, CollectGot; public Vector3 CollectAt; public float CollectUntil, CollectWalkUntil;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();

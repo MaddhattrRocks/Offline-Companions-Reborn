@@ -69,6 +69,12 @@ internal static class MHR_Ore
 		return false;
 	}
 
+	// H6: an ore item by its prefab name
+	internal static bool IsOre(string prefab)
+	{
+		return !string.IsNullOrEmpty(prefab) && Ready() && s_items.Contains(prefab);
+	}
+
 	internal static bool IsVein(MineRock5 m)
 	{
 		return m != null && Drops(m.m_dropItems);

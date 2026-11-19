@@ -808,6 +808,12 @@ public partial class HarvestController : MonoBehaviour
 		{
 			return;
 		}
+		// 1.5.98 FF3: the heavy-with-ore steps under way (OreHeavy.cs) run to their end whatever it weighs now
+		if (mode == 3 && _vFor != null && _hvStage != 0)
+		{
+			OvHeavyTick();
+			return;
+		}
 		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
 		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
 		{
@@ -818,6 +824,11 @@ public partial class HarvestController : MonoBehaviour
 				return;
 			}
 			if (MHR_GatherRules.TossOnVein(this))
+			{
+				return;
+			}
+			// FF3: then the ore - dropped to what it can carry, rest, picked up, the vein's ore dump (OreHeavy.cs)
+			if (OvHeavyStart())
 			{
 				return;
 			}

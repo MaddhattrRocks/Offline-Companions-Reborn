@@ -71,7 +71,21 @@ public partial class HarvestController
 
 		// G6: the spot each thing was handed over for (a thing it couldn't clear skips only that spot)
 		public readonly Dictionary<int, OvSpot> HandFor = new Dictionary<int, OvSpot>();
-		public readonly Dictionary<int, int> PitLeft = new Dictionary<int, int>();   // Y6e: times a thing in the pit was left (2 = for this vein)
+		public readonly Dictionary<int, float> PitCool = new Dictionary<int, float>();   // FF1: a thing someone couldn't clear: not taken again until then (60 s)
+
+		// FF1: the vein's one pit scan (what is inside the trench's outer walls), its mode / type for the Wood / Stone flow
+		public readonly List<GameObject> PitThings = new List<GameObject>();
+
+		public readonly List<int> PitModes = new List<int>();
+
+		public readonly List<string> PitTypes = new List<string>();
+
+		public float PitScanAt;
+
+		// FF3 / Q1: the vein's one ore dump, on the trench floor (set by the first companion that needs it)
+		public bool DumpHas;
+
+		public Vector3 Dump;
 
 		public Vector3 Center;
 
@@ -114,7 +128,11 @@ public partial class HarvestController
 
 	private const float OvSpacing = 1.0f;          // C2.2: a spot every 1 m
 
-	private const float OvPitNear = 8.0f;          // CC4: the pit pick takes things within 8 m (straight line)
+	private const float OvPitScanTrench = 1f;     // FF1: the vein's pit scan every 1 s while the trench is dug ...
+
+	private const float OvPitScanAfter = 10f;     // ... every 10 s after
+
+	private const float OvPitCool = 60f;          // FF1: a thing someone couldn't clear waits 60 s
 
 	private const float OvJoin = 4.0f;             // C2.1: deposits within 4 m join
 
@@ -360,7 +378,7 @@ public partial class HarvestController
 	// V5: when the thing handed to the Wood / Stone flow was handed over
 	private float _hdSince;
 
-	private int _pitSkipId;       // Y6e: the thing left last - not taken again until one other piece of work starts
+	private float _pitAt;         // FF1: the next look at the pit list between swings
 
 	private float _firstAt;       // Y1 / Y6a: the "way out / things first" look runs at most once a second when it finds nothing
 
@@ -559,6 +577,8 @@ public partial class HarvestController
 		_ovAxeDone = false;
 		_ovPickOk = true;
 		_ovPickAt = 0f;
+		_hvStage = 0;   // FF3
+		_hvDrops.Clear();
 		_vFirstSide = SideOf(base.transform.position);
 		_ovSpot = null;
 		_ovIdx = -1;
@@ -569,7 +589,6 @@ public partial class HarvestController
 		_woActive = false;
 		_exTry = false;
 		OvRampThingDrop();
-		_pitSkipId = 0;
 		OvDigOff();
 		_rpActive = false;
 		_ai?.StopMoving();
@@ -589,6 +608,7 @@ public partial class HarvestController
 		{
 			OvClearGone();
 			OvLeave("the vein is gone", quiet: true);
+			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)
 			return;
 		}
 		if (_ovHandMode != 0)
@@ -646,6 +666,8 @@ public partial class HarvestController
 		{
 			LogInfo($"Leaving the vein work ({why})");
 		}
+		_hvStage = 0;   // FF3
+		_hvDrops.Clear();
 		_vFor = null;
 		_vRock = null;
 		_vp = null;
@@ -1316,7 +1338,6 @@ public partial class HarvestController
 			return;
 		}
 		p.Lap++;
-		p.PitLeft.Clear();   // AA5: "left twice" is per lap - a left thing is tried again on the next lap (the laps are capped)
 		int open = 0;
 		foreach (OvSpot s in p.Spots)
 		{
@@ -1451,6 +1472,7 @@ public partial class HarvestController
 		{
 			OvClearGone();
 			OvLeave("the vein is gone");
+			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)
 			return;
 		}
 		OvPlan p = _vp;
@@ -1491,6 +1513,11 @@ public partial class HarvestController
 		// N1: a clearing dig point is ticked by the clearing itself (OvClRound), which then sees how it ended
 		if (_dgActive && !_dgClear)
 		{
+			// FF1: between swings of a trench dig, the pit list first
+			if (OvPitBetween())
+			{
+				return;
+			}
 			OvDigTick();
 			return;
 		}
@@ -1750,7 +1777,6 @@ public partial class HarvestController
 			return false;
 		}
 		_ovStandSaid = false;
-		_pitSkipId = 0;   // Y6e: another piece of work started
 		OvSpot s = spots[found];
 		s.Holder = this;
 		_ovSpot = s;
@@ -1851,7 +1877,6 @@ public partial class HarvestController
 		_hdRampNext = false;
 		_hdBest = float.MaxValue;
 		_hdHwTime = 0f;
-		_pitSkipId = 0;
 		_ai?.StopMoving();
 		_target = best;
 		_targetType = ClassifyTargetType(best, bestMode);
@@ -1906,9 +1931,9 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			if (_vp.PitLeft.TryGetValue(go.GetInstanceID(), out int left) && left >= 2)
+			if (OvPitCooling(go.GetInstanceID()))
 			{
-				continue;   // Y6e: left for this vein
+				continue;   // FF1: cooling down
 			}
 			int id = go.GetInstanceID();
 			if (s_claimedTargets.Contains(id) && id != _claimedTargetId)
@@ -3114,7 +3139,7 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		if (OvWayOutFirst() || OvPitFirst())
+		if (OvPitFirst() || OvWayOutFirst())
 		{
 			return true;
 		}
@@ -3146,17 +3171,26 @@ public partial class HarvestController
 		return any;
 	}
 
-	// Y6a (John: "Clearing trees, bushes, logs, should take priority. Same goes for any rocks that fall into the trench or
-	// the area under the ore vein"): a tree, log, stump, bush or rock (not this vein's) in the pit - its game box within
-	// 2 m (flat) of a trench spot or under the vein, its bottom no more than 2 m above the floor at its nearest spot - the
-	// nearest (flat, from its feet to the box) is taken the Wood / Stone job's way. One companion per thing (claimed);
-	// one left twice is left for this vein, the one left last waits for one other piece of work (Y6e). True = taken.
-	private bool OvPitFirst()
+	// FF1 (John, test 14: "anything inside the outside walls of the trench needs to be cleared. That comes above everything
+	// else besides defending themselves"): ONE scan per vein, kept in the shared plan - run by whichever companion on the
+	// vein finds it due, every 1 s while the trench is being dug and every 10 s after; the others only read the list. In the
+	// pit = a tree, log, stump, bush or rock (not this vein's; one the Wood / Stone job takes, so never a dungeon piece that
+	// can't be broken) whose game box is inside the trench ring or within 2 m (flat) of a trench spot (the outer wall); no
+	// height rule.
+	private void OvPitScan(OvPlan p)
 	{
-		OvPlan p = _vp;
-		if (p == null || p.Spots.Count == 0)
+		float now = Time.time;
+		if (now < p.PitScanAt)
 		{
-			return false;
+			return;
+		}
+		p.PitScanAt = now + (p.Done ? OvPitScanAfter : OvPitScanTrench);
+		p.PitThings.Clear();
+		p.PitModes.Clear();
+		p.PitTypes.Clear();
+		if (p.Spots.Count == 0)
+		{
+			return;
 		}
 		if (s_ovThingMask == 0)
 		{
@@ -3171,99 +3205,133 @@ public partial class HarvestController
 			z0 = Mathf.Min(z0, sp.P.z);
 			z1 = Mathf.Max(z1, sp.P.z);
 			y0 = Mathf.Min(y0, g);
-			y1 = Mathf.Max(y1, g);
+			y1 = Mathf.Max(y1, Mathf.Max(g, sp.P.y));
 		}
 		y1 = Mathf.Max(y1, p.Box.max.y);
-		Vector3 c0 = new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, (z0 + z1) * 0.5f);
-		Vector3 half = new Vector3((x1 - x0) * 0.5f + OvThingRadius + 0.5f, (y1 - y0) * 0.5f + OvThingAbove + 1f, (z1 - z0) * 0.5f + OvThingRadius + 0.5f);
+		// the whole column over the pit (a standing tree's trunk starts at the ground), from 1 m under the lowest floor
+		Vector3 c0 = new Vector3((x0 + x1) * 0.5f, (y0 - 1f + y1 + 2f) * 0.5f, (z0 + z1) * 0.5f);
+		Vector3 half = new Vector3((x1 - x0) * 0.5f + OvThingRadius, (y1 + 2f - (y0 - 1f)) * 0.5f, (z1 - z0) * 0.5f + OvThingRadius);
 		int k = Physics.OverlapBoxNonAlloc(c0, half, s_ovPitBuf, Quaternion.identity, s_ovThingMask, QueryTriggerInteraction.Ignore);
-		Vector3 me = base.transform.position;
 		HashSet<int> seen = new HashSet<int>();
-		GameObject best = null;
-		OvSpot bestSpot = null;
-		string bestType = null;
-		int bestMode = 0;
-		float bd = float.MaxValue;
 		for (int i = 0; i < k; i++)
 		{
 			GameObject go = OvThingOf(s_ovPitBuf[i], out int mode, out string type);
-			if (go == null)
+			if (go == null || !seen.Add(go.GetInstanceID()) || !OvThingBox(go, out Bounds b) || !OvInPit(p, b))
+			{
+				continue;
+			}
+			p.PitThings.Add(go);
+			p.PitModes.Add(mode);
+			p.PitTypes.Add(type);
+		}
+	}
+
+	// FF1: inside the trench's outer walls - a corner or the centre of the box (flat) inside the ring, or the box within 2 m
+	// (flat) of a trench spot
+	private static bool OvInPit(OvPlan p, Bounds b)
+	{
+		if (p.Poly.Count >= 3)
+		{
+			if (OvInside(p.Poly, new Vector2(b.center.x, b.center.z)) || OvInside(p.Poly, new Vector2(b.min.x, b.min.z)) || OvInside(p.Poly, new Vector2(b.max.x, b.min.z)) || OvInside(p.Poly, new Vector2(b.max.x, b.max.z)) || OvInside(p.Poly, new Vector2(b.min.x, b.max.z)))
+			{
+				return true;
+			}
+		}
+		foreach (OvSpot sp in p.Spots)
+		{
+			Vector3 np = b.ClosestPoint(new Vector3(sp.P.x, b.center.y, sp.P.z));
+			if (Flat(np, sp.P) <= OvThingRadius)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// FF1: the nearest thing on the vein's pit list that no other companion has claimed, isn't cooling down (60 s after
+	// someone couldn't clear it) and that it has a tool for - taken the Wood / Stone job's way. With stopWork (a trench dig
+	// or a clearing round under way) that work is ended first. True = taken.
+	private bool OvPitFirst(bool stopWork = false)
+	{
+		OvPlan p = _vp;
+		if (p == null || p.Spots.Count == 0)
+		{
+			return false;
+		}
+		OvPitScan(p);
+		Vector3 me = base.transform.position;
+		GameObject best = null;
+		string bestType = null;
+		int bestMode = 0;
+		Bounds bestBox = default;
+		float bd = float.MaxValue;
+		for (int i = 0; i < p.PitThings.Count; i++)
+		{
+			GameObject go = p.PitThings[i];
+			if (go == null || !go.activeInHierarchy)
 			{
 				continue;
 			}
 			int id = go.GetInstanceID();
-			if (!seen.Add(id) || id == _pitSkipId || (p.PitLeft.TryGetValue(id, out int left) && left >= 2))
+			if (OvPitCooling(id) || (s_claimedTargets.Contains(id) && id != _claimedTargetId))
 			{
-				continue;
+				continue;   // cooling down, or another companion is on it
 			}
-			if (s_claimedTargets.Contains(id) && id != _claimedTargetId)
-			{
-				continue;   // another companion is on it
-			}
-			if (!OvThingBox(go, out Bounds b))
-			{
-				continue;
-			}
-			OvSpot n = OvNearest(b.center);
-			// AA7: one whose box hangs over a trench spot is taken however high it is (the Y6d way up reaches it)
-			bool overSpot = OvOverSpot(b);
-			if (n == null || (!overSpot && b.min.y > GroundAt(n.P) + OvThingAbove))
-			{
-				continue;   // on the wall top
-			}
-			if (n.Skip && !p.Done)
-			{
-				continue;   // Z1 (test 10): its spot is skipped this lap - it waits for the next lap (after the trench: any)
-			}
-			Vector3 np = b.ClosestPoint(new Vector3(n.P.x, b.center.y, n.P.z));
-			bool under = b.center.x >= p.Box.min.x && b.center.x <= p.Box.max.x && b.center.z >= p.Box.min.z && b.center.z <= p.Box.max.z;
-			if (Flat(np, n.P) > OvThingRadius && !under && !overSpot)
-			{
-				continue;
-			}
-			if (FindBestTool(mode) == null)
+			if (FindBestTool(p.PitModes[i]) == null || !OvThingBox(go, out Bounds b))
 			{
 				continue;   // no tool for it: nothing to do about it here
 			}
-			// CC4 (test 12: a fir 54.8 m away was picked): only one within 8 m in a straight line (height counts) - a farther
-			// one is left for whoever works nearer it
 			float d = Vector3.Distance(me, b.ClosestPoint(me));
-			if (d > OvPitNear)
-			{
-				continue;
-			}
 			if (d < bd)
 			{
 				bd = d;
 				best = go;
-				bestSpot = n;
-				bestType = type;
-				bestMode = mode;
+				bestType = p.PitTypes[i];
+				bestMode = p.PitModes[i];
+				bestBox = b;
 			}
 		}
 		if (best == null)
 		{
 			return false;
 		}
+		if (stopWork)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Stopping its {(_clFor != null ? "clearing round" : "trench dig")} - \"{best.name}\" is in the pit");
+			OvDigOff();
+			OvPartRelease();
+		}
 		OvRelease();
-		return OvTake(best, bestMode, bestType, bestSpot, canSkip: false, "In the pit (things first)") == 1;
+		return OvTake(best, bestMode, bestType, OvNearest(bestBox.center), canSkip: false, "In the pit (things first)") == 1;
 	}
 
-	// Y6e: a thing in the pit was left: it waits for one other piece of work; left twice = left for this vein
+	// FF1: between swings of a trench dig or a clearing round (not mid-swing, not a ladder round, not a bush it is already
+	// digging out): the pit list, at most once a second (a read of the shared list; the scan itself is the vein's)
+	private bool OvPitBetween()
+	{
+		if (Time.time < _pitAt || (_humanoid != null && _humanoid.InAttack()) || _clLadder || _dgBushOn)
+		{
+			return false;
+		}
+		_pitAt = Time.time + 1f;
+		return OvPitFirst(stopWork: true);
+	}
+
+	private bool OvPitCooling(int id)
+	{
+		return _vp != null && _vp.PitCool.TryGetValue(id, out float until) && Time.time < until;
+	}
+
+	// FF1 (John: "If something gets skipped it needs to have a cool down not a permanent skip"): a thing in the pit someone
+	// couldn't clear isn't taken again by any companion for 60 s, then it is back on the list
 	private void OvPitLeftNote(GameObject thing)
 	{
 		if (_vp == null || thing == null)
 		{
 			return;
 		}
-		int id = thing.GetInstanceID();
-		int n = (_vp.PitLeft.TryGetValue(id, out int was) ? was : 0) + 1;
-		_vp.PitLeft[id] = n;
-		_pitSkipId = id;
-		if (n >= 2 && CompanionsPlugin.LogNormal)
-		{
-			LogInfo($"Left \"{thing.name}\" at {MHR_Mover.Fmt(thing.transform.position)} twice - it's left for this vein");
-		}
+		_vp.PitCool[thing.GetInstanceID()] = Time.time + OvPitCool;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't clear \"{thing.name}\" at {MHR_Mover.Fmt(thing.transform.position)} - any companion may try it again in {OvPitCool:F0} s");
 	}
 
 	// Y6d: the thing handed to the Wood / Stone flow sits more than a step above its feet and the walk gets no closer (3 s
