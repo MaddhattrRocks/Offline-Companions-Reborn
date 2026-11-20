@@ -479,7 +479,7 @@ namespace Companions
             if (!p.OreDue) return p.Collect && CollectTick(h, p, ai, hum);
             p.OreDue = false;
             bool store = p.OreStore; p.OreStore = false;
-            if (Mode(h) != 3 || InDungeon(h)) { p.OreChest = null; return false; }
+            if (Mode(h) != 3 || InDungeon(h)) { p.OreChest = null; p.OreTrip = false; return false; }
             return OreLoad(h, p, ai, hum, afterVein: !store);
         }
 
@@ -801,11 +801,12 @@ namespace Companions
 
         // T3 (John: "They should head out when they hit 90+ percent capacity"): off the vein to this chest with its ore;
         // once off the vein OreDue puts only the ore in it. False = busy with a pile or dump trip.
-        internal static bool OreToChest(HarvestController h, Container c)
+        internal static bool OreToChest(HarvestController h, Container c, Vector3 pitAt, float pitR)
         {
             Per p = P(h);
             if (c == null || p.PileActive) return false;
             p.OreDue = true; p.OreStore = true; p.OreChest = c;
+            p.OreTrip = true; p.OreTripAt = pitAt; p.OreTripR = pitR;
             h.OvToStorage(c);
             return true;
         }
@@ -817,10 +818,27 @@ namespace Companions
             foreach (ItemDrop.ItemData it in hum.GetInventory().GetAllItems()) if (IsOreItem(it)) { any = true; break; }
             if (!any) return false;
             string why = afterVein ? "Done with the vein" : "Too heavy";
-            // T3: the trip to the chest by the vein goes to that chest while it is usable, else the normal search
-            Container c = p.OreChest != null && UsableChest(h, p.OreChest) ? p.OreChest : DropOff(h, h.transform.position, 20f);
-            if (p.OreChest != null && c == p.OreChest) why = "Near its carry limit";
+            // T3: the trip to the chest by the vein goes to that chest while it is usable. W5 (test 26: Comp's trip lost its
+            // chest after its way up and left its ore on the ore spot in the pit): if not, why is said, and a chest is looked
+            // for round the pit the way the 90% trip does; then the normal search within 20 m of itself
+            Container c = null;
+            if (p.OreChest != null)
+            {
+                string no = ChestNo(h, p.OreChest);
+                if (no == null) c = p.OreChest;
+                else if (CompanionsPlugin.LogNormal) Info("The chest it was taking its ore to (\"" + p.OreChest.m_name + "\") can't be used now: " + no + " - looking round the pit");
+            }
+            else if (p.OreTrip && CompanionsPlugin.LogNormal) Info("The chest it was taking its ore to is no longer set - looking round the pit");
+            if (c == null && p.OreTrip)
+            {
+                ItemDrop.ItemData ore = null;
+                foreach (ItemDrop.ItemData it in hum.GetInventory().GetAllItems()) if (IsOreItem(it)) { ore = it; break; }
+                if (ore != null) c = HarvestController.OvTripChest(h, p.OreTripAt, p.OreTripR, ore);
+            }
+            if (c != null && p.OreTrip) why = "Near its carry limit";
+            if (c == null) c = DropOff(h, h.transform.position, 20f);
             p.OreChest = null;
+            p.OreTrip = false;
             if (c != null)
             {
                 if (CompanionsPlugin.LogNormal) Info(why + " - putting the ore in \"" + c.m_name + "\" " + Vector3.Distance(h.transform.position, c.transform.position).ToString("F0") + "m away");

@@ -170,6 +170,36 @@ public partial class HarvestController
 	private const float OvChestNear = 20f, OvChestAt = 0.9f, OvChestEvery = 5f, OvChestCool = 60f;
 	private float _ovChestNext;
 
+	// T3 / W5: a player-built chest (not a cart or ship) within 20 m of the pit (the vein's centre and its trench radius r)
+	// that it may use and that takes this ore - the nearest to the companion
+	internal static Container OvTripChest(HarvestController h, Vector3 center, float r, ItemDrop.ItemData ore)
+	{
+		Container best = null;
+		float bd = float.MaxValue;
+		foreach (Container c in MHR_Chests.Near(center, r + OvChestNear))
+		{
+			if (c == null || c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null)
+			{
+				continue;
+			}
+			if (Flat(c.transform.position, center) - r > OvChestNear)
+			{
+				continue;
+			}
+			if (!MHR_GatherRules.UsableChest(h, c) || !c.GetInventory().CanAddItem(ore, 1))
+			{
+				continue;
+			}
+			float d = Flat(h.transform.position, c.transform.position);
+			if (d < bd)
+			{
+				bd = d;
+				best = c;
+			}
+		}
+		return best;
+	}
+
 	private bool OvChestTrip()
 	{
 		if (_vp == null || _vFor == null || _ovOut || _humanoid == null || _humanoid.InAttack() || _vp.Spots.Count == 0)
@@ -206,40 +236,19 @@ public partial class HarvestController
 			r = Mathf.Max(r, Flat(sp.P, _vp.Center));
 		}
 		r += OvThingRadius;
-		Container best = null;
-		float bd = float.MaxValue;
-		foreach (Container c in MHR_Chests.Near(_vp.Center, r + OvChestNear))
-		{
-			if (c == null || c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null)
-			{
-				continue;
-			}
-			if (Flat(c.transform.position, _vp.Center) - r > OvChestNear)
-			{
-				continue;
-			}
-			if (!MHR_GatherRules.UsableChest(this, c) || !c.GetInventory().CanAddItem(ore, 1))
-			{
-				continue;
-			}
-			float d = Flat(base.transform.position, c.transform.position);
-			if (d < bd)
-			{
-				bd = d;
-				best = c;
-			}
-		}
+		Container best = OvTripChest(this, _vp.Center, r, ore);
 		if (best == null)
 		{
 			return false;
 		}
+		float bd = Flat(base.transform.position, best.transform.position);
 		// U7 (John 2026-11-20: "just have them toss stuff and go unload ore"): its stone and wood go off to one side first
 		// (the existing vein toss); still at 90% after that (looked again within 5 s) = the ore trip
 		if (MHR_GatherRules.TossOnVein(this))
 		{
 			return true;
 		}
-		if (!MHR_GatherRules.OreToChest(this, best))
+		if (!MHR_GatherRules.OreToChest(this, best, _vp.Center, r))
 		{
 			return false;
 		}

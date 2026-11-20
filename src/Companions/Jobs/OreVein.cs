@@ -2524,16 +2524,14 @@ public partial class HarvestController
 		}
 		// T4: a saved way out within 15 m that the trench has gone below - extended down to the floor, then up it
 		OvRamp ext = OvStrandedNear(me);
-		OvSpot es = ext != null ? OvNearest(ext.Bottom) : null;
-		if (es != null)
+		if (ext != null && OvExtendFloor(ext, out Vector3 extFloor))
 		{
 			_woActive = true;
 			_woOut = true;
-			_woFloor = es.P;
-			_woFloor.y = GroundAt(es.P);
+			_woFloor = extFloor;   // W1: on the way out's own line, downhill from its old bottom
 			_woGoal = ext.Bottom;
 			_moveTimer = 0f;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}): extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down to the floor at {MHR_Mover.Fmt(_woFloor)} ({ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}): extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down its own line to the floor at {MHR_Mover.Fmt(_woFloor)} ({ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
 			return;
 		}
 		OvRampBegin(goal, null, outOfTrench: true, why);
@@ -3582,7 +3580,9 @@ public partial class HarvestController
 			OvRamp same = null;
 			foreach (OvRamp r in _vp.Ramps)
 			{
-				if (Flat(r.Bottom, _rpStart) <= OvRampNear)
+				// W2 (test 26: a bottom within 10 m glued different ways out together - Comp's by the chests got a top 19 m
+				// away): the same ramp made longer only when its new top is within 5 m of the saved one's top or bottom
+				if (Flat(me, r.Top) <= OvRampTopNear || Flat(me, r.Bottom) <= OvRampTopNear)
 				{
 					same = r;
 					break;

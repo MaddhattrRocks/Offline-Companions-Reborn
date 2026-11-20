@@ -26,7 +26,7 @@ namespace Companions
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
             // tried on this trip (like the ladders it tried)
-            public int VeinOut; public bool VeinDown; public float NextPitWay; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
+            public int VeinOut; public bool VeinDown; public float NextPitWay; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public int VeinOutStuckN; public float VeinOutStuckRem; public bool VeinOutGiveUp; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
             public bool GaveUp; public float GaveUpAt;
             public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
@@ -209,6 +209,14 @@ namespace Companions
 
             // arrived: within reach on the same level (not standing under it on the floor below)
             if (Flat(pos, goal) <= dist && Mathf.Abs(pos.y - goal.y) <= 1.5f) { Halt(ai, c, s); return true; }
+            if (s.GaveUp && s.VeinOut != 0 && s.UseLadder == null)
+            {
+                // W3: the mover gave up on this way out - the next one (it is not taken again in this walk)
+                s.VeinOutTried.Add(s.VeinOutId);
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] no way to " + Fmt(s.VeinOutAt) + " on the way out of the trench - the next way");
+                s.VeinOut = 0; s.HasDetour = false; s.GaveUp = false; VeinLeg(s);
+                Plan(ai, c, s, pos, now);
+            }
             if (s.GaveUp) { Halt(ai, c, s); return false; }
             if (c == null || c.InAttack()) return false;
 
@@ -339,13 +347,13 @@ namespace Companions
                 // R5: the way out of a vein's trench - its bottom by the normal route, then up to its top (10 s each). A side
                 // step of the stuck handling may take the detour for a moment; then it goes on to the way out again.
                 bool there = Flat(pos, s.VeinOutAt) < 1.0f && Mathf.Abs(pos.y - s.VeinOutAt.y) < 1.5f;
-                if (!there && now <= s.VeinOutUntil && (!s.HasDetour || (s.Detour != s.VeinOutAt && Flat(pos, s.Detour) < 1.0f)))
+                if (!there && !s.VeinOutGiveUp && (!s.HasDetour || (s.Detour != s.VeinOutAt && Flat(pos, s.Detour) < 1.0f)))
                 {
                     s.HasDetour = true; s.Detour = s.VeinOutAt; s.DetourUntil = s.VeinOutUntil; Plan(ai, c, s, pos, now);
                 }
                 else if (there && s.VeinOut == 1)
                 {
-                    s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = now + VeinOutTime;
+                    s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
                     s.HasDetour = true; s.Detour = s.VeinOutTop; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
                     if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the " + (s.VeinDown ? "top" : "bottom") + " of the way out of the trench - going " + (s.VeinDown ? "down" : "up") + " to " + Fmt(s.VeinOutTop));
                     Plan(ai, c, s, pos, now);
@@ -357,10 +365,11 @@ namespace Companions
                     if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.VeinDown ? "down" : "up") + " the way out of the trench at " + Fmt(pos));
                     Plan(ai, c, s, pos, now);
                 }
-                else if (now > s.VeinOutUntil)
+                else if (s.VeinOutGiveUp)
                 {
                     s.VeinOutTried.Add(s.VeinOutId);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " in " + VeinOutTime.ToString("F0") + " s");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " (stuck twice with its route no shorter) - the next way");
+                    VeinLeg(s);
                     s.VeinOut = 0; s.HasDetour = false;
                     Plan(ai, c, s, pos, now);
                 }
@@ -1175,6 +1184,13 @@ namespace Companions
         static void Unstick(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 target, float now, string tag, float still, float noCloser)
         {
             string why = still >= StillTime ? "standing still " + still.ToString("F0") + "s" : "no closer for " + noCloser.ToString("F0") + "s";
+            if (s.VeinOut != 0)
+            {
+                // W3: twice in a row with the route no 0.75 m shorter = the leg is given up (the walk's VeinOut state)
+                float rem = Remaining(s, pos);
+                if (s.VeinOutStuckN > 0 && rem > s.VeinOutStuckRem - 0.75f) s.VeinOutGiveUp = true;
+                else { s.VeinOutStuckN = 1; s.VeinOutStuckRem = rem; }
+            }
             s.AnchorTime = now; s.Anchor = pos;
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
@@ -2271,7 +2287,15 @@ namespace Companions
             Steer(ai, c, s, dir, false, false);
         }
 
-        const float VeinOutTime = 10f;   // R5: 10 s to the bottom of a way out, 10 s up it
+        // W3 (test 26, John: "Timers break things"; replaces R5's 10 s per leg): a leg of the way-out walk has no clock - it is
+        // given up only when the mover gives up on it, or its stuck handling fires twice in a row with the route (its length,
+        // not a straight line - a way out often leads away first) no 0.75 m shorter in between
+        const float VeinOutTime = float.MaxValue;
+
+        static void VeinLeg(S s)
+        {
+            s.VeinOutStuckN = 0; s.VeinOutGiveUp = false;
+        }
 
         static bool OnVeinOf(CompanionAI ai)
         {
@@ -2288,7 +2312,7 @@ namespace Companions
             if (hv == null || !hv.OnVein) return false;
             if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.Goal, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
             {
-                s.VeinOut = 1; s.VeinDown = false; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
+                s.VeinOut = 1; s.VeinDown = false; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
                 s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
                 if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
                 return true;
@@ -2308,7 +2332,7 @@ namespace Companions
             HarvestController hv = ai.GetComponent<HarvestController>();
             if (hv != null && hv.CutsWayOut) return false;
             if (!HarvestController.PitWay(pos, s.Goal, c.GetHeight(), s.VeinOutTried, out bool down, out Vector3 first, out Vector3 second, out int id)) return false;
-            s.VeinOut = 1; s.VeinDown = down; s.VeinOutAt = first; s.VeinOutTop = second; s.VeinOutId = id; s.VeinOutUntil = now + VeinOutTime;
+            s.VeinOut = 1; s.VeinDown = down; s.VeinOutAt = first; s.VeinOutTop = second; s.VeinOutId = id; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
             s.HasDetour = true; s.Detour = first; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (down ? "going into the pit" : "leaving the pit") + " by its way out: " + Fmt(first) + " then " + Fmt(second));
             return true;

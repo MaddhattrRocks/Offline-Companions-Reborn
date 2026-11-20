@@ -110,6 +110,12 @@ public partial class HarvestController
 
 	private Vector3 _standAim;     // M1: OvStandFor's aim for a part
 
+	private bool _standWall;       // W4: OvStandForPart found pit ground where its body fits, but no swing from it meets the rock
+
+	private bool _clWall;          // W4: this round is John's way - right up to the wall facing the part, swing, step in, again
+
+	private float _clHwBest, _clHwTime;   // W4: the walk up to the wall (E4's headway check)
+
 
 	// GG2: the dirt point it digs, where it stands, walking there, one way up per point
 	private OvDirt _drSpot;
@@ -137,6 +143,10 @@ public partial class HarvestController
 		public int Mined;
 
 		public int Popped;
+
+		// W0 (test 26, John 2026-11-20: "2 or more when there are no remaining large groups of parts still attached
+		// together. Single standing parts and buried parts should not be counted"): the pop was seen
+		public bool PopSeen;
 
 		// F2: the pit's shared list of loose ore, stone and wood (by item instance id), looked at again every 5 s
 		public readonly Dictionary<int, OvLoose> Loose = new Dictionary<int, OvLoose>();
@@ -270,6 +280,63 @@ public partial class HarvestController
 		{
 			part.Held = part.Sim;
 		}
+		// W0: the game dropped 2 or more parts at once (since the last look, none of them being mined) and no group of
+		// 3 or more linked parts above the floor is left standing = the pop
+		if (!c.PopSeen && popped >= OvPopDrop)
+		{
+			int big = OvBiggestGroup(c);
+			if (big < OvPopGroup)
+			{
+				c.PopSeen = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{_vp.Name}\" popped: {popped} part(s) fell at once and no group of {OvPopGroup} or more parts is left standing ({c.Parts.Count} left, the biggest group {big})");
+			}
+			else if (CompanionsPlugin.LogNormal)
+			{
+				LogInfo($"{popped} part(s) of \"{_vp.Name}\" fell at once, not the pop: a group of {big} linked parts still stands");
+			}
+		}
+	}
+
+	private const int OvPopDrop = 2;    // W0: parts the game drops at once
+	private const int OvPopGroup = 3;   // W0: a "large group" of linked parts (their boxes touch) still standing
+
+	// W0: the most parts above the floor (not Out) linked together by touching boxes (the game's support links)
+	private static int OvBiggestGroup(OvClear c)
+	{
+		HashSet<OvPart> live = new HashSet<OvPart>();
+		foreach (OvPart part in c.Parts)
+		{
+			if (!part.Out)
+			{
+				live.Add(part);
+			}
+		}
+		HashSet<OvPart> seen = new HashSet<OvPart>();
+		Stack<OvPart> todo = new Stack<OvPart>();
+		int best = 0;
+		foreach (OvPart start in live)
+		{
+			if (!seen.Add(start))
+			{
+				continue;
+			}
+			int n = 0;
+			todo.Push(start);
+			while (todo.Count > 0)
+			{
+				OvPart part = todo.Pop();
+				n++;
+				foreach (OvPart l in part.Links)
+				{
+					if (live.Contains(l) && seen.Add(l))
+					{
+						todo.Push(l);
+					}
+				}
+			}
+			best = Mathf.Max(best, n);
+		}
+		return best;
 	}
 
 	// M4: the game's MineRock5.UpdateSupport over the vein's parts as they are now: 3 passes in the game's order; a part is
@@ -935,23 +1002,11 @@ public partial class HarvestController
 		return _vp != null && OvPopped(OvC());
 	}
 
-	// U6 (test 25: "The vein popped" with ~98 parts standing - one part that lost its support and fell counted): the vein
-	// popped = parts fell in the game's support drop and no part is left standing above the pit floor (only parts buried
-	// under it, Out)
+	// W0 (replaces U6's "no part left above the floor", which missed test 26's pop: ~17 parts still in the dirt stayed):
+	// the pop OvPartsLook saw - 2 or more parts dropped at once and no group of 3 or more linked parts left standing
 	private static bool OvPopped(OvClear c)
 	{
-		if (c.Popped <= 0)
-		{
-			return false;
-		}
-		foreach (OvPart part in c.Parts)
-		{
-			if (!part.Out)
-			{
-				return false;
-			}
-		}
-		return true;
+		return c.PopSeen;
 	}
 
 	private bool OvPopDone(OvClear c)
@@ -1050,6 +1105,17 @@ public partial class HarvestController
 				{
 					OvPartCool(lp, lwhy, wait: false);
 					continue;
+				}
+				if (lr == 1 && _standWall)
+				{
+					OvSpot wws = OvClSpotFor(lp);
+					if (wws != null && OvWayOutNeeded(wws))
+					{
+						OvWayOutHere(wws);
+						return true;
+					}
+					OvClBegin(lp, lstand, ladder: false, low: true, wall: true);   // W4
+					return true;
 				}
 				if (lr == 1)
 				{
@@ -1384,6 +1450,7 @@ public partial class HarvestController
 		stand = Vector3.zero;
 		why = null;
 		_standAim = part.Centre;
+		_standWall = false;
 		bool low = OvIsLow(part);   // L4
 		Vector3 me = base.transform.position;
 		Attack a = FindBestTool(2)?.m_shared?.m_attack;
@@ -1439,6 +1506,8 @@ public partial class HarvestController
 		float band = float.MaxValue, bd = float.MaxValue;
 		int tested = 0, noFit = 0;
 		bool found = false;
+		Vector3 wallAt = Vector3.zero;   // W4: of the places looked at where its body fits, the nearest (flat) to the part's box
+		float wd = float.MaxValue;
 		foreach (Vector3 pt in cand)
 		{
 			if (pt.y > band || tested >= OvSwTestMax)
@@ -1450,6 +1519,12 @@ public partial class HarvestController
 			{
 				noFit++;
 				continue;
+			}
+			float bdist = Flat(pt, box.ClosestPoint(new Vector3(pt.x, box.center.y, pt.z)));
+			if (bdist < wd)
+			{
+				wd = bdist;
+				wallAt = pt;
 			}
 			if (!OvSwingReaches(a, pt, part, out Vector3 hit, lowDirt: low))
 			{
@@ -1473,6 +1548,11 @@ public partial class HarvestController
 			return 0;
 		}
 		stand = cand[0];
+		if (wd < float.MaxValue)
+		{
+			stand = wallAt;      // W4: from here it walks right up to the wall facing the part and swings
+			_standWall = true;
+		}
 		why = $"no place on the pit ground beside it where the game's pickaxe swing meets its rock first ({tested} looked at{(noFit > 0 ? $", {noFit} with no room for its body" : "")})";
 		return 1;
 	}
@@ -1675,6 +1755,17 @@ public partial class HarvestController
 				OvPartCool(pick, why, wait: false);
 				continue;
 			}
+			if (r == 1 && OvIsLow(pick) && _standWall)
+			{
+				OvSpot wws = OvClSpotFor(pick);
+				if (wws != null && OvWayOutNeeded(wws))
+				{
+					OvWayOutHere(wws);
+					return true;
+				}
+				OvClBegin(pick, stand, ladder: false, low: true, wall: true);   // W4
+				return true;
+			}
 			if (r == 1 && OvIsLow(pick))
 			{
 				// L4: a low part is never mined from a ladder - it waits 60 s (not a failure) for a place on the ground
@@ -1819,23 +1910,27 @@ public partial class HarvestController
 	}
 
 	// a round on the part starts: to the place to stand beside it (or the ladder's way)
-	private void OvClBegin(OvPart part, Vector3 stand, bool ladder, bool low = false)
+	private void OvClBegin(OvPart part, Vector3 stand, bool ladder, bool low = false, bool wall = false)
 	{
 		_clFor = part;
 		part.Holder = this;
 		_clStand = stand;
 		_clAim = _standAim;
 		_clWalk = !ladder;
+		_clWall = wall;
+		_clHwBest = float.MaxValue;
+		_clHwTime = 0f;
 		_moveTimer = 0f;
 		_ai?.StopMoving();
 		OvLnBegin(ladder);
-		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\"{(low ? "" : " (no dirt holds it up now)")}: {(low ? "a low part that goes into the ground (P5)" : ladder ? $"a part too high to hit from the ground beside it - from a ladder" : _clPopWhy ?? "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Held ? " (held by other parts)" : " (not held - it falls when a part breaks)")}{(ladder ? "" : $" - from {MHR_Mover.Fmt(stand)}, swinging at its rock at {MHR_Mover.Fmt(_standAim)}")}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\"{(low ? "" : " (no dirt holds it up now)")}: {(low ? "a low part that goes into the ground (P5)" : ladder ? $"a part too high to hit from the ground beside it - from a ladder" : _clPopWhy ?? "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Held ? " (held by other parts)" : " (not held - it falls when a part breaks)")}{(ladder ? "" : wall ? $" - no place where the swing meets its rock yet: from {MHR_Mover.Fmt(stand)} right up to the wall facing it, swinging, stepping in (W4)" : $" - from {MHR_Mover.Fmt(stand)}, swinging at its rock at {MHR_Mover.Fmt(_standAim)}")}");
 	}
 
 	private void OvClOff()
 	{
 		_clFor = null;
 		_clWalk = false;
+		_clWall = false;
 		OvLnOff();
 		if (_dgClear)
 		{
@@ -1888,6 +1983,14 @@ public partial class HarvestController
 			{
 				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the round goes on after it
 			}
+			if (_clWall && _dgDamage && !_dgLimit)
+			{
+				// W4: those swings dug the dirt toward it (or hit its rock) - right up to the wall again and on
+				_clHwBest = float.MaxValue;
+				_clHwTime = 0f;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Dug toward \"{part.C.name}\" - stepping up to the wall again");
+				return;
+			}
 			// K3: why the round ended
 			OvClFail(_dgLimit ? $"digging toward it from {MHR_Mover.Fmt(me)} reached the game's 8 m dig limit" : _dgPartMiss >= OvPartMissMax ? $"{OvPartMissMax} swings from {MHR_Mover.Fmt(me)} without hitting it" : $"{OvNoProgSwings} swings in a row from {MHR_Mover.Fmt(me)} neither hit it nor dug toward it");
 			return;
@@ -1917,11 +2020,47 @@ public partial class HarvestController
 			_clWalk = false;
 			_ai?.StopMoving();
 		}
-		else if (Flat(me, _clStand) > 1.2f)
+		else if (!_clWall && Flat(me, _clStand) > 1.2f)   // W4: stepping in toward the part moves it off its place
 		{
 			_clWalk = true;   // pushed off its place (or back from clearing a thing): back to it
 			_moveTimer = 0f;
 			return;
+		}
+		if (_clWall)
+		{
+			// W4 (John, test 26: "Step right up to the wall and swing"): the aim is the part's rock - where a line from its
+			// swing height toward the part's centre meets the part's own collider (never its box). It walks at it until it
+			// is against the wall (E4: 1 s without getting 0.3 m closer, flat) or the rock is within its swing, then swings.
+			Attack wa = FindBestTool(2)?.m_shared?.m_attack;
+			float wRange = wa != null ? wa.m_attackRange : 1.8f;
+			Vector3 eye = me + Vector3.up * (wa != null ? wa.m_attackHeight : 1f);
+			Vector3 toC = part.Centre - eye;
+			Vector3 rock = part.Centre;
+			if (toC.sqrMagnitude > 0.0001f && part.C.Raycast(new Ray(eye, toC.normalized), out RaycastHit wh, toC.magnitude + 20f))
+			{
+				rock = wh.point;
+			}
+			_clAim = rock;
+			float wf = Flat(me, rock);
+			if (wf < _clHwBest - OvHeadwayGain)
+			{
+				_clHwBest = wf;
+				_clHwTime = 0f;
+			}
+			else
+			{
+				_clHwTime += dt;
+			}
+			if (Vector3.Distance(eye, rock) > wRange && _clHwTime < OvRampHeadway)
+			{
+				Vector3 wd = rock - me;
+				wd.y = 0f;
+				Vector3 step = me + (wd.sqrMagnitude > 0.0001f ? wd.normalized : base.transform.forward) * 1.5f;
+				step.y = Mathf.Min(GroundAt(step), me.y + OvStepUp);
+				WalkGo(step, 0.3f, false, dt);
+				return;
+			}
+			_ai?.StopMoving();
 		}
 		// M1: the swing at the point where the game's own swing from its place meets the part's rock (OvStandFor) - not
 		// the nearest point of its box; 3 swings that neither hit it nor dig toward it end the round (K3)
@@ -2077,20 +2216,18 @@ public partial class HarvestController
 		// has gone below is extended - cut from the floor at the trench spot nearest its bottom up to that bottom; the
 		// ramp merge (OvRampFinish) then moves its saved bottom down to the floor
 		OvRamp ext = OvStrandedNear(sp.P);
-		OvSpot es = ext != null ? OvNearest(ext.Bottom) : null;
-		if (es != null)
+		if (ext != null && OvExtendFloor(ext, out Vector3 extFloor))
 		{
 			p.ExitBy = this;
 			_woWhy = why;
 			_woCombat = false;
 			_woActive = true;
 			_woOut = false;
-			_woFloor = es.P;
-			_woFloor.y = GroundAt(es.P);
+			_woFloor = extFloor;   // W1: on the way out's own line, downhill from its old bottom
 			_woGoal = ext.Bottom;
 			_moveTimer = 0f;
 			_ai?.StopMoving();
-			if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down to the floor at {MHR_Mover.Fmt(_woFloor)} (spot {es.Idx + 1}, {ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
+			if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down its own line to the floor at {MHR_Mover.Fmt(_woFloor)} ({ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
 			return;
 		}
 		string pickWhy = null;
@@ -2132,6 +2269,57 @@ public partial class HarvestController
 			}
 		}
 		return best;
+	}
+
+	// W1 (test 26: the extension started at the trench spot nearest the old bottom, 1.4 m from it and toward the vein, so the
+	// cut ran 6 m along the floor; John: it must follow the original path): the floor start of an extension on the way
+	// out's own line - from its old bottom on downhill (away from its top) in 0.5 m steps, at most 15 m, to the first
+	// point where the ground is as low as the old ramp's slope (its run per metre of rise, at least 1) reaches there. A
+	// step off the pit's ground or into a part's box stops it at the last good point. False = not one good step (the
+	// normal way-out cut instead).
+	private bool OvExtendFloor(OvRamp r, out Vector3 floor)
+	{
+		floor = r.Bottom;
+		Vector3 dn = r.Bottom - r.Top;
+		dn.y = 0f;
+		if (dn.sqrMagnitude < 0.01f)
+		{
+			return false;
+		}
+		dn.Normalize();
+		float rise = r.Top.y - r.Bottom.y;
+		float ratio = rise > 0.5f ? Mathf.Max(1f, Flat(r.Top, r.Bottom) / rise) : 1f;
+		OvClear c = OvC();
+		bool any = false;
+		for (float d = 0.5f; d <= OvWayNear + 0.001f; d += 0.5f)
+		{
+			Vector3 pt = r.Bottom + dn * d;
+			pt.y = GroundAt(pt);
+			if (!OvInPitPt(pt))
+			{
+				break;
+			}
+			bool inBox = false;
+			foreach (OvPart part in c.Parts)
+			{
+				if (new Bounds(part.Centre, part.Half * 2f).Contains(pt + Vector3.up * 0.5f))
+				{
+					inBox = true;
+					break;
+				}
+			}
+			if (inBox)
+			{
+				break;
+			}
+			floor = pt;
+			any = true;
+			if (pt.y <= r.Bottom.y - d / ratio)
+			{
+				break;
+			}
+		}
+		return any;
 	}
 
 	private static readonly RaycastHit[] s_woHits = new RaycastHit[32];
