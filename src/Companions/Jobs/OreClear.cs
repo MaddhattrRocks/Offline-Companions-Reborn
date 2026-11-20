@@ -36,6 +36,8 @@ public partial class HarvestController
 
 		public bool Ground;       // M4: its box touches the terrain (the game's own overlap)
 
+		public bool OnWorld;      // X2: its box touches an indestructible world object (a burial chamber): mined first
+
 		public readonly List<OvPart> Links = new List<OvPart>();   // M4: the parts of the same rock its box touches
 
 		public bool Held;         // M4: held up by the game's rule (3 passes, as MineRock5.UpdateSupport)
@@ -261,6 +263,7 @@ public partial class HarvestController
 				part.Out = part.Centre.y + part.Half.y < OvFloor(part.Centre);
 				part.Root = false;
 				part.Ground = false;
+				part.OnWorld = false;
 				part.Links.Clear();
 				part.Why = null;
 				part.HoldThing = null;
@@ -416,6 +419,10 @@ public partial class HarvestController
 				}
 				continue;
 			}
+			if (!part.OnWorld && OvIsWorldSolid(o))
+			{
+				part.OnWorld = true;   // X2: held by a thing that can never go - this part has to be mined
+			}
 			if (part.Root)
 			{
 				continue;
@@ -506,6 +513,11 @@ public partial class HarvestController
 		}
 		// Z2: a tree, log, stump or rock a part rests on is cleared first, the Wood / Stone job's way
 		if (OvHoldFirst(c))
+		{
+			return true;
+		}
+		// X2: a part held by an indestructible world object is mined first (nothing else can free the vein from it)
+		if (Time.time >= _clNextPick && OvWorldFirst(c))
 		{
 			return true;
 		}
@@ -1798,6 +1810,50 @@ public partial class HarvestController
 		}
 		OvStuckCheck(c);
 		return true;
+	}
+
+	// X2: the nearest part whose box touches an indestructible world object (not buried, no one on it, not waiting) - mined
+	// with the normal part round: a place where the swing meets its rock, else John's way from the wall (W4); none = it
+	// waits 60 s (a cooldown) and the next is tried. True = a round began.
+	private bool OvWorldFirst(OvClear c)
+	{
+		Vector3 me = base.transform.position;
+		List<OvPart> cand = new List<OvPart>();
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.OnWorld && !part.Out && part.Holder == null && !OvPartCooling(part))
+			{
+				cand.Add(part);
+			}
+		}
+		if (cand.Count == 0)
+		{
+			return false;
+		}
+		cand.Sort((OvPart a, OvPart b) => Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me))));
+		int tries = 0;
+		foreach (OvPart pick in cand)
+		{
+			if (tries++ >= 4)
+			{
+				break;
+			}
+			int r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out Vector3 stand, out string why);
+			if (r == 0 || (r == 1 && _standWall))
+			{
+				OvSpot ws = OvClSpotFor(pick);
+				if (ws != null && OvWayOutNeeded(ws))
+				{
+					OvWayOutHere(ws);
+					return true;
+				}
+				_clPopWhy = "a part held by a thing that can't be damaged (X2)";
+				OvClBegin(pick, stand, ladder: false, low: OvIsLow(pick), wall: r == 1);
+				return true;
+			}
+			OvPartCool(pick, why + " - a part held by a thing that can't be damaged", wait: true);
+		}
+		return false;
 	}
 
 	// GG3c / GG3a: a part that didn't break (or can't get its ladder) waits 1 min; wait = not counted by the stuck rule

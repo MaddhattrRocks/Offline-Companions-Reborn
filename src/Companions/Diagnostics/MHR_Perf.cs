@@ -178,7 +178,19 @@ internal static class MHR_Perf
 				try
 				{
 					Type t = AccessTools.TypeByName(step[0]);
-					MethodInfo m = t != null ? AccessTools.Method(t, step[1]) : null;
+					// X3 (log 2026-11-20: "Ambiguous match" on MHR_Cart.InCartWay / AroundCart): with overloads, the one with the
+					// most parameters (the short ones only pass on to it)
+					MethodInfo m = null;
+					if (t != null)
+					{
+						foreach (MethodInfo mi in t.GetMethods(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+						{
+							if (mi.Name == step[1] && (m == null || mi.GetParameters().Length > m.GetParameters().Length))
+							{
+								m = mi;
+							}
+						}
+					}
 					if (m != null && Timeable(m))
 					{
 						targets.Add(m);

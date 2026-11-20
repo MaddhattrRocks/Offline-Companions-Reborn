@@ -71,6 +71,13 @@ public partial class HarvestController
 
 		// G6: the spot each thing was handed over for (a thing it couldn't clear skips only that spot)
 		public readonly Dictionary<int, OvSpot> HandFor = new Dictionary<int, OvSpot>();
+
+		// X2 (John, 2026-11-20: a burial chamber beside the vein can't be damaged - the trench goes beside it, through the
+		// vein, as close to it as possible, never round it): the game boxes of the indestructible world objects found in
+		// the trench's way (X1), each once per vein; ring spots inside one (body radius out) move toward the vein's centre
+		public readonly List<Bounds> Blockers = new List<Bounds>();
+
+		public readonly List<string> BlockerNames = new List<string>();
 		public readonly Dictionary<int, float> PitCool = new Dictionary<int, float>();   // FF1: a thing someone couldn't clear: not taken again until then (60 s)
 
 		// FF1: the vein's one pit scan (what is inside the trench's outer walls), its mode / type for the Wood / Stone flow
@@ -1268,6 +1275,11 @@ public partial class HarvestController
 			Vector3 pos = new Vector3(q2.x, 0f, q2.y);
 			pos.y = GroundAt(pos);
 			OvSpot s = new OvSpot { P = pos, Idx = k };
+			if (OvBesideBlocker(p, pos, out Vector3 bpos))
+			{
+				pos = bpos;   // X2
+				s.P = pos;
+			}
 			s.Floor = OvFloor(pos);
 			s.Target = Mathf.Max(s.Floor, p.Goal);
 			OvSpot old = null;
@@ -3327,9 +3339,210 @@ public partial class HarvestController
 			OvDigOff();
 			if (_dgSpot != null)
 			{
+				// X1: the first thing on the swing's line is an indestructible world object - the spots it blocks go beside it
+				if (_vp != null && OvWorldBlocker(_dgPoint, out Collider wb))
+				{
+					OvAddBlocker(_vp, wb, _dgSpot);
+					return;
+				}
 				OvSpotDone(_dgSpot, $"can't go lower ({OvNoProgSwings} swings with no change)");
 			}
 		}
+	}
+
+	// X1: an indestructible world object - solid, not the terrain, nothing the game can damage anywhere on it (no
+	// IDestructible), not a piece a player built, not a creature
+	private static bool OvIsWorldSolid(Collider o)
+	{
+		if (o == null || o.isTrigger || o.attachedRigidbody != null || o.gameObject.layer == LayerMask.NameToLayer("terrain"))
+		{
+			return false;
+		}
+		if (o.GetComponentInParent<Character>() != null || o.GetComponentInParent<IDestructible>() != null)
+		{
+			return false;
+		}
+		Piece pc = o.GetComponentInParent<Piece>();
+		return pc == null || !pc.IsPlacedByPlayer();
+	}
+
+	private static readonly RaycastHit[] s_wbHits = new RaycastHit[32];
+
+	// X1: the game's swing line (from its swing height toward the dig point, the pickaxe's range + 1 m, its ray width, the
+	// game's attack layers): its first hit, when that is an indestructible world object
+	private bool OvWorldBlocker(Vector3 point, out Collider blocker)
+	{
+		blocker = null;
+		Attack a = FindBestTool(2)?.m_shared?.m_attack;
+		float range = (a != null ? a.m_attackRange : 1.8f) + 1f;
+		float width = a != null ? Mathf.Max(0.05f, a.m_attackRayWidth) : 0.2f;
+		Vector3 o = base.transform.position + Vector3.up * (a != null ? a.m_attackHeight : 1f);
+		Vector3 dir = point - o;
+		if (dir.sqrMagnitude < 0.0001f)
+		{
+			return false;
+		}
+		dir.Normalize();
+		int mask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain");
+		int n = Physics.SphereCastNonAlloc(o, width, dir, s_wbHits, range, mask, QueryTriggerInteraction.Ignore);
+		float best = float.MaxValue;
+		Collider first = null;
+		for (int i = 0; i < n; i++)
+		{
+			RaycastHit h = s_wbHits[i];
+			if (h.collider == null || h.collider.isTrigger || h.collider.GetComponentInParent<Character>() != null || h.distance >= best)
+			{
+				continue;
+			}
+			best = h.distance;
+			first = h.collider;
+		}
+		if (!OvIsWorldSolid(first))
+		{
+			return false;
+		}
+		blocker = first;
+		return true;
+	}
+
+	// X1 / X2: the object's game box is kept for this vein (once), and every ring spot inside it moves beside it
+	private void OvAddBlocker(OvPlan p, Collider wb, OvSpot hit)
+	{
+		Bounds b = wb.bounds;
+		bool known = false;
+		foreach (Bounds kb in p.Blockers)
+		{
+			if (Vector3.Distance(kb.center, b.center) < 0.1f && Vector3.Distance(kb.size, b.size) < 0.1f)
+			{
+				known = true;
+				break;
+			}
+		}
+		if (!known)
+		{
+			p.Blockers.Add(b);
+			p.BlockerNames.Add(wb.name);
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {hit.Idx + 1}/{p.Spots.Count} at {MHR_Mover.Fmt(hit.P)}: blocked by \"{wb.name}\" (it can't be damaged), box {MHR_Mover.Fmt(b.min)} to {MHR_Mover.Fmt(b.max)} - the trench goes beside it, toward the vein (X2)");
+		bool movedHit = false;
+		foreach (OvSpot sp in p.Spots)
+		{
+			if (sp.Closed || !OvBesideBlocker(p, sp.P, out Vector3 np))
+			{
+				continue;
+			}
+			sp.P = np;
+			sp.Floor = OvFloor(np);
+			sp.Target = Mathf.Max(sp.Floor, p.Goal);
+			float g = GroundAt(np);
+			sp.LapStart = g;
+			sp.OpenLap = p.Lap;
+			sp.LapDepth = Mathf.Max(sp.Target, g - OvLapStep);
+			sp.Done = g <= sp.LapDepth + OvDigGain;
+			sp.DoneWhy = sp.Done ? "already at this lap's depth" : null;
+			sp.Skip = false;
+			sp.SkipWhy = null;
+			movedHit |= sp == hit;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {sp.Idx + 1} moved beside \"{wb.name}\" to {MHR_Mover.Fmt(np)}");
+		}
+		if (!movedHit)
+		{
+			// X2: no place beside it toward the vein's centre - this spot is left out (never tried again on this vein)
+			hit.Closed = true;
+			hit.ClosedWhy = $"blocked by \"{wb.name}\" (it can't be damaged) with no place beside it toward the vein";
+			if (hit.Holder == this)
+			{
+				hit.Holder = null;
+			}
+			if (_ovSpot == hit)
+			{
+				_ovSpot = null;
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {hit.Idx + 1} left out: {hit.ClosedWhy}");
+		}
+		else
+		{
+			if (hit.Holder == this)
+			{
+				hit.Holder = null;
+			}
+			if (_ovSpot == hit)
+			{
+				_ovSpot = null;
+			}
+		}
+		OvSave(p);
+	}
+
+	// X2: a ring point inside a blocker's box (flat, the body radius out) - moved toward the vein's centre in 0.5 m steps
+	// to the first point outside every blocker box where a body (its capsule) touches nothing solid but the ground and
+	// the vein's own rock (the trench goes through the vein there). False = not in a box, or no such point before the
+	// centre (out = unchanged).
+	private bool OvBesideBlocker(OvPlan p, Vector3 pos, out Vector3 outPos)
+	{
+		outPos = pos;
+		if (p.Blockers.Count == 0)
+		{
+			return false;
+		}
+		float rad = _character != null ? _character.GetRadius() : 0.4f;
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		if (!OvInBlocker(p, pos, rad))
+		{
+			return false;
+		}
+		Vector3 dir = p.Center - pos;
+		dir.y = 0f;
+		float len = dir.magnitude;
+		if (len < 0.5f)
+		{
+			return false;
+		}
+		dir /= len;
+		for (float d = 0.5f; d < len; d += 0.5f)
+		{
+			Vector3 pt = pos + dir * d;
+			pt.y = GroundAt(pt);
+			if (OvInBlocker(p, pt, rad) || !OvBodyFitsVein(p, pt, rad, hh))
+			{
+				continue;
+			}
+			outPos = pt;
+			return true;
+		}
+		return false;
+	}
+
+	private static bool OvInBlocker(OvPlan p, Vector3 pt, float rad)
+	{
+		foreach (Bounds b in p.Blockers)
+		{
+			if (pt.x >= b.min.x - rad && pt.x <= b.max.x + rad && pt.z >= b.min.z - rad && pt.z <= b.max.z + rad && pt.y <= b.max.y && pt.y + 2f >= b.min.y)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static readonly Collider[] s_bfHits = new Collider[32];
+
+	// X2: OvBodyFits, the vein's own rock not counted (the trench is cut through it there)
+	private bool OvBodyFitsVein(OvPlan p, Vector3 pt, float rad, float hh)
+	{
+		float r = rad * 0.9f;
+		int mask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece");
+		int n = Physics.OverlapCapsuleNonAlloc(pt + Vector3.up * (r + 0.15f), pt + Vector3.up * Mathf.Max(r + 0.2f, hh - r), r, s_bfHits, mask, QueryTriggerInteraction.Ignore);
+		for (int i = 0; i < n; i++)
+		{
+			MineRock5 m = s_bfHits[i] != null ? s_bfHits[i].GetComponentInParent<MineRock5>() : null;
+			if (m != null && p.Rocks.Contains(m))
+			{
+				continue;
+			}
+			return false;
+		}
+		return true;
 	}
 
 	// ---------- C5: the way up (a ramp) ----------
