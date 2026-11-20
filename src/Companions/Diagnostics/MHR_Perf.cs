@@ -84,6 +84,7 @@ internal static class MHR_Perf
 		new string[] { "Companions.MHR_Mover", "FireZoneAt" },
 		new string[] { "Companions.MHR_World", "Ladders" },
 		new string[] { "Companions.MHR_Diag", "Tick" },
+		new string[] { "Companions.HarvestController", "OvMapTickAll" },   // R0.7: the Ore job's pit maps
 	};
 
 	// 1.5.94: any single call over this is a hitch (a dropped frame at 60+ FPS) and is listed on its own in the report

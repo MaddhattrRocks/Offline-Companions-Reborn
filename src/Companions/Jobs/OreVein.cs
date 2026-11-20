@@ -147,6 +147,8 @@ public partial class HarvestController
 		public string Name;
 
 		public Bounds Box;
+
+		public OvMap Map;   // R0: the vein's pit map (OreMap.cs) - data only, nothing reads it yet
 	}
 
 	private const float OvRingOut = 1.0f;          // C2.2: the ring 1 m outside the seen parts
@@ -557,7 +559,12 @@ public partial class HarvestController
 	// the lowest the game lets the ground at p go: 8 m under its first height (TerrainComp keeps the change within 8 m)
 	private static float TFloorAt(Vector3 p)
 	{
-		float g = GroundAt(p);
+		return TFloorFrom(p, GroundAt(p));
+	}
+
+	// R0.1: the same, with the ground height at p already read (the pit map reads it once per square)
+	private static float TFloorFrom(Vector3 p, float g)
+	{
 		Heightmap hm = Heightmap.FindHeightmap(p);
 		TerrainComp tc = TerrainComp.FindTerrainCompiler(p);
 		if (hm == null || tc == null)
@@ -2242,6 +2249,7 @@ public partial class HarvestController
 		{
 			return;
 		}
+		OvMapDirty(_vp?.Map, go.transform.position, OvMapEventNear);   // R0.3: the pit map's squares within 2 m are read again
 		MineRock5 m = go.GetComponentInParent<MineRock5>();
 		if (m != null && _vp != null && _vp.Rocks.Contains(m))
 		{
@@ -4773,6 +4781,7 @@ public partial class HarvestController
 	{
 		_dgDugAt = Time.time;
 		_dgDugPt = hitPoint;
+		OvMapDirty(_vp?.Map, hitPoint, OvMapEventNear);   // R0.3: the pit map's squares within 2 m are read again
 	}
 
 	// ---------- the leash (part 1 G3, kept) ----------

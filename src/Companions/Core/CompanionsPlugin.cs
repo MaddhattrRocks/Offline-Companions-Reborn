@@ -177,6 +177,14 @@ public class CompanionsPlugin : BaseUnityPlugin
 		}
 		try
 		{
+			HarvestController.OvMapTickAll();   // R0: the Ore job's pit maps (one slice of work a frame)
+		}
+		catch (Exception ex)
+		{
+			if (CompanionsPlugin.LogNormal) Log.LogWarning("[PitMap] " + ex.Message);
+		}
+		try
+		{
 			MHR_RespawnTracker.Tick();
 			MHR_ToolKeeper.Tick();
 		}

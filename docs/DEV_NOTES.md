@@ -138,6 +138,14 @@
   - G3: W4 (the wall walk-in) removed: no wall round, no stand-by-the-wall, no step-up after a dig. A low part with no place where the swing meets its rock waits 60 s again (K1 / L4), as before W4.
   - G5: in a part round a swing that dug at the game's 8 m limit counts as a swing that did nothing (3 in a row end it); it no longer ends the round at once.
   - G6: Z1's strike isn't used when another companion is just ahead (OvOtherAhead).
+- Radar R0, the pit map (John's OK 2026-11-20 23:48Z; still 1.5.98). Data only: nothing reads it yet (R1 walls, R2 stand places / companions, R3 pit contents follow as their own lists). OreMap.cs.
+  - R0.1: OvPlan.Map, one per vein: the pit (pit cells, trench spots, the vein's box) + 8 m, 0.5 m squares (side capped at 100 m), grows and never shrinks. Per square: terrain ground (GroundAt), top surface + kind from one ray down (ground / this vein's part / rock or stone / tree or thing by drops / player-built / can't be damaged; creatures skipped), open space above the ground + its kind from one ray up (0 when the down-ray found something reaching into the ground), the 8 m dig floor (TFloorFrom, split out of TFloorAt), under water.
+  - R0.2: built 200 squares a frame when a worker arrives (first time, or again after nobody was on it).
+  - R0.3: squares within 2 m re-read on NotifyDig and OvNoteHit; once a second the live parts (OvPartBoxes) are compared and the squares under a part that went are re-read.
+  - R0.4: rolling sweep 40 squares a frame once built. No work at all while the vein has no worker; the map stays with the plan (OvPlanKeep, 1 hour).
+  - R0.5: companions' squares and walk-goal squares from the board (_bdGoal) 4 times a second.
+  - R0.6: config Advanced/PitMapOverlay (default off, live): one mesh of coloured squares (Sprites/Default, as FarmZoneVisual), redrawn at most once a second when something changed.
+  - R0.7: one log line when a map is built / read again (grown: Detailed), a [PitMap] cost line every 60 s on Detailed; OvMapTickAll is in MHR_Perf's steps.
 - Test-24 fixes T1-T4 (John's OK 2026-11-20 16:43Z; still 1.5.98). John: "They should head out when they hit 90+ percent capacity. They may need to carve a new way out"; "What happened to ... updating the existing way down / up?"; "the NPC should prefer to have ore in their inventory over rock".
   - T1 (MHR_Mover): the step TryDropDown starts (S.DropStepUntil = its StepUntil) is not stopped by the step guard's DropAhead check; fire and spikes still stop it. Test 24: Comp on the trench rim, every drop-down step cancelled by the guard.
   - T2 (HarvestController.OreRoomFor; ScanForDrops, OvLooseTakes): on the Ore job, stone and wood are picked up only while the pickup keeps the bag under half the carry limit; ore fills the rest. Wood wanted for a ladder (OvWantsWood) is not capped.

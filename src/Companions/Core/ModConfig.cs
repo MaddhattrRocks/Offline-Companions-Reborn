@@ -16,6 +16,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> RecoverUnsummoned;
 
+	internal static ConfigEntry<bool> PitMapOverlay;   // R0.6
+
 	internal static ConfigEntry<string> PortalItems;
 
 	internal static ConfigEntry<bool> SpawnStarterCompanion;
@@ -940,6 +942,7 @@ internal static class ModConfig
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));
 		LogLevel = Bind(cfg, "Advanced", "LogLevel", "Normal", "How much the mod writes to the BepInEx log. Off: warnings and errors only. Normal: the main events (orders, deaths, portals, jobs starting and stopping, problems). Detailed: everything the companions think and do, plus the diagnostics - turn this on when sending a log with a bug report. Lower levels cost nothing: the lines aren't even put together.", new AcceptableValueList<string>("Off", "Normal", "Detailed"));
+		PitMapOverlay = Bind(cfg, "Advanced", "PitMapOverlay", false, "Testing: draw the Ore job's map of a vein's pit (squares of 0.5 m) while companions work it. Colour of each square's top: green = ground, orange = a part of the vein (red-orange where it reaches down to the ground), grey = rock or stone, brown = a tree or other thing, blue = built by a player, red = can't be damaged, a blue tint = under water. Purple at ground level = open space under something. White = where a companion stands, yellow = where one is walking to. Can be switched on and off while playing.");
 		TombstoneNavTimeout = Bind(cfg, "Advanced", "TombstoneNavTimeout", 120f, "Death: seconds a companion keeps trying to get to its tombstone before giving up.", new AcceptableValueRange<float>(10f, 600f));
 
 		// 1.4.149: settings moved/renamed in the config clean-up keep the values players set; leftovers are removed.
