@@ -1220,10 +1220,18 @@ public partial class HarvestController
 	{
 		if (_drForThing)
 		{
-			// P2: the thing waits 60 s (FF1's cooldown), any companion may try it again then
+			// P2: the thing waits 60 s (FF1's cooldown), any companion may try it again then - in the trench, a way out
+			// first (Z2, once per try)
 			GameObject t = _rpThing;
+			int tm = _rpThingMode;
+			string tt = _rpThingType;
+			OvSpot ts = _rpThingSpot;
 			if (CompanionsPlugin.LogNormal) LogInfo($"The ground at the base of \"{(t != null ? t.name : "?")}\": {why}");
 			OvDrOff();
+			if (OvThingWayOut(t, tm, tt, ts, "the ground at its base: " + why))
+			{
+				return;
+			}
 			OvPitLeftNote(t);
 			return;
 		}
@@ -1342,19 +1350,19 @@ public partial class HarvestController
 		{
 			float flat = Flat(me, _drStand);
 			// HH2: there = within 0.5 m (flat) and on that ground - feet no more than a step above the ground there now (standing on a part above the
-			// place is not there: it goes on, and the 10 s walk limit ends it)
+			// place is not there: it goes on, and the mover's give-up (Z4) ends it)
 			if (flat > OvStandAt || me.y - GroundAt(_drStand) > OvStepUp)
 			{
 				float up = _drStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
 				// P3: the place to stand is the bottom of the pit - no steps cut toward it (HH3 removed)
-				if ((tooHigh || (WalkTimer(dt, _drStand) && _moveTimer > 10f)))
+				if (tooHigh || OvWalkGaveUp(dt, _drStand))
 				{
 					OvDrFail(c, $"couldn't get to {MHR_Mover.Fmt(_drStand)} to dig it ({flat:F1} m away, {up:F1} m up)");
 					return;
 				}
-				WalkGo(_drStand, 0.25f, flat > 8f, dt);
+				OvWalk(_drStand, 0.25f, flat > 8f, dt);
 				return;
 			}
 			_drWalk = false;
@@ -2065,12 +2073,12 @@ public partial class HarvestController
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
 				// P3: the place to stand is the bottom of the pit - no steps cut toward it (HH3 removed)
-				if (tooHigh || (WalkTimer(dt, _clStand) && _moveTimer > 10f))
+				if (tooHigh || OvWalkGaveUp(dt, _clStand))
 				{
 					OvClFail($"couldn't get to {MHR_Mover.Fmt(_clStand)} beside it ({flat:F1} m away, {up:F1} m up)");
 					return;
 				}
-				WalkGo(_clStand, 0.25f, flat > 8f, dt);
+				OvWalk(_clStand, 0.25f, flat > 8f, dt);
 				return;
 			}
 			_clWalk = false;
@@ -2395,7 +2403,8 @@ public partial class HarvestController
 		int looked = 0, rocks = 0;
 		foreach (OvSpot q in _vp.Spots)
 		{
-			if (Flat(q.P, sp.P) > OvWayNear || OvExitTriedNear(q.P))
+			// Z5: not a spot whose line out crosses an object that can't be damaged
+			if (Flat(q.P, sp.P) > OvWayNear || OvExitTriedNear(q.P) || OvOutBlocked(q))
 			{
 				continue;
 			}

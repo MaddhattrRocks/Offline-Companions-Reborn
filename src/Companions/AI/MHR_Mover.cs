@@ -2323,6 +2323,12 @@ namespace Companions
                 ai.GetComponent<CompanionCombatAI>()?.LetGoForWayOut();
                 return true;
             }
+            // Z2 (John, 2026-11-20: "If they cannot reach a location and are in a trench they should carve a way out"): the
+            // same for the vein's own work (the trench, a part, the dirt, a thing it clears) - the job cuts one now
+            if ((tag == "Gather" || tag == "Harvest") && s.Goal.y > pos.y + 1.5f && hv.WorkWayOut(s.Goal))
+            {
+                return true;
+            }
             return false;
         }
         // U3: a saved way out of a vein's pit for this walk (HarvestController.PitWay) - not while the vein job walks, cuts or

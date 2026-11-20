@@ -456,6 +456,8 @@ public partial class HarvestController
 		_rpThingClaim = 0;
 	}
 
+	private bool _dgStrike;       // Z1: a swing at what the way up is against (the rock, not the ground): no floor check
+
 	private bool _dgWalkThing;    // Y6b: the things-near-the-dirt check before the walk to this dig point was made
 
 	private static readonly Collider[] s_ovPitBuf = new Collider[512];
@@ -755,6 +757,10 @@ public partial class HarvestController
 			{
 				// GG1: left for the pickaxe (or ignored on this vein) - no cooldown, no skip
 				_hdNoCool = false;
+			}
+			else if (thing != null && thing.activeInHierarchy && OvThingWayOut(thing, _ovHandMode, _targetType, q, "the walk to it gave up"))
+			{
+				return;   // Z2: in the trench - a way out first, then the thing again
 			}
 			else if (thing != null && thing.activeInHierarchy)
 			{
@@ -2473,7 +2479,7 @@ public partial class HarvestController
 				}
 			}
 			float d = Flat(me, sp.P);
-			if (far && d < bd)
+			if (far && d < bd && !OvOutBlocked(sp))   // Z5
 			{
 				bd = d;
 				best = sp;
@@ -2511,7 +2517,7 @@ public partial class HarvestController
 		// is headed than the trench spot nearest there - a new one is cut at that spot (E2's way: its floor, then up to the
 		// wall top); if that cut fails, the saved one is used (once)
 		OvSpot side = OvNearestIn(_vp, to);
-		if (best != null && side != null && bd - Flat(side.P, to) > OvWayNear)
+		if (best != null && side != null && !OvOutBlocked(side) && bd - Flat(side.P, to) > OvWayNear)   // Z5
 		{
 			_woFallback = best;
 			_woActive = true;
@@ -2602,6 +2608,10 @@ public partial class HarvestController
 				OvExitTry(me);   // R4: counted, so no other try is made within 15 m of here
 				_vp.ExitBy = null;
 				if (CompanionsPlugin.LogNormal) LogInfo("The trench is shallow here - no way out needed");
+				if (_rpThing != null)
+				{
+					OvRampThingBack();   // Z2: the thing it cut the way out for gets its try from here
+				}
 				return;
 			}
 			OvExitTry(me);
@@ -2609,10 +2619,10 @@ public partial class HarvestController
 			OvRampBegin(_woGoal, null, outOfTrench: false, _woWhy);
 			return;
 		}
-		if (WalkTimer(dt, _woFloor) && _moveTimer > 10f)
+		if (OvWalkGaveUp(dt, _woFloor))
 		{
 			_woActive = false;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(_woFloor)} along the trench in 10 s");
+			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(_woFloor)} along the trench (the walk gave up)");
 			if (!_woOut && _vp.ExitBy == this)
 			{
 				_vp.ExitBy = null;
@@ -2624,9 +2634,13 @@ public partial class HarvestController
 				return;
 			}
 			OvExitTry(_woFloor);   // counts as a try
+			if (_rpThing != null)
+			{
+				OvRampThingBack();   // Z2: the thing it went to cut the way out for gets its try from here
+			}
 			return;
 		}
-		WalkGo(_woFloor, 0.5f, Flat(me, _woFloor) > 8f, dt);
+		OvWalk(_woFloor, 0.5f, Flat(me, _woFloor) > 8f, dt);
 	}
 
 	// C7 (build 1): the trench is done - it says so once and stands by the vein
@@ -2735,6 +2749,7 @@ public partial class HarvestController
 		_dgLimit = false;
 		_dgPart = false;
 		_dgDirt = false;
+		_dgStrike = false;
 		_bdWaitFrom = -1f;   // AA6: a new point - its own wait
 		_bdNextPick = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
@@ -2959,13 +2974,13 @@ public partial class HarvestController
 					OvRampBegin(_dgPoint, q, outOfTrench: false, $"no headway for {OvNoHeadway:F0} s toward spot {q.Idx + 1} (not 0.3 m closer), {up:F1} m up");
 					return;
 				}
-				if (WalkTimer(dt, _dgPoint) && _moveTimer > 10f)
+				if (OvWalkGaveUp(dt, _dgPoint))
 				{
 					if (_dgBushOn)
 					{
 						GameObject b = _dgBush;
 						OvDigOff();
-						OvBushGiveUp(b, q, $"couldn't get to it in {10f:F0} s ({flat:F1} m away, {up:F1} m up)");
+						OvBushGiveUp(b, q, $"couldn't get to it (the walk gave up, {flat:F1} m away, {up:F1} m up)");
 						return;
 					}
 					OvDigOff();
@@ -2975,11 +2990,11 @@ public partial class HarvestController
 					}
 					else
 					{
-						OvSkip(q, $"couldn't get to it in {10f:F0} s ({flat:F1} m away, {up:F1} m up)");
+						OvSkip(q, $"couldn't get to it (the walk gave up, {flat:F1} m away, {up:F1} m up)");
 					}
 					return;
 				}
-				WalkGo(_dgPoint, below ? 0.3f : reach * 0.8f, flat > 8f, dt);
+				OvWalk(_dgPoint, below ? 0.3f : reach * 0.8f, flat > 8f, dt);
 				return;
 			}
 		}
@@ -3022,7 +3037,7 @@ public partial class HarvestController
 			}
 		}
 		// N3: a clearing point always gets its swing first (OvDigJudge decides when it's done)
-		if (!_dgClear && g <= OvFloor(_dgPoint) + OvDigGain)
+		if (!_dgClear && !_dgStrike && g <= OvFloor(_dgPoint) + OvDigGain)
 		{
 			OvDigOff();
 			_dgLastProg = false;
@@ -3368,19 +3383,26 @@ public partial class HarvestController
 
 	private static readonly RaycastHit[] s_wbHits = new RaycastHit[32];
 
-	// X1: the game's swing line (from its swing height toward the dig point, the pickaxe's range + 1 m, its ray width, the
-	// game's attack layers): its first hit, when that is an indestructible world object
-	private bool OvWorldBlocker(Vector3 point, out Collider blocker)
+	// X1 / Z1: where the game's swing starts (its swing height above the feet)
+	private Vector3 OvSwingFrom()
 	{
-		blocker = null;
+		Attack a = FindBestTool(2)?.m_shared?.m_attack;
+		return base.transform.position + Vector3.up * (a != null ? a.m_attackHeight : 1f);
+	}
+
+	// X1 / Z1: the game's swing line (from its swing height toward the point, the pickaxe's range + 1 m, its ray width, the
+	// game's attack layers): the first solid thing on it (not a creature) and where it was hit. Null = nothing.
+	private Collider OvFirstOnSwing(Vector3 point, out Vector3 at)
+	{
+		at = point;
 		Attack a = FindBestTool(2)?.m_shared?.m_attack;
 		float range = (a != null ? a.m_attackRange : 1.8f) + 1f;
 		float width = a != null ? Mathf.Max(0.05f, a.m_attackRayWidth) : 0.2f;
-		Vector3 o = base.transform.position + Vector3.up * (a != null ? a.m_attackHeight : 1f);
+		Vector3 o = OvSwingFrom();
 		Vector3 dir = point - o;
 		if (dir.sqrMagnitude < 0.0001f)
 		{
-			return false;
+			return null;
 		}
 		dir.Normalize();
 		int mask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "terrain");
@@ -3396,33 +3418,40 @@ public partial class HarvestController
 			}
 			best = h.distance;
 			first = h.collider;
+			// a cast that starts inside the collider reports no point: the start of the line then
+			at = h.distance <= 0f && h.point == Vector3.zero ? o : h.point;
 		}
-		if (!OvIsWorldSolid(first))
+		return first;
+	}
+
+	// X1: the first thing on the swing line, when that is an indestructible world object
+	private bool OvWorldBlocker(Vector3 point, out Collider blocker)
+	{
+		Collider first = OvFirstOnSwing(point, out _);
+		blocker = OvIsWorldSolid(first) ? first : null;
+		return blocker != null;
+	}
+
+	// X1 / Z1: the object's game box is kept for this vein (once)
+	private static void OvNoteBlocker(OvPlan p, Collider wb)
+	{
+		Bounds b = wb.bounds;
+		foreach (Bounds kb in p.Blockers)
 		{
-			return false;
+			if (Vector3.Distance(kb.center, b.center) < 0.1f && Vector3.Distance(kb.size, b.size) < 0.1f)
+			{
+				return;
+			}
 		}
-		blocker = first;
-		return true;
+		p.Blockers.Add(b);
+		p.BlockerNames.Add(wb.name);
 	}
 
 	// X1 / X2: the object's game box is kept for this vein (once), and every ring spot inside it moves beside it
 	private void OvAddBlocker(OvPlan p, Collider wb, OvSpot hit)
 	{
 		Bounds b = wb.bounds;
-		bool known = false;
-		foreach (Bounds kb in p.Blockers)
-		{
-			if (Vector3.Distance(kb.center, b.center) < 0.1f && Vector3.Distance(kb.size, b.size) < 0.1f)
-			{
-				known = true;
-				break;
-			}
-		}
-		if (!known)
-		{
-			p.Blockers.Add(b);
-			p.BlockerNames.Add(wb.name);
-		}
+		OvNoteBlocker(p, wb);
 		if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {hit.Idx + 1}/{p.Spots.Count} at {MHR_Mover.Fmt(hit.P)}: blocked by \"{wb.name}\" (it can't be damaged), box {MHR_Mover.Fmt(b.min)} to {MHR_Mover.Fmt(b.max)} - the trench goes beside it, toward the vein (X2)");
 		bool movedHit = false;
 		foreach (OvSpot sp in p.Spots)
@@ -3561,7 +3590,7 @@ public partial class HarvestController
 				if (Flat(b, me) <= OvRampBadNear)
 				{
 					spot.RampTried = true;
-					OvSkip(spot, $"it would need a way up from here, and the wall here is at the game's 8 m dig limit ({why})", normal: true);
+					OvSkip(spot, $"it would need a way up from here, and a way up from here already met ground at the game's 8 m dig limit or something it can't damage ({why})", normal: true);
 					return;
 				}
 			}
@@ -3651,10 +3680,10 @@ public partial class HarvestController
 				OvRampFinish("up the saved ramp");
 				return;
 			}
-			if (WalkTimer(dt, _rpSaved.Top) && _moveTimer > 10f)
+			if (OvWalkGaveUp(dt, _rpSaved.Top))
 			{
 				_rpTried.Add(_rpSaved);
-				if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get up the ramp at {MHR_Mover.Fmt(_rpSaved.Bottom)} in 10 s - cutting its own");
+				if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get up the ramp at {MHR_Mover.Fmt(_rpSaved.Bottom)} (the walk gave up) - cutting its own");
 				_rpSaved = null;
 				_rpStart = me;
 				_rpBestY = me.y;
@@ -3662,7 +3691,7 @@ public partial class HarvestController
 				_moveTimer = 0f;
 				return;
 			}
-			WalkGo(_rpSaved.Top, 0.5f, false, dt);
+			OvWalk(_rpSaved.Top, 0.5f, false, dt);
 			return;
 		}
 		if (_rpWay)
@@ -3743,7 +3772,36 @@ public partial class HarvestController
 			_rpHwTime += dt;
 		}
 		bool against = _rpHwTime >= OvRampHeadway && ga > me.y + 0.1f;
-		if (ga > me.y + OvStepUp || (against && !atLimit))
+		bool wall = ga > me.y + OvStepUp || (against && !atLimit);
+		if (!wall && _rpHwTime >= OvRampHeadway)
+		{
+			// Z1 (test 27: Gunter walked 2 x 60 s into the vein's rock - the ground height is the terrain's only, so a rock,
+			// the vein or a chamber in front reads as flat ground): up against something (1 s without getting 0.3 m
+			// closer), the first thing on its swing line toward the goal decides
+			Collider fc = OvFirstOnSwing(OvSwingFrom() + dir, out Vector3 fat);
+			if (fc != null)
+			{
+				if (OvIsWorldSolid(fc))
+				{
+					OvRampWorldStop(fc.name, fc);
+					return;
+				}
+				// the vein's rock, the ground, or a thing (the dig's H1 hands a thing to the Wood / Stone flow): a swing at
+				// the point it was hit, the rock itself (not its box)
+				if (Flat(fat, _rpStepPt) > 0.5f)
+				{
+					_rpStepPt = fat;
+					_rpNoProg = 0;
+				}
+				_rpHwTime = 0f;
+				_ai?.StopMoving();
+				if (CompanionsPlugin.LogNormal) LogInfo($"The way up: up against \"{fc.name}\" at {MHR_Mover.Fmt(fat)} (the ground in front reads {ga - me.y:F1} m above its feet) - swinging at it");
+				OvDigBegin(fat, null, ramp: true);
+				_dgStrike = true;
+				return;
+			}
+		}
+		if (wall)
 		{
 			if (atLimit)
 			{
@@ -3760,6 +3818,19 @@ public partial class HarvestController
 				// from here this lap
 				_rpBad.Add(_rpStart);
 				OvRampFail($"the ground in front at {MHR_Mover.Fmt(ahead)} is at the game's 8 m dig limit ({ga - me.y:F1} m above its feet, more than its {jump:F1} m jump)");
+				return;
+			}
+			// Z1: an object that can't be damaged first on the swing line (or the step inside a known one's box): no swing,
+			// this way up gives up now
+			Collider sc = OvFirstOnSwing(ahead, out _);
+			if (OvIsWorldSolid(sc))
+			{
+				OvRampWorldStop(sc.name, sc);
+				return;
+			}
+			if (_vp != null && OvInBlocker(_vp, ahead, 0f))
+			{
+				OvRampWorldStop(OvBlockerAt(_vp, ahead), null);
 				return;
 			}
 			// the wall in front: 2 swings at it (E4), then look again
@@ -3779,6 +3850,31 @@ public partial class HarvestController
 		walk.y = Mathf.Min(GroundAt(walk), me.y + OvStepUp);
 		_moveTimer = 0f;
 		WalkGo(walk, 0.3f, false, dt);
+	}
+
+	// Z1: the way up meets an object that can't be damaged - its box is kept (X1), no new way up from where this one began
+	// this lap, and this one gives up
+	private void OvRampWorldStop(string name, Collider c)
+	{
+		if (c != null && _vp != null)
+		{
+			OvNoteBlocker(_vp, c);
+		}
+		_rpBad.Add(_rpStart);
+		OvRampFail($"the step in front is blocked by \"{name}\" (it can't be damaged)");
+	}
+
+	private static string OvBlockerAt(OvPlan p, Vector3 pt)
+	{
+		for (int i = 0; i < p.Blockers.Count; i++)
+		{
+			Bounds b = p.Blockers[i];
+			if (pt.x >= b.min.x && pt.x <= b.max.x && pt.z >= b.min.z && pt.z <= b.max.z)
+			{
+				return i < p.BlockerNames.Count ? p.BlockerNames[i] : "?";
+			}
+		}
+		return p.BlockerNames.Count > 0 ? p.BlockerNames[0] : "?";
 	}
 
 	private void OvRampFinish(string how)
@@ -3848,11 +3944,32 @@ public partial class HarvestController
 		OvDigOff();
 		_ai?.StopMoving();
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up gave up: {why} (it rose {base.transform.position.y - _rpStart.y:F1} m)");
+		if (_exTry && _rpThing != null)
+		{
+			// Z2: a way out cut for a thing - the try is counted as below (E2 / M3), then the thing gets its try from here
+			_exTry = false;
+			if (_vp != null)
+			{
+				OvExitTry(_rpStart);
+				if (_vp.ExitBy == this)
+				{
+					_vp.ExitBy = null;
+				}
+			}
+		}
 		if (_rpThing != null && _rpThingUp)
 		{
-			// K8: the way up after the base dig gave up - the thing waits 60 s, any companion may try it again then
+			// K8: the way up after the base dig gave up - in the trench, a way out first (Z2, once per try); else the thing
+			// waits 60 s, any companion may try it again then
 			GameObject t = _rpThing;
+			int tm = _rpThingMode;
+			string tt = _rpThingType;
+			OvSpot ts = _rpThingSpot;
 			OvRampThingDrop();
+			if (OvThingWayOut(t, tm, tt, ts, "the way up beside it gave up"))
+			{
+				return;
+			}
 			OvPitLeftNote(t);
 			return;
 		}
@@ -4239,6 +4356,10 @@ public partial class HarvestController
 			return;
 		}
 		_vp.PitCool[thing.GetInstanceID()] = Time.time + OvPitCool;
+		if (_twId == thing.GetInstanceID())
+		{
+			_twId = 0;   // Z2: this try is over - after the wait, a new try may cut a way out again
+		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't clear \"{thing.name}\" at {MHR_Mover.Fmt(thing.transform.position)} - any companion may try it again in {OvPitCool:F0} s");
 	}
 
@@ -4274,8 +4395,9 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		// the ground at its base, on its side toward the companion
-		Vector3 bp = b.ClosestPoint(new Vector3(me.x, b.min.y, me.z));
+		// Z3 (test 27: a pine's box corner put the dig 8 m from its trunk, a log's put it on the trench floor under its
+		// overhang): the ground at its root - where the trunk or log itself is
+		Vector3 bp = _ovHand.transform.position;
 		bp.y = GroundAt(bp);
 		OvClear c = OvC();
 		if (OvStandFor(c, bp, null, out Vector3 stand, out string why) != 0)
@@ -4370,6 +4492,190 @@ public partial class HarvestController
 		OvWayOutHere(sp, $"In a fight, stuck {enemy.y - me.y:F1} m below the enemy with no way out of the trench", "a way out to the enemy");
 		_woCombat = true;
 		return true;
+	}
+
+	// ---------- Z4: a vein walk ends on arrival or when the mover is done (John: "Timers break things") ----------
+	private bool _wgArrived;      // Z4: the mover said "there" on the last step of this walk
+
+	// one step of a vein walk (WalkGo), noting whether the mover says it is there
+	private void OvWalk(Vector3 to, float stop, bool run, float dt)
+	{
+		_wgArrived = WalkGo(to, stop, run, dt);
+	}
+
+	// Z4 (replaces the 10 s walk clocks): the walk is over without getting there when the mover gave up (its stuck steps,
+	// measured on its route's length) or the mover stopped at the goal while the job's own "there" test still fails (it
+	// can't get any closer). The 0.5 s from the walk's start keeps a give-up left from the last walk from counting.
+	private bool OvWalkGaveUp(float dt, Vector3 toward)
+	{
+		WalkTimer(dt, toward);
+		return _moveTimer > 0.5f && (MHR_Mover.GaveUp(_ai) || _wgArrived);
+	}
+
+	// ---------- Z2: can't reach something while in the trench - a way out (John, 2026-11-20) ----------
+	// John: "If they cannot reach a location and are in a trench they should carve a way out."
+	private int _twId;            // Z2: the thing this try cut its way out for (once per try)
+
+	// in the trench: the ground outside the trench spot nearest it is 1.5 x its height or more above its feet (Y2)
+	private bool OvInTrench(out OvSpot ns)
+	{
+		Vector3 me = base.transform.position;
+		ns = _vp != null && _vp.Spots.Count > 0 ? OvNearest(me) : null;
+		float h = _character != null ? _character.GetHeight() : 1.8f;
+		return ns != null && OvWallTop(ns) - me.y >= OvRampRatio * h;
+	}
+
+	// the trench spot to cut from: nearest the target (within 15 m of it), else nearest itself; not one whose line out
+	// crosses an object that can't be damaged (Z5) nor one tried in the last 60 s (R4). Null = none.
+	private OvSpot OvWayOutToward(Vector3 target, OvSpot ns)
+	{
+		OvSpot sp = OvNearest(target);
+		if (sp == null || Flat(sp.P, base.transform.position) > OvWayNear || OvOutBlocked(sp))
+		{
+			sp = ns;
+		}
+		if (sp == null || OvOutBlocked(sp) || OvExitTriedNear(sp.P))
+		{
+			return null;
+		}
+		return sp;
+	}
+
+	private bool OvOtherCutting()
+	{
+		OvPlan p = _vp;
+		return p.ExitBy != null && p.ExitBy != this && p.ExitBy._vp == p && OvActive().Contains(p.ExitBy);
+	}
+
+	// Z2: a thing in the pit (or the ground at its base) it couldn't get to, while it is in the trench: it keeps the thing,
+	// goes back to the vein and cuts a way out at the trench spot nearest it (R4's walk and ramp), then the thing gets its
+	// try again from there (OvRampThingBack, "Up beside it"). Once per try: the next time this thing fails, it waits its
+	// 60 s (FF1). False = no way out now (not in the trench, another companion is cutting one, a try was made near there
+	// in the last 60 s): the caller's 60 s wait.
+	private bool OvThingWayOut(GameObject t, int mode, string type, OvSpot spot, string why)
+	{
+		if (t == null || !t.activeInHierarchy || _vp == null || _vFor == null || _vRock == null || _woActive || _rpActive)
+		{
+			return false;
+		}
+		int id = t.GetInstanceID();
+		if (_twId == id)
+		{
+			return false;   // this try had its way out: the 60 s wait now (OvPitLeftNote ends the try)
+		}
+		if (!OvInTrench(out OvSpot ns) || OvOtherCutting())
+		{
+			return false;
+		}
+		OvSpot sp = OvWayOutToward(t.transform.position, ns);
+		if (sp == null)
+		{
+			return false;
+		}
+		_twId = id;
+		OvDigOff();
+		OvPartRelease();
+		OvRelease();
+		OvRampThingDrop();
+		// back to the vein holding the thing (OvHandLedge's way)
+		_ovHand = null;
+		_ovHandSpot = null;
+		_ovHandMode = 0;
+		_rpThing = t;
+		_rpThingMode = mode;
+		_rpThingType = type;
+		_rpThingSpot = spot;
+		_rpThingBase = float.MaxValue;
+		_rpThingUp = false;
+		_rpThingClaim = id;
+		_target = _vFor;
+		_targetType = "MineRock5";
+		ClaimTarget();
+		s_claimedTargets.Add(_rpThingClaim);
+		_ai?.SetFollowTarget(null);
+		_ai?.StopMoving();
+		_state = HarvestState.Vein;
+		OvWayOutHere(sp, $"Couldn't get to \"{t.name}\" from the trench ({why})", "a way out to reach it");
+		return true;
+	}
+
+	// Z2: the mover tried every saved way out on a walk on this vein and it is still stuck below where it is going (the
+	// fight's Y5, for work): the job cuts one now - for a thing it walks to, OvThingWayOut; for the trench, a part or the
+	// dirt, at the trench spot nearest where it is going. True = cutting.
+	internal bool WorkWayOut(Vector3 goal)
+	{
+		OvPlan p = _vp;
+		if (p == null || _vFor == null || _woActive || _rpActive || _ovOut || p.Spots.Count == 0)
+		{
+			return false;
+		}
+		if (_ovHandMode != 0 && _ovHand != null && (_state == HarvestState.Moving || _state == HarvestState.Attacking))
+		{
+			return OvThingWayOut(_ovHand, _ovHandMode, _targetType, _ovHandSpot, $"stuck {goal.y - base.transform.position.y:F1} m below it with no way out to use");
+		}
+		if (_state != HarvestState.Vein || !OvInTrench(out OvSpot ns) || OvOtherCutting())
+		{
+			return false;
+		}
+		OvSpot sp = OvWayOutToward(goal, ns);
+		if (sp == null)
+		{
+			return false;
+		}
+		if (_drForThing && _rpThing != null)
+		{
+			// the walk to the ground at a thing's base: the thing keeps its try (OvThingWayOut's way)
+			GameObject t = _rpThing;
+			if (t == null || _twId == t.GetInstanceID())
+			{
+				return false;   // this try had its way out: the walk gives up as before (OvDrFail, the 60 s wait)
+			}
+			int m = _rpThingMode;
+			string ty = _rpThingType;
+			OvSpot ts = _rpThingSpot;
+			_drForThing = false;
+			OvDrOff();
+			if (OvThingWayOut(t, m, ty, ts, "stuck below the ground at its base with no way out to use"))
+			{
+				return true;
+			}
+			OvRampThingDrop();
+			OvPitLeftNote(t);
+			return false;
+		}
+		OvDigOff();
+		OvPartRelease();
+		OvRelease();
+		if (_drSpot != null)
+		{
+			OvDrOff();
+		}
+		OvWayOutHere(sp, $"Stuck {goal.y - base.transform.position.y:F1} m below where it is going with no way out of the trench to use", "a way out first");
+		return true;
+	}
+
+	// Z5 (test 27: a way out's goal was inside the burial chamber's box): the line out from a trench spot (to the wall
+	// top's 8 m) crosses the box of an object that can't be damaged
+	private bool OvOutBlocked(OvSpot q)
+	{
+		if (_vp == null || _vp.Blockers.Count == 0)
+		{
+			return false;
+		}
+		Vector3 d = q.P - _vp.Center;
+		d.y = 0f;
+		d = d.sqrMagnitude > 0.01f ? d.normalized : Vector3.forward;
+		float rad = _character != null ? _character.GetRadius() : 0.4f;
+		for (float k = 0.5f; k <= OvWallOut; k += 0.5f)
+		{
+			Vector3 pt = q.P + d * k;
+			pt.y = GroundAt(pt);
+			if (OvInBlocker(_vp, pt, rad))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// ---------- V5: a thing handed to the Wood / Stone flow ----------
