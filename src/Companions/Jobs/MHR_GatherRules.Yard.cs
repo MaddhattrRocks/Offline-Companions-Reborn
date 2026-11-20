@@ -415,12 +415,33 @@ namespace Companions
             }
         }
 
-        // D4: a new vein - the last vein's pit is no longer open for stone piles
-        internal static void NewVein(HarvestController h)
+        // D4 / F1 (John, 2026-11-20: "They can build stone piles anywhere the game will allow in the pit, once the ore vein
+        // has popped"): from the pop, the pit ground every 2 m is open for its stone and wood piles (was the pit's middle
+        // and 4 spots 1 m from it, for 60 s after the vein)
+        internal static void OpenPit(HarvestController h)
+        {
+            Per p = P(h);
+            int first, side;
+            Bounds b = VeinBounds(h, out first, out side);
+            if (!h.PitGrid(p.VoidSpots, 2f)) return;
+            p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = float.MaxValue;
+            if (CompanionsPlugin.LogNormal) Info("The vein popped - its pit is open for stone and wood piles (" + p.VoidSpots.Count + " spots)");
+        }
+
+        // F1: the after-pop work is over (it left the vein) or a new vein - the pit is closed for piles
+        internal static void ClosePit(HarvestController h)
         {
             Per p = P(h);
             p.VoidHas = false;
             p.VoidSpots.Clear();
+        }
+
+        // F2: the pile piece's cost for stone or wood, when it can build one now (a hammer, not in a no-build wait)
+        internal static bool PileCost(HarvestController h, string item, out int cost)
+        {
+            cost = 0;
+            Humanoid hum = h.GetComponent<Humanoid>();
+            return hum != null && CanBuild(h, P(h), hum, item, out cost) && cost > 0;
         }
 
         // after each finished (or given-up) vein: the hole is free for stone piles for a minute, and the ore is due
@@ -436,16 +457,12 @@ namespace Companions
                 // game's any-part-left test counted the parts buried out of reach, so a vein with buried parts never read as
                 // popped)
                 bool popped = h._target == null || !h._target.activeInHierarchy || h.OvSawPop();
-                // D4 (John, 2026-11-20: "They can build stone piles anywhere the game will allow in the pit, once the ore vein
-                // has popped"): the pit ground every 2 m, open until the next vein (was the pit's middle and 4 spots 1 m from
-                // it, for 60 s)
-                if (popped && h.PitGrid(p.VoidSpots, 2f)) { p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = float.MaxValue; }
                 p.OreDue = true;
                 // Q2: a popped vein with an ore dump - its ore is carried to storage after what it carries itself
                 Vector3 dump;
                 if (popped && HarvestController.PitDumpNear(h.transform.position, out dump))
                 {
-                    p.Collect = true; p.CollectAt = dump; p.CollectUntil = Time.time + CollectMax; p.CollectGot = false; p.CollectWalkUntil = 0f;
+                    p.Collect = true; p.CollectAt = dump; p.CollectGot = false; p.CollectWalkUntil = 0f;
                 }
             }
             catch (Exception e) { Warn("AfterVein: " + e.Message); }
@@ -469,15 +486,15 @@ namespace Companions
         // Q2 (John: "after the vein 'pops' and yes only to their limit"): with player-built storage with room within 20 m
         // of the ore dump, it walks to the dump, picks up the ore lying within 2.5 m of it the way a player presses E,
         // until the next stack would take it over what it can carry, and takes it to the storage; again until the dump is
-        // empty or the storage full. Each walk 30 s at most, the whole of it 10 minutes at most; a trip that picks up
-        // nothing ends it.
-        const float CollectNear = 2.5f, CollectWalk = 30f, CollectMax = 600f;
+        // empty or the storage full. Each walk 30 s at most (F2: no cap on the whole of it); a trip that picks up nothing
+        // ends it.
+        const float CollectNear = 2.5f, CollectWalk = 30f;
         static readonly Collider[] s_collectBuf = new Collider[64];
 
         static bool CollectTick(HarvestController h, Per p, CompanionAI ai, Humanoid hum)
         {
             float now = Time.time;
-            if (Mode(h) != 3 || now >= p.CollectUntil) { CollectEnd(p, "out of time"); return false; }
+            if (Mode(h) != 3) { CollectEnd(p, "the job changed"); return false; }   // F2: no 10 minute cap
             Container store = DropOff(h, p.CollectAt, 20f);
             if (store == null) { CollectEnd(p, "no storage with room near it"); return false; }
             ItemDrop next = null; float bd = float.MaxValue;

@@ -7,9 +7,8 @@ namespace Companions;
 // in MHR_GatherRules.Yard.cs). Then:
 //   1. still over what it can carry (encumbered): it drops only as much ore as takes it to that weight, with the game's
 //      player drop (the game's own auto-pickup flag on the item, nothing else);
-//   2. it stands still until its stamina is full (60 s at most);
-//   3. it picks that ore back up the way a player presses E (its job wants ore), 15 s at most - anything it didn't get
-//      stays on the ground with the game's flag;
+//   (F5, John 2026-11-20 15:38Z: "just have them come back for any ore that puts them over the weight limit") the dropped
+//      ore stays where it fell - no rest and no pick-back; the pit's shared list of loose items picks it up after the pop;
 //   4. it walks to the vein's one ore dump on the trench floor (the Yard ore trip) and drops its ore there: all of it when
 //      there is no player-built storage with room within 20 m; with storage, only enough to get under its weight limit,
 //      then it takes the rest out to the storage and comes back.
@@ -17,16 +16,6 @@ namespace Companions;
 // limit a trip, until the dump is empty or the storage is full (MHR_GatherRules.Yard.cs).
 public partial class HarvestController
 {
-	private const float OvHvRestMax = 60f;        // 2. the rest, 60 s at most
-
-	private const float OvHvPickMax = 15f;        // 3. the pick-up, 15 s at most
-
-	private const float OvHvPickReach = 1.2f;     // 3. close enough to pick it up (flat)
-
-	private int _hvStage;                         // 0 none, 1 resting, 2 picking up
-
-	private float _hvAt;
-
 	private readonly List<ItemDrop> _hvDrops = new List<ItemDrop>();
 
 	// what "under its weight limit" is: under the job's too-heavy weight and not over what it can carry
@@ -46,72 +35,13 @@ public partial class HarvestController
 		{
 			_hvDrops.Clear();
 			int n = MHR_GatherRules.DropOreTo(_humanoid, carry, _hvDrops);
-			if (_hvDrops.Count > 0)
+			if (_hvDrops.Count > 0 && CompanionsPlugin.LogNormal)
 			{
-				_hvStage = 1;
-				_hvAt = Time.time;
-				_ai?.StopMoving();
-				if (CompanionsPlugin.LogNormal) LogInfo($"Over what it can carry ({w:F0} of {carry:F0}) - dropped {n} ore to get to it; resting until its stamina is full");
-				return true;
+				LogInfo($"Over what it can carry ({w:F0} of {carry:F0}) - dropped {n} ore to get to it; it comes back for it after the pop (F5)");
 			}
+			_hvDrops.Clear();
 		}
 		return OvHeavyDump();
-	}
-
-	private void OvHeavyTick()
-	{
-		if (_hvStage == 1)
-		{
-			_ai?.StopMoving();
-			float pct = _stamina != null ? _stamina.GetStaminaPercentage() : 1f;
-			if (pct >= 0.999f || Time.time - _hvAt >= OvHvRestMax)
-			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"Stamina {(pct * 100f):F0}% after {Time.time - _hvAt:F0} s - picking the ore back up");
-				_hvStage = 2;
-				_hvAt = Time.time;
-			}
-			return;
-		}
-		_hvDrops.RemoveAll((ItemDrop d) => d == null || !d.gameObject.activeInHierarchy);
-		if (_hvDrops.Count == 0 || Time.time - _hvAt >= OvHvPickMax)
-		{
-			if (_hvDrops.Count > 0 && CompanionsPlugin.LogNormal) LogInfo($"Couldn't pick up {_hvDrops.Count} of the ore stacks it dropped in {OvHvPickMax:F0} s - left on the ground");
-			_hvDrops.Clear();
-			_hvStage = 0;
-			if (!OvHeavyDump())
-			{
-				ResetToIdle();
-			}
-			return;
-		}
-		Vector3 me = base.transform.position;
-		ItemDrop best = null;
-		float bd = float.MaxValue;
-		foreach (ItemDrop d in _hvDrops)
-		{
-			float dd = Vector3.Distance(me, d.transform.position);
-			if (dd < bd)
-			{
-				bd = dd;
-				best = d;
-			}
-		}
-		if (Flat(me, best.transform.position) <= OvHvPickReach && Mathf.Abs(best.transform.position.y - me.y) <= 2f)
-		{
-			_ai?.StopMoving();
-			if (!best.CanPickup(autoPickupDelay: false))
-			{
-				best.RequestOwn();
-				return;
-			}
-			// the player's E: Humanoid.Pickup (no weight check, as for the player)
-			if (_humanoid.Pickup(best.gameObject, autoequip: false, autoPickupDelay: false))
-			{
-				_hvDrops.Remove(best);
-			}
-			return;
-		}
-		_ai?.MHR_Go(Time.deltaTime, best.transform.position, OvHvPickReach * 0.8f, false, "Pickup");
 	}
 
 	private bool OvHeavyDump()

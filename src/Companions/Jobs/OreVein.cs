@@ -243,7 +243,7 @@ public partial class HarvestController
 
 	private OvPlan _vp;
 
-	private OvPlan _vpLast;   // D4: the last vein it went on (its pit for stone piles after the pop)
+	private bool _ovPitOpen;   // F1: this vein's pit is open for its stone and wood piles (from the pop)
 
 	private int _vFirstSide = -1;
 
@@ -701,12 +701,11 @@ public partial class HarvestController
 		_vFor = _target;
 		_vRock = rock;
 		_vp = p;
-		_vpLast = p;
-		MHR_GatherRules.NewVein(this);   // D4: the last vein's pit is no longer open for stone piles
+		_ovPitOpen = false;
+		MHR_GatherRules.ClosePit(this);   // F1: the last vein's pit is closed for stone piles
 		_ovAxeDone = false;
 		_ovPickOk = true;
 		_ovPickAt = 0f;
-		_hvStage = 0;   // FF3
 		_hvDrops.Clear();
 		_vFirstSide = SideOf(base.transform.position);
 		_ovSpot = null;
@@ -800,8 +799,14 @@ public partial class HarvestController
 		{
 			LogInfo($"Leaving the vein work ({why})");
 		}
-		_hvStage = 0;   // FF3
 		_hvDrops.Clear();
+		// F1 (John: "once they make piles from the existing stone then they can move on"): the after-pop work is over -
+		// the pit is closed for stone and wood piles; what it mines later is piled or tossed where it is
+		if (_ovPitOpen)
+		{
+			_ovPitOpen = false;
+			MHR_GatherRules.ClosePit(this);
+		}
 		_vFor = null;
 		_vRock = null;
 		_vp = null;
@@ -828,6 +833,7 @@ public partial class HarvestController
 			_clFor.Holder = null;
 		}
 		_rpPart = null;
+		OvLooseOff();   // F2: and the loose item it had
 		OvClOff();
 		OvDrOff();   // GG2: and the dirt point it had
 	}
@@ -1609,6 +1615,11 @@ public partial class HarvestController
 	{
 		if (_vp == null || _vRock == null || _vFor == null || !_vFor.activeInHierarchy)
 		{
+			// F2: a vein that popped to the last part (the rock is gone): the loose ore, stone and wood in its pit first
+			if (_vp != null && _vFor != null && OvGoneLoose())
+			{
+				return;
+			}
 			OvClearGone();
 			OvLeave("the vein is gone");
 			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)

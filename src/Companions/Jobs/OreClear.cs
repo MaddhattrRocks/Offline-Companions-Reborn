@@ -138,7 +138,10 @@ public partial class HarvestController
 
 		public int Popped;
 
-		public float PopAt = -100f;   // D3: when the last look counted parts that fell by themselves
+		// F2: the pit's shared list of loose ore, stone and wood (by item instance id), looked at again every 5 s
+		public readonly Dictionary<int, OvLoose> Loose = new Dictionary<int, OvLoose>();
+
+		public float LooseAt = -100f;
 
 		public bool Done;
 
@@ -261,10 +264,6 @@ public partial class HarvestController
 			}
 		}
 		c.Popped += popped;
-		if (popped > 0)
-		{
-			c.PopAt = Time.time;
-		}
 		c.Alive = alive;
 		c.HeldCount = OvSupport(c, null);
 		foreach (OvPart part in c.Parts)
@@ -405,6 +404,15 @@ public partial class HarvestController
 			return false;
 		}
 		OvPartsLook(c, false);
+		if (c.Popped > 0)
+		{
+			OvPitOpen();   // F1: from the pop, the pit is open for its stone and wood piles
+		}
+		if (_lsItem != null)
+		{
+			OvLooseTick(c);   // F2: the loose item it is going for
+			return true;
+		}
 		if (_clFor != null)
 		{
 			// FF1: between swings of the round, the pit list first
@@ -440,9 +448,18 @@ public partial class HarvestController
 			return true;   // standing by: looked again once a second
 		}
 		OvDirtScan(c, false);
-		// D1 (test 23): after a pop the vein is done once nothing standing can still be worked
+		// D1 (test 23): after a pop the vein is done once nothing standing can still be worked - F2: and nothing loose in
+		// the pit is left that it can take
 		if (OvPopDone(c))
 		{
+			if (OvLooseTick(c))
+			{
+				if (_lsItem == null)
+				{
+					_clNextPick = Time.time + 1f;   // standing by: looked again once a second
+				}
+				return true;
+			}
 			c.Done = true;
 			OvClearSay(c);
 			return false;
@@ -573,12 +590,320 @@ public partial class HarvestController
 	// (Popped, counted by OvPartsLook) and every part still standing is buried out of reach (Out) or a low part with no
 	// place on the pit ground to hit it from (its last look found none: OutOfReach, waiting). Those stay in the ground like
 	// the buried parts, and the vein's finish runs (OvDoneTick: the way out, then the after-vein steps).
-	// D4: the pit ground of the vein it is on (or last went on) every `step` m, by the pit test (the ring and the trench)
+	// ---------- F2: the pit's shared list of loose items ----------
+	// John (2026-11-20): "They need to clean the entire pit of ore"; "Can we do a shared sweep that marks all the ore parts
+	// and the NPC update the list as they pick up the ore? With some timed auto sweep"; stone and wood tossed in the pit go
+	// on it too; no time limits on the job, only for getting stuck.
+	private sealed class OvLoose
+	{
+		public ItemDrop D;
+
+		public string Name;
+
+		public bool Ore;
+
+		public HarvestController Holder;
+
+		public float CoolUntil;
+	}
+
+	private const float OvLooseEvery = 5f;      // the shared look at the pit
+	private const float OvLooseNoCloser = 10f;   // the stuck rule: no 0.3 m closer in 10 s (or the mover gave up)
+	private const float OvLooseReach = 1.2f;     // close enough to pick it up (flat), as the old pick-back
+
+	private OvLoose _lsItem;
+	private float _lsBest;
+	private float _lsBestAt;
+	private float _lsStart;
+	private static readonly Collider[] s_lsBuf = new Collider[512];
+
+	// the vein's list: looked at by whichever companion finds it due (every 5 s), read by the others. On it: ore, stone
+	// and wood lying on the pit ground (the ring and the trench), tossed or not - except ore on the ore dump (the dump
+	// carry takes that to storage).
+	private void OvLooseScan(OvClear c)
+	{
+		float now = Time.time;
+		if (now - c.LooseAt < OvLooseEvery)
+		{
+			return;
+		}
+		c.LooseAt = now;
+		float r = 0f;
+		foreach (OvSpot sp in _vp.Spots)
+		{
+			r = Mathf.Max(r, Flat(sp.P, _vp.Center));
+		}
+		r += OvThingRadius + 8f;   // + 8 m: the pit's depth (the game's dig limit), the look is a sphere
+		bool hasDump = PitDumpFor(out Vector3 dump);
+		int n = Physics.OverlapSphereNonAlloc(_vp.Center, r, s_lsBuf, _itemLayerMask);
+		HashSet<int> seen = new HashSet<int>();
+		for (int i = 0; i < n; i++)
+		{
+			Collider col = s_lsBuf[i];
+			ItemDrop d = col != null && col.attachedRigidbody != null ? col.attachedRigidbody.GetComponent<ItemDrop>() : null;
+			if (d == null || d.m_itemData == null)
+			{
+				continue;
+			}
+			ZNetView nv = d.GetComponent<ZNetView>();
+			if (nv == null || !nv.IsValid())
+			{
+				continue;
+			}
+			int id = d.gameObject.GetInstanceID();
+			if (!seen.Add(id))
+			{
+				continue;
+			}
+			Vector3 at = d.transform.position;
+			if (!OvInPitPt(at))
+			{
+				continue;
+			}
+			d.Load();
+			string name = MHR_GatherRules.DropName(d);
+			bool ore = MHR_GatherRules.IsOreItem(d.m_itemData);
+			if (!ore && name != "Stone" && name != "Wood")
+			{
+				continue;
+			}
+			if (ore && hasDump && Flat(at, dump) <= 2.5f)
+			{
+				seen.Remove(id);
+				continue;   // on the ore dump
+			}
+			if (!c.Loose.ContainsKey(id))
+			{
+				c.Loose[id] = new OvLoose { D = d, Name = name, Ore = ore };
+			}
+		}
+		List<int> gone = new List<int>();
+		foreach (KeyValuePair<int, OvLoose> kv in c.Loose)
+		{
+			if (!seen.Contains(kv.Key) && (kv.Value.Holder == null || kv.Value.Holder._lsItem != kv.Value))
+			{
+				gone.Add(kv.Key);
+			}
+		}
+		foreach (int id in gone)
+		{
+			c.Loose.Remove(id);
+		}
+	}
+
+	private static bool OvLooseHere(OvLoose l)
+	{
+		return l.D != null && l.D.gameObject.activeInHierarchy && l.D.m_itemData != null;
+	}
+
+	// 0 = it takes it now, 1 = not now (someone else's, cooling, not enough for a pile), 2 = only its weight / bag stops it
+	private int OvLooseTakes(OvClear c, OvLoose l, Inventory inv, Dictionary<string, int> pileOk)
+	{
+		if (!OvLooseHere(l) || (l.Holder != null && l.Holder != this && l.Holder._lsItem == l) || Time.time < l.CoolUntil)
+		{
+			return 1;
+		}
+		if (!l.Ore)
+		{
+			// stone / wood: only while what lies in the pit and what it carries make one more pile it can build now (a
+			// last bit short of a pile stays where it is)
+			if (!pileOk.TryGetValue(l.Name, out int ok))
+			{
+				ok = 0;
+				if (MHR_GatherRules.PileCost(this, l.Name, out int cost))
+				{
+					int have = 0;
+					foreach (ItemDrop.ItemData it in inv.GetAllItems())
+					{
+						if (it.m_dropPrefab != null && it.m_dropPrefab.name == l.Name)
+						{
+							have += it.m_stack;
+						}
+					}
+					foreach (OvLoose o in c.Loose.Values)
+					{
+						if (o.Name == l.Name && OvLooseHere(o) && Time.time >= o.CoolUntil)
+						{
+							have += o.D.m_itemData.m_stack;
+						}
+					}
+					ok = have >= cost ? 1 : 0;
+				}
+				pileOk[l.Name] = ok;
+			}
+			if (ok == 0)
+			{
+				return 1;
+			}
+		}
+		// a pickup never takes it over its weight limit
+		if (inv.GetTotalWeight() + l.D.m_itemData.GetWeight() > HeavyLimit || !inv.CanAddItem(l.D.m_itemData))
+		{
+			return 2;
+		}
+		return 0;
+	}
+
+	// true = busy with the list (going for an item, or taking its ore to the dump to make room); false = nothing on it it
+	// can take
+	private bool OvLooseTick(OvClear c)
+	{
+		if (_humanoid == null || _humanoid.GetInventory() == null)
+		{
+			return false;
+		}
+		float now = Time.time;
+		Vector3 me = base.transform.position;
+		if (_lsItem != null)
+		{
+			OvLoose l = _lsItem;
+			if (!OvLooseHere(l))
+			{
+				OvLooseOff();
+				return true;
+			}
+			Vector3 at = l.D.transform.position;
+			float dist = Flat(me, at);
+			if (dist <= OvLooseReach && Mathf.Abs(at.y - me.y) <= 2f)
+			{
+				_ai?.StopMoving();
+				if (!l.D.CanPickup(autoPickupDelay: false))
+				{
+					l.D.RequestOwn();
+					if (now - _lsBestAt > OvLooseNoCloser)
+					{
+						OvLooseCool(l, "it couldn't take it (another game owns it)");
+					}
+					return true;
+				}
+				// the player's E (Humanoid.Pickup), as the old pick-back
+				string what = l.D.m_itemData.m_shared.m_name;
+				int count = l.D.m_itemData.m_stack;
+				if (_humanoid.Pickup(l.D.gameObject, autoequip: false, autoPickupDelay: false))
+				{
+					c.Loose.Remove(l.D.gameObject.GetInstanceID());
+					if (CompanionsPlugin.LogDetailed) Log($"Picked up {count}x {MHR_List.Local(what)} in the pit ({c.Loose.Count} on the pit's list)");
+					OvLooseOff();
+				}
+				else
+				{
+					OvLooseCool(l, "the pickup didn't take");
+				}
+				return true;
+			}
+			if (dist < _lsBest - 0.3f)
+			{
+				_lsBest = dist;
+				_lsBestAt = now;
+			}
+			if ((now - _lsStart > 0.5f && MHR_Mover.GaveUp(_ai)) || now - _lsBestAt > OvLooseNoCloser)
+			{
+				OvLooseCool(l, MHR_Mover.GaveUp(_ai) ? "the way there failed" : $"no closer in {OvLooseNoCloser:F0} s");
+				return true;
+			}
+			_ai?.MHR_Go(Time.deltaTime, at, OvLooseReach * 0.8f, false, "Pickup");
+			return true;
+		}
+		OvLooseScan(c);
+		Inventory inv = _humanoid.GetInventory();
+		Dictionary<string, int> pileOk = new Dictionary<string, int>();
+		OvLoose best = null;
+		float bd = float.MaxValue;
+		bool heavyLeft = false;
+		foreach (OvLoose l in c.Loose.Values)
+		{
+			int t = OvLooseTakes(c, l, inv, pileOk);
+			if (t == 2 && l.Ore)
+			{
+				heavyLeft = true;
+			}
+			if (t != 0)
+			{
+				continue;
+			}
+			float d = Flat(me, l.D.transform.position);
+			if (d < bd)
+			{
+				bd = d;
+				best = l;
+			}
+		}
+		if (best != null)
+		{
+			best.Holder = this;
+			_lsItem = best;
+			_lsBest = bd;
+			_lsBestAt = now;
+			_lsStart = now;
+			return true;
+		}
+		// full: ore still in the pit that only its weight stops - its ore to the dump first (the existing dump trip), then on
+		if (heavyLeft && MHR_GatherRules.HasOre(_humanoid) && OvHeavyDump())
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo("Full with ore from the pit - taking it to the ore dump, then back to the pit's list");
+			return true;
+		}
+		// another companion is still going for an item: the vein isn't done yet (it stands by)
+		foreach (OvLoose l in c.Loose.Values)
+		{
+			if (l.Holder != null && l.Holder != this && l.Holder._lsItem == l && OvLooseHere(l))
+			{
+				_ai?.StopMoving();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// a failed try: the item waits 60 s (not a permanent skip) and goes back on the list
+	private void OvLooseCool(OvLoose l, string why)
+	{
+		l.CoolUntil = Time.time + OvCool;
+		if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{(l.D != null ? MHR_List.Local(l.D.m_itemData.m_shared.m_name) : "?")}\" in the pit waits 60 s: {why}");
+		OvLooseOff();
+	}
+
+	private void OvLooseOff()
+	{
+		if (_lsItem != null && _lsItem.Holder == this)
+		{
+			_lsItem.Holder = null;
+		}
+		_lsItem = null;
+	}
+
+	// F2: the vein is gone (it popped to the last part) - the list of its pit before it leaves
+	private bool OvGoneLoose()
+	{
+		OvPitOpen();
+		if (_lsItem == null && Time.time < _clNextPick)
+		{
+			return true;   // standing by: looked again once a second
+		}
+		bool busy = OvLooseTick(OvC());
+		if (busy && _lsItem == null)
+		{
+			_clNextPick = Time.time + 1f;
+		}
+		return busy;
+	}
+
+	// F1: from the pop, the pit is open for its stone and wood piles (once per vein)
+	private void OvPitOpen()
+	{
+		if (_ovPitOpen)
+		{
+			return;
+		}
+		_ovPitOpen = true;
+		MHR_GatherRules.OpenPit(this);
+	}
+
+	// D4: the pit ground of the vein it is on every `step` m, by the pit test (the ring and the trench)
 	internal bool PitGrid(List<Vector3> into, float step)
 	{
 		into.Clear();
-		OvPlan p = _vp ?? _vpLast;
-		_vpLast = null;   // used once: a plain rock mined after the vein doesn't open the old pit again
+		OvPlan p = _vp;
 		if (p == null || p.Spots.Count == 0)
 		{
 			return false;
@@ -1870,24 +2195,6 @@ public partial class HarvestController
 	private void OvPartDrops(Vector3 at)
 	{
 		_lastDestroyPos = at;
-		// D3 (test 23: Je picked up 14 of about 60 items in the 8 m circle round the part he broke): right after a pop
-		// (the last look counted parts falling by themselves within 5 s) the pickup covers the whole pit - the ring and
-		// the trench - and its 10 s limit counts only time with nothing picked up
-		_dropPitWide = false;
-		OvClear c = _vp != null ? OvC() : null;
-		if (c != null && Time.time - c.PopAt <= 5f)
-		{
-			float r = 0f;
-			foreach (OvSpot sp in _vp.Spots)
-			{
-				r = Mathf.Max(r, Flat(sp.P, _vp.Center));
-			}
-			_dropPitWide = true;
-			_dropPitR = r + OvThingRadius + 8f;   // + 8 m: the pit's depth (the game's dig limit), the scan is a sphere
-			_dropPitGot = 0;
-			_lastDestroyPos = _vp.Center;
-			if (CompanionsPlugin.LogNormal) LogInfo($"The vein popped - picking up what lies in the pit (within {r + OvThingRadius:F0} m of its middle)");
-		}
 		_currentDrop = null;
 		_dropTimer = 0f;
 		_dropScanDelayTimer = 0.5f;
