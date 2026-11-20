@@ -138,6 +138,8 @@ public partial class HarvestController
 
 		public int Popped;
 
+		public float PopAt = -100f;   // D3: when the last look counted parts that fell by themselves
+
 		public bool Done;
 
 		public bool Stopped;
@@ -259,6 +261,10 @@ public partial class HarvestController
 			}
 		}
 		c.Popped += popped;
+		if (popped > 0)
+		{
+			c.PopAt = Time.time;
+		}
 		c.Alive = alive;
 		c.HeldCount = OvSupport(c, null);
 		foreach (OvPart part in c.Parts)
@@ -434,6 +440,13 @@ public partial class HarvestController
 			return true;   // standing by: looked again once a second
 		}
 		OvDirtScan(c, false);
+		// D1 (test 23): after a pop the vein is done once nothing standing can still be worked
+		if (OvPopDone(c))
+		{
+			c.Done = true;
+			OvClearSay(c);
+			return false;
+		}
 		if (c.Dirt.Count > 0 || OvLowLeft(c))
 		{
 			return OvDrChoose(c);
@@ -554,6 +567,68 @@ public partial class HarvestController
 	private static bool OvLowUp(OvPart part)
 	{
 		return part != null && !part.Out && part.C != null && part.C.gameObject.activeSelf;
+	}
+
+	// D1 (test 23, John: after the pop "They should be organizing the ore and rocks"): parts fell in the game's support drop
+	// (Popped, counted by OvPartsLook) and every part still standing is buried out of reach (Out) or a low part with no
+	// place on the pit ground to hit it from (its last look found none: OutOfReach, waiting). Those stay in the ground like
+	// the buried parts, and the vein's finish runs (OvDoneTick: the way out, then the after-vein steps).
+	// D4: the pit ground of the vein it is on (or last went on) every `step` m, by the pit test (the ring and the trench)
+	internal bool PitGrid(List<Vector3> into, float step)
+	{
+		into.Clear();
+		OvPlan p = _vp ?? _vpLast;
+		_vpLast = null;   // used once: a plain rock mined after the vein doesn't open the old pit again
+		if (p == null || p.Spots.Count == 0)
+		{
+			return false;
+		}
+		float r = 0f;
+		foreach (OvSpot sp in p.Spots)
+		{
+			r = Mathf.Max(r, Flat(sp.P, p.Center));
+		}
+		r += OvThingRadius;
+		for (float x = -r; x <= r; x += step)
+		{
+			for (float z = -r; z <= r; z += step)
+			{
+				Vector3 pt = new Vector3(p.Center.x + x, p.Center.y, p.Center.z + z);
+				if (OvInPit(p, new Bounds(pt, Vector3.zero)))
+				{
+					pt.y = GroundAt(pt);
+					into.Add(pt);
+				}
+			}
+		}
+		return into.Count > 0;
+	}
+
+	// D2: the vein job saw parts fall in the game's support drop (MHR_GatherRules.AfterVein's "popped")
+	internal bool OvSawPop()
+	{
+		return _vp != null && OvC().Popped > 0;
+	}
+
+	private bool OvPopDone(OvClear c)
+	{
+		if (c.Popped <= 0)
+		{
+			return false;
+		}
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Out)
+			{
+				continue;
+			}
+			if (OvIsLow(part) && part.OutOfReach && part.Wait && OvPartCooling(part))
+			{
+				continue;
+			}
+			return false;
+		}
+		return true;
 	}
 
 	// K1: a low part no swing from the ground reaches (OutOfReach, K2) doesn't hold the last step back (L4: never a ladder part)
@@ -1567,7 +1642,7 @@ public partial class HarvestController
 			_talk?.SayProblem("vein:clear_stopped", string.Format(ModLocalization.Loc("hc_speech_vein_clear_stopped"), MHR_Items.NiceName(_vFor)));
 			return;
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{_vp.Name}\" is done: {c.Mined} part(s) mined, {c.Popped} fell by themselves, {left} left ({outN} buried out of reach)");
+		if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{_vp.Name}\" is done: {c.Mined} part(s) mined, {c.Popped} fell by themselves, {left} left ({outN} buried out of reach{(left > outN ? $", {left - outN} low part(s) with no place to hit them from, left in the ground after the pop (D1)" : "")})");
 	}
 
 	// Z2: the root rests on a tree / log / stump / rock that isn't left (the Y6e count) - that thing comes first
@@ -1795,6 +1870,24 @@ public partial class HarvestController
 	private void OvPartDrops(Vector3 at)
 	{
 		_lastDestroyPos = at;
+		// D3 (test 23: Je picked up 14 of about 60 items in the 8 m circle round the part he broke): right after a pop
+		// (the last look counted parts falling by themselves within 5 s) the pickup covers the whole pit - the ring and
+		// the trench - and its 10 s limit counts only time with nothing picked up
+		_dropPitWide = false;
+		OvClear c = _vp != null ? OvC() : null;
+		if (c != null && Time.time - c.PopAt <= 5f)
+		{
+			float r = 0f;
+			foreach (OvSpot sp in _vp.Spots)
+			{
+				r = Mathf.Max(r, Flat(sp.P, _vp.Center));
+			}
+			_dropPitWide = true;
+			_dropPitR = r + OvThingRadius + 8f;   // + 8 m: the pit's depth (the game's dig limit), the scan is a sphere
+			_dropPitGot = 0;
+			_lastDestroyPos = _vp.Center;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The vein popped - picking up what lies in the pit (within {r + OvThingRadius:F0} m of its middle)");
+		}
 		_currentDrop = null;
 		_dropTimer = 0f;
 		_dropScanDelayTimer = 0.5f;

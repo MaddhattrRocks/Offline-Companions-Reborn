@@ -131,6 +131,11 @@ public partial class HarvestController : MonoBehaviour
 
 	private Vector3 _lastDestroyPos;
 
+	// D3: the after-pop pickup - the whole vein pit, 10 s with nothing picked up
+	private bool _dropPitWide;
+	private float _dropPitR;
+	private int _dropPitGot;
+
 	private GameObject _currentDrop;
 
 	private float _dropTimer;
@@ -1790,6 +1795,11 @@ public partial class HarvestController : MonoBehaviour
 	{
 		float deltaTime = Time.deltaTime;
 		_dropTimer += deltaTime;
+		if (_dropPitWide && _dropsPickedUp != _dropPitGot)
+		{
+			_dropPitGot = _dropsPickedUp;
+			_dropTimer = 0f;   // D3: the 10 s count only time with nothing picked up
+		}
 		if (_dropTimer > 10f)
 		{
 			if (CompanionsPlugin.LogDetailed) Log($"Drop collection timeout ({10f}s) — picked up {_dropsPickedUp} items, resuming harvest");
@@ -1849,6 +1859,7 @@ public partial class HarvestController : MonoBehaviour
 	{
 		HarvestState state = _state;
 		_state = HarvestState.Idle;
+		_dropPitWide = false;
 		_target = null;
 		_targetType = null;
 		_swingCount = 0;
@@ -2904,6 +2915,7 @@ public partial class HarvestController : MonoBehaviour
 			}
 			_stoneDropTry = null;
 		}
+		_dropPitWide = false;
 		// 1.5.96: the Ore job, done with a rock: the ore goes to a chest within 20 m or the ore spot (John: "it should do
 		// both" - when over its limit and after each finished vein)
 		// 1.5.98: not for a rock in its trench that the vein work handed over (the vein isn't done)
@@ -2957,7 +2969,8 @@ public partial class HarvestController : MonoBehaviour
 
 	private GameObject ScanForDrops()
 	{
-		int num = Physics.OverlapSphereNonAlloc(_lastDestroyPos, DropScanRadius, _dropBuffer, _itemLayerMask);
+		bool pitWide = _dropPitWide && _vp != null;
+		int num = Physics.OverlapSphereNonAlloc(_lastDestroyPos, pitWide ? _dropPitR : DropScanRadius, _dropBuffer, _itemLayerMask);
 		if (num > _dropBuffer.Length)
 		{
 			num = _dropBuffer.Length;
@@ -2980,6 +2993,10 @@ public partial class HarvestController : MonoBehaviour
 			if (component == null)
 			{
 				continue;
+			}
+			if (pitWide && !OvInPitPt(component.transform.position))
+			{
+				continue;   // D3: only what lies in the pit
 			}
 			_scanSeen++;
 			// 1.5.96: the Stone job takes tossed stone on purpose (MHR_GatherRules.WantDrop)

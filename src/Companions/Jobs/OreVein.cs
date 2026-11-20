@@ -243,6 +243,8 @@ public partial class HarvestController
 
 	private OvPlan _vp;
 
+	private OvPlan _vpLast;   // D4: the last vein it went on (its pit for stone piles after the pop)
+
 	private int _vFirstSide = -1;
 
 	private OvSpot _ovSpot;
@@ -699,6 +701,8 @@ public partial class HarvestController
 		_vFor = _target;
 		_vRock = rock;
 		_vp = p;
+		_vpLast = p;
+		MHR_GatherRules.NewVein(this);   // D4: the last vein's pit is no longer open for stone piles
 		_ovAxeDone = false;
 		_ovPickOk = true;
 		_ovPickAt = 0f;
@@ -2512,6 +2516,12 @@ public partial class HarvestController
 			{
 				_blacklist[r.gameObject.GetInstanceID()] = Time.time;
 			}
+		}
+		// D1: the after-vein steps (ore to a chest within 20 m or the ore spot, Q2's ore dump carry, piles in the pit) for a
+		// vein that is done while parts are left in the ground - before, only a vein that was gone started them
+		if (!_ovOut)
+		{
+			MHR_GatherRules.AfterVein(this);
 		}
 		OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 dvGoal, out _) ? dvGoal : base.transform.position, "the vein is done");
 	}

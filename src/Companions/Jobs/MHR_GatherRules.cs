@@ -25,6 +25,8 @@ namespace Companions
             public float NextStoneCheck, NoBuildUntil, NextNoBuildLog;
             // 1.5.96: the hole a popped vein left (stone piles go in it), ore due after a vein, the next toss
             public bool VoidHas; public Vector3 VoidAt; public float VoidUntil; public bool OreDue; public float NextToss;
+            // D4: the popped vein's pit ground, every 2 m (stone piles go anywhere on it the game allows)
+            public readonly List<Vector3> VoidSpots = new List<Vector3>();
             // 1.5.97: what the pile or toss is of (Stone or Wood), or the other junk (item G)
             public string PileItem = "Stone"; public bool TossJunk; public float NoJunkUntil;
             // pop test E1: Stone job over what it can carry - stone tossed only until it's at or under it

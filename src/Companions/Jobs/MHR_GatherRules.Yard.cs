@@ -415,6 +415,14 @@ namespace Companions
             }
         }
 
+        // D4: a new vein - the last vein's pit is no longer open for stone piles
+        internal static void NewVein(HarvestController h)
+        {
+            Per p = P(h);
+            p.VoidHas = false;
+            p.VoidSpots.Clear();
+        }
+
         // after each finished (or given-up) vein: the hole is free for stone piles for a minute, and the ore is due
         internal static void AfterVein(HarvestController h)
         {
@@ -424,14 +432,14 @@ namespace Companions
                 Per p = P(h);
                 int first, side;
                 Bounds b = VeinBounds(h, out first, out side);
-                bool popped = h._target == null || !h._target.activeInHierarchy;
-                if (h._target != null)
-                {
-                    MineRock5 r = h._target.GetComponent<MineRock5>();
-                    bool? left = r != null ? MHR_Vein.AnyLeft(r) : null;
-                    if (left.HasValue) popped = !left.Value;
-                }
-                if (popped) { p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = Time.time + 60f; }
+                // D2 (test 23): popped = the rock is gone, or the vein job saw its parts fall in the game's support drop (the
+                // game's any-part-left test counted the parts buried out of reach, so a vein with buried parts never read as
+                // popped)
+                bool popped = h._target == null || !h._target.activeInHierarchy || h.OvSawPop();
+                // D4 (John, 2026-11-20: "They can build stone piles anywhere the game will allow in the pit, once the ore vein
+                // has popped"): the pit ground every 2 m, open until the next vein (was the pit's middle and 4 spots 1 m from
+                // it, for 60 s)
+                if (popped && h.PitGrid(p.VoidSpots, 2f)) { p.VoidHas = true; p.VoidAt = new Vector3(b.center.x, Ground(b.center), b.center.z); p.VoidUntil = float.MaxValue; }
                 p.OreDue = true;
                 // Q2: a popped vein with an ore dump - its ore is carried to storage after what it carries itself
                 Vector3 dump;
@@ -546,8 +554,10 @@ namespace Companions
             hole = b; hole.Expand(new Vector3(3f, 0f, 3f));
             if (p.VoidHas && Time.time < p.VoidUntil)
             {
-                list.Add(p.VoidAt);
-                for (int k = 0; k < 4; k++) list.Add(p.VoidAt + Quaternion.Euler(0f, k * 90f, 0f) * Vector3.forward * 1f);
+                // D4: every 2 m of the popped vein's pit ground, nearest the companion first
+                Vector3 me = h.transform.position;
+                list.AddRange(p.VoidSpots);
+                list.Sort((Vector3 x, Vector3 y) => (x - me).sqrMagnitude.CompareTo((y - me).sqrMagnitude));
                 return list;
             }
             Vector3 n;
@@ -589,18 +599,9 @@ namespace Companions
             int notFlat = 0, blocked = 0, rules = 0, station = 0;
             foreach (Vector3 c in cands)
             {
-                // on the ground (terrain), level enough to stand a pile on
-                float lo = float.MaxValue, hi = float.MinValue; bool ok = true;
-                for (int k = 0; k < 5 && ok; k++)
-                {
-                    Vector3 q = c + rot * (k == 0 ? Vector3.zero : new Vector3((k & 1) == 0 ? 0.9f : -0.9f, 0f, k < 3 ? 0.9f : -0.9f));
-                    q.y = c.y;
-                    RaycastHit hit;
-                    if (!Physics.Raycast(new Vector3(q.x, Ground(q) + 3f, q.z), Vector3.down, out hit, 8f, s_groundMask) || hit.collider.GetComponent<Heightmap>() == null) { ok = false; break; }
-                    lo = Mathf.Min(lo, hit.point.y); hi = Mathf.Max(hi, hit.point.y);
-                }
-                if (!ok || hi - lo > 0.35f) { notFlat++; continue; }
-                Vector3 spot = new Vector3(c.x, lo, c.z);
+                // D4: the ground there passes the game's placement rules for the pile piece (was: 5 terrain rays within 0.35 m)
+                Vector3 spot;
+                if (!GamePlaceOk(piece, c, out spot)) { notFlat++; continue; }
                 if (!inVoid)
                 {
                     Bounds hb = hole; hb.Expand(new Vector3(0f, 200f, 0f));
@@ -613,9 +614,41 @@ namespace Companions
                 p.BuildSpot = spot; p.BuildRot = rot; p.BuildHas = true;
                 return true;
             }
-            why = station > 0 ? "it needs a " + MHR_List.Local(piece.m_craftingStation.m_name) + " nearby" : rules > 0 ? "a ward or no-build area" : notFlat >= blocked ? "no flat ground" : "no free ground";
-            if (CompanionsPlugin.LogDetailed) Debug("No " + PileWord(p.PileItem) + " pile spot (" + (inVoid ? "in the hole" : "outside the hole") + "): " + notFlat + " not flat, " + blocked + " in the way, " + rules + " ward/no-build, " + station + " no station");
+            why = station > 0 ? "it needs a " + MHR_List.Local(piece.m_craftingStation.m_name) + " nearby" : rules > 0 ? "a ward or no-build area" : notFlat >= blocked ? "no ground the game lets it go on" : "no free ground";
+            if (CompanionsPlugin.LogDetailed) Debug("No " + PileWord(p.PileItem) + " pile spot (" + (inVoid ? "in the hole" : "outside the hole") + "): " + notFlat + " not allowed by the game's placement rules, " + blocked + " in the way, " + rules + " ward/no-build, " + station + " no station");
             return false;
+        }
+
+        // D4: the player's placement rules for a piece on the ground under `at` (Player.UpdatePlacementGhost, the checks on
+        // what its placement ray hit: water, ground only, cultivated / vegetation ground, not on a tilting surface (normal.y
+        // under 0.8), ceiling only, not on a floor). The point is where the pile goes.
+        static int s_waterMask = -1;
+        static bool GamePlaceOk(Piece piece, Vector3 at, out Vector3 point)
+        {
+            point = at;
+            RaycastHit hit;
+            if (!Physics.Raycast(new Vector3(at.x, Ground(at) + 3f, at.z), Vector3.down, out hit, 8f, s_groundMask)) return false;
+            point = hit.point;
+            Vector3 normal = hit.normal;
+            Heightmap heightmap = hit.collider.GetComponent<Heightmap>();
+            if (s_waterMask < 0) s_waterMask = LayerMask.GetMask("Water");
+            RaycastHit wh;
+            bool inWater = Physics.Raycast(new Vector3(at.x, hit.point.y + 3f, at.z), Vector3.down, out wh, 3f, s_waterMask, QueryTriggerInteraction.Collide) && wh.point.y > hit.point.y;
+            if (piece.m_noInWater && inWater) return false;
+            if (piece.m_waterPiece && !inWater) return false;
+            if ((piece.m_groundPiece || piece.m_groundOnly) && heightmap == null) return false;
+            if (piece.m_cultivatedGroundOnly && (heightmap == null || !heightmap.IsCultivated(point))) return false;
+            if (piece.m_vegetationGroundOnly)
+            {
+                if (heightmap == null) return false;
+                Heightmap.Biome biome = heightmap.GetBiome(point);
+                float mask = heightmap.GetVegetationMask(point);
+                if (biome == Heightmap.Biome.AshLands ? mask > 0.1f : mask < 0.25f) return false;
+            }
+            if (piece.m_notOnTiltingSurface && normal.y < 0.8f) return false;
+            if (piece.m_inCeilingOnly && normal.y > -0.5f) return false;
+            if (piece.m_notOnFloor && normal.y > 0.1f) return false;
+            return true;
         }
 
         // at the build spot: hammer out, one pile per work beat while it has enough stone. False = done.
