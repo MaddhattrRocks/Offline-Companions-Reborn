@@ -33,6 +33,8 @@ public partial class HarvestController
 
 	private HarvestController _bdBlock;
 
+	private float _bdAheadAt;     // G1: the next look for a companion just ahead (4 times a second)
+
 	// AA4: the hand-off clock (only time in range swinging at the thing counts)
 	private float _hdClock;
 
@@ -138,14 +140,34 @@ public partial class HarvestController
 		{
 			_bdHwTime += dt;
 		}
-		// (c) + H4: pressed against another (within 1.2 m ahead) with no headway for 1 s: stop pushing, the mover's side step
-		if (_bdHwTime >= OvSideAfter && Time.time - _dgSideAt >= OvSideAfter && OvOtherAhead(me, goal))
+		// G1 (test 28: Gunter pushed Je 20 m down the trench - pushing someone still gets closer, so the old "no headway for
+		// 1 s" side step never came): 4 times a second, another companion within 1.2 m ahead in the way it is walking = it
+		// goes round them now on the side with more room (the mover's detour); when the mover can't take a detour (already
+		// on one, or on a way-out leg) it stops pushing and takes the mover's side step (at most once a second)
+		if (Time.time >= _bdAheadAt)
 		{
-			_dgSideAt = Time.time;
-			_ai?.StopMoving();
-			if (CompanionsPlugin.LogDetailed) Log($"Another companion is in the way to {MHR_Mover.Fmt(goal)} - stopped pushing, side step");
-			MHR_Mover.SidestepNow(_ai, MHR_GatherRules.ApproachPoint(this, goal), "Gather");
-			return;
+			_bdAheadAt = Time.time + 0.25f;
+			Vector3 v = _character != null ? _character.GetVelocity() : Vector3.zero;
+			v.y = 0f;
+			Vector3 toward = v.sqrMagnitude > 0.25f ? me + v.normalized * 2f : goal;
+			HarvestController ah = OvBoardAhead(me, toward);
+			if (ah != null)
+			{
+				Vector3 round = OvBoardSide(me, toward, ah);
+				if (MHR_Mover.DetourNow(_ai, round, 4f))
+				{
+					if (CompanionsPlugin.LogDetailed) Log($"Another companion is just ahead at {MHR_Mover.Fmt(ah.transform.position)} - going round it by {MHR_Mover.Fmt(round)}");
+					return;
+				}
+				if (Time.time - _dgSideAt >= OvSideAfter)
+				{
+					_dgSideAt = Time.time;
+					_ai?.StopMoving();
+					if (CompanionsPlugin.LogDetailed) Log($"Another companion is in the way to {MHR_Mover.Fmt(goal)} - stopped pushing, side step");
+					MHR_Mover.SidestepNow(_ai, MHR_GatherRules.ApproachPoint(this, goal), "Gather");
+				}
+				return;
+			}
 		}
 		// (b) once a second: a working companion on the line - the mover's detour past it, on the side with more room
 		if (Time.time < _bdNextLook)
@@ -159,22 +181,59 @@ public partial class HarvestController
 			return;
 		}
 		Vector3 wp = w.transform.position;
-		Vector3 dir = goal - me;
-		dir.y = 0f;
-		dir.Normalize();
-		Vector3 side = new Vector3(dir.z, 0f, 0f - dir.x);
-		Vector3 l = wp + side * (OvBoardLine + 0.6f), r = wp - side * (OvBoardLine + 0.6f);
-		l.y = GroundAt(l);
-		r.y = GroundAt(r);
-		// more room: the side whose ground is nearer its own feet's height (in a trench the other side is the wall), and
-		// with no other companion within 1.2 m
-		float cl = Mathf.Abs(l.y - me.y) + (OvBoardTaken(l) != null && OvBoardTaken(l) != w ? 10f : 0f);
-		float cr = Mathf.Abs(r.y - me.y) + (OvBoardTaken(r) != null && OvBoardTaken(r) != w ? 10f : 0f);
-		Vector3 via = cl <= cr ? l : r;
+		Vector3 via = OvBoardSide(me, goal, w);
 		if (MHR_Mover.DetourNow(_ai, via, 4f) && CompanionsPlugin.LogDetailed)
 		{
 			Log($"A companion is working on the way to {MHR_Mover.Fmt(goal)} at {MHR_Mover.Fmt(wp)} - going round it by {MHR_Mover.Fmt(via)}");
 		}
+	}
+
+	// AA6 (b) / G1: the point beside companion w to go round it by, on the side with more room - the side whose ground is
+	// nearer its own feet's height (in a trench the other side is the wall), and with no other companion within 1.2 m
+	private Vector3 OvBoardSide(Vector3 me, Vector3 toward, HarvestController w)
+	{
+		Vector3 wp = w.transform.position;
+		Vector3 dir = toward - me;
+		dir.y = 0f;
+		dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : base.transform.forward;
+		Vector3 side = new Vector3(dir.z, 0f, 0f - dir.x);
+		Vector3 l = wp + side * (OvBoardLine + 0.6f), r = wp - side * (OvBoardLine + 0.6f);
+		l.y = GroundAt(l);
+		r.y = GroundAt(r);
+		HarvestController tl = OvBoardTaken(l), tr = OvBoardTaken(r);
+		float cl = Mathf.Abs(l.y - me.y) + (tl != null && tl != w ? 10f : 0f);
+		float cr = Mathf.Abs(r.y - me.y) + (tr != null && tr != w ? 10f : 0f);
+		return cl <= cr ? l : r;
+	}
+
+	// G1: the nearest other companion on this vein within 1.2 m ahead (flat, within 60 degrees of the way it walks)
+	private HarvestController OvBoardAhead(Vector3 me, Vector3 toward)
+	{
+		Vector3 dir = toward - me;
+		dir.y = 0f;
+		if (dir.sqrMagnitude < 0.01f || _vp == null)
+		{
+			return null;
+		}
+		dir.Normalize();
+		HarvestController best = null;
+		float bd = float.MaxValue;
+		foreach (HarvestController h in _vp.Workers.Keys)
+		{
+			if (h == null || h == this || h._vp != _vp)
+			{
+				continue;
+			}
+			Vector3 o = h.transform.position - me;
+			o.y = 0f;
+			float d = o.magnitude;
+			if (d <= OvSideNear && d > 0.01f && Vector3.Dot(o / d, dir) > 0.5f && d < bd)
+			{
+				bd = d;
+				best = h;
+			}
+		}
+		return best;
 	}
 
 	// AA6 (a): a trench point another companion stands on or walks to - waits up to 5 s (looked at once a second), then the

@@ -3255,7 +3255,7 @@ public partial class HarvestController
 			// R2a: mining the part itself from where it stands - a swing on the vein's rock is progress (its break is seen by
 			// OvClRound). K3 (test 18: 403 of 416 misses dug the dirt bank in front of the part): a swing the game dug into the
 			// dirt between it and the part, 0.3 m or more above its feet (P4's bank test - not the floor at its own feet, Y7),
-			// is work too. Ends: 3 swings in a row that did neither, the game's 8 m limit at that dig, or 20 swings that
+			// is work too. Ends: 3 swings in a row that did neither (a dig at the game's 8 m limit is one of them, G5), or 20 swings that
 			// didn't hit the part.
 			Vector3 pf = base.transform.position;
 			bool toward = !hitOre && dug && _dgDugPt.y >= pf.y + 0.3f && Flat(pf, _dgDugPt) <= Flat(pf, _dgPoint) + 0.3f;
@@ -3267,13 +3267,11 @@ public partial class HarvestController
 				OvC().ProgAt = Time.time;
 			}
 			if (CompanionsPlugin.LogDetailed) Log($"Swing at the part at {MHR_Mover.Fmt(_dgPoint)}: {(hitOre ? "hit the vein's rock" : toward ? (pLimit ? "dug toward it, at the game's 8 m dig limit there" : "dug the dirt toward it") : $"didn't hit the rock ({_dgNoProg} in a row)")}{dugAt}, {_dgPartMiss} swing(s) without hitting it, feet {pf.y:F2}");
-			if (pLimit)
+			// G5 (test 28: 17 of 28 part waits came from one swing landing in dirt at the game's 8 m limit right after hits on
+			// the rock - half-carved parts): a swing at the limit is a swing that did nothing; 3 in a row end it as before
+			if (_dgNoProg >= OvNoProgSwings || _dgPartMiss >= OvPartMissMax)
 			{
-				_dgLimit = true;
-				OvDigOff();
-			}
-			else if (_dgNoProg >= OvNoProgSwings || _dgPartMiss >= OvPartMissMax)
-			{
+				_dgLimit = pLimit;
 				OvDigOff();
 			}
 			return;
@@ -3773,7 +3771,8 @@ public partial class HarvestController
 		}
 		bool against = _rpHwTime >= OvRampHeadway && ga > me.y + 0.1f;
 		bool wall = ga > me.y + OvStepUp || (against && !atLimit);
-		if (!wall && _rpHwTime >= OvRampHeadway)
+		// G6: not when what it is up against is another companion (G1 goes round it)
+		if (!wall && _rpHwTime >= OvRampHeadway && !OvOtherAhead(me, _rpGoal))
 		{
 			// Z1 (test 27: Gunter walked 2 x 60 s into the vein's rock - the ground height is the terrain's only, so a rock,
 			// the vein or a chamber in front reads as flat ground): up against something (1 s without getting 0.3 m

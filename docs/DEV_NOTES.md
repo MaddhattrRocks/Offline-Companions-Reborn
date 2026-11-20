@@ -132,6 +132,12 @@
   - Z3: OvHandLedge's base dig point is the thing's transform position (its root), not the box corner.
   - Z4: the 10 s walk clocks for trench spots, dirt stand, part stand, saved ramp and the trench-floor walk replaced by OvWalkGaveUp: the mover gave up, or it stopped at the goal while the job's own test still fails (OvWalk notes WalkGo's result). OreLadder's two clocks untouched.
   - Z5: OvOutBlocked - a spot whose line out (to 8 m) crosses a known blocker box isn't picked for a way out (OvWayOutPick, OvWayOutSpot, OvGetOut's other side, Z2).
+- Fixes G1-G3, G5, G6 (John's OK 2026-11-20 23:14Z; still 1.5.98). Log 14:45-15:03: Gunter pushed Je 20 m down the trench; Gunter/Je climbed onto the stone in W4 rounds; 17 of 28 part waits from one swing at the 8 m dig limit (half-carved parts).
+  - G1: OvBoardWalk looks 4 times a second for another companion within 1.2 m ahead (the way it moves, else toward its goal) and goes round it at once (MHR_Mover.DetourNow via OvBoardSide); when the mover can't take a detour, the side step (once a second). Replaces the side step that needed 1 s without headway.
+  - G2: OvStandFor (dirt) and OvStandForPart skip places within 1.2 m of another companion's position or walk goal (OvBoardTaken).
+  - G3: W4 (the wall walk-in) removed: no wall round, no stand-by-the-wall, no step-up after a dig. A low part with no place where the swing meets its rock waits 60 s again (K1 / L4), as before W4.
+  - G5: in a part round a swing that dug at the game's 8 m limit counts as a swing that did nothing (3 in a row end it); it no longer ends the round at once.
+  - G6: Z1's strike isn't used when another companion is just ahead (OvOtherAhead).
 - Test-24 fixes T1-T4 (John's OK 2026-11-20 16:43Z; still 1.5.98). John: "They should head out when they hit 90+ percent capacity. They may need to carve a new way out"; "What happened to ... updating the existing way down / up?"; "the NPC should prefer to have ore in their inventory over rock".
   - T1 (MHR_Mover): the step TryDropDown starts (S.DropStepUntil = its StepUntil) is not stopped by the step guard's DropAhead check; fire and spikes still stop it. Test 24: Comp on the trench rim, every drop-down step cancelled by the guard.
   - T2 (HarvestController.OreRoomFor; ScanForDrops, OvLooseTakes): on the Ore job, stone and wood are picked up only while the pickup keeps the bag under half the carry limit; ore fills the rest. Wood wanted for a ladder (OvWantsWood) is not capped.
