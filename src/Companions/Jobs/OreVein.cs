@@ -2609,6 +2609,34 @@ public partial class HarvestController
 		}
 	}
 
+	private float _dgFaceFrom = -1f;   // L2: when it started turning for this swing (-1 = not turning)
+
+	// L2 (game: Attack.GetMeleeAttackDir swings along the body's facing, transform.forward - the pickaxe can't tilt - and
+	// Character.UpdateRotation turns the body gradually): a swing starts once the body faces the aim within 10 degrees
+	// (flat); after 1 s of turning it swings anyway. True = swing now.
+	private bool OvFacing(Vector3 point)
+	{
+		Vector3 d = point - base.transform.position;
+		d.y = 0f;
+		Vector3 f = base.transform.forward;
+		f.y = 0f;
+		if (d.sqrMagnitude < 0.01f || f.sqrMagnitude < 0.01f || Vector3.Angle(f, d) <= 10f)
+		{
+			_dgFaceFrom = -1f;
+			return true;
+		}
+		if (_dgFaceFrom < 0f)
+		{
+			_dgFaceFrom = Time.time;
+		}
+		if (Time.time - _dgFaceFrom >= 1f)
+		{
+			_dgFaceFrom = -1f;
+			return true;
+		}
+		return false;
+	}
+
 	private void OvFace(Vector3 point)
 	{
 		if (_ai == null || _character == null)
@@ -2815,6 +2843,10 @@ public partial class HarvestController
 		{
 			// J3: the bush, with the axe (WorkMode)
 			OvFace(_dgBush.transform.position);
+			if (!OvFacing(_dgBush.transform.position))
+			{
+				return;   // L2: turned first
+			}
 			int bw = SwingNow(out _, out _);
 			if (bw == -1)
 			{
@@ -2863,6 +2895,10 @@ public partial class HarvestController
 			}
 		}
 		OvFace(_dgPoint);
+		if (!OvFacing(_dgPoint))
+		{
+			return;   // L2: turned first
+		}
 		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
 		{

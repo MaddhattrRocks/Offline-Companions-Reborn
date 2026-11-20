@@ -47,6 +47,10 @@ public partial class HarvestController
 
 	private Vector3 _lnTop;                      // S1: the ladder's top (the mover's walk goal)
 
+	private float _lnTestY;                      // L1: the feet height of the last swing test on the ladder
+
+	private float _lnRiseAt;                     // L1: when its feet last rose 0.2 m on the ladder
+
 	private bool _lnPushing;
 
 	private bool _lnPushingOrUp => _lnPushing || _lnStage == 4;   // AA6: on the ladder (climbing it, or swinging from it)
@@ -465,14 +469,15 @@ public partial class HarvestController
 		return f.sqrMagnitude > 0.01f ? f.normalized : Vector3.forward;
 	}
 
-	// (a): clear of every other standing part's game box (the target's own box goes with it when it breaks)
+	// (a) / L3 (game: MineRock5.GetSupport counts any piece lower than the rock inside a part's box, that part's own box
+	// too - test 21: part 125 rested on the plank of the ladder built for it): clear of every standing part's game box
 	private static bool OvLnClearOfParts(OvClear c, OvPart target, Bounds wb)
 	{
 		Bounds w = wb;
 		w.Expand(-0.1f);
 		foreach (OvPart p in c.Parts)
 		{
-			if (p == target || p.Out || p.C == null || !p.C.gameObject.activeSelf)
+			if (p.Out || p.C == null || !p.C.gameObject.activeSelf)
 			{
 				continue;
 			}
@@ -629,7 +634,7 @@ public partial class HarvestController
 			rot = r;
 			return true;
 		}
-		why = $"{pts.Count} looked at: {low} too low, {far} too far from it, {inBox} inside another part's box, {bad} not placeable{(lastBad != null ? " (" + lastBad + ")" : "")}";
+		why = $"{pts.Count} looked at: {low} too low, {far} too far from it, {inBox} inside a part's box, {bad} not placeable{(lastBad != null ? " (" + lastBad + ")" : "")}";
 		return false;
 	}
 
@@ -893,13 +898,15 @@ public partial class HarvestController
 			return;
 		}
 		_lnTop = new Vector3(wb.center.x, wb.max.y, wb.center.z);
-		_lnStopY = wb.max.y - 0.3f;
+		_lnStopY = wb.max.y;
+		_lnTestY = float.MinValue;
+		_lnRiseAt = Time.time;
 		_lnPushing = false;
 		_lnLowFor = 0f;
 		_lnStage = 3;
 		_lnStageAt = Time.time;
 		_moveTimer = 0f;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Climbing the ladder at {MHR_Mover.Fmt(wb.center)} to its top (feet {_lnStopY:F1}) for \"{part.C.name}\" (bottom {OvPartBottom(part):F1})");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Climbing the ladder at {MHR_Mover.Fmt(wb.center)} (top {wb.max.y:F1}) for \"{part.C.name}\" (bottom {OvPartBottom(part):F1}) - swinging from the first height where the game's swing meets its rock");
 	}
 
 	// the ladder's solid colliders together (its world box)
@@ -970,12 +977,33 @@ public partial class HarvestController
 		_lnWaitFrom = -1f;
 		// on the ladder (AA6's "in use"): over it, above its foot
 		_lnPushing = Flat(me, wb.center) < Mathf.Max(wb.extents.x, wb.extents.z) + 0.5f && me.y > wb.min.y + 0.3f;
-		if (me.y >= _lnStopY && _lnPushing)
+		if (_lnPushing)
 		{
-			// the stop: it stops moving at the top (Character.OnAutoJump lifts only while it moves into the ladder)
-			_ai?.StopMoving();
-			OvLnSwingFromHere(part, me);
-			return;
+			// L1 (John, 2026-11-20: not just at the top - any height on the ladder where it reaches the part): the M1 swing
+			// test from its feet each time they rise 0.2 m; the first that reaches stops it there and it swings. No rise for
+			// 2 s: one more test, then the part waits 60 s.
+			Attack a = FindBestTool(2)?.m_shared?.m_attack;
+			bool rose = me.y >= _lnTestY + 0.2f;
+			if (rose)
+			{
+				_lnTestY = me.y;
+				_lnRiseAt = Time.time;
+			}
+			bool stalled = Time.time - _lnRiseAt >= 2f;
+			if ((rose || stalled) && OvSwingReaches(a, me, part, out Vector3 aim))
+			{
+				// the stop: it stops moving (Character.OnAutoJump lifts only while it moves into the ladder)
+				_ai?.StopMoving();
+				OvLnSwingFrom(part, me, aim);
+				return;
+			}
+			if (stalled)
+			{
+				_lnPushing = false;
+				_ai?.StopMoving();
+				OvClFail($"no swing from any height it got to on the ladder (feet up to {me.y:F1}, its top {wb.max.y:F1}) meets its rock first");
+				return;
+			}
 		}
 		// the mover's own limits: its give-up (MHR_Mover.GaveUp) or 10 s without getting closer
 		if (WalkTimer(dt, _lnTop) && _moveTimer > 10f)
@@ -988,20 +1016,13 @@ public partial class HarvestController
 		WalkGo(_lnTop, 0.3f, false, dt);
 	}
 
-	// S2 (John: "They should be aiming at the part, not the box"): from the ladder's top, the same aim as on the ground (M1) -
-	// the game's own pickaxe swing rays from its feet; only a ray whose first hit is the part's own rock counts, and the swing
-	// aims there. None does: the part waits 60 s.
-	private void OvLnSwingFromHere(OvPart part, Vector3 me)
+	// S2 (John: "They should be aiming at the part, not the box"): the aim is where the game's own pickaxe swing ray from its
+	// feet first meets the part's own rock (M1's test, L1 runs it at each height on the ladder)
+	private void OvLnSwingFrom(OvPart part, Vector3 me, Vector3 aim)
 	{
-		Attack a = FindBestTool(2)?.m_shared?.m_attack;
-		if (!OvSwingReaches(a, me, part, out Vector3 aim))
-		{
-			_lnPushing = false;
-			OvClFail($"no swing from the ladder's top at {MHR_Mover.Fmt(me)} meets its rock first");
-			return;
-		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"Up the ladder (feet {me.y:F1}) - swinging at \"{part.C.name}\" (bottom {OvPartBottom(part):F1}), at its rock at {MHR_Mover.Fmt(aim)}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"On the ladder (feet {me.y:F1}) - swinging at \"{part.C.name}\" (bottom {OvPartBottom(part):F1}), at its rock at {MHR_Mover.Fmt(aim)}");
 		_lnPushing = true;
+		_lnStopY = me.y;
 		OvDigBegin(aim, null, ramp: false);
 		_dgClear = true;
 		_dgPart = true;

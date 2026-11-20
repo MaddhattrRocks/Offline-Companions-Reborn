@@ -543,13 +543,20 @@ public partial class HarvestController
 		return c.DirtCool.TryGetValue(d.Key, out float until) && Time.time < until;
 	}
 
+	// L4: a low part (P5: its box touches the ground by the game's own check) - never a ladder part
+	private bool OvIsLow(OvPart part)
+	{
+		OvClear c = OvC();
+		return c != null && c.Low.Contains(part);
+	}
+
 	// P5: a low part still standing (not buried out of reach)
 	private static bool OvLowUp(OvPart part)
 	{
 		return part != null && !part.Out && part.C != null && part.C.gameObject.activeSelf;
 	}
 
-	// K1: a low part that only a ladder reaches (OutOfReach, K2) doesn't count - it is left for the last step
+	// K1: a low part no swing from the ground reaches (OutOfReach, K2) doesn't hold the last step back (L4: never a ladder part)
 	private static bool OvLowLeft(OvClear c)
 	{
 		foreach (OvPart part in c.Low)
@@ -629,7 +636,7 @@ public partial class HarvestController
 				{
 					// K1 (John, 2026-11-19: no ladder until the rest of the dirt and low parts are removed): it waits for the
 					// last step (OvOreChoose), not counted as a failure and not holding that step back (OvLowLeft)
-					OvPartCool(lp, lwhy + " - it waits for the ladder, after the dirt and the other low parts", wait: true);
+					OvPartCool(lp, lwhy + " - a low part (it touches the ground): never from a ladder, it waits for a place on the ground", wait: true);
 					continue;
 				}
 				OvSpot lws = OvClSpotFor(lp);
@@ -958,6 +965,7 @@ public partial class HarvestController
 		stand = Vector3.zero;
 		why = null;
 		_standAim = part.Centre;
+		bool low = OvIsLow(part);   // L4
 		Vector3 me = base.transform.position;
 		Attack a = FindBestTool(2)?.m_shared?.m_attack;
 		float range = a != null ? a.m_attackRange : 1.8f;
@@ -1009,7 +1017,7 @@ public partial class HarvestController
 				noFit++;
 				continue;
 			}
-			if (!OvSwingReaches(a, pt, part, out Vector3 hit))
+			if (!OvSwingReaches(a, pt, part, out Vector3 hit, lowDirt: low))
 			{
 				continue;
 			}
@@ -1052,7 +1060,9 @@ public partial class HarvestController
 	// on the game's attack layers with the terrain; each ray counts only its FIRST hit, skipping companions and creatures
 	// (the game skips ones it isn't hostile to) and hits behind it. True = a ray's first hit is the part's own rock (hit =
 	// where). A ray that doesn't meet the rock within range (Collider.Raycast, the rock alone) isn't cast at all.
-	private bool OvSwingReaches(Attack a, Vector3 pt, OvPart part, out Vector3 hit)
+	// L4: lowDirt = a low part (touches the ground): a ray whose first hit is the ground within 0.5 m of the part's box also
+	// counts - that swing digs the dirt off it (K3: digging toward a part counts as work)
+	private bool OvSwingReaches(Attack a, Vector3 pt, OvPart part, out Vector3 hit, bool lowDirt = false)
 	{
 		hit = part.Centre;
 		if (s_swMask < 0)
@@ -1116,6 +1126,16 @@ public partial class HarvestController
 				hit = fp;
 				return true;
 			}
+			if (lowDirt && first != null && first.gameObject.layer == LayerMask.NameToLayer("terrain"))
+			{
+				Bounds pad = new Bounds(part.Centre, part.Half * 2f);
+				pad.Expand(1f);
+				if (pad.Contains(fp))
+				{
+					hit = fp;
+					return true;
+				}
+			}
 		}
 		return false;
 	}
@@ -1162,7 +1182,7 @@ public partial class HarvestController
 		bool ladderPass = true;
 		foreach (OvPart part in c.Parts)
 		{
-			if (!part.Out && !part.OutOfReach && !OvPartHeldByOther(part))
+			if (!part.Out && !part.OutOfReach && !OvPartHeldByOther(part) && !OvIsLow(part))
 			{
 				ladderPass = false;
 				break;
@@ -1219,6 +1239,12 @@ public partial class HarvestController
 			if (r == 2)
 			{
 				OvPartCool(pick, why, wait: false);
+				continue;
+			}
+			if (r == 1 && OvIsLow(pick))
+			{
+				// L4: a low part is never mined from a ladder - it waits 60 s (not a failure) for a place on the ground
+				OvPartCool(pick, why + " - a low part (it touches the ground): never from a ladder", wait: true);
 				continue;
 			}
 			if (r == 1 && !ladderPass)
