@@ -6,9 +6,8 @@ namespace Companions;
 // 1.5.98 Z4 (John, test 10: "If they cant reach the ore anymore they should build a workbench and then a ladder"; his
 // answers 2026-11-18 22:44Z / 22:47Z): a part too high to hit from the floor gets its round from a wood_stepladder on the
 // pit floor - one already there that does, else one it builds (a workbench first when none is in range), with its own
-// hammer and wood, chopping trees within 20 m of the vein when it is short of wood. It climbs the player's way (walking
-// into the ladder: the game's AutoJumpLedge lifts it), stops pushing 2 m below the part's box bottom and swings the part
-// swing. Game facts: Player.TryPlacePiece / UpdatePlacementGhost / PlacePiece, Character.OnAutoJump, MineRock5.GetSupport
+// hammer and wood, chopping trees within 20 m of the vein when it is short of wood. S1: the mover's own ladder climb takes
+// it up (walk goal = the ladder's top) and it stops at the top; S2: it swings where the game's swing rays meet the rock. Game facts: Player.TryPlacePiece / UpdatePlacementGhost / PlacePiece, Character.OnAutoJump, MineRock5.GetSupport
 // (a piece lower than the vein inside a part's box holds the vein up - so the ladder stays clear of the other parts' boxes).
 public partial class HarvestController
 {
@@ -18,8 +17,6 @@ public partial class HarvestController
 
 	private const int OvLnTreesMax = 3;         // at most 3 trees for one ladder (one it gives up on counts)
 
-	private const float OvLnStopBelow = 2f;     // it stops climbing 2 m below the part's box bottom (reach 2.56 m)
-
 	private const float OvLnGrid = 0.5f;        // the spots looked at: every 0.5 m under the part's box ...
 
 	private const float OvLnOut = 2f;           // ... and up to 2 m out from it
@@ -27,10 +24,6 @@ public partial class HarvestController
 	private const float OvLnBuildDist = 4f;     // it builds from within 4 m (the game's place distance is 5 m)
 
 	private const float OvLnBuildTime = 30f;    // a piece not placed within 30 s of being in place: the round ends
-
-	private const float OvLnClimbTime = 20f;    // the climb (the mover's own 20 s climb limit) ...
-
-	private const float OvLnNoRise = 5f;        // ... and 5 s without rising 0.3 m end it
 
 	private const float OvLnFallTime = 3f;      // 3 s off the ladder below its stop height: fell (one more climb a round)
 
@@ -52,9 +45,7 @@ public partial class HarvestController
 
 	private float _lnStopY;
 
-	private Vector3 _lnFoot;
-
-	private Vector3 _lnFwd;
+	private Vector3 _lnTop;                      // S1: the ladder's top (the mover's walk goal)
 
 	private bool _lnPushing;
 
@@ -65,10 +56,6 @@ public partial class HarvestController
 	private float _lnWaitFrom = -1f;
 
 	private float _lnStageAt;
-
-	private float _lnBestY;
-
-	private float _lnBestAt;
 
 	private float _lnLowFor;
 
@@ -890,6 +877,9 @@ public partial class HarvestController
 
 	// ---- climb, then the part swing ----
 
+	// S1 (John, 2026-11-20: "Use what is already built ... All it needs is for them to stop at the top of the ladder"): the
+	// ladder is climbed by the mover's own ladder climb (MHR_Mover: the foot, jumping onto it, its own limits) - the walk
+	// goal is the ladder's top; the only thing added is the stop once the feet are at the top.
 	private void OvLnClimbStart(OvPart part)
 	{
 		ItemDrop.ItemData pick = FindBestTool(2);
@@ -897,141 +887,126 @@ public partial class HarvestController
 		{
 			EquipTool(pick);
 		}
-		Bounds wb = default(Bounds);
-		bool any = false;
-		if (_lnLadder != null)
-		{
-			foreach (Collider col in _lnLadder.GetComponentsInChildren<Collider>())
-			{
-				if (col.isTrigger)
-				{
-					continue;
-				}
-				if (!any)
-				{
-					wb = col.bounds;
-					any = true;
-				}
-				else
-				{
-					wb.Encapsulate(col.bounds);
-				}
-			}
-		}
-		AutoJumpLedge lg = _lnLadder != null ? _lnLadder.GetComponentInChildren<AutoJumpLedge>(true) : null;
-		if (!any || lg == null)
+		if (!OvLnBounds(out Bounds wb))
 		{
 			OvClFail("its ladder is gone");
 			return;
 		}
-		Vector3 f = lg.transform.forward;
-		f.y = 0f;
-		_lnFwd = f.sqrMagnitude > 0.01f ? f.normalized : base.transform.forward;
-		// the foot: in front of the ladder, against the way it pushes, on the ground
-		float along = Mathf.Abs(Vector3.Dot(wb.extents, new Vector3(Mathf.Abs(_lnFwd.x), 0f, Mathf.Abs(_lnFwd.z))));
-		_lnFoot = wb.center - _lnFwd * (along + 0.7f);
-		_lnFoot.y = GroundAt(_lnFoot);
-		_lnStopY = Mathf.Min(OvPartBottom(part) - OvLnStopBelow, wb.max.y - 0.3f);
+		_lnTop = new Vector3(wb.center.x, wb.max.y, wb.center.z);
+		_lnStopY = wb.max.y - 0.3f;
 		_lnPushing = false;
 		_lnLowFor = 0f;
 		_lnStage = 3;
 		_lnStageAt = Time.time;
 		_moveTimer = 0f;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Climbing the ladder at {MHR_Mover.Fmt(wb.center)} to feet {_lnStopY:F1} (the part's bottom is {OvPartBottom(part):F1}, the ladder's top {wb.max.y:F1})");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Climbing the ladder at {MHR_Mover.Fmt(wb.center)} to its top (feet {_lnStopY:F1}) for \"{part.C.name}\" (bottom {OvPartBottom(part):F1})");
+	}
+
+	// the ladder's solid colliders together (its world box)
+	private bool OvLnBounds(out Bounds wb)
+	{
+		wb = default(Bounds);
+		if (_lnLadder == null || !_lnLadder.activeInHierarchy)
+		{
+			return false;
+		}
+		bool any = false;
+		foreach (Collider col in _lnLadder.GetComponentsInChildren<Collider>())
+		{
+			if (col.isTrigger)
+			{
+				continue;
+			}
+			if (!any)
+			{
+				wb = col.bounds;
+				any = true;
+			}
+			else
+			{
+				wb.Encapsulate(col.bounds);
+			}
+		}
+		return any;
 	}
 
 	private void OvLnClimb(OvClear c, OvPart part)
 	{
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
-		if (_lnLadder == null || !_lnLadder.activeInHierarchy)
+		if (!OvLnBounds(out Bounds wb))
 		{
 			OvClFail("its ladder is gone");
 			return;
 		}
-		if (!_lnPushing)
+		// AA6: another companion is on this ladder - it waits 2 m from it, up to 20 s; then another ladder spot
+		if (OvLnInUse(_lnLadder))
 		{
-			float flat = Flat(me, _lnFoot);
-			// AA6: another companion is on this ladder - it waits 2 m from the foot, up to 20 s; then another ladder spot
-			// (the plan again, this ladder left out: one that does, else one it builds)
-			if (OvLnInUse(_lnLadder))
+			if (_lnWaitFrom < 0f)
 			{
-				if (_lnWaitFrom < 0f)
-				{
-					_lnWaitFrom = Time.time;
-					if (CompanionsPlugin.LogNormal) LogInfo($"Another companion is on the ladder at {MHR_Mover.Fmt(_lnLadder.transform.position)} - waiting (up to {OvBoardLadderWait:F0} s)");
-				}
-				if (Time.time - _lnWaitFrom >= OvBoardLadderWait)
-				{
-					_lnSkip.Add(_lnLadder.GetInstanceID());
-					_lnWaitFrom = -1f;
-					_lnLadder = null;
-					_lnStage = 0;
-					if (CompanionsPlugin.LogNormal) LogInfo($"The ladder was in use for {OvBoardLadderWait:F0} s - looking for another ladder spot");
-					return;
-				}
-				if (flat > 2.5f)
-				{
-					WalkGo(_lnFoot, 2f, false, dt);
-				}
-				else
-				{
-					_ai?.StopMoving();
-				}
-				_moveTimer = 0f;
+				_lnWaitFrom = Time.time;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Another companion is on the ladder at {MHR_Mover.Fmt(_lnLadder.transform.position)} - waiting (up to {OvBoardLadderWait:F0} s)");
+			}
+			if (Time.time - _lnWaitFrom >= OvBoardLadderWait)
+			{
+				_lnSkip.Add(_lnLadder.GetInstanceID());
+				_lnWaitFrom = -1f;
+				_lnLadder = null;
+				_lnStage = 0;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The ladder was in use for {OvBoardLadderWait:F0} s - looking for another ladder spot");
 				return;
 			}
-			_lnWaitFrom = -1f;
-			if (flat > 0.5f)
+			if (Flat(me, wb.center) > 2.5f)
 			{
-				if (WalkTimer(dt, _lnFoot) && _moveTimer > 10f)
-				{
-					OvClFail($"couldn't get to the foot of the ladder at {MHR_Mover.Fmt(_lnFoot)} in 10 s ({flat:F1} m away)");
-					return;
-				}
-				WalkGo(_lnFoot, 0.3f, flat > 8f, dt);
-				return;
+				WalkGo(_lnTop, 2f, false, dt);
 			}
-			_lnPushing = true;
-			_lnBestY = me.y;
-			_lnBestAt = Time.time;
-			_lnStageAt = Time.time;
-		}
-		if (me.y >= _lnStopY)
-		{
-			// stop pushing: it stays where it is on the ladder (Character.OnAutoJump lifts only while it moves into it)
-			_lnPushing = false;
-			_ai?.StopMoving();
-			Vector3 bp = OvBoxNear(part, me);
-			float reach = GetAttackRange();
-			if (Flat(me, bp) > reach * 0.9f)
+			else
 			{
-				OvClFail($"the part is {Flat(me, bp):F1} m away from the ladder's top (reach {reach:F1} m)");
-				return;
+				_ai?.StopMoving();
 			}
-			if (CompanionsPlugin.LogNormal) LogInfo($"Up the ladder (feet {me.y:F1}) - swinging at \"{part.C.name}\" (bottom {OvPartBottom(part):F1})");
-			OvDigBegin(bp, null, ramp: false);
-			_dgClear = true;
-			_dgPart = true;
-			_dgGoalY = me.y;
-			_lnStage = 4;
-			_lnLowFor = 0f;
+			_moveTimer = 0f;
 			return;
 		}
-		if (me.y > _lnBestY + 0.3f)
+		_lnWaitFrom = -1f;
+		// on the ladder (AA6's "in use"): over it, above its foot
+		_lnPushing = Flat(me, wb.center) < Mathf.Max(wb.extents.x, wb.extents.z) + 0.5f && me.y > wb.min.y + 0.3f;
+		if (me.y >= _lnStopY && _lnPushing)
 		{
-			_lnBestY = me.y;
-			_lnBestAt = Time.time;
+			// the stop: it stops moving at the top (Character.OnAutoJump lifts only while it moves into the ladder)
+			_ai?.StopMoving();
+			OvLnSwingFromHere(part, me);
+			return;
 		}
-		if (Time.time - _lnBestAt > OvLnNoRise || Time.time - _lnStageAt > OvLnClimbTime)
+		// the mover's own limits: its give-up (MHR_Mover.GaveUp) or 10 s without getting closer
+		if (WalkTimer(dt, _lnTop) && _moveTimer > 10f)
 		{
 			_lnPushing = false;
 			_ai?.StopMoving();
-			OvClFail($"couldn't get up the ladder (feet {me.y:F1}, it stops at {_lnStopY:F1})");
+			OvClFail($"couldn't get up the ladder (feet {me.y:F1}, its top {_lnStopY:F1})");
 			return;
 		}
-		// the player's way: walk into it, the ladder's AutoJumpLedge does the lifting
-		MHR_Mover.Face(_ai, _lnFwd);
-		_ai?.PushDirection(_lnFwd, run: false);
+		WalkGo(_lnTop, 0.3f, false, dt);
+	}
+
+	// S2 (John: "They should be aiming at the part, not the box"): from the ladder's top, the same aim as on the ground (M1) -
+	// the game's own pickaxe swing rays from its feet; only a ray whose first hit is the part's own rock counts, and the swing
+	// aims there. None does: the part waits 60 s.
+	private void OvLnSwingFromHere(OvPart part, Vector3 me)
+	{
+		Attack a = FindBestTool(2)?.m_shared?.m_attack;
+		if (!OvSwingReaches(a, me, part, out Vector3 aim))
+		{
+			_lnPushing = false;
+			OvClFail($"no swing from the ladder's top at {MHR_Mover.Fmt(me)} meets its rock first");
+			return;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Up the ladder (feet {me.y:F1}) - swinging at \"{part.C.name}\" (bottom {OvPartBottom(part):F1}), at its rock at {MHR_Mover.Fmt(aim)}");
+		_lnPushing = true;
+		OvDigBegin(aim, null, ramp: false);
+		_dgClear = true;
+		_dgPart = true;
+		_dgGoalY = me.y;
+		_lnStage = 4;
+		_lnLowFor = 0f;
 	}
 }

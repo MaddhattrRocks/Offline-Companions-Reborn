@@ -54,6 +54,8 @@ public partial class HarvestController
 
 		public bool OutOfReach;   // Z3: too high to hit from the pit ground beside it (the last look)
 
+		public bool LadderWait;   // S3: its wait is only "it needs a ladder" (the last step's ladder pass may take it)
+
 		public GameObject HoldThing;   // Z2: the tree / log / stump / rock it rests on (the Wood or Stone job takes it)
 
 		public int HoldMode;
@@ -1155,6 +1157,17 @@ public partial class HarvestController
 		Vector3 me = base.transform.position;
 		List<OvPart> cand = new List<OvPart>();
 		bool standing = false, others = false;
+		// S3 (John, 2026-11-20): parts hit from the ground go before ladder parts - a ladder only once every standing part
+		// (that no other companion has) needs one at its last look (OutOfReach). A part not looked at yet doesn't need one.
+		bool ladderPass = true;
+		foreach (OvPart part in c.Parts)
+		{
+			if (!part.Out && !part.OutOfReach && !OvPartHeldByOther(part))
+			{
+				ladderPass = false;
+				break;
+			}
+		}
 		foreach (OvPart part in c.Parts)
 		{
 			if (part.Out)
@@ -1162,7 +1175,7 @@ public partial class HarvestController
 				continue;
 			}
 			standing = true;
-			if (OvPartCooling(part))
+			if (OvPartCooling(part) && !(ladderPass && part.LadderWait))
 			{
 				continue;
 			}
@@ -1208,6 +1221,13 @@ public partial class HarvestController
 				OvPartCool(pick, why, wait: false);
 				continue;
 			}
+			if (r == 1 && !ladderPass)
+			{
+				// S3: it waits 60 s (not a failure) while other parts may be hit from the ground; the next part is tried
+				OvPartCool(pick, why + " - it waits for a ladder until every part needs one", wait: true);
+				pick.LadderWait = true;
+				continue;
+			}
 			OvSpot ws = OvClSpotFor(pick);
 			if (ws != null && OvWayOutNeeded(ws))
 			{
@@ -1236,6 +1256,7 @@ public partial class HarvestController
 		part.CoolUntil = now + OvCool;
 		part.CoolWhy = why;
 		part.Wait = wait;
+		part.LadderWait = false;
 		if (!wait)
 		{
 			part.FailAt = now;
