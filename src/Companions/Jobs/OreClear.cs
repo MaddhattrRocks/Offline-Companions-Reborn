@@ -404,9 +404,9 @@ public partial class HarvestController
 			return false;
 		}
 		OvPartsLook(c, false);
-		if (c.Popped > 0)
+		if (OvPopped(c))
 		{
-			OvPitOpen();   // F1: from the pop, the pit is open for its stone and wood piles
+			OvPitOpen();   // F1 / U6: from the pop, the pit is open for its stone and wood piles
 		}
 		if (_lsItem != null)
 		{
@@ -736,10 +736,6 @@ public partial class HarvestController
 				return 1;
 			}
 		}
-		if (!l.Ore && OreRoomFor(l.D))
-		{
-			return 1;   // T2: stone / wood only under half the carry limit
-		}
 		// a pickup never takes it over its weight limit
 		if (inv.GetTotalWeight() + l.D.m_itemData.GetWeight() > HeavyLimit || !inv.CanAddItem(l.D.m_itemData))
 		{
@@ -936,7 +932,26 @@ public partial class HarvestController
 	// D2: the vein job saw parts fall in the game's support drop (MHR_GatherRules.AfterVein's "popped")
 	internal bool OvSawPop()
 	{
-		return _vp != null && OvC().Popped > 0;
+		return _vp != null && OvPopped(OvC());
+	}
+
+	// U6 (test 25: "The vein popped" with ~98 parts standing - one part that lost its support and fell counted): the vein
+	// popped = parts fell in the game's support drop and no part is left standing above the pit floor (only parts buried
+	// under it, Out)
+	private static bool OvPopped(OvClear c)
+	{
+		if (c.Popped <= 0)
+		{
+			return false;
+		}
+		foreach (OvPart part in c.Parts)
+		{
+			if (!part.Out)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private bool OvPopDone(OvClear c)

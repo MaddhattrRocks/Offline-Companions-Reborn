@@ -348,6 +348,7 @@ public partial class HarvestController
 
 	// E2 / E3: walking along the trench floor to where it tries a way out (a saved ramp's bottom, or a new place)
 	private bool _woActive;
+	private OvRamp _woFallback;   // U3: the saved way out used if a new one cut toward where it is going fails
 
 	private Vector3 _woFloor;
 
@@ -857,7 +858,7 @@ public partial class HarvestController
 			_ovOutWhy = why;
 			_ai?.SetFollowTarget(null);
 			if (CompanionsPlugin.LogNormal) LogInfo($"Leaving the vein ({why}) - out of the trench first, toward {MHR_Mover.Fmt(goal)}");
-			OvGetOut(goal, why);
+			OvGetOut(goal, why, dest);
 			return;
 		}
 		OvLeave(why);
@@ -884,7 +885,7 @@ public partial class HarvestController
 			_ovOut = true;
 			_ovOutWhy = "the job changed";
 			if (CompanionsPlugin.LogNormal) LogInfo($"The job changed while it's in the trench - getting out first, toward {MHR_Mover.Fmt(goal)}");
-			OvGetOut(goal, "the job changed");
+			OvGetOut(goal, "the job changed", dest);
 			return;
 		}
 		OvRelease();
@@ -1182,10 +1183,9 @@ public partial class HarvestController
 				{
 					box.Encapsulate(pb);
 				}
-				if (!IsSegmentExposed(ha.Collider))
-				{
-					continue;
-				}
+				// U5 (John 2026-11-15: the trench goes round the outside edge of the ENTIRE vein; test 25: rebuilt on a reload
+				// from 34 uncovered parts of 103, buried east parts sat under the trench line): every live part, buried too -
+				// the same ring after every reload
 				seen++;
 				pts.Add(new Vector2(c.x - h.x, c.z - h.z));
 				pts.Add(new Vector2(c.x + h.x, c.z - h.z));
@@ -1396,7 +1396,7 @@ public partial class HarvestController
 			Vector3 origin = rock.transform.position;
 			foreach (MHR_Vein.Area ha in s_vAreas)
 			{
-				if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf || !IsSegmentExposed(ha.Collider))
+				if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)   // U5: every live part, as OvRing
 				{
 					continue;
 				}
@@ -2294,18 +2294,89 @@ public partial class HarvestController
 	// 1.5 x its height above the trench floor now (the ground at the trench spot nearest its bottom)
 	private bool OvRampOut(OvRamp r)
 	{
+		return OvRampUsable(_vp, r, _character != null ? _character.GetHeight() : 1.8f);
+	}
+
+	// U3: OvRampOut for any plan (the mover's walks in and out of a pit use it too): it reached the ground outside, and
+	// the trench floor beside its bottom is not 1.5 x the height below it (K5)
+	private static bool OvRampUsable(OvPlan p, OvRamp r, float h)
+	{
 		if (r.Top.y < r.Need - OvStepUp)
 		{
 			return false;
 		}
-		OvSpot q = _vp != null ? OvNearest(r.Bottom) : null;
+		OvSpot q = p != null ? OvNearestIn(p, r.Bottom) : null;
 		if (q == null)
 		{
 			return true;
 		}
-		float h = _character != null ? _character.GetHeight() : 1.8f;
 		return r.Bottom.y - GroundAt(q.P) < OvRampRatio * h;
 	}
+
+	private static OvSpot OvNearestIn(OvPlan p, Vector3 at)
+	{
+		OvSpot best = null;
+		float bd = float.MaxValue;
+		foreach (OvSpot sp in p.Spots)
+		{
+			float d = Flat(sp.P, at);
+			if (d < bd)
+			{
+				bd = d;
+				best = sp;
+			}
+		}
+		return best;
+	}
+
+	// U3 (John 2026-11-20: "anytime they leave or go into the trench or pit they should use the cut out path"): for any
+	// walk (the mover, every task): leaving a vein's pit (it is in the pit, the goal outside it and 1.5 m or more up) - the
+	// saved way out whose top is nearest the goal, bottom first then top; going in (it is outside, the goal in the pit and
+	// 1.5 m or more down) - the one whose top is nearest it, top first then bottom. Ways out tried in this walk are skipped.
+	internal static bool PitWay(Vector3 pos, Vector3 goal, float height, HashSet<int> tried, out bool down, out Vector3 first, out Vector3 second, out int id)
+	{
+		down = false;
+		first = second = pos;
+		id = -1;
+		float bd = float.MaxValue;
+		for (int pi = 0; pi < s_ovPlans.Count; pi++)
+		{
+			OvPlan p = s_ovPlans[pi];
+			if (p == null || p.Ramps.Count == 0)
+			{
+				continue;
+			}
+			bool posIn = OvInPit(p, new Bounds(pos, Vector3.zero)), goalIn = OvInPit(p, new Bounds(goal, Vector3.zero));
+			bool leave = posIn && !goalIn && goal.y > pos.y + 1.5f;
+			bool enter = !posIn && goalIn && goal.y < pos.y - 1.5f;
+			if (!leave && !enter)
+			{
+				continue;
+			}
+			for (int i = 0; i < p.Ramps.Count; i++)
+			{
+				OvRamp r = p.Ramps[i];
+				int key = pi * 1000 + i;
+				if (tried.Contains(key) || !OvRampUsable(p, r, height))
+				{
+					continue;
+				}
+				float d = Flat(r.Top, leave ? goal : pos);
+				if (d < bd)
+				{
+					bd = d;
+					down = enter;
+					first = enter ? r.Top : r.Bottom;
+					second = enter ? r.Bottom : r.Top;
+					id = key;
+				}
+			}
+		}
+		return id >= 0;
+	}
+
+	// U3: the job is walking its own way out (to it, or cutting / climbing it) - the mover leaves it alone
+	internal bool CutsWayOut => _woActive || _rpActive;
 
 	// K5 (John: cooldowns, never permanent skips): a try at a way out within 15 m of p in the last 60 s
 	private bool OvExitTriedNear(Vector3 p)
@@ -2344,7 +2415,7 @@ public partial class HarvestController
 
 	// R5: the nearest way out of this vein's trench (a saved ramp that is really out, R3) not tried on this trip, for the
 	// mover when it is stuck below its goal on a vein (where it would otherwise climb). False = none.
-	internal bool VeinWayOut(Vector3 pos, HashSet<int> tried, out Vector3 bottom, out Vector3 top, out int id)
+	internal bool VeinWayOut(Vector3 pos, Vector3 goal, HashSet<int> tried, out Vector3 bottom, out Vector3 top, out int id)
 	{
 		bottom = top = pos;
 		id = -1;
@@ -2360,7 +2431,7 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			float d = Flat(pos, r.Bottom);
+			float d = Flat(goal, r.Top);   // U3: the way out whose top is nearest where it is headed
 			if (d < bd)
 			{
 				bd = d;
@@ -2401,11 +2472,14 @@ public partial class HarvestController
 
 	// E2 / E3: getting out of the trench (leaving): a saved way out of the trench first (walked to along the floor), else
 	// a new one cut from here
-	private void OvGetOut(Vector3 goal, string why)
+	private void OvGetOut(Vector3 goal, string why, Vector3? dest = null)
 	{
 		_outTried.Clear();
 		_woActive = false;
+		_woFallback = null;
 		Vector3 me = base.transform.position;
+		// U3: the saved way out whose top is nearest where it is headed (was: whose bottom was nearest it)
+		Vector3 to = dest ?? goal;
 		OvRamp best = null;
 		float bd = float.MaxValue;
 		foreach (OvRamp r in _vp.Ramps)
@@ -2414,12 +2488,29 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			float d = Flat(me, r.Bottom);
+			float d = Flat(to, r.Top);
 			if (d < bd)
 			{
 				bd = d;
 				best = r;
 			}
+		}
+		// U3 (John: "They can carve a 2nd or 3rd one on the other sides"): that top is more than 15 m farther from where it
+		// is headed than the trench spot nearest there - a new one is cut at that spot (E2's way: its floor, then up to the
+		// wall top); if that cut fails, the saved one is used (once)
+		OvSpot side = OvNearestIn(_vp, to);
+		if (best != null && side != null && bd - Flat(side.P, to) > OvWayNear)
+		{
+			_woFallback = best;
+			_woActive = true;
+			_woOut = true;
+			_woFloor = side.P;
+			_woFloor.y = GroundAt(side.P);
+			_woGoal = OvOutside(side);
+			_woGoal.y = OvWallTop(side);
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}): the nearest way out comes up {bd:F0} m from where it is going - cutting one on that side at {MHR_Mover.Fmt(_woFloor)} (spot {side.Idx + 1})");
+			return;
 		}
 		if (best != null)
 		{
@@ -2428,7 +2519,7 @@ public partial class HarvestController
 			_woFloor = best.Bottom;
 			_woGoal = best.Top;
 			_moveTimer = 0f;
-			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}) by the way out at {MHR_Mover.Fmt(best.Bottom)} ({bd:F0} m along the trench)");
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}) by the way out at {MHR_Mover.Fmt(best.Bottom)} (its top {bd:F0} m from where it is going)");
 			return;
 		}
 		// T4: a saved way out within 15 m that the trench has gone below - extended down to the floor, then up it
@@ -2451,6 +2542,19 @@ public partial class HarvestController
 	// E2: getting out failed at one place: the next (5 m from the places tried), up to 3; then it is stuck and waits for you
 	private void OvGetOutNext(string why)
 	{
+		// U3: the new way out on the far side failed - the saved one instead (once)
+		if (_woFallback != null)
+		{
+			OvRamp fb = _woFallback;
+			_woFallback = null;
+			_woActive = true;
+			_woOut = true;
+			_woFloor = fb.Bottom;
+			_woGoal = fb.Top;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out by the saved way out at {MHR_Mover.Fmt(fb.Bottom)} instead - {why}");
+			return;
+		}
 		OvSpot sp = _outTried.Count < OvWayOutTries ? OvWayOutSpot(_outTried) : null;
 		if (sp == null)
 		{

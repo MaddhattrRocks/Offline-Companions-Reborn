@@ -22,11 +22,11 @@ namespace Companions
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
-            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun; public float DropStepUntil;   // T1: the step TryDropDown started (its end time)
+            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun; public float DropStepUntil, DropFromY;   // T1 / U1: the step TryDropDown started (its end time) and the height it stepped off from
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
             // tried on this trip (like the ladders it tried)
-            public int VeinOut; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
+            public int VeinOut; public bool VeinDown; public float NextPitWay; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
             public bool GaveUp; public float GaveUpAt;
             public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
@@ -244,8 +244,12 @@ namespace Companions
                 // checked when it started (jumps are left alone - they're in the air)
                 // 1.5.98 T1 (test 24: Comp on the trench rim, the drop-down's own 1.2-1.4 m drop cancelled by this check every
                 // 20-25 s for minutes): the drop-down's step is the drop it chose - only fire and spikes stop it
-                bool dropStep = s.DropStepUntil == s.StepUntil;
-                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && ((!dropStep && DropAhead(pos, s.StepDir, 0.8f, 1.2f)) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
+                // U1 (test 25: Je stepped off a 1.2 m ledge and walked on over a 9 m face): only until it has stepped off -
+                // feet 0.5 m below where it started - then the check is back on
+                // U2 (test 25: Comp's unstuck side step on the rim walked down the face): the walking check (LedgeAhead: a
+                // drop over MaxDrop or a steep run going on down), not a 1.2 m look 0.8 m ahead
+                bool dropStep = s.DropStepUntil == s.StepUntil && pos.y > s.DropFromY - 0.5f;
+                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && ((!dropStep && LedgeAhead(pos, s.StepDir, 0.8f, out _)) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
                     if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
@@ -269,6 +273,13 @@ namespace Companions
                 else { Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; return false; }
             }
 
+            // U3 (John 2026-11-20: "anytime they leave or go into the trench or pit they should use the cut out path"): every
+            // walk out of a vein's pit, or into it, takes a saved way out (looked at once a second) - the R5 way-out walk below
+            if (s.VeinOut == 0 && s.UseLadder == null && !s.LadderPending && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && c.IsOnGround() && now >= s.NextPitWay)
+            {
+                s.NextPitWay = now + 1f;
+                if (PitWayStart(ai, c, s, pos, now, tag)) return false;
+            }
             // 1.5.2: ladders - use one we've reached; look for one when the goal is up out of reach
             if (s.UseLadder != null || (object)s.UseLadder != null)
             {
@@ -336,19 +347,20 @@ namespace Companions
                 {
                     s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = now + VeinOutTime;
                     s.HasDetour = true; s.Detour = s.VeinOutTop; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the bottom of the way out of the trench - going up to " + Fmt(s.VeinOutTop));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the " + (s.VeinDown ? "top" : "bottom") + " of the way out of the trench - going " + (s.VeinDown ? "down" : "up") + " to " + Fmt(s.VeinOutTop));
                     Plan(ai, c, s, pos, now);
                 }
                 else if (there)
                 {
                     s.VeinOut = 0; s.HasDetour = false;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] up the way out of the trench at " + Fmt(pos));
+                    s.VeinOutTried.Add(s.VeinOutId);   // U3: used - not taken again in this walk (a top on the pit's edge can't send it back down)
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.VeinDown ? "down" : "up") + " the way out of the trench at " + Fmt(pos));
                     Plan(ai, c, s, pos, now);
                 }
                 else if (now > s.VeinOutUntil)
                 {
                     s.VeinOutTried.Add(s.VeinOutId);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the bottom of the way out at " + Fmt(s.VeinOutAt) : "up the way out to " + Fmt(s.VeinOutTop)) + " in " + VeinOutTime.ToString("F0") + " s");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " in " + VeinOutTime.ToString("F0") + " s");
                     s.VeinOut = 0; s.HasDetour = false;
                     Plan(ai, c, s, pos, now);
                 }
@@ -567,7 +579,7 @@ namespace Companions
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             bool keepChain = s.OnChain && s.Tag == tag && (s.ChainDown ? goal.y < pos.y - 1.0f : goal.y > pos.y + 1.0f);
             // R5: a way out of a vein's trench in use (and the ways out tried) is kept while the goal is still up out of it
-            bool keepVein = s.Tag == tag && goal.y > pos.y + 1.5f;
+            bool keepVein = s.Tag == tag && (s.VeinDown ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);   // U3: going in, while the goal is still down
             int vOut = keepVein ? s.VeinOut : 0;
             if (!keepVein) s.VeinOutTried.Clear();
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
@@ -2274,9 +2286,9 @@ namespace Companions
         {
             HarvestController hv = ai.GetComponent<HarvestController>();
             if (hv == null || !hv.OnVein) return false;
-            if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
+            if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.Goal, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
             {
-                s.VeinOut = 1; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
+                s.VeinOut = 1; s.VeinDown = false; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = now + VeinOutTime;
                 s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
                 if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
                 return true;
@@ -2289,6 +2301,19 @@ namespace Companions
             }
             return false;
         }
+        // U3: a saved way out of a vein's pit for this walk (HarvestController.PitWay) - not while the vein job walks, cuts or
+        // climbs its own way out. Ids are kept apart from VeinUp's (plan * 1000 + way out)
+        static bool PitWayStart(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null && hv.CutsWayOut) return false;
+            if (!HarvestController.PitWay(pos, s.Goal, c.GetHeight(), s.VeinOutTried, out bool down, out Vector3 first, out Vector3 second, out int id)) return false;
+            s.VeinOut = 1; s.VeinDown = down; s.VeinOutAt = first; s.VeinOutTop = second; s.VeinOutId = id; s.VeinOutUntil = now + VeinOutTime;
+            s.HasDetour = true; s.Detour = first; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (down ? "going into the pit" : "leaving the pit") + " by its way out: " + Fmt(first) + " then " + Fmt(second));
+            return true;
+        }
+
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
@@ -3174,7 +3199,7 @@ namespace Companions
             Face(ai, bestDir);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
-            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil;
+            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil; s.DropFromY = pos.y;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
             return true;
         }

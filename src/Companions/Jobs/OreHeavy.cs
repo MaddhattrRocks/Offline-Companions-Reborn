@@ -166,6 +166,7 @@ public partial class HarvestController
 	// the nearest way out (OvLeaveOut / OvGetOut, extended with T4 or cut if needed), only the ore into that chest
 	// (OreDue -> OreLoad), then it takes the vein again. No such chest = it keeps working (the ore dump at the weight
 	// limit, as before). Checked every 5 s at most while at 90%; 60 s between trips so a failed deposit can't loop.
+	// U7: with such a chest, its stone and wood are tossed first; the trip only if it is still at 90% after that.
 	private const float OvChestNear = 20f, OvChestAt = 0.9f, OvChestEvery = 5f, OvChestCool = 60f;
 	private float _ovChestNext;
 
@@ -228,7 +229,17 @@ public partial class HarvestController
 				best = c;
 			}
 		}
-		if (best == null || !MHR_GatherRules.OreToChest(this, best))
+		if (best == null)
+		{
+			return false;
+		}
+		// U7 (John 2026-11-20: "just have them toss stuff and go unload ore"): its stone and wood go off to one side first
+		// (the existing vein toss); still at 90% after that (looked again within 5 s) = the ore trip
+		if (MHR_GatherRules.TossOnVein(this))
+		{
+			return true;
+		}
+		if (!MHR_GatherRules.OreToChest(this, best))
 		{
 			return false;
 		}
