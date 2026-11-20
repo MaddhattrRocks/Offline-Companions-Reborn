@@ -974,6 +974,8 @@ public partial class HarvestController
 		float rad = _character != null ? _character.GetRadius() : 0.4f;
 		Bounds box = new Bounds(part.Centre, part.Half * 2f);
 		float maxFeet = box.max.y;
+		float pickReach = OvPickReach();
+		int tooLow = 0;
 		List<Vector3> cand = new List<Vector3>();
 		for (float x = Mathf.Floor((box.min.x - reach) / OvDirtGrid) * OvDirtGrid; x <= box.max.x + reach + 0.001f; x += OvDirtGrid)
 		{
@@ -989,8 +991,21 @@ public partial class HarvestController
 				{
 					continue;
 				}
+				// P1 (test 22: the 80 tests went to trench-floor points that can't reach, never the higher ground beside part
+				// 104): a point whose feet + the pickaxe's reach (OvPickReach: attack height + range x sin(half the sweep))
+				// doesn't get to the box bottom is dropped before the tests
+				if (pt.y + pickReach < box.min.y)
+				{
+					tooLow++;
+					continue;
+				}
 				cand.Add(pt);
 			}
+		}
+		if (cand.Count == 0 && tooLow > 0)
+		{
+			why = $"no pit ground beside it high enough for the pickaxe to reach its bottom ({tooLow} too low)";
+			return 1;   // as before P1: pit ground, but no swing from it reaches (the ladder's case)
 		}
 		if (cand.Count == 0)
 		{
