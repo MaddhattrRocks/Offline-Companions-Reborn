@@ -32,7 +32,15 @@ public partial class HarvestController
 
 		public bool Out;          // wholly under the lowest the ground can go: never uncovered, left
 
-		public bool Root;         // holds the vein up (dirt, a solid thing, a lower breakable thing, a buried part)
+		public bool Root;         // M4: held straight up by something that isn't this vein (the dirt, a solid thing, a lower breakable thing)
+
+		public bool Ground;       // M4: its box touches the terrain (the game's own overlap)
+
+		public readonly List<OvPart> Links = new List<OvPart>();   // M4: the parts of the same rock its box touches
+
+		public bool Held;         // M4: held up by the game's rule (3 passes, as MineRock5.UpdateSupport)
+
+		public bool Sim;          // M4: the what-if pass
 
 		public string Why;
 
@@ -83,8 +91,6 @@ public partial class HarvestController
 
 	private const float OvDirtEvery = 10f;         // GG2: the dirt list is made again every 10 s (and right after a point is done)
 
-	private const float OvBodyPad = 0.35f;         // GG2: its body's half width - a stand point this close to a part's box is in it
-
 	private const float OvStandAt = 0.5f;          // GG2: at its place to stand = within 0.5 m of it (flat)
 
 	private OvPart _rpPart;
@@ -95,6 +101,12 @@ public partial class HarvestController
 	private Vector3 _clStand;
 
 	private bool _clWalk;
+
+	private string _clPopWhy;      // M4: why the last step picked this part (for the log)
+
+	private Vector3 _clAim;        // M1: where the game's swing meets the part's rock from its place
+
+	private Vector3 _standAim;     // M1: OvStandFor's aim for a part
 
 
 	// GG2: the dirt point it digs, where it stands, walking there, one way up per point
@@ -146,6 +158,8 @@ public partial class HarvestController
 
 		// P5: low parts - their box goes into ground the game won't dig under their bottom; mined in the dirt work
 		public readonly List<OvPart> Low = new List<OvPart>();
+
+		public int HeldCount;     // M4: parts held up by the game's rule at the last look
 
 		public readonly HashSet<HarvestController> HammerSaid = new HashSet<HarvestController>();
 	}
@@ -229,74 +243,127 @@ public partial class HarvestController
 				part.Half = haveBounds ? ha.BoundSize : ha.Collider.bounds.size * 0.5f;
 				part.Out = part.Centre.y + part.Half.y < OvFloor(part.Centre);
 				part.Root = false;
+				part.Ground = false;
+				part.Links.Clear();
 				part.Why = null;
 				part.HoldThing = null;
 				c.Parts.Add(part);
 				alive++;
 			}
+			// M4: every part, the buried ones too (the game checks them all)
 			for (int i = first; i < c.Parts.Count; i++)
 			{
-				OvPart part = c.Parts[i];
-				if (part.Out)
-				{
-					continue;
-				}
-				OvPartRoot(part, rock, origin, c);
+				OvPartRoot(c.Parts[i], rock, origin, c);
 			}
 		}
 		c.Popped += popped;
 		c.Alive = alive;
+		c.HeldCount = OvSupport(c, null);
+		foreach (OvPart part in c.Parts)
+		{
+			part.Held = part.Sim;
+		}
 	}
 
-	// the game's support test for one part (MineRock5.UpdateSupport / GetSupport, same box and layer mask)
-	private void OvPartRoot(OvPart part, MineRock5 rock, Vector3 origin, OvClear c)
+	// M4: the game's MineRock5.UpdateSupport over the vein's parts as they are now: 3 passes in the game's order; a part is
+	// held when it is held straight up (Root) or its box touches a part of the same rock held earlier. `without` = as if
+	// that part had broken (its collider gone, as the game sees it). The result is in each part's Sim; returns how many
+	// are held.
+	private static int OvSupport(OvClear c, OvPart without)
 	{
+		foreach (OvPart part in c.Parts)
 		{
+			part.Sim = false;
+		}
+		for (int pass = 0; pass < 3; pass++)
+		{
+			foreach (OvPart part in c.Parts)
 			{
-				int n = Physics.OverlapBoxNonAlloc(part.Centre, part.Half, s_cBuf, Quaternion.identity, s_cMask);
-				for (int j = 0; j < n && !part.Root; j++)
+				if (part.Sim || part == without)
 				{
-					Collider o = s_cBuf[j];
-					if (o == null || o == part.C || o.attachedRigidbody != null || o.isTrigger)
+					continue;
+				}
+				if (part.Root)
+				{
+					part.Sim = true;
+					continue;
+				}
+				foreach (OvPart l in part.Links)
+				{
+					if (l != without && l.Sim)
 					{
-						continue;
-					}
-					if (o.gameObject.layer == s_cTerrain)
-					{
-						part.Root = true;
-						part.Why = "touches the dirt";
-						continue;
-					}
-					MineRock5 m = o.GetComponentInParent<MineRock5>();
-					if (m == rock)
-					{
-						if (c.ById.TryGetValue(o.GetInstanceID(), out OvPart other) && other.Out)
-						{
-							part.Root = true;
-							part.Why = "rests on a part buried out of reach";
-						}
-						continue;   // held by another part: the chain
-					}
-					IDestructible d = o.GetComponentInParent<IDestructible>();
-					if (d == null)
-					{
-						part.Root = true;
-						part.Why = "rests on \"" + o.name + "\" (it can't be broken)";
-					}
-					else if (o.transform.position.y < origin.y)
-					{
-						part.Root = true;
-						// Z2: a tree, log, stump or rock the Wood / Stone job would take: that is cleared, not the part
-						GameObject t = OvThingOf(o, out int tm, out string tt);
-						if (t != null)
-						{
-							part.HoldThing = t;
-							part.HoldMode = tm;
-							part.HoldType = tt;
-						}
-						part.Why = "rests on \"" + o.name + "\"" + (t != null ? $" ({t.name} at {MHR_Mover.Fmt(t.transform.position)})" : "") + " (lower than the vein's centre)";
+						part.Sim = true;
+						break;
 					}
 				}
+			}
+		}
+		int n = 0;
+		foreach (OvPart part in c.Parts)
+		{
+			if (part.Sim)
+			{
+				n++;
+			}
+		}
+		return n;
+	}
+
+	// the game's support test for one part (MineRock5.UpdateSupport / GetSupport, same box and layer mask): what its box
+	// touches. M4: a part of the same rock is a link (the game asks whether THAT part is held - no "rests on a part buried
+	// out of reach" rule, the game has none); the terrain, a solid thing that can't be broken, or a breakable thing lower
+	// than the rock's centre holds it straight up (Root).
+	private void OvPartRoot(OvPart part, MineRock5 rock, Vector3 origin, OvClear c)
+	{
+		int n = Physics.OverlapBoxNonAlloc(part.Centre, part.Half, s_cBuf, Quaternion.identity, s_cMask);
+		for (int j = 0; j < n; j++)
+		{
+			Collider o = s_cBuf[j];
+			if (o == null || o == part.C || o.attachedRigidbody != null || o.isTrigger)
+			{
+				continue;
+			}
+			if (o.gameObject.layer == s_cTerrain)
+			{
+				part.Ground = true;
+				if (!part.Root)
+				{
+					part.Root = true;
+					part.Why = "touches the dirt";
+				}
+				continue;
+			}
+			MineRock5 m = o.GetComponentInParent<MineRock5>();
+			if (m == rock)
+			{
+				if (c.ById.TryGetValue(o.GetInstanceID(), out OvPart other) && !part.Links.Contains(other))
+				{
+					part.Links.Add(other);
+				}
+				continue;
+			}
+			if (part.Root)
+			{
+				continue;
+			}
+			IDestructible d = o.GetComponentInParent<IDestructible>();
+			if (d == null)
+			{
+				part.Root = true;
+				part.Why = "rests on \"" + o.name + "\" (it can't be broken)";
+			}
+			else if (o.transform.position.y < origin.y)
+			{
+				part.Root = true;
+				// Z2: a tree, log, stump or rock the Wood / Stone job would take: that is cleared, not the part
+				GameObject t = OvThingOf(o, out int tm, out string tt);
+				if (t != null)
+				{
+					part.HoldThing = t;
+					part.HoldMode = tm;
+					part.HoldType = tt;
+				}
+				part.Why = "rests on \"" + o.name + "\"" + (t != null ? $" ({t.name} at {MHR_Mover.Fmt(t.transform.position)})" : "") + " (lower than the vein's centre)";
 			}
 		}
 	}
@@ -421,9 +488,9 @@ public partial class HarvestController
 			{
 				low |= OvDirtAt(part, bottom, part.Centre.x, part.Centre.z, byKey);   // a box narrower than the grid: its middle
 			}
-			if (low)
+			if (low && part.Ground)
 			{
-				c.Low.Add(part);   // P5
+				c.Low.Add(part);   // P5; M4: and its box touches the terrain by the game's own check
 			}
 		}
 		// a point that has gone (dug down, or its part broke) frees whoever had it
@@ -817,70 +884,44 @@ public partial class HarvestController
 
 	// P3 (John, 2026-11-19: "It should just be stand in the bottom of the trench or pit, whatever level that is at"): the
 	// place to stand for work at `aim` - pit ground (P1) on a 0.5 m grid within its swing (the pickaxe's range less the
-	// 0.5 m the walk stops short: 1.3 m) of the dirt point / of the part's box; the LOWEST of them (within 0.3 m of the
-	// lowest: the nearest to the companion). A part round also stands outside every standing part's box (a body can't
-	// stand in rock), with its feet no higher than the part's top, and when the part's bottom is more than its swing
-	// reaches (about 2.6 m) above that lowest place it is from a ladder. 0 = found, 1 = a part from a ladder, 2 = none.
+	// 0.5 m the walk stops short: 1.3 m) of the dirt point; the LOWEST of them (within 0.3 m of the lowest: the nearest to
+	// the companion). A part: OvStandForPart (M1). 0 = found, 1 = a part from a ladder, 2 = none.
 	private int OvStandFor(OvClear c, Vector3 aim, OvPart part, out Vector3 stand, out string why)
 	{
+		if (part != null)
+		{
+			return OvStandForPart(part, out stand, out why);
+		}
 		stand = Vector3.zero;
 		why = null;
 		Vector3 me = base.transform.position;
 		float range = FindBestTool(2)?.m_shared?.m_attack != null ? FindBestTool(2).m_shared.m_attack.m_attackRange : 2f;
 		float reach = Mathf.Max(0.8f, range - OvStandAt);
-		float up = OvPickReach();
-		float hh = _character != null ? _character.GetHeight() : 1.8f;
-		Bounds box = part != null ? new Bounds(part.Centre, part.Half * 2f) : default;
-		float maxFeet = part != null ? part.Centre.y + part.Half.y : float.MaxValue;
-		float x0 = part != null ? box.min.x - reach : aim.x - reach, x1 = part != null ? box.max.x + reach : aim.x + reach;
-		float z0 = part != null ? box.min.z - reach : aim.z - reach, z1 = part != null ? box.max.z + reach : aim.z + reach;
 		List<Vector3> cand = new List<Vector3>();
 		float low = float.MaxValue;
-		bool any = false;
-		for (float x = Mathf.Floor(x0 / OvDirtGrid) * OvDirtGrid; x <= x1 + 0.001f; x += OvDirtGrid)
+		for (float x = Mathf.Floor((aim.x - reach) / OvDirtGrid) * OvDirtGrid; x <= aim.x + reach + 0.001f; x += OvDirtGrid)
 		{
-			for (float z = Mathf.Floor(z0 / OvDirtGrid) * OvDirtGrid; z <= z1 + 0.001f; z += OvDirtGrid)
+			for (float z = Mathf.Floor((aim.z - reach) / OvDirtGrid) * OvDirtGrid; z <= aim.z + reach + 0.001f; z += OvDirtGrid)
 			{
 				Vector3 pt = new Vector3(x, 0f, z);
-				Vector3 near = part != null ? box.ClosestPoint(new Vector3(x, box.center.y, z)) : aim;
-				if (Flat(pt, near) > reach + 0.01f || !OvInPitPt(pt))
+				if (Flat(pt, aim) > reach + 0.01f || !OvInPitPt(pt))
 				{
 					continue;
 				}
 				pt.y = GroundAt(pt);
-				if (part != null && (OvInAnyBox(c, pt, hh) || pt.y > maxFeet))
-				{
-					continue;
-				}
-				any = true;
 				cand.Add(pt);
 				low = Mathf.Min(low, pt.y);
 			}
 		}
-		if (!any)
+		if (cand.Count == 0)
 		{
-			why = part != null ? "no pit ground within its swing of it outside the parts (and no higher than its top)" : $"no pit ground within its swing ({reach:F1} m) of it";
+			why = $"no pit ground within its swing ({reach:F1} m) of it";
 			return 2;
 		}
-		// K2 (test 18): for a part, only the pit ground from which its bottom is within its swing (a part in the pit wall is
-		// mined from the bank beside it); the lowest of those. None: the lowest of all, from a ladder (K1: the last step).
-		float lowIn = float.MaxValue;
-		if (part != null)
-		{
-			foreach (Vector3 pt in cand)
-			{
-				if (aim.y - pt.y <= up)
-				{
-					lowIn = Mathf.Min(lowIn, pt.y);
-				}
-			}
-		}
-		bool fromLadder = part != null && lowIn == float.MaxValue;
-		float baseY = part != null && !fromLadder ? lowIn : low;
 		float bd = float.MaxValue;
 		foreach (Vector3 pt in cand)
 		{
-			if (pt.y > baseY + 0.3f || pt.y < baseY - 0.001f || (part != null && !fromLadder && aim.y - pt.y > up))
+			if (pt.y > low + 0.3f)
 			{
 				continue;
 			}
@@ -891,12 +932,190 @@ public partial class HarvestController
 				stand = pt;
 			}
 		}
-		if (fromLadder)
-		{
-			why = $"its bottom is more than its swing reaches ({up:F1} m) above all the pit ground beside it";
-			return 1;
-		}
 		return 0;
+	}
+
+	// ---------- M1: where to stand to hit a part's rock, by the game's own swing ----------
+	private const int OvSwTestMax = 80;     // M1: at most 80 places looked at per part per choice
+
+	private static readonly RaycastHit[] s_swHits = new RaycastHit[32];
+
+	private static int s_swMask = -1;       // the game's Attack.m_attackMaskTerrain
+
+	private static int s_bodyMask = -1;     // solid things a body can't stand in (not the terrain, not creatures)
+
+	// M1 (test 19: the swing aimed at the part's box, which is bigger than its rock, from outside every box - the rock was
+	// never within the swing): pit ground (P1) on the 0.5 m grid within the pickaxe's range + 0.5 m (flat) of the part's
+	// box, feet no higher than the box top, where a body fits (the game's physics: a capsule of its size touches nothing
+	// solid but the ground - inside a part's box is fine when the rock isn't there) and the game's own pickaxe swing from
+	// there (OvSwingReaches) meets the part's own rock first. Lowest first: of those within 0.3 m of the lowest that
+	// work, the nearest to the companion. The aim goes in _standAim. 0 = found; 1 = pit ground but no swing from it
+	// reaches the rock (the last step's ladder, K1); 2 = no pit ground near it.
+	private int OvStandForPart(OvPart part, out Vector3 stand, out string why)
+	{
+		stand = Vector3.zero;
+		why = null;
+		_standAim = part.Centre;
+		Vector3 me = base.transform.position;
+		Attack a = FindBestTool(2)?.m_shared?.m_attack;
+		float range = a != null ? a.m_attackRange : 1.8f;
+		float reach = range + OvStandAt;
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		float rad = _character != null ? _character.GetRadius() : 0.4f;
+		Bounds box = new Bounds(part.Centre, part.Half * 2f);
+		float maxFeet = box.max.y;
+		List<Vector3> cand = new List<Vector3>();
+		for (float x = Mathf.Floor((box.min.x - reach) / OvDirtGrid) * OvDirtGrid; x <= box.max.x + reach + 0.001f; x += OvDirtGrid)
+		{
+			for (float z = Mathf.Floor((box.min.z - reach) / OvDirtGrid) * OvDirtGrid; z <= box.max.z + reach + 0.001f; z += OvDirtGrid)
+			{
+				Vector3 pt = new Vector3(x, 0f, z);
+				if (Flat(pt, box.ClosestPoint(new Vector3(x, box.center.y, z))) > reach + 0.01f || !OvInPitPt(pt))
+				{
+					continue;
+				}
+				pt.y = GroundAt(pt);
+				if (pt.y > maxFeet)
+				{
+					continue;
+				}
+				cand.Add(pt);
+			}
+		}
+		if (cand.Count == 0)
+		{
+			why = "no pit ground near it (no higher than its top)";
+			return 2;
+		}
+		cand.Sort((Vector3 p1, Vector3 p2) =>
+		{
+			int yc = p1.y.CompareTo(p2.y);
+			return yc != 0 ? yc : Flat(me, p1).CompareTo(Flat(me, p2));
+		});
+		float band = float.MaxValue, bd = float.MaxValue;
+		int tested = 0, noFit = 0;
+		bool found = false;
+		foreach (Vector3 pt in cand)
+		{
+			if (pt.y > band || tested >= OvSwTestMax)
+			{
+				break;
+			}
+			tested++;
+			if (!OvBodyFits(pt, rad, hh))
+			{
+				noFit++;
+				continue;
+			}
+			if (!OvSwingReaches(a, pt, part, out Vector3 hit))
+			{
+				continue;
+			}
+			if (!found)
+			{
+				found = true;
+				band = pt.y + 0.3f;
+			}
+			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
+			if (d < bd)
+			{
+				bd = d;
+				stand = pt;
+				_standAim = hit;
+			}
+		}
+		if (found)
+		{
+			return 0;
+		}
+		stand = cand[0];
+		why = $"no place on the pit ground beside it where the game's pickaxe swing meets its rock first ({tested} looked at{(noFit > 0 ? $", {noFit} with no room for its body" : "")})";
+		return 1;
+	}
+
+	// M1: a body (a capsule of its radius and height) on the ground at pt touches nothing solid but the ground
+	private bool OvBodyFits(Vector3 pt, float rad, float hh)
+	{
+		if (s_bodyMask < 0)
+		{
+			s_bodyMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece");
+		}
+		float r = rad * 0.9f;
+		return !Physics.CheckCapsule(pt + Vector3.up * (r + 0.15f), pt + Vector3.up * Mathf.Max(r + 0.2f, hh - r), r, s_bodyMask, QueryTriggerInteraction.Ignore);
+	}
+
+	// M1: the game's pickaxe swing (Attack.DoMeleeAttack) from feet at pt, facing the part's centre (flat): from the attack
+	// origin (its origin joint, else the feet) + the attack height + the attack offset, a ray every 4 degrees across the
+	// attack angle (vertical or horizontal as the attack says), each as long as the attack range, as wide as its ray width,
+	// on the game's attack layers with the terrain; each ray counts only its FIRST hit, skipping companions and creatures
+	// (the game skips ones it isn't hostile to) and hits behind it. True = a ray's first hit is the part's own rock (hit =
+	// where). A ray that doesn't meet the rock within range (Collider.Raycast, the rock alone) isn't cast at all.
+	private bool OvSwingReaches(Attack a, Vector3 pt, OvPart part, out Vector3 hit)
+	{
+		hit = part.Centre;
+		if (s_swMask < 0)
+		{
+			s_swMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "terrain", "character", "character_net", "character_ghost", "hitbox", "character_noenv", "vehicle");
+		}
+		float range = a != null ? a.m_attackRange : 1.8f;
+		float height = a != null ? a.m_attackHeight : 1.0f;
+		float angle = a != null ? a.m_attackAngle : 120f;
+		float width = a != null ? a.m_attackRayWidth : 0.2f;
+		float offset = a != null ? a.m_attackOffset : 0f;
+		bool vertical = a == null || a.m_attackType == Attack.AttackType.Vertical;
+		Vector3 jointUp = Vector3.zero;
+		if (a != null && !string.IsNullOrEmpty(a.m_attackOriginJoint) && _character != null && _character.GetVisual() != null)
+		{
+			Transform j = Utils.FindChild(_character.GetVisual().transform, a.m_attackOriginJoint);
+			if (j != null)
+			{
+				jointUp = Vector3.up * (j.position.y - base.transform.position.y);
+			}
+		}
+		Vector3 flat = part.Centre - pt;
+		flat.y = 0f;
+		if (flat.sqrMagnitude < 0.0001f)
+		{
+			flat = base.transform.forward;
+		}
+		Quaternion yaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+		Vector3 fwd = yaw * Vector3.forward;
+		Vector3 o = pt + jointUp + Vector3.up * height + yaw * Vector3.right * offset;
+		float half = angle / 2f;
+		for (float ang = -half; ang <= half; ang += 4f)
+		{
+			Vector3 dir = yaw * ((vertical ? Quaternion.Euler(ang, 0f, 0f) : Quaternion.Euler(0f, -ang, 0f)) * Vector3.forward);
+			if (!part.C.Raycast(new Ray(o, dir), out RaycastHit rh, range))
+			{
+				continue;
+			}
+			int n = width > 0f ? Physics.SphereCastNonAlloc(o, width, dir, s_swHits, Mathf.Max(0f, range - width), s_swMask, QueryTriggerInteraction.Ignore) : Physics.RaycastNonAlloc(o, dir, s_swHits, range, s_swMask, QueryTriggerInteraction.Ignore);
+			Collider first = null;
+			float fd = float.MaxValue;
+			Vector3 fp = rh.point;
+			for (int i = 0; i < n; i++)
+			{
+				RaycastHit h = s_swHits[i];
+				if (h.collider == null || h.distance >= fd || h.collider.GetComponentInParent<Character>() != null)
+				{
+					continue;
+				}
+				Vector3 hp = h.point == Vector3.zero && h.distance == 0f ? o : h.point;
+				if (angle < 180f && Vector3.Dot(hp - o, fwd) <= 0f)
+				{
+					continue;
+				}
+				first = h.collider;
+				fd = h.distance;
+				fp = hp;
+			}
+			if (first == part.C)
+			{
+				hit = fp;
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
@@ -922,31 +1141,15 @@ public partial class HarvestController
 		return false;
 	}
 
-	// GG2: a body standing on the ground at pt (its width, its height) would be inside a standing part's box
-	private static bool OvInAnyBox(OvClear c, Vector3 pt, float hh)
-	{
-		foreach (OvPart part in c.Parts)
-		{
-			if (part.Out || part.C == null || !part.C.gameObject.activeSelf)
-			{
-				continue;
-			}
-			if (Mathf.Abs(pt.x - part.Centre.x) <= part.Half.x + OvBodyPad && Mathf.Abs(pt.z - part.Centre.z) <= part.Half.z + OvBodyPad && part.Centre.y - part.Half.y < pt.y + hh && part.Centre.y + part.Half.y > pt.y - 0.1f)
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
 	// ---------- GG2 2.: the ore step ----------
 	private bool OvPartCooling(OvPart part)
 	{
 		return Time.time < part.CoolUntil;
 	}
 
-	// no dirt left: the lowest standing part (no one else's, not waiting), from the pit ground beside it, or from a ladder
-	// when it is too high for that
+	// no dirt and no low parts left (John, 2026-11-20: the pop part only once the low parts are cleared): M4 - the part
+	// whose break leaves the fewest held by the game's support check (none = it pops the vein), nearest first; no one
+	// else's, not waiting; from the pit ground where the game's swing meets its rock (M1), or from a ladder when none does
 	private bool OvOreChoose(OvClear c)
 	{
 		Vector3 me = base.transform.position;
@@ -977,11 +1180,20 @@ public partial class HarvestController
 			OvClearSay(c);
 			return false;
 		}
+		// M4 (John: "All they need to do is break whatever part is closest to the ground / holding up the other parts"):
+		// for each part, the game's support pass as if it had broken - how many parts would still be held. Fewest first (0
+		// = it pops the vein), then nearest.
+		Dictionary<OvPart, int> after = new Dictionary<OvPart, int>();
+		foreach (OvPart part in cand)
+		{
+			after[part] = OvSupport(c, part);
+		}
 		cand.Sort((OvPart a, OvPart b) =>
 		{
-			int bc = OvPartBottom(a).CompareTo(OvPartBottom(b));
+			int bc = after[a].CompareTo(after[b]);
 			return bc != 0 ? bc : Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me)));
 		});
+		_clPopWhy = null;
 		int tries = 0;
 		foreach (OvPart pick in cand)
 		{
@@ -1002,6 +1214,8 @@ public partial class HarvestController
 				OvWayOutHere(ws);
 				return true;
 			}
+			int left = after[pick];
+			_clPopWhy = left == 0 ? $"the part that pops it: by the game's support check nothing of the vein stays held once it breaks ({c.HeldCount} held now)" : $"the part whose break drops the most: by the game's support check {left} of the {c.HeldCount} held part(s) stay held once it breaks";
 			OvClBegin(pick, stand, ladder: r == 1);
 			return true;
 		}
@@ -1129,11 +1343,12 @@ public partial class HarvestController
 		_clFor = part;
 		part.Holder = this;
 		_clStand = stand;
+		_clAim = _standAim;
 		_clWalk = !ladder;
 		_moveTimer = 0f;
 		_ai?.StopMoving();
 		OvLnBegin(ladder);
-		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\"{(low ? "" : " (no dirt holds it up now)")}: {(low ? "a low part that goes into the ground (P5)" : ladder ? $"a part too high to hit from the ground beside it - from a ladder" : "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Root ? "" : " (it rests on other parts)")}{(ladder ? "" : $" - from {MHR_Mover.Fmt(stand)}")}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\"{(low ? "" : " (no dirt holds it up now)")}: {(low ? "a low part that goes into the ground (P5)" : ladder ? $"a part too high to hit from the ground beside it - from a ladder" : _clPopWhy ?? "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Held ? " (held by other parts)" : " (not held - it falls when a part breaks)")}{(ladder ? "" : $" - from {MHR_Mover.Fmt(stand)}, swinging at its rock at {MHR_Mover.Fmt(_standAim)}")}");
 	}
 
 	private void OvClOff()
@@ -1227,8 +1442,9 @@ public partial class HarvestController
 			_moveTimer = 0f;
 			return;
 		}
-		// R2a's swing at the part itself: the nearest point of its game box; 3 swings that don't hit it end the round
-		Vector3 bp = OvBoxNear(part, me);
+		// M1: the swing at the point where the game's own swing from its place meets the part's rock (OvStandFor) - not
+		// the nearest point of its box; 3 swings that neither hit it nor dig toward it end the round (K3)
+		Vector3 bp = _clAim;
 		OvDigBegin(bp, null, ramp: false);
 		_dgClear = true;
 		_dgPart = true;
@@ -1284,7 +1500,7 @@ public partial class HarvestController
 			}
 			foreach (OvPart part in c.Parts)
 			{
-				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : "hanging on other parts")}{(part.OutOfReach && !part.Out ? ", too high to hit from the ground beside it" : "")}{(part.CoolWhy != null ? ", last try: " + part.CoolWhy : "")}");
+				if (CompanionsPlugin.LogNormal) LogInfo($"  part \"{part.C.name}\": centre {MHR_Mover.Fmt(part.Centre)}, size {part.Half.x * 2f:F1} x {part.Half.y * 2f:F1} x {part.Half.z * 2f:F1}, bottom {OvPartBottom(part):F1}, ground {GroundAt(part.Centre):F1}, floor {OvFloor(part.Centre):F1}, {(part.Out ? "buried out of reach" : part.Root ? "holds it up (" + part.Why + ")" : part.Held ? "held by other parts" : "not held")}{(part.OutOfReach && !part.Out ? ", too high to hit from the ground beside it" : "")}{(part.CoolWhy != null ? ", last try: " + part.CoolWhy : "")}");
 			}
 			_talk?.SayProblem("vein:clear_stopped", string.Format(ModLocalization.Loc("hc_speech_vein_clear_stopped"), MHR_Items.NiceName(_vFor)));
 			return;
@@ -1376,6 +1592,11 @@ public partial class HarvestController
 	private void OvWayOutHere(OvSpot sp, string head = null, string why = "a way out first")
 	{
 		OvPlan p = _vp;
+		string pickWhy = null;
+		if (head == null)
+		{
+			sp = OvWayOutPick(sp, out pickWhy);   // M2 (not in a fight: that one is cut toward the enemy, Y5)
+		}
 		p.ExitBy = this;
 		_woWhy = why;
 		_woCombat = false;
@@ -1387,7 +1608,100 @@ public partial class HarvestController
 		_woGoal.y = OvWallTop(sp);   // Y2
 		_moveTimer = 0f;
 		_ai?.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({_woGoal.y - _woFloor.y:F1} m up)");
+		if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({_woGoal.y - _woFloor.y:F1} m up){(pickWhy != null ? " - " + pickWhy : "")}");
+	}
+
+	private static readonly RaycastHit[] s_woHits = new RaycastHit[32];
+
+	// M2 (test 19: a way out cut straight into a plain rock, and up a 13 m wall with a 6 m one 10 m away): of the trench
+	// spots within 15 m (flat) of the spot where it works with no way-out try within 15 m in the last 60 s (K5 / M3) and a
+	// wall outside 1.5 x its height or more above the floor (a lower spot needs no way out - the walk there would only
+	// say so), the one with no rock in its line, lowest wall first (the wall top along the line out, Y2, less the floor
+	// there). None without a rock: the lowest wall. None at all: the spot it was given.
+	private OvSpot OvWayOutPick(OvSpot sp, out string why)
+	{
+		why = null;
+		float h = _character != null ? _character.GetHeight() : 1.8f;
+		OvSpot best = null;
+		bool bestRock = true;
+		float bestClimb = float.MaxValue;
+		int looked = 0, rocks = 0;
+		foreach (OvSpot q in _vp.Spots)
+		{
+			if (Flat(q.P, sp.P) > OvWayNear || OvExitTriedNear(q.P))
+			{
+				continue;
+			}
+			float floor = GroundAt(q.P);
+			float climb = OvWallTop(q) - floor;
+			if (climb < OvRampRatio * h)
+			{
+				continue;
+			}
+			looked++;
+			bool rock = OvRockInLine(q, floor);
+			if (rock)
+			{
+				rocks++;
+			}
+			if ((!rock && bestRock) || (rock == bestRock && climb < bestClimb))
+			{
+				best = q;
+				bestRock = rock;
+				bestClimb = climb;
+			}
+		}
+		if (best == null)
+		{
+			return sp;
+		}
+		why = $"the lowest wall within {OvWayNear:F0} m{(bestRock ? " (every line out has a rock in it)" : "")} of {looked} spot(s) looked at, {rocks} with a rock in the line out";
+		return best;
+	}
+
+	// M2: a rock in the line the way out is cut along - from the floor at the spot to the top of the wall outside it (the
+	// ramp's line), at 0.5 m and 1.5 m above it, by the game's physics (solid things, not the ground): something whose
+	// drops are stone by the game's drop tables (MHR_Drops), not this vein
+	private bool OvRockInLine(OvSpot q, float floor)
+	{
+		if (s_bodyMask < 0)
+		{
+			s_bodyMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece");
+		}
+		Vector3 from = q.P;
+		from.y = floor;
+		Vector3 to = OvOutside(q);
+		to.y = OvWallTop(q);
+		Vector3 d = to - from;
+		float len = d.magnitude;
+		if (len < 0.1f)
+		{
+			return false;
+		}
+		d /= len;
+		for (int k = 0; k < 2; k++)
+		{
+			Vector3 o = from + Vector3.up * (k == 0 ? 0.5f : 1.5f);
+			int n = Physics.RaycastNonAlloc(o, d, s_woHits, len, s_bodyMask, QueryTriggerInteraction.Ignore);
+			for (int i = 0; i < n; i++)
+			{
+				GameObject go = MHR_Drops.Root(s_woHits[i].collider);
+				if (go == null)
+				{
+					continue;
+				}
+				MineRock5 mr = go.GetComponent<MineRock5>();
+				if (mr != null && _vp.Rocks.Contains(mr))
+				{
+					continue;
+				}
+				if (MHR_Drops.KindOf(go) == MHR_Drops.Stone)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	// the nearest point of a part's box (the game's box, as the support rule uses) to p

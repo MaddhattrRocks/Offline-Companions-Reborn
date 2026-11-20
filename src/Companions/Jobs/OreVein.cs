@@ -392,6 +392,8 @@ public partial class HarvestController
 
 	private bool _dgPart;
 
+	private bool _dgDamage;      // M3: a swing of this dig lowered the ground or damaged a rock (reset by OvDigBegin)
+
 	private int _dgPartMiss;   // K3: swings at a part that didn't hit it (digging toward it included), 20 at most
 
 	private const int OvPartMissMax = 20;
@@ -2568,6 +2570,7 @@ public partial class HarvestController
 		_dgNoProg = 0;
 		_dgPartMiss = 0;
 		_dgLastProg = false;
+		_dgDamage = false;
 		_dgThingChecked = false;
 		_dgThingSwing = false;
 		_dgWalkThing = false;
@@ -3118,6 +3121,7 @@ public partial class HarvestController
 		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
 		// vein's ore restarts the spot's 30 s clock
 		_dgLastProg = prog || oreProg || dug || rockHit;
+		_dgDamage |= prog || oreProg || dug || rockHit;   // M3: this dig lowered the ground or damaged a rock
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
 		if (prog || oreProg)
 		{
@@ -3240,6 +3244,13 @@ public partial class HarvestController
 			{
 				_rpSwings++;
 				_rpNoProg = _dgLastProg ? 0 : _rpNoProg + 1;
+				if (_dgDamage)
+				{
+					// M3 (John, 2026-11-20: keep working on the way out as long as they are doing damage): a swing that
+					// lowered the ground or damaged a rock starts the 60 s "no higher" clock again; 3 swings in a row that do
+					// nothing still end it
+					_rpBestAt = Time.time;
+				}
 				if (_rpNoProg >= OvNoProgSwings)
 				{
 					OvRampFail($"{OvNoProgSwings} swings at the step at {MHR_Mover.Fmt(_rpStepPt)} changed nothing");
@@ -3477,8 +3488,13 @@ public partial class HarvestController
 		}
 		if (_exTry)
 		{
-			// E2: the try is counted (ExitAt); the next one comes from OvExitTick (R4: the next round's check)
+			// E2: the try is counted (ExitAt); the next one comes from OvExitTick (R4: the next round's check). M3: counted
+			// again now, so its 60 s runs from when the try ended, not from when it began
 			_exTry = false;
+			if (_vp != null)
+			{
+				OvExitTry(_rpStart);
+			}
 			if (_vp != null && _vp.ExitBy == this)
 			{
 				_vp.ExitBy = null;
