@@ -160,6 +160,83 @@ public partial class HarvestController
 		return any;
 	}
 
+	// T3 (John 2026-11-20: "They should head out when they hit 90+ percent capacity"): on its vein with a player-built
+	// chest (not a cart or ship) with room for its ore within 20 m of the pit (the trench's outer edge = the furthest trench
+	// spot + OvThingRadius from the vein's centre), at 90% or more of what it can carry, after its current swing: out by
+	// the nearest way out (OvLeaveOut / OvGetOut, extended with T4 or cut if needed), only the ore into that chest
+	// (OreDue -> OreLoad), then it takes the vein again. No such chest = it keeps working (the ore dump at the weight
+	// limit, as before). Checked every 5 s at most while at 90%; 60 s between trips so a failed deposit can't loop.
+	private const float OvChestNear = 20f, OvChestAt = 0.9f, OvChestEvery = 5f, OvChestCool = 60f;
+	private float _ovChestNext;
+
+	private bool OvChestTrip()
+	{
+		if (_vp == null || _vFor == null || _ovOut || _humanoid == null || _humanoid.InAttack() || _vp.Spots.Count == 0)
+		{
+			return false;
+		}
+		float now = Time.time;
+		if (now < _ovChestNext)
+		{
+			return false;
+		}
+		Inventory inv = _humanoid.GetInventory();
+		if (inv == null || inv.GetTotalWeight() < CompanionTierData.CarryLimit(this) * OvChestAt)
+		{
+			return false;
+		}
+		ItemDrop.ItemData ore = null;
+		foreach (ItemDrop.ItemData it in inv.GetAllItems())
+		{
+			if (MHR_GatherRules.IsOreItem(it))
+			{
+				ore = it;
+				break;
+			}
+		}
+		if (ore == null)
+		{
+			return false;
+		}
+		_ovChestNext = now + OvChestEvery;
+		float r = 0f;
+		foreach (OvSpot sp in _vp.Spots)
+		{
+			r = Mathf.Max(r, Flat(sp.P, _vp.Center));
+		}
+		r += OvThingRadius;
+		Container best = null;
+		float bd = float.MaxValue;
+		foreach (Container c in MHR_Chests.Near(_vp.Center, r + OvChestNear))
+		{
+			if (c == null || c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null)
+			{
+				continue;
+			}
+			if (Flat(c.transform.position, _vp.Center) - r > OvChestNear)
+			{
+				continue;
+			}
+			if (!MHR_GatherRules.UsableChest(this, c) || !c.GetInventory().CanAddItem(ore, 1))
+			{
+				continue;
+			}
+			float d = Flat(base.transform.position, c.transform.position);
+			if (d < bd)
+			{
+				bd = d;
+				best = c;
+			}
+		}
+		if (best == null || !MHR_GatherRules.OreToChest(this, best))
+		{
+			return false;
+		}
+		_ovChestNext = now + OvChestCool;
+		if (CompanionsPlugin.LogNormal) LogInfo($"At {inv.GetTotalWeight():F0} of {CompanionTierData.CarryLimit(this):F0} carry - taking its ore to \"{best.m_name}\" {bd:F0}m away, then back to the vein");
+		return true;
+	}
+
 	// 4. with storage: out of the trench toward it; once off the vein the ore goes in (MHR_GatherRules.OreDue)
 	internal void OvToStorage(Container c)
 	{

@@ -479,7 +479,7 @@ namespace Companions
             if (!p.OreDue) return p.Collect && CollectTick(h, p, ai, hum);
             p.OreDue = false;
             bool store = p.OreStore; p.OreStore = false;
-            if (Mode(h) != 3 || InDungeon(h)) return false;
+            if (Mode(h) != 3 || InDungeon(h)) { p.OreChest = null; return false; }
             return OreLoad(h, p, ai, hum, afterVein: !store);
         }
 
@@ -799,6 +799,17 @@ namespace Companions
             catch (Exception e) { Warn("AfterVeinGoal: " + e.Message); return false; }
         }
 
+        // T3 (John: "They should head out when they hit 90+ percent capacity"): off the vein to this chest with its ore;
+        // once off the vein OreDue puts only the ore in it. False = busy with a pile or dump trip.
+        internal static bool OreToChest(HarvestController h, Container c)
+        {
+            Per p = P(h);
+            if (c == null || p.PileActive) return false;
+            p.OreDue = true; p.OreStore = true; p.OreChest = c;
+            h.OvToStorage(c);
+            return true;
+        }
+
         // all the ore into a chest within 20 m, else all of it on the ore spot. False = no ore to unload.
         static bool OreLoad(HarvestController h, Per p, CompanionAI ai, Humanoid hum, bool afterVein = false)
         {
@@ -806,7 +817,10 @@ namespace Companions
             foreach (ItemDrop.ItemData it in hum.GetInventory().GetAllItems()) if (IsOreItem(it)) { any = true; break; }
             if (!any) return false;
             string why = afterVein ? "Done with the vein" : "Too heavy";
-            Container c = DropOff(h, h.transform.position, 20f);
+            // T3: the trip to the chest by the vein goes to that chest while it is usable, else the normal search
+            Container c = p.OreChest != null && UsableChest(h, p.OreChest) ? p.OreChest : DropOff(h, h.transform.position, 20f);
+            if (p.OreChest != null && c == p.OreChest) why = "Near its carry limit";
+            p.OreChest = null;
             if (c != null)
             {
                 if (CompanionsPlugin.LogNormal) Info(why + " - putting the ore in \"" + c.m_name + "\" " + Vector3.Distance(h.transform.position, c.transform.position).ToString("F0") + "m away");

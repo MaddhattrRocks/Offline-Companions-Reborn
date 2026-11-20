@@ -36,6 +36,8 @@ namespace Companions
             // 1.5.98 FF3 / Q2: the ore trip is to the vein's ore dump; the ore goes to storage once off the vein; carrying the
             // ore dump to storage after a pop
             public bool PitDump, OreStore, Collect, CollectGot; public Vector3 CollectAt; public float CollectWalkUntil;
+            // T3: the chest by the vein the ore trip (90% of what it can carry) is for - used even if it is over 20 m from where it gets out
+            public Container OreChest;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();

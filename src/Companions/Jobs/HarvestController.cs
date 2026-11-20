@@ -803,6 +803,11 @@ public partial class HarvestController : MonoBehaviour
 		{
 			return;
 		}
+		// T3: at 90% of what it can carry on its vein with a player-built chest within 20 m of the pit - its ore to that chest
+		if (mode == 3 && _vFor != null && OvChestTrip())
+		{
+			return;
+		}
 		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
 		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
 		{
@@ -2949,6 +2954,22 @@ public partial class HarvestController : MonoBehaviour
 		}
 	}
 
+	// T2 (John, 2026-11-20: "prefer ore over stone"): in the Ore job, stone and wood are taken only while the bag (with
+	// this stack) stays under half the carry limit - the other half is kept for ore. True = leave this one.
+	internal bool OreRoomFor(ItemDrop d)
+	{
+		if (GetMode() != 3 || d == null || d.m_itemData == null || _humanoid == null || _humanoid.GetInventory() == null)
+		{
+			return false;
+		}
+		string name = MHR_GatherRules.DropName(d);
+		if ((name != "Stone" && name != "Wood") || (name == "Wood" && OvWantsWood))
+		{
+			return false;   // not stone / wood, or wood for a ladder it is short of (Z4)
+		}
+		return _humanoid.GetInventory().GetTotalWeight() + d.m_itemData.GetWeight() > CompanionTierData.CarryLimit(this) * 0.5f;
+	}
+
 	private GameObject ScanForDrops()
 	{
 		int num = Physics.OverlapSphereNonAlloc(_lastDestroyPos, DropScanRadius, _dropBuffer, _itemLayerMask);
@@ -2991,6 +3012,11 @@ public partial class HarvestController : MonoBehaviour
 			{
 				_scanUnwanted++;
 				continue;
+			}
+			if (OreRoomFor(component))
+			{
+				_scanUnwanted++;
+				continue;   // T2: stone / wood only while the bag is under half the carry limit (the rest is for ore)
 			}
 			if (IsOverweight())
 			{

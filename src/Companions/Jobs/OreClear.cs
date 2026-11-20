@@ -736,6 +736,10 @@ public partial class HarvestController
 				return 1;
 			}
 		}
+		if (!l.Ore && OreRoomFor(l.D))
+		{
+			return 1;   // T2: stone / wood only under half the carry limit
+		}
 		// a pickup never takes it over its weight limit
 		if (inv.GetTotalWeight() + l.D.m_itemData.GetWeight() > HeavyLimit || !inv.CanAddItem(l.D.m_itemData))
 		{
@@ -2054,6 +2058,26 @@ public partial class HarvestController
 	private void OvWayOutHere(OvSpot sp, string head = null, string why = "a way out first")
 	{
 		OvPlan p = _vp;
+		// T4 (John, 2026-11-20: "updating the existing way down / up"): a saved way out within 15 m whose bottom the trench
+		// has gone below is extended - cut from the floor at the trench spot nearest its bottom up to that bottom; the
+		// ramp merge (OvRampFinish) then moves its saved bottom down to the floor
+		OvRamp ext = OvStrandedNear(sp.P);
+		OvSpot es = ext != null ? OvNearest(ext.Bottom) : null;
+		if (es != null)
+		{
+			p.ExitBy = this;
+			_woWhy = why;
+			_woCombat = false;
+			_woActive = true;
+			_woOut = false;
+			_woFloor = es.P;
+			_woFloor.y = GroundAt(es.P);
+			_woGoal = ext.Bottom;
+			_moveTimer = 0f;
+			_ai?.StopMoving();
+			if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down to the floor at {MHR_Mover.Fmt(_woFloor)} (spot {es.Idx + 1}, {ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
+			return;
+		}
 		string pickWhy = null;
 		if (head == null)
 		{
@@ -2071,6 +2095,28 @@ public partial class HarvestController
 		_moveTimer = 0f;
 		_ai?.StopMoving();
 		if (CompanionsPlugin.LogNormal) LogInfo($"{head ?? $"No way out of the trench within {OvWayNear:F0} m of where it works"} - going to {MHR_Mover.Fmt(_woFloor)} (spot {sp.Idx + 1}) to cut one ({_woGoal.y - _woFloor.y:F1} m up){(pickWhy != null ? " - " + pickWhy : "")}");
+	}
+
+	// T4: the nearest saved way out within 15 m (flat) of `at` that reached out of the trench but whose bottom the trench
+	// floor has gone 1.5 x its height or more below (OvRampOut no longer counts it)
+	private OvRamp OvStrandedNear(Vector3 at)
+	{
+		OvRamp best = null;
+		float bd = float.MaxValue;
+		foreach (OvRamp r in _vp.Ramps)
+		{
+			if (r.Top.y < r.Need - OvStepUp || OvRampOut(r) || _rpTried.Contains(r))
+			{
+				continue;
+			}
+			float d = Flat(r.Bottom, at);
+			if (d <= OvWayNear && d < bd && !OvExitTriedNear(r.Bottom))
+			{
+				bd = d;
+				best = r;
+			}
+		}
+		return best;
 	}
 
 	private static readonly RaycastHit[] s_woHits = new RaycastHit[32];

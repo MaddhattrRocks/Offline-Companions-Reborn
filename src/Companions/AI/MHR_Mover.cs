@@ -22,7 +22,7 @@ namespace Companions
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
-            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
+            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun; public float DropStepUntil;   // T1: the step TryDropDown started (its end time)
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
             // tried on this trip (like the ladders it tried)
@@ -242,7 +242,10 @@ namespace Companions
             {
                 // 1.5.72: a walking step (a sidestep out of being stuck) stops at a drop, fire or spikes on the way - it was only
                 // checked when it started (jumps are left alone - they're in the air)
-                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && (DropAhead(pos, s.StepDir, 0.8f, 1.2f) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
+                // 1.5.98 T1 (test 24: Comp on the trench rim, the drop-down's own 1.2-1.4 m drop cancelled by this check every
+                // 20-25 s for minutes): the drop-down's step is the drop it chose - only fire and spikes stop it
+                bool dropStep = s.DropStepUntil == s.StepUntil;
+                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && ((!dropStep && DropAhead(pos, s.StepDir, 0.8f, 1.2f)) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
                     if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
@@ -3171,7 +3174,7 @@ namespace Companions
             Face(ai, bestDir);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
-            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f;
+            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil;
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
             return true;
         }

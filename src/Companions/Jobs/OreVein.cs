@@ -2431,6 +2431,20 @@ public partial class HarvestController
 			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}) by the way out at {MHR_Mover.Fmt(best.Bottom)} ({bd:F0} m along the trench)");
 			return;
 		}
+		// T4: a saved way out within 15 m that the trench has gone below - extended down to the floor, then up it
+		OvRamp ext = OvStrandedNear(me);
+		OvSpot es = ext != null ? OvNearest(ext.Bottom) : null;
+		if (es != null)
+		{
+			_woActive = true;
+			_woOut = true;
+			_woFloor = es.P;
+			_woFloor.y = GroundAt(es.P);
+			_woGoal = ext.Bottom;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Getting out ({why}): extending the way out at {MHR_Mover.Fmt(ext.Bottom)} down to the floor at {MHR_Mover.Fmt(_woFloor)} ({ext.Bottom.y - _woFloor.y:F1} m up to its bottom)");
+			return;
+		}
 		OvRampBegin(goal, null, outOfTrench: true, why);
 	}
 
