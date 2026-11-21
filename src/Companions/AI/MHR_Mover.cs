@@ -188,8 +188,27 @@ namespace Companions
             Vector3 pos = ai.transform.position;
             float shift = Vector3.Distance(goal, s.Goal);
             bool fresh = shift > 4f || now - s.LastGo > 2f || s.Tag != tag;
-            if (s.GaveUp && now - s.GaveUpAt > 15f) fresh = true;   // try again after a while
-            if (fresh) Reset(s, goal, pos, now, tag);
+            bool retry = s.GaveUp && now - s.GaveUpAt > 15f;
+            if (retry) fresh = true;   // try again after a while
+            // K4 (log 58064830: Comp under a 1.5 m bank - every swing try or rest restarted the stuck clocks, so it was never
+            // called stuck and never cut a way up): a pause on the same goal (shift within the existing 1.5 m new-goal line,
+            // same task) where it hasn't moved 0.6 m flat from its stuck anchor doesn't restart the stuck clocks or the
+            // unstuck step - the pause itself isn't counted, the clocks go on from where they stopped. A real move, a new goal
+            // or a new task restarts them as before.
+            float pause = now - s.LastGo;
+            bool held = !retry && pause > 0.5f && shift <= 1.5f && s.Tag == tag && Flat(pos, s.Anchor) < 0.6f;
+            if (fresh && held)
+            {
+                float aT = s.AnchorTime + pause, pT = s.ProgressTime + pause, best = s.Best, mBest = s.MainBest; Vector3 anc = s.Anchor;
+                int ladderStep = s.Ladder, passes = s.Passes;
+                Reset(s, goal, pos, now, tag);
+                s.AnchorTime = aT; s.ProgressTime = pT; s.Anchor = anc; s.Best = best; s.MainBest = mBest; s.Ladder = ladderStep; s.Passes = passes;
+            }
+            else if (fresh) Reset(s, goal, pos, now, tag);
+            else if (held)
+            {
+                s.AnchorTime += pause; s.ProgressTime += pause;
+            }
             // 1.4.78: a new nearby target (the farmer's next crop 2 m on) or carrying on after a pause (harvesting,
             // swinging) starts the stuck clocks over. They used to keep running while he stood working, so the next
             // short step counted as "standing still 4s" and he started sidestepping and hopping around the field.
@@ -581,7 +600,10 @@ namespace Companions
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
             // 1.4.86: walk up stairs like a player; only hop when a step actually holds him up (1.4.85 hopped every step)
-            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f))
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f)
+                // K3 (log 58064830: hops at 8-10 stamina fell short of a 1.5 m bank): the walking hop only with the stamina for a
+                // full jump (the game's tired check); otherwise it doesn't hop (the vein job stands it still to get its breath, K2)
+                && MHR_Jump.CanAfford(c))
             {
                 s.NextHop = now + 0.6f;
                 Face(ai, dir);

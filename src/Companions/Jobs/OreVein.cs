@@ -751,6 +751,12 @@ public partial class HarvestController
 	{
 		if (_vp == null || _vRock == null || _vFor == null)
 		{
+			// K1: the vein is gone - its pit's loose ore, stone and wood first (as OvTick), from the saved plan
+			if (_vp != null)
+			{
+				_state = HarvestState.Vein;
+				return;
+			}
 			OvClearGone();
 			OvLeave("the vein is gone", quiet: true);
 			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)
@@ -1625,6 +1631,12 @@ public partial class HarvestController
 			s.Holder = null;
 			return false;
 		}
+		// K5 (the SV1 take-over, log 58064830: Comp stuck below spot 28 kept it): a holder that is stuck on its way to the
+		// spot (the mover's stuck ladder, MHR_Mover.Stuck) doesn't hold it - another companion may take it
+		if (!h.OvHolderWorking(true))
+		{
+			return false;
+		}
 		return true;
 	}
 
@@ -1638,7 +1650,7 @@ public partial class HarvestController
 		foreach (KeyValuePair<HarvestController, float> w in _vp.Workers)
 		{
 			HarvestController h = w.Key;
-			if (h == null || h == this || Time.time - w.Value > 5f || h._vp != _vp || h._ovSpot == null || h._ovSpot.Holder != h)
+			if (h == null || h == this || Time.time - w.Value > 5f || h._vp != _vp || h._ovSpot == null || h._ovSpot.Holder != h || !h.OvHolderWorking(true))
 			{
 				continue;
 			}
@@ -1706,7 +1718,9 @@ public partial class HarvestController
 		if (_vp == null || _vRock == null || _vFor == null || !_vFor.activeInHierarchy)
 		{
 			// F2: a vein that popped to the last part (the rock is gone): the loose ore, stone and wood in its pit first
-			if (_vp != null && _vFor != null && OvGoneLoose())
+			// K1 (log 58064830: all 85 parts fell, the game removed the rock, so _vFor was gone too and this was skipped -
+			// 65 items left in the pit): only the saved plan is needed
+			if (_vp != null && OvGoneLoose())
 			{
 				return;
 			}
@@ -1719,6 +1733,20 @@ public partial class HarvestController
 		float now = Time.time;
 		p.Workers[this] = now;
 		p.LastWork = now;
+		// K2 (log 58064830: Comp hopped up a 1.5 m bank every time its stamina reached 10, so it sat at 8-10/65): below the
+		// existing rest line (swing cost + GatherRestStamina, set by the swing) it stands still, no walking or hopping,
+		// until the existing GatherResumeStamina, like a player getting its breath back
+		if (_catchingBreath && _stamina != null)
+		{
+			float max = Mathf.Max(1f, _stamina.MaxStamina);
+			if (_stamina.Stamina < (ModConfig.GatherResumeStamina?.Value ?? 0.6f) * max)
+			{
+				_ai?.StopMoving();
+				return;
+			}
+			_catchingBreath = false;
+			if (CompanionsPlugin.LogDetailed) Log($"Got its breath back ({_stamina.Stamina:F0}/{max:F0}) - back to the vein");
+		}
 		if (now - _vBoxAt > 1f)
 		{
 			_vBoxAt = now;
@@ -1775,6 +1803,12 @@ public partial class HarvestController
 		}
 		// CC3 (test 12): no separate first pass round the ring (J4 removed) - a thing on a spot is cleared when the spot is
 		// reached (1. below), one in the pit by the pit pick near it (Y6a / CC4)
+		// K5: its spot taken over by another companion while it was stuck on the way (the SV1 take-over): it lets go
+		if (_ovSpot != null && _ovSpot.Holder != null && _ovSpot.Holder != this)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {_ovSpot.Idx + 1} was taken over by {_ovSpot.Holder.OvName()} while it was stuck on the way - letting it go");
+			_ovSpot = null;
+		}
 		if (_ovSpot == null || !OvOpen(_ovSpot))
 		{
 			OvRelease();
@@ -1957,7 +1991,8 @@ public partial class HarvestController
 	{
 		foreach (HarvestController h in OvActive())
 		{
-			if (h == this)
+			// K5: a companion that isn't working (stuck on its walk, the SV1 rule) doesn't keep the spots near it
+			if (h == this || !h.OvHolderWorking(true))
 			{
 				continue;
 			}
