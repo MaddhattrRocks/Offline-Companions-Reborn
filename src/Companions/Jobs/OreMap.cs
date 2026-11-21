@@ -422,6 +422,53 @@ public partial class HarvestController
 		return x < 0 || z < 0 || x >= m.W || z >= m.H ? -1 : z * m.W + x;
 	}
 
+	// ---------- R2.1: is this square a place to stand ----------
+
+	// R2.1: the map's answer for standing at pt (the square is read again first). 1 = yes, feet = where its feet go: the
+	// ground when nothing solid stands on it and there is its height of open space above it; otherwise the top of the
+	// lowest built piece on the square (John, 2026-11-21: a floor he built in the pit may be stood on) with its height of
+	// open space above that. 0 = no (why says what is there) - never on stone, rock, a vein part, a thing or what can't be
+	// damaged. -1 = don't know (no map, off the map, a square not read yet).
+	private int OvMapStand(Vector3 pt, out float feet, out string why)
+	{
+		feet = pt.y;
+		why = null;
+		OvMap m = _vp?.Map;
+		int i = OvMapIndex(m, pt);
+		if (i < 0 || m.ReadAt[i] < 0f)
+		{
+			return -1;
+		}
+		OvMapRead(_vp, m, i);
+		float g = m.Ground[i];
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		int li = i * OvMapLayers, lc = m.LCount[i];
+		if (lc == 0 || m.LBot[li] - g >= hh)
+		{
+			feet = g;
+			return 1;
+		}
+		for (int j = 0; j < lc; j++)
+		{
+			if (m.LKind[li + j] != MkBuilt)
+			{
+				continue;
+			}
+			float top = m.LTop[li + j];
+			float above = j + 1 < lc ? m.LBot[li + j + 1] - top : float.MaxValue;
+			if (above >= hh)
+			{
+				feet = top;
+				return 1;
+			}
+			why = $"a built piece with {above:F1} m of room above it (its height is {hh:F1} m)";
+			return 0;
+		}
+		float room = m.LBot[li] - g;
+		why = room > OvMapJoin ? $"{room:F1} m of room under {OvMapKindName(m.LKind[li])} (its height is {hh:F1} m)" : $"{OvMapKindName(m.LKind[li])} on it";
+		return 0;
+	}
+
 	// ---------- R1.1: what is in front, from the map ----------
 
 	private const float OvMapAheadNear = 0.5f;     // R1.1: the squares 0.5 m ...

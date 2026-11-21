@@ -1399,6 +1399,7 @@ public partial class HarvestController
 		float reach = Mathf.Max(0.8f, range - OvStandAt);
 		List<Vector3> cand = new List<Vector3>();
 		float low = float.MaxValue;
+		int noStand = 0;
 		for (float x = Mathf.Floor((aim.x - reach) / OvDirtGrid) * OvDirtGrid; x <= aim.x + reach + 0.001f; x += OvDirtGrid)
 		{
 			for (float z = Mathf.Floor((aim.z - reach) / OvDirtGrid) * OvDirtGrid; z <= aim.z + reach + 0.001f; z += OvDirtGrid)
@@ -1410,13 +1411,25 @@ public partial class HarvestController
 					continue;
 				}
 				pt.y = GroundAt(pt);
+				// R2.2: the map says no place to stand there (stone, rock, a part or a thing on it, or too little room): dropped;
+				// a built floor: its feet go on the floor; don't know: as before
+				int ms = OvMapStand(pt, out float mf, out _);
+				if (ms == 0)
+				{
+					noStand++;
+					continue;
+				}
+				if (ms == 1)
+				{
+					pt.y = mf;
+				}
 				cand.Add(pt);
 				low = Mathf.Min(low, pt.y);
 			}
 		}
 		if (cand.Count == 0)
 		{
-			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion";
+			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{(noStand > 0 ? $" ({noStand} with no place to stand by the pit map)" : "")}";
 			return 2;
 		}
 		float bd = float.MaxValue;
@@ -1467,7 +1480,7 @@ public partial class HarvestController
 		Bounds box = new Bounds(part.Centre, part.Half * 2f);
 		float maxFeet = box.max.y;
 		float pickReach = OvPickReach();
-		int tooLow = 0, taken = 0;
+		int tooLow = 0, taken = 0, noStand = 0;
 		List<Vector3> cand = new List<Vector3>();
 		for (float x = Mathf.Floor((box.min.x - reach) / OvDirtGrid) * OvDirtGrid; x <= box.max.x + reach + 0.001f; x += OvDirtGrid)
 		{
@@ -1479,6 +1492,18 @@ public partial class HarvestController
 					continue;
 				}
 				pt.y = GroundAt(pt);
+				// R2.3: the map says no place to stand there: dropped before the body and swing tests; a built floor: its feet
+				// go on the floor; don't know: as before
+				int ms = OvMapStand(pt, out float mf, out _);
+				if (ms == 0)
+				{
+					noStand++;
+					continue;
+				}
+				if (ms == 1)
+				{
+					pt.y = mf;
+				}
 				if (pt.y > maxFeet)
 				{
 					continue;
@@ -1509,6 +1534,11 @@ public partial class HarvestController
 		{
 			why = $"no pit ground beside it high enough for the pickaxe to reach its bottom ({tooLow} too low)";
 			return 1;   // as before P1: pit ground, but no swing from it reaches (the ladder's case)
+		}
+		if (cand.Count == 0 && noStand > 0)
+		{
+			why = $"no place to stand beside it by the pit map ({noStand} with stone, rock, a part or a thing on them, or too little room)";
+			return 2;
 		}
 		if (cand.Count == 0)
 		{

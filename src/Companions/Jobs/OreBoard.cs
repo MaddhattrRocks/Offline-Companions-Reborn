@@ -21,10 +21,6 @@ public partial class HarvestController
 
 	private bool _bdGoalOn;
 
-	private float _bdHwBest = float.MaxValue;
-
-	private float _bdHwTime;
-
 	private float _bdNextLook;
 
 	private float _bdWaitFrom = -1f;
@@ -127,18 +123,6 @@ public partial class HarvestController
 		{
 			_bdGoal = goal;
 			_bdGoalOn = true;
-			_bdHwBest = float.MaxValue;
-			_bdHwTime = 0f;
-		}
-		float flat = Flat(me, goal);
-		if (flat < _bdHwBest - OvHeadwayGain)
-		{
-			_bdHwBest = flat;
-			_bdHwTime = 0f;
-		}
-		else
-		{
-			_bdHwTime += dt;
 		}
 		// G1 (test 28: Gunter pushed Je 20 m down the trench - pushing someone still gets closer, so the old "no headway for
 		// 1 s" side step never came): 4 times a second, another companion within 1.2 m ahead in the way it is walking = it
@@ -200,9 +184,20 @@ public partial class HarvestController
 		Vector3 l = wp + side * (OvBoardLine + 0.6f), r = wp - side * (OvBoardLine + 0.6f);
 		l.y = GroundAt(l);
 		r.y = GroundAt(r);
+		// R2.4: a side the pit map says is no place to stand (stone, rock, a part or a thing on it) counts as taken; a built
+		// floor: on the floor
+		int sl = OvMapStand(l, out float fl, out _), sr = OvMapStand(r, out float fr, out _);
+		if (sl == 1)
+		{
+			l.y = fl;
+		}
+		if (sr == 1)
+		{
+			r.y = fr;
+		}
 		HarvestController tl = OvBoardTaken(l), tr = OvBoardTaken(r);
-		float cl = Mathf.Abs(l.y - me.y) + (tl != null && tl != w ? 10f : 0f);
-		float cr = Mathf.Abs(r.y - me.y) + (tr != null && tr != w ? 10f : 0f);
+		float cl = Mathf.Abs(l.y - me.y) + (tl != null && tl != w ? 10f : 0f) + (sl == 0 ? 10f : 0f);
+		float cr = Mathf.Abs(r.y - me.y) + (tr != null && tr != w ? 10f : 0f) + (sr == 0 ? 10f : 0f);
 		return cl <= cr ? l : r;
 	}
 

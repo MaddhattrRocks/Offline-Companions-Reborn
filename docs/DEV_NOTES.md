@@ -2837,3 +2837,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - R1.1 `OvMapWallAhead`: squares 0.5 m and 1 m ahead of where the companion faces (within 60 degrees of toward the goal); a layer with bottom below head height and top more than a step (0.7 m) above the feet is a wall; the square is re-read first; the aim comes from OvFirstOnSwing. Answers wall / clear / don't know.
 - R1.2 OvRampTick: no ground step in front -> the map is asked before the 1 s headway test. Swing line meets something that can't be damaged -> OvRampWorldStop; a built piece -> no swing, this way up fails; else the Z1 strike (now `OvRampStrike`, shared with Z1). The 1 s test stays as the fallback.
 - R1.3 OvDigTick: a map wall toward the spot starts the way up at once; the 3 s no-headway test stays as the fallback.
+
+### R2.1-R2.5 (pit map: stand places)
+- R2.1 `OvMapStand`: per square (re-read first) - open ground with body-height room -> feet on the ground; else the top of the lowest built piece with body-height room above (John 11-21: built floors may be stood on); else no (stone/rock/part/thing/fixed or too little room); -1 = don't know.
+- R2.2 OvStandFor and R2.3 OvStandForPart drop "no" candidates (before the body/swing tests) and use the built floor's height as the feet; "don't know" keeps today's behaviour.
+- R2.4 OvBoardSide: a side the map says is no place to stand costs +10 (like a taken side).
+- R2.5 removed the never-read `_bdHwBest` / `_bdHwTime`.
