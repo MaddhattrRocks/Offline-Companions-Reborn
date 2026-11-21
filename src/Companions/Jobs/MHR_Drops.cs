@@ -174,6 +174,25 @@ internal static class MHR_Drops
 		return string.IsNullOrEmpty(s) ? Utils.GetPrefabName(go) : s;
 	}
 
+	// D1/D2 (John, 2026-11-21: silver veins only): does it drop this item (by prefab name, e.g. "SilverOre")
+	internal static bool DropsItem(GameObject go, string item)
+	{
+		if (go == null)
+		{
+			return false;
+		}
+		List<GameObject> items = new List<GameObject>();
+		Gather(go, items, 0);
+		foreach (GameObject i in items)
+		{
+			if (i != null && string.Equals(i.name, item, StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void Gather(GameObject go, List<GameObject> items, int depth)
 	{
 		if (go == null || depth > 3)

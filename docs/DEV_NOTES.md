@@ -2884,3 +2884,8 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - MP5 OreBoard `OvBoardAhead`: only a companion closer to this walk's goal (by 0.3 m; level = lower network id) counts as in the way.
 - MP6 `OvRampUsable`: with a built pit map a way out counts only while its bottom is within 1.1 m of the trench floor beside it (else T4 extends it); 1.5 x height without a map.
 - MP7 overlay (PitMapOverlay on): each companion's map route drawn as cyan dots.
+
+### D1 + D2 (silver veins only; test log d9d55fae)
+- Silver = the vein's deposit drops SilverOre (`MHR_Drops.DropsItem`, cached per plan in `OvPlan.SilverState`).
+- D1 OvStandFor (dirt): on a silver vein, a stand place only counts when the game's pickaxe swing from it (rays in the game's order, top of the arc first, each its first hit: `OvSwingDirtFirst`) meets something other than this vein's rock first; the lowest such places, nearest first (MP3 still applies). None: the point waits ("the swing meets the silver before the dirt"). In the dirt swing count, a swing that only hit the vein's rock is not work on silver (HH1 kept for other veins).
+- D2: trench spot depth / plan goal under the vein = 1.5 m on silver (`OvUnder`), one companion height on other veins.

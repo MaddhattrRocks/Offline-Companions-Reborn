@@ -61,6 +61,9 @@ public partial class HarvestController
 	{
 		public readonly List<MineRock5> Rocks = new List<MineRock5>();
 
+		// D2: a silver vein (its deposit drops silver ore): 0 = not looked yet, 1 = silver, 2 = not
+		public int SilverState;
+
 		public readonly List<OvSpot> Spots = new List<OvSpot>();
 
 		public readonly List<Vector2> Poly = new List<Vector2>();
@@ -1064,6 +1067,34 @@ public partial class HarvestController
 		return _character != null ? _character.GetHeight() : 1.8f;
 	}
 
+	// D2 (John, 2026-11-21: "when mining silver I think 1-1.5m under is probably enough"; silver veins only): how far under
+	// the vein each trench spot goes - 1.5 m on a silver vein, one companion height on any other
+	private const float OvSilverUnder = 1.5f;
+
+	private float OvUnder(OvPlan p)
+	{
+		return OvIsSilver(p) ? OvSilverUnder : OvBodyH();
+	}
+
+	// D1/D2: the vein's deposit drops silver ore (by its drops, never its name); looked at once per plan
+	private static bool OvIsSilver(OvPlan p)
+	{
+		if (p == null)
+		{
+			return false;
+		}
+		if (p.SilverState == 0)
+		{
+			MineRock5 r = p.Rocks.Count > 0 ? p.Rocks[0] : null;
+			if (r == null)
+			{
+				return false;
+			}
+			p.SilverState = MHR_Drops.DropsItem(r.gameObject, "SilverOre") ? 1 : 2;
+		}
+		return p.SilverState == 1;
+	}
+
 	// R3b.1 (John, 2026-11-21: "no more than a NPC height under the ore vein"): the vein's base beside a spot - the lowest
 	// bottom of this vein's live part boxes (the same boxes the plan's ring is made from) that come within 2 m (flat) of
 	// it; none = the whole vein's lowest part
@@ -1092,7 +1123,7 @@ public partial class HarvestController
 				}
 			}
 		}
-		return low < float.MaxValue ? low : p.Goal + OvBodyH();
+		return low < float.MaxValue ? low : p.Goal + OvUnder(p);
 	}
 
 	private static void OvPartBoxes(MineRock5 r, List<Bounds> into)
@@ -1196,7 +1227,7 @@ public partial class HarvestController
 		p.LastWork = now;
 		s_ovPlans.Add(p);
 		OvLoad(p);   // F3: the vein's saved progress (a plan made after a load)
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for the vein \"{p.Name}\": {p.Rocks.Count} deposit(s), {p.Seen} part(s) seen, a ring of {p.Spots.Count} spots 1 m out from them; each spot down to one companion height ({OvBodyH():F1} m) under the vein beside it (never under the floor; {p.Goal:F1} where no part is within {OvBaseNear:F0} m); lap 1 takes each spot down 2 m at most{joined}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for the vein \"{p.Name}\": {p.Rocks.Count} deposit(s), {p.Seen} part(s) seen, a ring of {p.Spots.Count} spots 1 m out from them; each spot down to {(OvIsSilver(p) ? "1.5 m (a silver vein)" : "one companion height")} ({OvUnder(p):F1} m) under the vein beside it (never under the floor; {p.Goal:F1} where no part is within {OvBaseNear:F0} m); lap 1 takes each spot down 2 m at most{joined}");
 		return p;
 	}
 
@@ -1251,7 +1282,7 @@ public partial class HarvestController
 		}
 		p.Seen = seen;
 		p.Box = box;
-		p.Goal = lowest - OvBodyH();   // R3b.1: the fallback - one companion height under the whole vein's lowest part
+		p.Goal = lowest - OvUnder(p);   // R3b.1 (D2: 1.5 m on silver): the fallback - one companion height under the whole vein's lowest part
 		List<Vector2> hull = OvHull(pts);
 		Vector2 mid = Vector2.zero;
 		foreach (Vector2 v in hull)
@@ -1326,7 +1357,7 @@ public partial class HarvestController
 				s.P = pos;
 			}
 			s.Floor = OvFloor(pos);
-			s.Target = Mathf.Max(s.Floor, OvSpotBase(p, pos) - OvBodyH());   // R3b.1
+			s.Target = Mathf.Max(s.Floor, OvSpotBase(p, pos) - OvUnder(p));   // R3b.1 (D2: 1.5 m on silver)
 			OvSpot old = null;
 			if (keep != null)
 			{
@@ -3237,12 +3268,15 @@ public partial class HarvestController
 			// the point, 0.3 m or more above its feet (not the floor), is work too
 			Vector3 ft = base.transform.position;
 			bool bank = dug && _dgDugPt.y >= ft.y + 0.3f && Flat(ft, _dgDugPt) <= Flat(ft, _dgPoint) + 0.3f;
-			_dgNoProg = drop || bank || carve || hitOre ? 0 : _dgNoProg + 1;
+			// D1 (John, 2026-11-21, silver veins only: "avoid the ore other than to clear dirt off it"): on a silver vein a swing
+			// that only hit the vein's rock is not work - 3 in a row end the round as any other
+			bool oreWork = hitOre && !OvIsSilver(_vp);
+			_dgNoProg = drop || bank || carve || oreWork ? 0 : _dgNoProg + 1;
 			if ((drop || bank) && _vp != null)
 			{
 				OvC().ProgAt = Time.time;
 			}
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? ", cut into the bank toward it" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || hitOre ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? ", cut into the bank toward it" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || oreWork ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
 			if (after <= _dgGoalY + OvDigGain)
 			{
 				_dgReached = true;
@@ -3467,7 +3501,7 @@ public partial class HarvestController
 			}
 			sp.P = np;
 			sp.Floor = OvFloor(np);
-			sp.Target = Mathf.Max(sp.Floor, OvSpotBase(p, np) - OvBodyH());   // R3b.1
+			sp.Target = Mathf.Max(sp.Floor, OvSpotBase(p, np) - OvUnder(p));   // R3b.1 (D2: 1.5 m on silver)
 			float g = GroundAt(np);
 			sp.LapStart = g;
 			sp.OpenLap = p.Lap;

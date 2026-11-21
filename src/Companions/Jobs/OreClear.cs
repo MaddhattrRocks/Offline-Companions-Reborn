@@ -1485,7 +1485,40 @@ public partial class HarvestController
 		}
 		// MP3 (the map-path list, John 2026-11-21): nearest first among the lowest; one the map says there is no way to (not
 		// just one step too high - MP4 cuts that on the walk) is dropped; at most 5 asked, the rest taken as they are
-		cand.RemoveAll((Vector3 q) => q.y > low + 0.3f);
+		// D1 (John, 2026-11-21, silver veins only: "avoid the ore other than to clear dirt off it"): on a silver vein the place
+		// must be one where the game's swing from it meets the dirt (or anything but the vein) before the vein's rock; the
+		// lowest such places, not only the lowest of all
+		bool silver = OvIsSilver(_vp);
+		Attack sa = silver ? FindBestTool(2)?.m_shared?.m_attack : null;
+		int oreFirst = 0;
+		if (silver)
+		{
+			cand.Sort((Vector3 p1, Vector3 p2) => p1.y.CompareTo(p2.y));
+			List<Vector3> ok = new List<Vector3>();
+			float band = float.MaxValue;
+			foreach (Vector3 q in cand)
+			{
+				if (q.y > band || ok.Count + oreFirst >= OvSwTestMax)
+				{
+					break;
+				}
+				if (!OvSwingDirtFirst(sa, q, aim))
+				{
+					oreFirst++;
+					continue;
+				}
+				if (ok.Count == 0)
+				{
+					band = q.y + 0.3f;
+				}
+				ok.Add(q);
+			}
+			cand = ok;
+		}
+		else
+		{
+			cand.RemoveAll((Vector3 q) => q.y > low + 0.3f);
+		}
 		cand.Sort((Vector3 p1, Vector3 p2) => (Flat(me, p1) + Mathf.Abs(me.y - p1.y)).CompareTo(Flat(me, p2) + Mathf.Abs(me.y - p2.y)));
 		int noWay = 0;
 		foreach (Vector3 pt in cand)
@@ -1498,7 +1531,7 @@ public partial class HarvestController
 			stand = pt;
 			return 0;
 		}
-		why = $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
+		why = cand.Count == 0 && oreFirst > 0 ? $"from every place within its swing of it ({oreFirst} looked at) the pickaxe swing meets the silver before the dirt" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
 		return 2;
 	}
 
@@ -1755,6 +1788,72 @@ public partial class HarvestController
 			}
 		}
 		return false;
+	}
+
+	// D1: the game's pickaxe swing from feet at pt toward aim (Attack.DoMeleeAttack: the rays in the game's order, the top of
+	// the arc first, each counting its first hit; the game handles the hits in that order and a pickaxe that hit something
+	// before the ground doesn't dig): false = the first thing the swing meets is this vein's rock; true = the ground or
+	// anything else first, or nothing at all
+	private bool OvSwingDirtFirst(Attack a, Vector3 pt, Vector3 aim)
+	{
+		if (s_swMask < 0)
+		{
+			s_swMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "terrain", "character", "character_net", "character_ghost", "hitbox", "character_noenv", "vehicle");
+		}
+		float range = a != null ? a.m_attackRange : 1.8f;
+		float height = a != null ? a.m_attackHeight : 1.0f;
+		float angle = a != null ? a.m_attackAngle : 120f;
+		float width = a != null ? a.m_attackRayWidth : 0.2f;
+		float offset = a != null ? a.m_attackOffset : 0f;
+		bool vertical = a == null || a.m_attackType == Attack.AttackType.Vertical;
+		Vector3 jointUp = Vector3.zero;
+		if (a != null && !string.IsNullOrEmpty(a.m_attackOriginJoint) && _character != null && _character.GetVisual() != null)
+		{
+			Transform j = Utils.FindChild(_character.GetVisual().transform, a.m_attackOriginJoint);
+			if (j != null)
+			{
+				jointUp = Vector3.up * (j.position.y - base.transform.position.y);
+			}
+		}
+		Vector3 flat = aim - pt;
+		flat.y = 0f;
+		if (flat.sqrMagnitude < 0.0001f)
+		{
+			flat = base.transform.forward;
+		}
+		Quaternion yaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+		Vector3 fwd = yaw * Vector3.forward;
+		Vector3 o = pt + jointUp + Vector3.up * height + yaw * Vector3.right * offset;
+		float half = angle / 2f;
+		for (float ang = -half; ang <= half; ang += 4f)
+		{
+			Vector3 dir = yaw * ((vertical ? Quaternion.Euler(ang, 0f, 0f) : Quaternion.Euler(0f, -ang, 0f)) * Vector3.forward);
+			int n = width > 0f ? Physics.SphereCastNonAlloc(o, width, dir, s_swHits, Mathf.Max(0f, range - width), s_swMask, QueryTriggerInteraction.Ignore) : Physics.RaycastNonAlloc(o, dir, s_swHits, range, s_swMask, QueryTriggerInteraction.Ignore);
+			Collider first = null;
+			float fd = float.MaxValue;
+			for (int i = 0; i < n; i++)
+			{
+				RaycastHit h = s_swHits[i];
+				if (h.collider == null || h.distance >= fd || h.collider.GetComponentInParent<Character>() != null)
+				{
+					continue;
+				}
+				Vector3 hp = h.point == Vector3.zero && h.distance == 0f ? o : h.point;
+				if (angle < 180f && Vector3.Dot(hp - o, fwd) <= 0f)
+				{
+					continue;
+				}
+				first = h.collider;
+				fd = h.distance;
+			}
+			if (first == null)
+			{
+				continue;
+			}
+			MineRock5 m5 = first.GetComponentInParent<MineRock5>();
+			return m5 == null || _vp == null || !_vp.Rocks.Contains(m5);
+		}
+		return true;
 	}
 
 	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
