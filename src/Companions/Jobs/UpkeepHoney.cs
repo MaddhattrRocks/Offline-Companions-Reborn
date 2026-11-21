@@ -142,7 +142,7 @@ public partial class UpkeepController
 		Vector3 me = base.transform.position;
 		ItemDrop nearest = null;
 		float nd = float.MaxValue;
-		foreach (Collider c in Physics.OverlapSphere(_hiveAt, 3f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.UpkeepHoney145, _hiveAt, 3f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
 			if (d == null || d.m_itemData == null || d.m_itemData.m_shared.m_name != _honey || _dropsBefore.Contains(d.GetInstanceID()) || !bag.CanAddItem(d.m_itemData, 1))

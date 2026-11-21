@@ -128,11 +128,16 @@ public class CompanionAI : BaseAI
 
 	private const float AutoPickupPullSpeed = 15f;
 
+	// 1.5.81: drops whose pickup just failed, by instance id -> time to try again (no endless pull while it can't go in)
+	private readonly Dictionary<int, float> _autoPickupRetry = new Dictionary<int, float>();
+
 	internal static EffectList DrownEffects;
 
 	private CompanionStamina _companionStamina;
 
 	private float _drownDamageTimer;
+
+	private float _drownTeleportAt;
 
 	private float _hazardRecoveryTimer;
 
@@ -342,6 +347,7 @@ public class CompanionAI : BaseAI
 			}
 			PendingDepositContainer = null;
 			PendingDepositHumanoid = null;
+			PendingDepositWeightCap = -1f;
 			_depositQueue.Clear();
 			_depositCount = 0;
 			RestoreFollowOrPatrol();
@@ -594,10 +600,10 @@ public class CompanionAI : BaseAI
 			{
 				return false;
 			}
-			foreach (Collider c in Physics.OverlapSphere(pos, 8f))
+			// 1.5.94: the shared fire list (was an 8 m search through every collider around it, once a second per companion)
+			foreach (Fireplace fp in MHR_World.Fires())
 			{
-				Fireplace fp = c != null ? c.GetComponentInParent<Fireplace>() : null;
-				if (fp != null && fp.IsBurning())
+				if (fp != null && (fp.transform.position - pos).sqrMagnitude <= 81f && fp.IsBurning())
 				{
 					return true;
 				}
@@ -737,6 +743,15 @@ public class CompanionAI : BaseAI
 	internal void SetFormationSlot(int slot)
 	{
 		_formationSlot = slot;
+	}
+
+	// 1.5.89: once hitched it follows you as before, and MHR_Follow walks it (and the cart) straight behind you. It used to
+	// follow the cart itself - stood at its own shafts until something else (a door, the menu) put it back on you, and then
+	// went to its usual spot beside or ahead of you, cart and all. With Follow off it still stays with the cart.
+	internal void FollowAfterHitch(Vagon cart)
+	{
+		GameObject owner = MHR_Owner.Go(this);
+		SetFollowTarget(owner != null && _setup != null && _setup.GetFollow() ? owner : cart.gameObject);
 	}
 
 	internal void SetPendingCart(Vagon vagon, Humanoid humanoid)
@@ -932,12 +947,80 @@ public class CompanionAI : BaseAI
 		SetFollowTarget(null);
 	}
 
-	internal void SetPendingDeposit(Container chest, Humanoid humanoid)
+	// 1.5.95: what a deposit may put in the chest (null = everything it doesn't keep). The Ore job only puts ore away -
+	// its stone never goes in a chest (user)
+	internal System.Predicate<ItemDrop.ItemData> PendingDepositFilter;
+
+	// 1.5.96: > 0 = only put in enough to get the bag down to this weight (the Ore job in a dungeon: "only unload enough
+	// to get under their carry capacity" - the rest goes back to base with it)
+	internal float PendingDepositWeightCap = -1f;
+
+	internal void SetPendingDeposit(Container chest, Humanoid humanoid, System.Predicate<ItemDrop.ItemData> only = null, float weightCap = -1f)
 	{
+		PendingDepositWeightCap = weightCap;
+		PendingDepositFilter = only;
 		PendingDepositContainer = chest;
 		PendingDepositHumanoid = humanoid;
 		_pendingDepositTimeout = 20f;
 		SetFollowTarget(null);
+	}
+
+	// 1.5.98 (W3): its tombstone in water that burns (Ashlands water; tombstones float). Loot it from ground that doesn't
+	// burn within 3 m of it; with no such ground, after a revive (recovering) it says so once and waits by the player,
+	// looking again every second (it may drift ashore) for up to 5 minutes, then the usual "try again in a minute".
+	// Not recovering (the normal pick-up in range), such a tombstone is passed over.
+	private TombStone _hotTomb;
+	private bool _hotTombDry;
+	private Vector3 _hotTombSpot;
+	private float _hotTombCheckAt = -10f;
+	private float _hotTombSince = -1f;
+	private TombStone _hotTombSaidFor;
+
+	// true = the tombstone is in water that burns for this companion; dry = a spot to loot it from (refreshed every second)
+	private bool HotTomb(TombStone tomb, out bool dry, out Vector3 spot)
+	{
+		dry = false;
+		spot = Vector3.zero;
+		Vector3 at = tomb.transform.position;
+		if (!MHR_Heat.HotWaterAt(at) || MHR_Heat.HeatProof(m_character))
+		{
+			return false;
+		}
+		float now = Time.time;
+		if (_hotTomb == tomb && now - _hotTombCheckAt < 1f)
+		{
+			dry = _hotTombDry;
+			spot = _hotTombSpot;
+			return true;
+		}
+		_hotTomb = tomb;
+		_hotTombCheckAt = now;
+		_hotTombDry = false;
+		float best = float.MaxValue;
+		Vector3 me = base.transform.position;
+		for (float r = 1f; r <= 2.8f; r += 0.9f)
+		{
+			for (int i = 0; i < 12; i++)
+			{
+				float a = i * 30f * Mathf.Deg2Rad;
+				Vector3 p = at + new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+				p.y = MHR_Water.GroundAt(p);
+				if (Vector3.Distance(p, at) >= 3f || MHR_Water.DepthAt(p) > 0.05f || MHR_Mover.Lava(p, m_character))
+				{
+					continue;
+				}
+				float d = Vector3.Distance(me, p);
+				if (d < best)
+				{
+					best = d;
+					_hotTombSpot = p;
+					_hotTombDry = true;
+				}
+			}
+		}
+		dry = _hotTombDry;
+		spot = _hotTombSpot;
+		return true;
 	}
 
 	private bool UpdateTombstoneRecovery(float dt)
@@ -970,6 +1053,41 @@ public class CompanionAI : BaseAI
 			}
 			Vector3 position = _pendingTombstone.transform.position;
 			float num = Vector3.Distance(base.transform.position, position);
+			// 1.5.98 (W3): in water that burns - loot from dry ground beside it, or wait by the player
+			bool hotTomb = HotTomb(_pendingTombstone, out bool hotDry, out Vector3 hotSpot);
+			if (hotTomb && !hotDry && num >= 3f)
+			{
+				if (_hotTombSaidFor != _pendingTombstone)
+				{
+					_hotTombSaidFor = _pendingTombstone;
+					_hotTombSince = Time.time;
+					if (_talk != null)
+					{
+						_talk.Say(ModLocalization.Loc("hc_speech_tomb_hot"));
+					}
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Recovery] Its tombstone is in water that burns at " + position.ToString("F1") + " with no dry ground within 3 m - waiting by the player");
+				}
+				if (Time.time - _hotTombSince > 300f)
+				{
+					_hotTombSaidFor = null;
+					_pendingTombstone = null;
+					ClearTombstoneId();
+					RestoreFollowOrPatrol();
+					_tombRecoverSnooze = 60f;
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Recovery] Its tombstone stayed in the burning water for 5 minutes; will try again in a minute");
+					return false;
+				}
+				_tombstoneNavTimeout = Mathf.Max(_tombstoneNavTimeout, 10f);   // waiting isn't failing to get there
+				if (!RecoverWait(dt))
+				{
+					StopMoving();
+				}
+				return true;
+			}
+			if (hotTomb && hotDry && num >= 3f && Vector3.Distance(base.transform.position, hotSpot) < 0.8f)
+			{
+				num = 0f;   // on the dry spot beside it: loot it from here
+			}
 			if (num < 3f)
 			{
 				Container component = _pendingTombstone.GetComponent<Container>();
@@ -1011,7 +1129,14 @@ public class CompanionAI : BaseAI
 				_tombstoneScanTimer = TombstoneScanInterval;
 			}
 			bool run = num > 10f;
-			MHR_Go(dt, position, 2.5f, run, "Tombstone");
+			if (hotTomb && hotDry)
+			{
+				MHR_Go(dt, hotSpot, 0.5f, run, "Tombstone");
+			}
+			else
+			{
+				MHR_Go(dt, position, 2.5f, run, "Tombstone");
+			}
 			return true;
 		}
 		if ((object)_pendingTombstone != null)
@@ -1038,7 +1163,7 @@ public class CompanionAI : BaseAI
 		}
 		// 1.5.45: after a revive, look every second (1.5.44 test: "Took the NPC a while to notice the tombstone")
 		_tombstoneScanTimer = MHR_Recover.IsRecovering(this) ? 1f : TombstoneScanInterval;
-		TombStone[] array = UnityEngine.Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None);
+		List<TombStone> array = MHR_World.Tombstones();   // 1.5.94: shared list, not a scene search
 		foreach (TombStone tombStone in array)
 		{
 			if (tombStone == null)
@@ -1066,6 +1191,11 @@ public class CompanionAI : BaseAI
 				continue;
 			}
 			float num2 = Vector3.Distance(base.transform.position, tombStone.transform.position);
+			// 1.5.98 (W3): the normal pick-up passes over a tombstone in water that burns with no dry ground beside it
+			if (!MHR_Recover.IsRecovering(this) && HotTomb(tombStone, out bool scanDry, out _) && !scanDry)
+			{
+				continue;
+			}
 			// 1.5.44: after a revive (RecoverFirst) at any distance - getting its gear back comes first
 			if (num2 <= ModConfig.TombstoneRecoveryRange.Value || MHR_Recover.IsRecovering(this))
 			{
@@ -1257,6 +1387,16 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "vanilla BaseAI.UpdateAI() false");
 			return false;
 		}
+		// 1.5.98 (swim item 1): drowning runs first, like Player.OnSwimming - no gate below may skip it (swim safety held every
+		// update, so companions in a sunken tower swam for days at 0 stamina and never drowned)
+		UpdateDrowning(dt);
+		MHR_Cart.HitchCheck(this);   // 1.5.97 (C2): a hitch is checked a second later
+		// 1.5.98 (W1b): in water that burns with the first hit close, getting out comes before the stamina swim rule
+		if (MHR_Mover.EscapeHotWater(this))
+		{
+			AIGateDiag.Report(_setup, "HotWater");
+			return true;
+		}
 		if (WaterSafety.Tick(this, dt))
 		{
 			AIGateDiag.Report(_setup, "WaterSafety");
@@ -1303,7 +1443,6 @@ public class CompanionAI : BaseAI
 			AIGateDiag.Report(_setup, "UI open (panel/radial)");
 			return true;
 		}
-		UpdateDrowning(dt);
 		if (UpdateHazardRecovery(dt))
 		{
 			AIGateDiag.Report(_setup, "HazardRecovery");
@@ -1399,7 +1538,8 @@ public class CompanionAI : BaseAI
 						base.transform.rotation = Quaternion.LookRotation(vector3.normalized);
 					}
 					FreezeTimer = 1f;
-					SetFollowTarget(PendingCartAttach.gameObject);
+					FollowAfterHitch(PendingCartAttach);
+					MHR_Cart.NoteHitch(this, PendingCartAttach);   // 1.5.97 (C2)
 					PendingCartAttach.Interact(PendingCartHumanoid, hold: false, alt: false);
 					PendingCartAttach = null;
 					PendingCartHumanoid = null;
@@ -1457,7 +1597,25 @@ public class CompanionAI : BaseAI
 					_depositQueue.RemoveAt(0);
 					Inventory inventory = PendingDepositContainer.GetInventory();
 					Inventory inventory2 = PendingDepositHumanoid?.GetInventory();
-					if (inventory != null && inventory2 != null && inventory2.ContainsItem(item) && inventory.AddItem(item))
+					float over = (PendingDepositWeightCap > 0f && inventory2 != null) ? inventory2.GetTotalWeight() - PendingDepositWeightCap : float.MaxValue;
+					if (over <= 0f)
+					{
+						_depositQueue.Clear();
+					}
+					else if (over != float.MaxValue && inventory != null && inventory2 != null && inventory2.ContainsItem(item) && item.m_stack > 1 && item.m_shared.m_weight > 0f && item.m_shared.m_weight * item.m_stack > over)
+					{
+						// just enough of this stack to get under the cap
+						int n = Mathf.Clamp(Mathf.CeilToInt(over / item.m_shared.m_weight), 1, item.m_stack);
+						ItemDrop.ItemData part = item.Clone();
+						part.m_stack = n;
+						if (inventory.AddItem(part))
+						{
+							inventory2.RemoveItem(item, n);
+							_depositCount++;
+						}
+						_depositQueue.Clear();
+					}
+					else if (inventory != null && inventory2 != null && inventory2.ContainsItem(item) && inventory.AddItem(item))
 					{
 						inventory2.RemoveItem(item);
 						_depositCount++;
@@ -1500,7 +1658,7 @@ public class CompanionAI : BaseAI
 						{
 							foreach (ItemDrop.ItemData allItem in inventory3.GetAllItems())
 							{
-								if (!CompanionInteract.ShouldKeep(allItem, pendingDepositHumanoid))
+								if (!CompanionInteract.ShouldKeep(allItem, pendingDepositHumanoid) && (PendingDepositFilter == null || PendingDepositFilter(allItem)))
 								{
 									_depositQueue.Add(allItem);
 								}
@@ -1786,21 +1944,26 @@ public class CompanionAI : BaseAI
 				DrownEffects.Create(position, base.transform.rotation, null, 1f, -1, ZDOID.None);
 			}
 		}
+		// 1.5.98 (swim item 4): following and down to 10% health while drowning -> next to you (toggle Movement/DrowningTeleport).
+		// Replaces hazard recovery's 6 s timer; the health left gives it time to reach a way out first, like a player's long swim.
+		if ((ModConfig.DrowningTeleport?.Value ?? true) && m_follow != null && _setup != null && _setup.GetFollow() && m_character.GetHealth() <= m_character.GetMaxHealth() * 0.1f && !m_character.IsDead() && Time.time >= _drownTeleportAt)
+		{
+			_drownTeleportAt = Time.time + 10f;   // once per 10 s at most (you swimming too would place it back in the water)
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[WaterSafety] \"" + m_character.m_name + "\" drowning at " + m_character.GetHealth().ToString("F0") + "/" + m_character.GetMaxHealth().ToString("F0") + " health - brought to you");
+			WaterSafety.Clear(m_character);
+			_drownDamageTimer = 0f;
+			TeleportToFollowTarget();
+		}
 	}
 
 	private bool UpdateHazardRecovery(float dt)
 	{
 		bool flag = m_character.GetSEMan().HaveStatusEffect(s_taredHash);
 		bool flag2 = m_character.InLava();
-		bool flag3 = m_character.IsSwimming();
-		bool flag4 = false;
-		string text = null;
-		if (flag3 && _companionStamina != null && _companionStamina.Stamina <= 0f)
-		{
-			flag4 = true;
-			text = "DROWNING(no stamina)";
-		}
-		if (!flag && !flag4 && !flag2)
+		// 1.5.98 (swim item 4): drowning is no longer handled here - swim safety (WaterSafety) steers to a way out, the 10%
+		// health teleport is in UpdateDrowning. This was the original mod's "swim out when drowning", with its own terrain-only
+		// shore search (it looked through walls) and a teleport after 6 s. Tar and lava stay.
+		if (!flag && !flag2)
 		{
 			_hazardRecoveryTimer = 0f;
 			return false;
@@ -1808,7 +1971,7 @@ public class CompanionAI : BaseAI
 		_hazardRecoveryTimer += dt;
 		if (_hazardRecoveryTimer < 0.1f || (int)(_hazardRecoveryTimer * 10f) % 20 == 0)
 		{
-			string text2 = (flag ? "TAR" : (flag2 ? "LAVA" : text));
+			string text2 = (flag ? "TAR" : "LAVA");
 		}
 		if (m_targetCreature != null)
 		{
@@ -1834,7 +1997,7 @@ public class CompanionAI : BaseAI
 				float num3 = Mathf.Max(liquidLevel, 30f);
 				// 1.5.72: not the rim of a drop (user: "a tar pit could have a large drop next to it") - the ground just beyond
 				// the spot isn't far below it, and it isn't in a fire or against spikes
-				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.Lava(new Vector3(vector3.x, solidHeight, vector3.z)) || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
+				bool rim = ZoneSystem.instance.GetSolidHeight(vector3 + vector2 * 1.5f) < solidHeight - 3f || MHR_Mover.FireArea(new Vector3(vector3.x, solidHeight, vector3.z), 0.5f) != null || MHR_Mover.Lava(new Vector3(vector3.x, solidHeight, vector3.z), m_character) || MHR_Mover.SpikeNear(new Vector3(vector3.x, solidHeight, vector3.z), 0.7f) != null;
 				if (solidHeight > num3 && !rim)
 				{
 					float num4 = Vector3.Distance(position, vector3);
@@ -1859,7 +2022,7 @@ public class CompanionAI : BaseAI
 			Vector3 normalized = (m_follow.transform.position - position).normalized;
 			MoveTowards(normalized, run: true);
 		}
-		float num5 = ((flag3 && _companionStamina != null && _companionStamina.Stamina <= 0f) ? 6f : 10f);
+		float num5 = 10f;
 		if (_hazardRecoveryTimer > num5 && m_follow != null && _setup != null && _setup.GetFollow())
 		{
 			TeleportToFollowTarget();
@@ -1915,6 +2078,14 @@ public class CompanionAI : BaseAI
 		{
 			return;
 		}
+		// 1.5.97 (F1, user report): picking things up as it walks past obeys the wheel's Auto Pickup, like going over to
+		// what a kill dropped (MHR_Loot). What its own job produces is picked up by the job itself.
+		ZNetView pickNv = m_nview;
+		ZDO pickZdo = pickNv != null && pickNv.IsValid() ? pickNv.GetZDO() : null;
+		if (pickZdo != null && !pickZdo.GetBool(CompanionSetup.AutoPickupHash, defaultValue: true))
+		{
+			return;
+		}
 		Vector3 vector = base.transform.position + Vector3.up;
 		int num = Physics.OverlapSphereNonAlloc(vector, AutoPickupRange, _autoPickupBuffer, _autoPickupMask);
 		for (int i = 0; i < num; i++)
@@ -1953,14 +2124,37 @@ public class CompanionAI : BaseAI
 				float num2 = inventory.GetTotalWeight() + component.m_itemData.GetWeight();
 				if (!(num2 > CompanionTierData.CarryLimit(this)))
 				{
-					float num3 = Vector3.Distance(component.transform.position, vector);
-					if (num3 < 0.3f)
+					int id = component.GetInstanceID();
+					if (_autoPickupRetry.TryGetValue(id, out float retryAt) && Time.time < retryAt)
 					{
-						humanoid.Pickup(component.gameObject, autoequip: false, autoPickupDelay: false);
+						continue;
+					}
+					// 1.5.81: the game pulls a drop to the player 15 m/s every physics step (0.02 s = 0.3 m, the same as its 0.3 m
+					// pickup distance), but the AI ticks every 0.05 s, so each pull moved the drop 0.75 m and it could jump back and
+					// forth across the companion without ever landing within 0.3 m - items circling it (bug report: "the items spin
+					// around them like a protective shield"). Now it's picked up once the next pull would reach the companion.
+					float num3 = Vector3.Distance(component.transform.position, vector);
+					float step = AutoPickupPullSpeed * dt;
+					if (num3 < 0.3f || num3 <= step)
+					{
+						if (humanoid.Pickup(component.gameObject, autoequip: false, autoPickupDelay: false))
+						{
+							_autoPickupRetry.Remove(id);
+						}
+						else
+						{
+							// never keep a drop circling that won't go in: leave it on the ground for 5 s
+							if (_autoPickupRetry.Count > 64)
+							{
+								_autoPickupRetry.Clear();
+							}
+							_autoPickupRetry[id] = Time.time + 5f;
+							if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[AutoPickup] Couldn't pick up \"" + text + "\" x" + component.m_itemData.m_stack + " - leaving it 5 s");
+						}
 						continue;
 					}
 					Vector3 normalized = (vector - component.transform.position).normalized;
-					component.transform.position += normalized * 15f * dt;
+					component.transform.position += normalized * step;
 				}
 			}
 		}
@@ -2023,6 +2217,8 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	private float _airWarpSaidAt;   // T3: the "no ground under you" line, once per 10 s
+
 	internal void TeleportToFollowTarget()
 	{
 		if (m_follow == null)
@@ -2041,6 +2237,17 @@ public class CompanionAI : BaseAI
 			vector.Normalize();
 		}
 		Vector3 position2 = MHR_SafeSpotNear(position, vector);
+		// T3 (test of ea18287: John flew back from his bed about 60 m up; each warp put them beside him in the air - falls of
+		// 43-64 m): only onto ground - none within 3 m under the spot (the player is in the air): no warp, it keeps walking
+		if (!Physics.Raycast(position2 + Vector3.up * 0.5f, Vector3.down, 3.5f, LayerMask.GetMask("Default", "static_solid", "terrain", "piece", "vehicle"), QueryTriggerInteraction.Ignore))
+		{
+			if (CompanionsPlugin.LogDetailed && Time.time >= _airWarpSaidAt)
+			{
+				_airWarpSaidAt = Time.time + 10f;
+				CompanionsPlugin.Log.LogInfo($"[Follow] No warp to you - no ground within 3 m under the spot by you at {position2:F1} (you're in the air)");
+			}
+			return;
+		}
 		base.transform.position = position2;
 		Rigidbody body = _body;
 		if (body != null)
@@ -2080,7 +2287,7 @@ public class CompanionAI : BaseAI
 					continue;
 				}
 				// 1.5.72: and dry, not in a fire or against spikes
-				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null || MHR_Mover.Lava(hit.point))
+				if (MHR_Water.DepthAt(hit.point) > 0.4f || MHR_Mover.FireArea(hit.point, 0.5f) != null || MHR_Mover.SpikeNear(hit.point, 0.7f) != null || MHR_Mover.Burns(hit.point))
 				{
 					continue;
 				}

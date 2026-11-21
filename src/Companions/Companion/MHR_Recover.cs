@@ -312,7 +312,7 @@ internal static class MHR_Recover
 		else
 		{
 			Character ch = c.GetComponent<Character>();
-			foreach (TombStone t in Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None))
+			foreach (TombStone t in MHR_World.Tombstones())   // 1.5.94
 			{
 				ZDO tz = t?.GetComponent<ZNetView>()?.GetZDO();
 				if (tz != null && CompanionAI.MHR_IsOwnGrave(tz, me, ch))

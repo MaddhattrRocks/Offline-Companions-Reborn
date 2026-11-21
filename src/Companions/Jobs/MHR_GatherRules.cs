@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Companions
 {
     // ---- 1.4.64: what the gather jobs may take, how much, and staying safe around falling trees ----
-    public static class MHR_GatherRules
+    public static partial class MHR_GatherRules
     {
         class Per
         {
@@ -17,7 +17,27 @@ namespace Companions
             public float DodgeUntil; public Vector3 DodgePoint;
             public int ApproachFor; public Vector3 ApproachOffset; public bool ApproachHas;
             public bool TooHeavy; public float LastHeavyCall, NextDropOffCheck, NextHeavySpeak;
-            public bool PileActive; public float PileUntil; public Vector3 PilePoint; public bool PileHas; public Vector3 PileSpot;
+            public bool PileActive; public float PileUntil; public Vector3 PilePoint;
+            public float VeinTossAt = -100f; public string VeinTossItem;   // 1.5.98 (G8): the last toss on a vein (the same item again within 5 s = it didn't help: skipped)
+            // 1.5.95: Ore job yard - what the trip is for, where the ore goes, the stone pile being built
+            public YardTrip Trip; public bool OreHas; public Vector3 OreSpot; public Vector3 YardFor;
+            public bool BuildHas; public Vector3 BuildSpot; public Quaternion BuildRot; public float NextAct; public bool Arrived;
+            public float NextStoneCheck, NoBuildUntil, NextNoBuildLog;
+            // 1.5.96: the hole a popped vein left (stone piles go in it), ore due after a vein, the next toss
+            public bool VoidHas; public Vector3 VoidAt; public float VoidUntil; public bool OreDue; public float NextToss;
+            // D4: the popped vein's pit ground, every 2 m (stone piles go anywhere on it the game allows)
+            public readonly List<Vector3> VoidSpots = new List<Vector3>();
+            // 1.5.97: what the pile or toss is of (Stone or Wood), or the other junk (item G)
+            public string PileItem = "Stone"; public bool TossJunk; public float NoJunkUntil;
+            // pop test E1: Stone job over what it can carry - stone tossed only until it's at or under it
+            public bool TossToCap; public float NoCapTossUntil;
+            // pop test E2: a pile was left because it would take it over what it can carry
+            public bool CapFull; public float NextCapLog;
+            // 1.5.98 FF3 / Q2: the ore trip is to the vein's ore dump; the ore goes to storage once off the vein; carrying the
+            // ore dump to storage after a pop
+            public bool PitDump, OreStore, Collect, CollectGot; public Vector3 CollectAt; public float CollectWalkUntil;
+            // T3: the chest by the vein the ore trip (90% of what it can carry) is for - used even if it is over 20 m from where it gets out
+            public Container OreChest; public bool OreTrip; public Vector3 OreTripAt; public float OreTripR;   // W5: the 90% trip's pit (its centre and trench radius)
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();
@@ -178,7 +198,7 @@ namespace Companions
             if (mode == 3)
             {
                 Humanoid sh = h.GetComponent<Humanoid>();
-                if (sh != null && sh.GetInventory() != null && CountIn(sh.GetInventory(), "Stone") >= 50 && StartPile(h)) return null;
+                if (sh != null && sh.GetInventory() != null && StoneDue(h, true) && StartPile(h)) return null;
             }
             Per p = P(h);
             p.LimitRejects = 0; p.OtherRejects = 0; p.NearBaseRejects = 0; p.AtLimit.Clear();
@@ -288,18 +308,27 @@ namespace Companions
             catch (Exception e) { Warn("AllowLoose: " + e.Message); return false; }
         }
 
+        internal static string DropName(ItemDrop drop)
+        {
+            if (drop == null || drop.m_itemData == null) return "";
+            return drop.m_itemData.m_dropPrefab != null ? drop.m_itemData.m_dropPrefab.name : drop.gameObject.name.Replace("(Clone)", "");
+        }
+
         public static bool WantDrop(HarvestController h, ItemDrop drop)
         {
             try
             {
                 if (drop == null || drop.m_itemData == null) return true;
-                if (!drop.m_autoPickup) return false;           // junk he dropped, stone piles
                 int mode = Mode(h);
+                // 1.5.96: the Stone job picks up dropped stone on purpose (like a player pressing E), tossed or not; other
+                // dropped things (ore, junk) stay where they are
+                if (!drop.m_autoPickup && !(mode == 2 && DropName(drop) == "Stone")) return false;           // junk he dropped, stone piles
                 if (mode < 1 || mode > 3) return true;
                 MHR_List list = Parse(mode);
                 if (list == null) return true;
                 string name = drop.m_itemData.m_dropPrefab != null ? drop.m_itemData.m_dropPrefab.name : drop.gameObject.name.Replace("(Clone)", "");
                 if (mode == 3 && name == "Stone") return true;   // 1.4.73: cleared up into a pile out of the way
+                if (mode == 3 && name == "Wood" && h.OvWantsWood) return true;   // 1.5.98 Z4: wood for a ladder it is short of
                 return list.Allows(name, MHR_List.Local(drop.m_itemData.m_shared.m_name));
             }
             catch { return true; }
@@ -316,8 +345,10 @@ namespace Companions
                 if (inv == null) return false;
                 CompanionSetup cs = h.GetComponent<CompanionSetup>();
                 Per p = P(h);
-                if (Mode(h) == 3 && StartPile(h)) return false;
-                if (h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position) != null)
+                if (Mode(h) == 3 && StoneDue(h, true) && StartPile(h)) return false;
+                // 1.5.97 (F2): in the Ore job a load only goes to a chest at home - a chest by the vein is for ore
+                bool oreAway = Mode(h) == 3 && !(cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs));
+                if (!oreAway && h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position) != null)
                 {
                     if (!p.PackFull) if (CompanionsPlugin.LogNormal) Info("Pack is full - taking a load to the chest");
                     p.PackFull = true;           // IsOverweight() now reports true until a slot frees up
@@ -370,6 +401,30 @@ namespace Companions
             return true;
         }
 
+        // pop test E2: it left a pile that would take it over what it can carry. With stone in the bag that is "too heavy"
+        // (the load goes to the chest as at the weight limit); with none there is nothing to take, so it only leaves it.
+        public static void NoteCapSkip(HarvestController h, float w, float add, float limit)
+        {
+            Per p = P(h);
+            Humanoid hum = h.GetComponent<Humanoid>();
+            bool stone = hum != null && hum.GetInventory() != null && CountIn(hum.GetInventory(), "Stone") > 0;
+            if (Time.time >= p.NextCapLog)
+            {
+                p.NextCapLog = Time.time + 60f;
+                if (CompanionsPlugin.LogNormal) Info("Leaving a pile that would take it over what it can carry (" + w.ToString("F0") + " + " + add.ToString("F0") + " of " + limit.ToString("F0") + ")" + (stone ? " - taking its load to the chest first" : ""));
+            }
+            if (stone) p.CapFull = true;
+        }
+
+        public static bool CapFull(HarvestController h)
+        {
+            Per p;
+            if (!s_per.TryGetValue(h.GetInstanceID(), out p) || !p.CapFull) return false;
+            Humanoid hum = h.GetComponent<Humanoid>();
+            if (Mode(h) != 2 || hum == null || hum.GetInventory() == null || CountIn(hum.GetInventory(), "Stone") <= 0) { p.CapFull = false; return false; }
+            return true;
+        }
+
         public static bool PackFull(HarvestController h)
         {
             Per p;
@@ -410,10 +465,26 @@ namespace Companions
                 CompanionAI pai = h.GetComponent<CompanionAI>();
                 if (pai == null || pai.IsInCombat) return false;
                 float d = new Vector2(h.transform.position.x - p.PilePoint.x, h.transform.position.z - p.PilePoint.z).magnitude;
+                // 1.5.96: tossing stone off to one side where it stands (no walking)
+                if (p.Trip == YardTrip.Toss)
+                {
+                    if (TossTick(h, p, pai)) return true;
+                    p.PileActive = false;
+                    h.ResetToIdle();
+                    return true;
+                }
+                if (p.Trip == YardTrip.Build && (p.Arrived || d <= 1.2f))
+                {
+                    if (!p.Arrived) { p.Arrived = true; p.PileUntil = Time.time + 30f; pai.StopMoving(); }
+                    if (BuildTick(h, p, pai)) return true;
+                    p.PileActive = false;
+                    h.ResetToIdle();
+                    return true;
+                }
                 if (d <= 1.5f || Time.time >= p.PileUntil)
                 {
                     pai.StopMoving();
-                    DropStone(h, p);
+                    if (p.Trip == YardTrip.Ore) DropOre(h, p);
                     p.PileActive = false;
                     h.ResetToIdle();
                     return true;
@@ -440,13 +511,22 @@ namespace Companions
                 if (now - p.LastHeavyCall > 1.5f) { p.TooHeavy = false; p.NextDropOffCheck = 0f; }
                 p.LastHeavyCall = now;
                 if (p.PileActive) return;
-                if (Mode(h) == 3 && StartPile(h)) return;
+                // pop test E1: Stone job over what it can carry - some of its stone goes off to one side first
+                if (Mode(h) == 2 && StartCapToss(h, p)) return;
+                if (Mode(h) == 3 && StoneDue(h, true) && StartPile(h)) return;
                 CompanionAI ai = h.GetComponent<CompanionAI>();
                 Humanoid hum = h.GetComponent<Humanoid>();
-                if (now >= p.NextDropOffCheck)
+                // 1.5.95: Ore job - the ore into a chest within 20 m, else all of it on one spot by the vein (user)
+                if (Mode(h) == 3 && ai != null && hum != null && OreLoad(h, p, ai, hum)) return;
+                // 1.5.97 (item G): the other junk, the heaviest first, until it's under the limit
+                if (Mode(h) == 3 && ai != null && hum != null && !InDungeon(h) && StartJunkToss(h, p, hum)) return;
+                // 1.5.97 (F2): in the Ore job its whole load only goes into a chest at home. Away from home it keeps what's
+                // left (a chest by the vein is for ore), pauses and says it needs another chest.
+                CompanionSetup cs = h.GetComponent<CompanionSetup>();
+                bool oreAway = Mode(h) == 3 && !(cs != null && cs.HasHomePosition() && MHR_ToolKeeper.AtHome(cs));
+                if (!oreAway && now >= p.NextDropOffCheck)
                 {
                     p.NextDropOffCheck = now + 5f;
-                    CompanionSetup cs = h.GetComponent<CompanionSetup>();
                     Container c = h.FindNearestChest(cs != null && cs.HasHomePosition() ? cs.GetHomePosition() : h.transform.position);
                     if (c != null && ai != null && hum != null)
                     {
@@ -461,7 +541,7 @@ namespace Companions
                 if (!p.TooHeavy)
                 {
                     p.TooHeavy = true;
-                    if (CompanionsPlugin.LogNormal) Info("Too heavy and nowhere to put things - pausing the job until there's room");
+                    if (CompanionsPlugin.LogNormal) Info(oreAway ? "Too heavy with the stone, wood, ore and junk dealt with - keeping the rest (a chest by the vein is for ore) and pausing the job until there's room" : "Too heavy and nowhere to put things - pausing the job until there's room");
                     h.ResetToIdle();
                     h.RestoreLoadout();
                 }
@@ -469,7 +549,7 @@ namespace Companions
                 {
                     p.NextHeavySpeak = now + 60f;
                     CompanionTalk t = h.GetComponent<CompanionTalk>();
-                    if (t != null) t.SayProblem("overweight", ModLocalization.Loc("hc_speech_overweight"));
+                    if (t != null) t.SayProblem(oreAway ? "pack_full_chest" : "overweight", ModLocalization.Loc(oreAway ? "hc_speech_pack_full_chest" : "hc_speech_overweight"));
                 }
             }
             catch (Exception e) { Warn("HandleOverweight: " + e.Message); }
@@ -477,35 +557,21 @@ namespace Companions
 
         // Replaces HarvestController.FindNearestChest. Never tombstones. Near home: chests around home. Away from home:
         // chests, carts and ships close to the companion (an outpost, the cart you brought, your ship).
-        public static Container DropOff(HarvestController h, Vector3 searchCenter)
+        // 1.5.95: nearRadius > 0 - only chests (carts, ships) that close to the companion (the Ore job's 20 m)
+        public static Container DropOff(HarvestController h, Vector3 searchCenter, float nearRadius = -1f)
         {
             try
             {
                 CompanionSetup cs = h.GetComponent<CompanionSetup>();
                 Vector3 me = h.transform.position;
-                bool atHome = cs != null && cs.HasHomePosition() && MHR_ToolKeeper.NearHome(cs);
-                List<Container> list = atHome ? MHR_Chests.Near(cs.GetHomePosition(), 50f) : MHR_Chests.Near(me, 30f);
+                bool atHome = nearRadius <= 0f && cs != null && cs.HasHomePosition() && MHR_ToolKeeper.NearHome(cs);
+                List<Container> list = nearRadius > 0f ? MHR_Chests.Near(me, nearRadius) : atHome ? MHR_Chests.Near(cs.GetHomePosition(), 50f) : MHR_Chests.Near(me, 30f);
                 Container best = null; float bd = float.MaxValue;
                 for (int i = 0; i < list.Count; i++)
                 {
                     Container c = list[i];
-                    if (c == null || c.GetInventory() == null || !c.GetInventory().HaveEmptySlot()) continue;
-                    if (c.GetComponent<TombStone>() != null || c.GetComponentInParent<TombStone>() != null) continue;
-                    if (c.GetComponentInParent<Character>() != null) continue;
-                    // 1.5.70: a chest, cart or ship a player built - not a world chest in a hut or camp
-                    Piece built = c.GetComponentInParent<Piece>();
-                    if (built == null || !built.IsPlacedByPlayer()) continue;
+                    if (!UsableChest(h, c, atHome)) continue;
                     bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
-                    if (mobile && atHome) continue;                   // at home, chests only
-                    if (MHR_Chests.InUse(c)) continue;   // 1.4.153: also open on another player's game
-                    if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) continue;
-                    ZNetView nv = c.GetComponent<ZNetView>();
-                    if (nv == null || !nv.IsValid()) continue;
-                    if (c.m_privacy == Container.PrivacySetting.Private)
-                    {
-                        Piece pc = c.GetComponent<Piece>();
-                        if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) continue;
-                    }
                     float d = Vector3.Distance(me, c.transform.position);
                     if (d >= bd) continue;
                     if (!mobile && !MHR_Chests.CanReach(me, c)) continue;
@@ -516,6 +582,33 @@ namespace Companions
             catch (Exception e) { Warn("DropOff: " + e.Message); return null; }
         }
 
+        // 1.5.96: the checks DropOff makes on each chest (shared with the Ore job's dungeon-entrance chest)
+        internal static bool UsableChest(HarvestController h, Container c, bool atHome = false) => ChestNo(h, c, atHome) == null;
+
+        // K9: the same checks, saying which one failed (null = usable)
+        internal static string ChestNo(HarvestController h, Container c, bool atHome = false)
+        {
+            if (c == null || c.GetInventory() == null) return "no inventory";
+            if (!c.GetInventory().HaveEmptySlot()) return "full";
+            if (c.GetComponent<TombStone>() != null || c.GetComponentInParent<TombStone>() != null) return "a tombstone";
+            if (c.GetComponentInParent<Character>() != null) return "on a creature";
+            // 1.5.70: a chest, cart or ship a player built - not a world chest in a hut or camp
+            Piece built = c.GetComponentInParent<Piece>();
+            if (built == null || !built.IsPlacedByPlayer()) return "not built by a player";
+            bool mobile = c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null;
+            if (mobile && atHome) return "a cart or ship (at home, chests only)";
+            if (MHR_Chests.InUse(c)) return "open (in use)";   // 1.4.153: also open on another player's game
+            if (!PrivateArea.CheckAccess(c.transform.position, 0f, flash: false)) return "inside a ward it has no access to";
+            ZNetView nv = c.GetComponent<ZNetView>();
+            if (nv == null || !nv.IsValid()) return "not loaded";
+            if (c.m_privacy == Container.PrivacySetting.Private)
+            {
+                Piece pc = c.GetComponent<Piece>();
+                if (pc == null || pc.GetCreator() != MHR_Owner.CreatorId(h)) return "private to someone else";
+            }
+            return null;
+        }
+
         // Replaces HarvestController.TryFindNearbyLog: the nearest log near the fallen tree, and only if the gather
         // list / limits allow it.
         public static GameObject NearestLog(HarvestController h, Vector3 center)
@@ -524,7 +617,7 @@ namespace Companions
             {
                 int mode = Mode(h);
                 GameObject best = null; float bd = float.MaxValue;
-                Collider[] cols = Physics.OverlapSphere(center, 12f);
+                var cols = MHR_Phys.Sphere(ref MHR_Phys.GatherRules527, center, 12f);
                 HashSet<int> seen = new HashSet<int>();
                 for (int i = 0; i < cols.Length; i++)
                 {
@@ -553,52 +646,6 @@ namespace Companions
         public static void BlacklistTarget(HarvestController h)
         {
             try { if (h._target != null && h._blacklist != null) h._blacklist[h._target.GetInstanceID()] = Time.time; } catch { }
-        }
-
-        // Ore mode: put the stone in a pile a few meters away instead of hauling it home.
-        public static bool StartPile(HarvestController h)
-        {
-            Per p = P(h);
-            if (p.PileActive) return true;
-            Humanoid hum = h.GetComponent<Humanoid>();
-            if (hum == null || hum.GetInventory() == null || CountIn(hum.GetInventory(), "Stone") <= 0) return false;
-            Vector3 me = h.transform.position;
-            if (!p.PileHas || Vector3.Distance(me, p.PileSpot) > 25f)
-            {
-                Vector3 ore = h._attackNodePos != Vector3.zero ? h._attackNodePos : me;
-                Vector3 dir = me - ore; dir.y = 0f;
-                if (dir.sqrMagnitude < 0.25f) dir = h.transform.right;
-                dir.Normalize();
-                dir = Quaternion.Euler(0f, 50f, 0f) * dir;       // off to the side, not on the way back to the rock
-                Vector3 spot = ore + dir * 6f;
-                spot.y = Ground(spot);
-                p.PileSpot = spot; p.PileHas = true;
-            }
-            p.PilePoint = p.PileSpot; p.PileActive = true; p.PileUntil = Time.time + 25f;
-            if (CompanionsPlugin.LogNormal) Info("Taking the stone to a pile out of the way");
-            return true;
-        }
-        static void DropStone(HarvestController h, Per p)
-        {
-            Humanoid hum = h.GetComponent<Humanoid>();
-            if (hum == null || hum.GetInventory() == null) return;
-            Inventory inv = hum.GetInventory();
-            List<ItemDrop.ItemData> items = new List<ItemDrop.ItemData>(inv.GetAllItems());
-            int n = 0;
-            for (int i = 0; i < items.Count; i++)
-            {
-                ItemDrop.ItemData it = items[i];
-                if (it == null || it.m_dropPrefab == null || it.m_dropPrefab.name != "Stone" || it.m_equipped) continue;
-                Vector3 at = p.PilePoint + Vector3.up * 0.4f + new Vector3(UnityEngine.Random.Range(-0.3f, 0.3f), 0f, UnityEngine.Random.Range(-0.3f, 0.3f));
-                int count = it.m_stack;
-                ItemDrop d = ItemDrop.DropItem(it, count, at, Quaternion.identity);
-                if (d == null) continue;
-                d.m_autoPickup = false;      // stays in the pile until someone picks it up on purpose
-                inv.RemoveItem(it);
-                n += count;
-            }
-            P(h).PackFull = false;
-            if (n > 0) if (CompanionsPlugin.LogNormal) Info("Piled " + n + " stone");
         }
 
         // Approach trees and logs from the uphill side when the ground slopes.

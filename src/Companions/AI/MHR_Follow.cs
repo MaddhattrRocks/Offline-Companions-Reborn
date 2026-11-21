@@ -28,6 +28,11 @@ namespace Companions
             public bool IdleSeat;   // 1.4.143: seated by IdleController, which decides when to get up
             // 1.5.2: walking the player's own path up/down (ladders in a narrow tower)
             public bool OnPath, PathApproach; public int PathIdx; public float PathProgressAt, NoPathUntil, PathJumpAt, NextPathLog;
+            public float HoleSince = -1f;   // 1.5.97 (W9): in a hole with no full route to the player since
+            public int FallCount; public float FallAt;   // 1.5.97: falls off the player's path, and when the first of them was
+            public bool Cart; public float CartDist;   // 1.5.89: pulling a cart, and how far from the player it is
+            public Vagon LastCart;                     // 1.5.91: the cart it was pulling, to tell why it came loose
+            public Vagon Loose; public string LooseWhy; public float LooseUntil, LooseSteadySince = -1f, CartLog;   // 1.5.92: came loose, waiting to see if it's safe to take again
         }
         // one per followed player, shared by all companions following them
         class T
@@ -184,6 +189,23 @@ namespace Companions
                 return;
             }
 
+            // 1.5.89: pulling a cart: straight behind the player, no wander, no spot off to one side
+            if (CartFollow(ai, s, t, c, player, me, pp, distP, maxD, tid, now, dt)) return;
+
+            // 1.5.94: a cart someone pulls is on top of it (or about to be): step out of its way first, moving or standing
+            Vector3 away;
+            if (MHR_Cart.InTheWay(c, me, 1f, out away))
+            {
+                s.HasIdle = false; s.IdleMoving = false; s.Moving = true;
+                if (now - s.CartLog > 3f) { s.CartLog = now; Dbg(c.m_name + " steps out of the way of a cart, to " + away.ToString("F1")); }
+                MHR_Mover.Go(ai, dt, away, 0.3f, true, MHR_Mover.FollowTag, MHR_Mover.SpeedJog);
+                return;
+            }
+
+            // 1.5.97 (W9): a follower (Follow mode only, not a job) in a hole - the ground 3 m out at least 1.5 m above its
+            // feet all round - whose route to the player has been partial for 5 s goes straight to the cliff climb
+            if (FollowHole(ai, s, c, me, pp, now)) return;
+
             // 1.5.2: on another floor and the route planner has no way there: go the way the player went
             if (WalkPlayerPath(ai, s, t, c, me, pp, now, dt, offLevel)) return;
 
@@ -202,7 +224,8 @@ namespace Companions
                     else
                     {
                         Vector3 g;
-                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g)) PickSpot(ai, s, t, pp, maxD, false, 0f);
+                        // 1.5.91: and when a cart someone pulls is on it now
+                        if (!Ground(SpotXZ(s, t, pp), pp, out g) || !Los(pp, g) || MHR_Cart.InCartWay(g, CartSpotPad, c)) PickSpot(ai, s, t, pp, maxD, false, 0f);
                         else s.SpotDy = g.y - pp.y;
                     }
                 }
@@ -231,6 +254,7 @@ namespace Companions
                     int pace = Pace(player, dSpot, distP, maxD);
                     // ahead of its spot: ease off a step instead of stopping
                     if (!s.Trail && dSpot < 2f && Vector3.Dot(me - goal, t.Travel) > 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+                    // 1.5.92: round a cart, like a player - 1.5.97 (C9): now done in MHR_Mover.Go for every walk
                     MHR_Mover.Go(ai, dt, lead, 0.3f, true, MHR_Mover.FollowTag, pace);
                     // 1.4.79: no route to its spot (other side of a wall, across water): walk the player's path instead
                     if (!s.Trail && MHR_Mover.RoutePartial(ai) && distP > 3f) { s.Trail = true; s.NextPick = now + 4f; s.NextCheck = now + 4f; }
@@ -295,7 +319,8 @@ namespace Companions
             }
             if (s.IdleMoving)
             {
-                if (MHR_Mover.Go(ai, dt, s.IdleGoal, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))
+                Vector3 idleAim = s.IdleGoal;   // 1.5.97 (C9): round carts in MHR_Mover.Go
+                if (MHR_Mover.Go(ai, dt, idleAim, 0.6f, false, MHR_Mover.FollowTag, MHR_Mover.SpeedWalk) || MHR_Mover.GaveUp(ai))
                 {
                     s.IdleMoving = false; s.NextIdle = now + UnityEngine.Random.Range(6f, 14f);
                     MHR_Mover.Release(ai);
@@ -318,6 +343,32 @@ namespace Companions
         // tight tower of short ladders and small floors, so when the companion is on another floor and the route planner has no
         // way there, it walks the player's recorded steps: same spots, same direction into each ladder (which is what makes a
         // ladder lift you), a jump where the next step is up and walking hasn't lifted it. ----------
+        static bool FollowHole(CompanionAI ai, S s, Character c, Vector3 me, Vector3 pp, float now)
+        {
+            if (MHR_Mover.ForcedClimbing(ai))
+            {
+                s.HoleSince = -1f;
+                MHR_Mover.Go(ai, Time.deltaTime, pp, 1.0f, true, MHR_Mover.FollowTag, MHR_Mover.SpeedJog);   // the climb runs inside Go
+                return true;
+            }
+            ZDO zdo = ai.GetComponent<ZNetView>()?.GetZDO();
+            bool followMode = zdo == null || zdo.GetInt(CompanionSetup.ActionModeHash) == 0;
+            if (!followMode || c.IsSwimming() || !c.IsOnGround() || pp.y < me.y + 1.5f || !MHR_Mover.RoutePartial(ai) || !MHR_Mover.InHole(me))
+            {
+                s.HoleSince = -1f;
+                return false;
+            }
+            if (s.HoleSince < 0f) { s.HoleSince = now; return false; }
+            if (now - s.HoleSince < 5f) return false;
+            s.HoleSince = -1f;
+            if (MHR_Mover.ClimbOutNow(ai, pp, MHR_Mover.FollowTag))
+            {
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " is in a hole with no way to you for 5 s - climbing out");
+                return true;
+            }
+            return false;
+        }
+
         static bool WalkPlayerPath(CompanionAI ai, S s, T t, Character c, Vector3 me, Vector3 pp, float now, float dt, bool offLevel)
         {
             List<Vector3> st = t.Steps;
@@ -332,6 +383,7 @@ namespace Companions
             if (!s.OnPath)
             {
                 if (now < s.NoPathUntil) return false;
+                if (MHR_Mover.ForcedClimbing(ai)) return false;   // 1.5.97: climbing out of the hole it fell into
                 // only when the planner can't do it (a full route - stairs, a ramp - is better than retracing)
                 if (!MHR_Mover.RoutePartial(ai) && !MHR_Mover.GaveUp(ai) && !MHR_Mover.OnTheWayUp(ai)) return false;
                 if (MHR_Mover.OnLadderChain(ai)) return false;   // 1.5.3: already climbing a planned chain of ladders
@@ -375,7 +427,25 @@ namespace Companions
             for (int j = Mathf.Min(s.PathIdx + 10, st.Count - 1); j > s.PathIdx; j--)
                 if (Flat(me, st[j]) < 0.6f && Mathf.Abs(me.y - st[j].y) < 0.8f) { s.PathIdx = j; s.PathProgressAt = now; break; }
             Vector3 next = st[s.PathIdx];
-            if (me.y < next.y - 2.5f && c.IsOnGround()) { EndPath(s, "fell off your path"); s.NoPathUntil = now + 3f; return false; }
+            if (me.y < next.y - 2.5f && c.IsOnGround())
+            {
+                EndPath(s, "fell off your path");
+                s.NoPathUntil = now + 3f;
+                // 1.5.97 (plan T8): the second fall within 30 s, in a hole (the ground 3 m out at least 1.5 m above its feet all
+                // round): straight to the cliff climb rather than your path again
+                if (s.FallCount == 0 || now - s.FallAt > 30f) { s.FallCount = 0; s.FallAt = now; }
+                s.FallCount++;
+                if (s.FallCount >= 2 && MHR_Mover.InHole(me))
+                {
+                    s.FallCount = 0;
+                    if (MHR_Mover.ClimbOutNow(ai, pp, MHR_Mover.FollowTag))
+                    {
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " fell off your path twice in a hole - climbing out instead");
+                    }
+                    else if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Follow] " + c.m_name + " fell off your path twice in a hole and found no way to climb out - trying the usual ways");
+                }
+                return false;
+            }
             if (now - s.PathProgressAt > 6f) { EndPath(s, "stuck on your path at " + next.ToString("F1")); s.NoPathUntil = now + 15f; return false; }
             Vector3 dir = next - me; dir.y = 0f;
             if (dir.sqrMagnitude < 0.04f && s.PathIdx < st.Count - 1) { dir = st[s.PathIdx + 1] - next; dir.y = 0f; }
@@ -394,7 +464,7 @@ namespace Companions
                     return false;
                 }
             }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            MHR_Mover.Face(ai, dir);   // 1.5.94: turn like a player, not in one frame
             c.SetWalk(false);
             ai.MoveTowards(dir, false);
             // the next step is up and walking at it hasn't lifted us: jump, as the player would
@@ -446,6 +516,127 @@ namespace Companions
         }
 
         // walk while the player walks, run while they run, a step faster to close a gap, run when far behind
+        // ---------- 1.5.89: pulling a cart ----------
+        // (user: "The companion seems to have a hard time with a cart when the player is also using a cart. Also when using
+        // a cart the companion should follow the player directly rather than using the wander or picking a location to one
+        // side.") The spots beside / ahead of the player put its cart across the player's cart (or in front of it), and the
+        // idle shuffle dragged the cart about. Now it walks the player's own path, a cart's length behind the player's cart
+        // (or 2.5 m behind the player), further back for each companion pulling a cart ahead of it, and waits there.
+        static bool CartFollow(CompanionAI ai, S s, T t, Character c, Player player, Vector3 me, Vector3 pp, float distP, float maxD, int tid, float now, float dt)
+        {
+            Vagon mine = MHR_Cart.Pulled(c);
+            Vagon theirs = MHR_Cart.Pulled(player);
+            if (mine == null)
+            {
+                if (s.Cart)
+                {
+                    s.Cart = false; s.HasSpot = false; s.HasIdle = false;
+                    s.LooseWhy = MHR_Cart.WhyLoose(s.LastCart, c);
+                    s.Loose = s.LastCart; s.LastCart = null; s.LooseUntil = now + 4f; s.LooseSteadySince = -1f;
+                    Dbg(c.m_name + " let go of the cart (" + s.LooseWhy + ")");
+                }
+                // 1.5.92: came loose without an order: take it again only when it's safe; stand by up to 3 s for the cart to
+                // stop rolling, otherwise leave it and say why
+                // 1.5.94: stricter - level, and still for a whole second; not after a second loss within 30 s; and when it
+                // leaves the cart it says so, like a job that stops
+                if (s.Loose != null)
+                {
+                    bool wait;
+                    string no = MHR_Cart.NotSafeToRehitch(ai, c, s.Loose, out wait) ?? MHR_Cart.TooManyLosses(c);
+                    if (no == null)
+                    {
+                        if (s.LooseSteadySince < 0f) s.LooseSteadySince = now;
+                        if (now - s.LooseSteadySince >= 1f)
+                        {
+                            Vagon v = s.Loose; s.Loose = null;
+                            if (MHR_Cart.Rehitch(ai, c, v, s.LooseWhy)) return true;
+                            return false;
+                        }
+                        if (now < s.LooseUntil) { ai.StopMoving(); return true; }
+                        no = "the cart didn't stay still";
+                    }
+                    else
+                    {
+                        s.LooseSteadySince = -1f;
+                        if (wait && now < s.LooseUntil) { ai.StopMoving(); return true; }
+                    }
+                    if (s.LooseWhy != "the cart was used")
+                    {
+                        if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Cart] " + c.m_name + "'s cart came loose (" + s.LooseWhy + ") - leaving it: " + no);
+                        ai.GetComponent<CompanionTalk>()?.Speak(ModLocalization.LocFmt("hc_speech_cart_left", no), CompanionTalk.Priority.Event, "cart:left");
+                    }
+                    s.Loose = null;
+                }
+                return false;
+            }
+            s.Loose = null;
+            s.LastCart = mine;
+            if (!s.Cart)
+            {
+                s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
+                if (s.GoingToChair) ReleaseChair(s);
+                Dbg(c.m_name + " is pulling a cart - following straight behind" + (theirs != null ? " the player's cart" : " the player"));
+            }
+            s.CartDist = distP;
+            float myReach = MHR_Cart.Reach(mine, me);
+            float gap = theirs != null ? MHR_Cart.Reach(theirs, pp) + 1.5f : 2.5f;
+            gap += CartRank(ai, s, tid, now) * (myReach + 1.5f);
+
+            bool playerMoving = now - t.StillSince < 1.0f;
+            Vector3 goal = TrailPoint(t, pp, gap);
+            float dGoal = Flat(me, goal);
+            // start when it has dropped back from its place; stop when it gets closer to the player than its place (never
+            // up against the player's cart), or once there while the player stands still
+            if (!s.Moving && (distP > gap + 1f || (playerMoving && dGoal > 1.5f && distP > gap - 0.5f) || c.IsSwimming())) s.Moving = true;
+            if (s.Moving && !c.IsSwimming() && (distP < gap - 1f || (!playerMoving && (dGoal < 0.8f || distP < gap)))) s.Moving = false;
+            ai.MHR_SetCrouch(player.IsCrouching());
+            if (!s.Moving) { ai.StopMoving(); return true; }
+
+            // aim a little up the path while the player walks on, so it keeps going instead of arriving and starting again;
+            // a step slower than the player once it's at its place, so it drops back a little rather than running into them
+            Vector3 aim = playerMoving ? TrailPoint(t, pp, Mathf.Max(1f, gap - 1.5f)) : goal;
+            int pace = Pace(player, dGoal, distP, maxD);
+            if (playerMoving && distP < gap + 0.5f && pace > MHR_Mover.SpeedWalk) pace--;
+            MHR_Mover.Go(ai, dt, aim, 0.5f, true, MHR_Mover.FollowTag, pace);
+            if (MHR_Mover.GaveUp(ai))
+            {
+                // the game's own follow heads straight for the player - only when far behind, else wait for a new route
+                if (distP > maxD) ai.MHR_FollowFallback(player.gameObject, dt);
+                else ai.StopMoving();
+            }
+            return true;
+        }
+        // 1.5.97 (C6): follow and idle spots keep 1.2 m clear of a cart (step-aside starts at 1.0 m), so a spot is never
+        // somewhere it would step out of again
+        const float CartSpotPad = 1.2f;
+
+        // 1.5.97 (C2): a companion that just took the shafts is pulling from now, even if this code hasn't seen it hitched
+        // yet - so a cart that comes off in the first second goes through the same loss rules (CartFollow)
+        internal static void MarkPulling(CompanionAI ai, Character c, Vagon v)
+        {
+            if (ai == null || v == null) return;
+            S s = Get(ai);
+            s.LastCart = v; s.Loose = null;
+            if (!s.Cart)
+            {
+                s.Cart = true; s.HasSpot = false; s.Trail = false; s.HasIdle = false; s.IdleMoving = false; s.Regrouped = false;
+                Dbg(c.m_name + " is pulling a cart (from the hitch)");
+            }
+        }
+
+        // companions pulling a cart for the same player, nearer the player than this one
+        static int CartRank(CompanionAI ai, S me, int tid, float now)
+        {
+            int id = ai.gameObject.GetInstanceID(), rank = 0;
+            foreach (KeyValuePair<int, S> kv in s_s)
+            {
+                S o = kv.Value;
+                if (kv.Key == id || !o.Cart || o.TargetId != tid || now - o.LastUpdate > 2f) continue;
+                if (o.CartDist < me.CartDist || (Mathf.Approximately(o.CartDist, me.CartDist) && kv.Key < id)) rank++;
+            }
+            return rank;
+        }
+
         static int Pace(Player p, float dSpot, float distP, float maxD)
         {
             if (distP > maxD + 4f || dSpot > 8f) return MHR_Mover.SpeedRun;
@@ -463,7 +654,15 @@ namespace Companions
         }
         static Vector3 Goal(CompanionAI ai, S s, T t, Vector3 pp, int tid)
         {
-            if (s.Trail) return TrailPoint(t, pp, 2f + Rank(ai, tid) * 1.5f);
+            if (s.Trail)
+            {
+                // 1.5.91: further back along the path while a cart someone pulls is on that point (the player's own cart is
+                // right behind them)
+                float back = 2f + Rank(ai, tid) * 1.5f;
+                Vector3 p = TrailPoint(t, pp, back);
+                for (int k = 0; k < 8 && MHR_Cart.InCartWay(p, CartSpotPad, ai.GetComponent<Character>()); k++) { back += 1.5f; p = TrailPoint(t, pp, back); }
+                return p;
+            }
             s.Spot = SpotXZ(s, t, pp);
             return s.Spot;
         }
@@ -493,7 +692,8 @@ namespace Companions
                 float r = UnityEngine.Random.Range(rMin, rMax);
                 Vector3 w = pp + Quaternion.Euler(0f, ang, 0f) * t.Travel * r;
                 Vector3 g;
-                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || !Los(pp, g)) continue;
+                // 1.5.91: never on a cart someone is pulling (the spots behind the player were on top of it)
+                if (!Ground(w, pp, out g) || Crowded(ai, tid, g, spacing) || MHR_Cart.InCartWay(g, CartSpotPad, ai.GetComponent<Character>()) || !Los(pp, g)) continue;
                 s.Angle = ang; s.Radius = r; s.SpotDy = g.y - pp.y; s.Spot = g;
                 s.HasSpot = true; s.Trail = false;
                 s.NextPick = now + UnityEngine.Random.Range(10f, 25f); s.NextCheck = now + 1f;
@@ -510,6 +710,7 @@ namespace Companions
             g = w;
             RaycastHit hit;
             if (!Physics.Raycast(new Vector3(w.x, pp.y + 2.5f, w.z), Vector3.down, out hit, 6f, GroundMask())) return false;
+            if (MHR_Cart.IsCartInWay(hit.collider)) return false;   // 1.5.97 (C7): never a spot on a cart
             if (hit.normal.y < 0.6f || Mathf.Abs(hit.point.y - pp.y) > 2.5f) return false;
             if (MHR_Water.DepthAt(hit.point) > 1.0f) return false;
             if (MHR_Mover.NearFire(hit.point, 1.2f)) return false;   // 1.4.88: not in the fire pit (1.5.44: nor at its edge)
@@ -560,7 +761,7 @@ namespace Companions
                 Vector3 w = s.IdleAnchor + new Vector3(r.x, 0f, r.y);
                 if (!Ground(w, pp, out g)) continue;
                 float dp = Flat(g, pp);
-                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || !Los(s.IdleAnchor, g)) continue;
+                if (dp > maxD || dp < 1.2f || Crowded(ai, tid, g, 1.2f) || MHR_Cart.InCartWay(g, CartSpotPad, ai.GetComponent<Character>()) || !Los(s.IdleAnchor, g)) continue;
                 return true;
             }
             return false;

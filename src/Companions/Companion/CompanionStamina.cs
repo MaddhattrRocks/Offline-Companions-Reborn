@@ -212,7 +212,10 @@ public class CompanionStamina : MonoBehaviour
 			else
 			{
 				_regenDelayTimer = Mathf.Max(0f, _regenDelayTimer - deltaTime);
-				if (_regenDelayTimer <= 0f && Stamina < num2)
+				// 1.5.98 (swim item 1): no stamina back while swimming off the bottom, like the player (Player.UpdateStats: regen x 0
+				// when IsSwimming() && !IsOnGround()). It refilled at 0 in the water, so 0 never held and drowning never landed.
+				bool deepWater = _character != null && _character.IsSwimming() && !_character.IsOnGround();
+				if (!deepWater && _regenDelayTimer <= 0f && Stamina < num2)
 				{
 					float num6 = 1f;
 					if (IsResting)

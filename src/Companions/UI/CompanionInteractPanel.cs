@@ -55,10 +55,9 @@ public class CompanionInteractPanel : MonoBehaviour
 				Instance.HideForContainerSwitch();
 				return true;
 			}
+			// 1.5.96: UpdateGrid already refreshes the weight, armour and food slots - once a frame is enough
 			Instance.UpdateGrid();
 			Instance.FixEquippedIndicators();
-			Instance.UpdateWeightAndArmor();
-			Instance.RefreshFoodSlots(Instance.GetStorageInventory());
 			Instance._patchUpdateFrame = Time.frameCount;
 			return true;
 		}
@@ -150,6 +149,20 @@ public class CompanionInteractPanel : MonoBehaviour
 	private GameObject _foodSlotsContainer;
 
 	private Image[] _foodSlotIcons;
+
+	private static readonly Dictionary<string, Sprite> s_foodIcons = new Dictionary<string, Sprite>();
+
+	private readonly string[] _foodShownName = new string[3];
+
+	private readonly string[] _foodShownText = new string[3];
+
+	private int _shownWeight = int.MinValue;
+
+	private int _shownLimit = int.MinValue;
+
+	private int _shownRed = -1;
+
+	private int _shownArmor = int.MinValue;
 
 	private TextMeshProUGUI[] _foodSlotCounts;
 
@@ -298,17 +311,34 @@ public class CompanionInteractPanel : MonoBehaviour
 		}
 		if (_grid != null)
 		{
+			// 1.5.96: the slots are only rebuilt when this bag's size differs from the grid's, as the game does
+			// (InventoryGrid.UpdateGui) - it used to destroy and rebuild all of them on every open
 			int num3 = ((_gridWidthField != null) ? ((int)_gridWidthField.GetValue(_grid)) : (-1));
 			int num4 = ((_gridHeightField != null) ? ((int)_gridHeightField.GetValue(_grid)) : (-1));
-			_gridWidthField?.SetValue(_grid, 0);
-			_gridHeightField?.SetValue(_grid, 0);
-			_gridCreated = false;
-			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[UI] Show â€” forced grid rebuild (old={num3}x{num4} â†’ 0x0, gridCreated=false)");
+			Inventory sizeInv = GetStorageInventory();
+			int wantW = sizeInv != null ? sizeInv.GetWidth() : -1;
+			int wantH = sizeInv != null ? sizeInv.GetHeight() : -1;
+			if (num3 != wantW || num4 != wantH || num3 <= 0 || num4 <= 0)
+			{
+				_gridWidthField?.SetValue(_grid, 0);
+				_gridHeightField?.SetValue(_grid, 0);
+				_gridCreated = false;
+				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug($"[UI] Show - grid rebuild (old={num3}x{num4}, bag={wantW}x{wantH})");
+			}
 		}
-		if (instance != null && instance.m_container != null)
+		for (int fi = 0; fi < 3; fi++)
 		{
-			instance.m_container.gameObject.SetActive(value: false);
+			_foodShownName[fi] = null;
+			_foodShownText[fi] = null;
 		}
+		_shownWeight = int.MinValue;
+		_shownLimit = int.MinValue;
+		_shownRed = -1;
+		_shownArmor = int.MinValue;
+		// 1.5.96: the game's chest panel is made see-through and click-through instead of switched off - the game turns it
+		// on every frame while a container is open (InventoryGui.UpdateContainer), and switching it back off every frame
+		// cost ~0.9 ms a frame plus the redraw (John's log, 10:25)
+		HideVanillaContainer(instance);
 		_root.SetActive(value: true);
 		_root.transform.SetAsLastSibling();
 		_visible = true;
@@ -419,7 +449,7 @@ public class CompanionInteractPanel : MonoBehaviour
 				return;
 			}
 		}
-		if (Input.GetKeyDown(KeyCode.F7) && _root != null)
+		if (ModConfig.MoveUiKey.Value != KeyCode.None && Input.GetKeyDown(ModConfig.MoveUiKey.Value) && _root != null)
 		{
 			_dragMode = !_dragMode;
 			SetDragModeUI(_dragMode);
@@ -453,7 +483,7 @@ public class CompanionInteractPanel : MonoBehaviour
 		if (enabled)
 		{
 			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo("[UI] F7 â€” drag-to-reposition mode ENABLED");
-			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_reposition_on"));
+			Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_reposition_on", ModConfig.MoveUiKey.Value));
 		}
 		else
 		{
@@ -511,10 +541,7 @@ public class CompanionInteractPanel : MonoBehaviour
 				return;
 			}
 		}
-		if (instance != null && instance.m_container != null)
-		{
-			instance.m_container.gameObject.SetActive(value: false);
-		}
+		HideVanillaContainer(instance);
 		if (_patchUpdateFrame != Time.frameCount)
 		{
 			Inventory storageInventory = GetStorageInventory();
@@ -522,6 +549,70 @@ public class CompanionInteractPanel : MonoBehaviour
 			UpdateWeightAndArmor();
 			RefreshFoodSlots(storageInventory);
 		}
+	}
+
+	private CanvasGroup _vanillaGroup;
+
+	private bool _vanillaGroupAdded;
+
+	private bool _vanillaHidden;
+
+	private float _vanillaAlpha = 1f;
+
+	private bool _vanillaRaycasts = true;
+
+	private bool _vanillaInteractable = true;
+
+	// 1.5.96: the game's chest panel stays on (as the game wants it) but can't be seen or clicked while ours is open
+	private void HideVanillaContainer(InventoryGui gui)
+	{
+		if (gui == null || gui.m_container == null)
+		{
+			return;
+		}
+		if (_vanillaGroup == null || _vanillaGroup.gameObject != gui.m_container.gameObject)
+		{
+			_vanillaGroup = gui.m_container.GetComponent<CanvasGroup>();
+			_vanillaGroupAdded = false;
+			if (_vanillaGroup == null)
+			{
+				_vanillaGroup = gui.m_container.gameObject.AddComponent<CanvasGroup>();
+				_vanillaGroupAdded = true;
+			}
+			_vanillaHidden = false;
+		}
+		if (!_vanillaHidden)
+		{
+			_vanillaAlpha = _vanillaGroupAdded ? 1f : _vanillaGroup.alpha;
+			_vanillaRaycasts = _vanillaGroupAdded || _vanillaGroup.blocksRaycasts;
+			_vanillaInteractable = _vanillaGroupAdded || _vanillaGroup.interactable;
+			_vanillaHidden = true;
+		}
+		if (_vanillaGroup.alpha != 0f)
+		{
+			_vanillaGroup.alpha = 0f;
+		}
+		if (_vanillaGroup.blocksRaycasts)
+		{
+			_vanillaGroup.blocksRaycasts = false;
+		}
+		if (_vanillaGroup.interactable)
+		{
+			_vanillaGroup.interactable = false;
+		}
+	}
+
+	private void RestoreVanillaContainer()
+	{
+		if (!_vanillaHidden || _vanillaGroup == null)
+		{
+			_vanillaHidden = false;
+			return;
+		}
+		_vanillaGroup.alpha = _vanillaAlpha;
+		_vanillaGroup.blocksRaycasts = _vanillaRaycasts;
+		_vanillaGroup.interactable = _vanillaInteractable;
+		_vanillaHidden = false;
 	}
 
 	private Inventory GetStorageInventory()
@@ -577,20 +668,25 @@ public class CompanionInteractPanel : MonoBehaviour
 			{
 				int num = Mathf.CeilToInt(inventory.GetTotalWeight());
 				int num2 = Mathf.CeilToInt(CompanionTierData.CarryLimit(_companionHumanoid));
-				if (num > num2)
+				// 1.5.96: the text is only rebuilt when a number (or the over-limit flash) changes, not every frame
+				int red = (num > num2 && Mathf.Sin(Time.time * 10f) > 0f) ? 1 : 0;
+				if (num != _shownWeight || num2 != _shownLimit || red != _shownRed || _weightText.text.Length == 0)
 				{
-					_weightText.text = ((Mathf.Sin(Time.time * 10f) > 0f) ? $"<color=red>{num}</color>/{num2}" : $"{num}/{num2}");
-				}
-				else
-				{
-					_weightText.text = $"{num}/{num2}";
+					_shownWeight = num;
+					_shownLimit = num2;
+					_shownRed = red;
+					_weightText.text = (red == 1) ? $"<color=red>{num}</color>/{num2}" : $"{num}/{num2}";
 				}
 			}
 		}
 		if (_armorText != null)
 		{
-			float totalArmor = _companion.GetTotalArmor();
-			_armorText.text = Mathf.FloorToInt(totalArmor).ToString();
+			int armor = Mathf.FloorToInt(_companion.GetTotalArmor());
+			if (armor != _shownArmor || _armorText.text.Length == 0)
+			{
+				_shownArmor = armor;
+				_armorText.text = armor.ToString();
+			}
 		}
 	}
 
@@ -600,23 +696,40 @@ public class CompanionInteractPanel : MonoBehaviour
 		{
 			return;
 		}
+		// 1.5.96: each food's icon is looked up once and remembered (it searched the bag, then the whole item list, every
+		// frame); the timer text changes at most once a second
 		for (int i = 0; i < 3; i++)
 		{
-			_foodSlotIcons[i].enabled = false;
-			_foodSlotCounts[i].enabled = false;
 			CompanionFood.FoodEffect food = _companionFood.GetFood(i);
-			if (food.IsActive)
+			if (!food.IsActive)
 			{
-				Sprite sprite = ResolveFoodIcon(food, inv);
-				if (sprite != null)
-				{
-					_foodSlotIcons[i].sprite = sprite;
-					_foodSlotIcons[i].enabled = true;
-				}
-				_foodSlotCounts[i].text = FormatFoodDuration(food.RemainingTime);
-				_foodSlotCounts[i].color = ((food.RemainingTime >= 60f) ? Color.white : new Color(1f, 1f, 1f, Mathf.Clamp01(0.4f + Mathf.Sin(Time.time * 10f) * 0.6f)));
-				_foodSlotCounts[i].enabled = true;
+				if (_foodSlotIcons[i].enabled) _foodSlotIcons[i].enabled = false;
+				if (_foodSlotCounts[i].enabled) _foodSlotCounts[i].enabled = false;
+				_foodShownName[i] = null;
+				continue;
 			}
+			if (_foodShownName[i] != food.ItemName)
+			{
+				_foodShownName[i] = food.ItemName;
+				_foodShownText[i] = null;
+				Sprite sprite;
+				string key = food.ItemName ?? "";
+				if (!s_foodIcons.TryGetValue(key, out sprite) || sprite == null)
+				{
+					sprite = ResolveFoodIcon(food, inv);
+					if (sprite != null) s_foodIcons[key] = sprite;
+				}
+				_foodSlotIcons[i].sprite = sprite;
+				_foodSlotIcons[i].enabled = sprite != null;
+			}
+			string txt = FormatFoodDuration(food.RemainingTime);
+			if (txt != _foodShownText[i])
+			{
+				_foodShownText[i] = txt;
+				_foodSlotCounts[i].text = txt;
+			}
+			_foodSlotCounts[i].color = ((food.RemainingTime >= 60f) ? Color.white : new Color(1f, 1f, 1f, Mathf.Clamp01(0.4f + Mathf.Sin(Time.time * 10f) * 0.6f)));
+			if (!_foodSlotCounts[i].enabled) _foodSlotCounts[i].enabled = true;
 		}
 	}
 
@@ -830,6 +943,7 @@ public class CompanionInteractPanel : MonoBehaviour
 		_visible = false;
 		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[UI] HideInternal reason={reason} closeGui={closeInventoryGuiIfNoTakeover} " + "companionContainer=" + ContainerName(_companionContainer));
 		RestoreGamepadGroups();
+		RestoreVanillaContainer();
 		if (_dragMode)
 		{
 			_dragMode = false;

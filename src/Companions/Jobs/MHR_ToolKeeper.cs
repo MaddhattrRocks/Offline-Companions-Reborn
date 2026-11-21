@@ -22,7 +22,7 @@ namespace Companions
             public int Kind; public string Prefab; public Entry ReturnEntry;
             public float TripStart, NextDecide, NextSpeak, BestDist, LastProgress, NextTripLog;
             public Vector3 Goal; public bool NeedMove; public bool WasFighting; public bool HasSpot; public float NextSpotPick;
-            public CraftingStation Station; public int WaitKind; public bool WaitHome; public float NextWaitSpeak, NextFollowFix;
+            public CraftingStation Station; public int WaitKind; public bool WaitHome; public bool WaitBroken; public float NextWaitSpeak, NextFollowFix;
             public int LastMode = -999; public bool UnloadPending, UnloadActive; public int UnloadTrips; public bool TagInit; public float NextUnloadSpeak; public bool WasAtHome;
             public Dictionary<int, float> KindCooldown = new Dictionary<int, float>();
             public Dictionary<int, float> RepairFailUntil = new Dictionary<int, float>();
@@ -47,7 +47,8 @@ namespace Companions
                 case 3: return ModLocalization.Loc("hc_status_unloading");
                 case 4: return ModLocalization.Loc("hc_status_repairing_gear");
             }
-            if (st.WaitHome) return ModLocalization.LocFmt("hc_status_needs_home", KindName(st.WaitKind));
+            // 1.5.98 DD9 (John: "it should still say it on their mouse over display"): a broken tool says so
+            if (st.WaitHome) return st.WaitBroken ? ModLocalization.LocFmt("hc_status_broken_home", KindNoun(st.WaitKind)) : ModLocalization.LocFmt("hc_status_needs_home", KindName(st.WaitKind));
             return null;
         }
 
@@ -139,10 +140,15 @@ namespace Companions
             if (st.LastMode == -999) st.LastMode = mode;
             if (mode != st.LastMode)
             {
-                st.UnloadPending = true; st.UnloadTrips = 0;
+                // 1.5.97 (F2, John 2026-11-15): a job switch empties its bags only when it has a home and is at home.
+                // Anywhere else nothing happens (it used to fill any chest within 30 m when it had no home, and to
+                // remember the switch until it was back home).
+                bool emptyNow = cs.HasHomePosition() && AtHome(cs);
+                st.UnloadPending = emptyNow; st.UnloadTrips = 0;
+                if (!emptyNow) st.UnloadActive = false;
                 st.Refused.Clear();
                 CompanionStatus.Clear(cs);   // 1.5.42: the old job's "why" no longer applies
-                if (CompanionsPlugin.LogDetailed) LogDebug("Job changed (" + st.LastMode + " -> " + mode +  ") - will empty bags at home");
+                if (CompanionsPlugin.LogDetailed) LogDebug("Job changed (" + st.LastMode + " -> " + mode + ") - " + (emptyNow ? "at home: will empty bags" : "not at home: keeping what it carries"));
                 // 1.5.4: a fetch the new job has no use for is called off (user log: Hunt turned off, and he still walked
                 // 50 m back to a chest for a bow, again after every recall)
                 if (st.Phase == 1 && !NeedsKind(mode, st.Kind))
@@ -202,7 +208,13 @@ namespace Companions
                 {
                     if (now >= st.NextFollowFix && MHR_Owner.Of(cs) != null && ai.GetFollowTarget() != MHR_Owner.Go(cs))
                     { st.NextFollowFix = now + 2f; ai.SetFollowTarget(MHR_Owner.Go(cs)); }
-                    if (NeedsKind(mode, st.WaitKind) && BestInInventory(inv, st.WaitKind, null) == null) return;
+                    if (NeedsKind(mode, st.WaitKind) && BestInInventory(inv, st.WaitKind, null) == null)
+                    {
+                        // 1.5.98 DD9 (John: "they should remind me that they have a broken axe once in a while"): every 2 min
+                        // while it follows (not in a fight - this isn't reached in one); ends with the job (NeedsKind)
+                        if (st.WaitBroken && now >= st.NextWaitSpeak) { st.NextWaitSpeak = now + 120f; SpeakBroke(cs, st.WaitKind, 120f); }
+                        return;
+                    }
                     st.WaitHome = false; cs.ApplyFollowMode(mode, true);
                 }
             }
@@ -258,18 +270,32 @@ namespace Companions
                 // 1.4.117: Repair and Restock still restocks and sorts without a hammer - not a reason to stop and follow
                 if (!nearHome && mode == 15) continue;
                 if (kind == K_FOOD && !nearHome) continue;   // nice to have, not worth going home for
+                float failUntil;
+                bool repairFailed = st.RepairFailUntil.TryGetValue(kind, out failUntil) && now < failUntil;
+                if (!nearHome && mode == 3 && kind == K_PICK)
+                {
+                    // 1.5.98 DD8 (John: "they need to work on clearing other things like the trees or go repair if there is a
+                    // place to do that they can reach. Or come back to the player"): 1. a station within 30 m of where it is
+                    // that can repair it (the repair trip, its own time limits); 2. on a vein with axe work left there: it
+                    // stays on it (HarvestController.OvAxeWork); 3. follow, below
+                    if (broken != null && !repairFailed)
+                    {
+                        CraftingStation near = FindRepairStation(cs, broken, cs.transform.position);
+                        if (near != null) { StartStationTrip(cs, st, ai, near, kind, broken, now); return; }
+                    }
+                    HarvestController hc = cs.GetComponent<HarvestController>();
+                    if (hc != null && hc.OvAxeWork) continue;
+                }
                 if (!nearHome)
                 {
                     // too far to go home for it: say so, stop the job for now and follow
-                    st.WaitHome = true; st.WaitKind = kind;
+                    st.WaitHome = true; st.WaitKind = kind; st.WaitBroken = broken != null;
                     if (CompanionsPlugin.LogNormal) Log((broken != null ? "\"" + broken.m_shared.m_name + "\" broke" : "Needs " + KindName(kind)) + " and home is too far - following until we're back");
-                    if (now >= st.NextWaitSpeak) { st.NextWaitSpeak = now + 120f; if (broken != null) SpeakBroke(cs, kind); else Speak(cs, kind); }
+                    if (now >= st.NextWaitSpeak) { st.NextWaitSpeak = now + 120f; if (broken != null) SpeakBroke(cs, kind, 120f); else Speak(cs, kind); }
                     if (MHR_Owner.Of(cs) != null) ai.SetFollowTarget(MHR_Owner.Go(cs));
                     return;
                 }
                 // near home: repair a broken one first
-                float failUntil;
-                bool repairFailed = st.RepairFailUntil.TryGetValue(kind, out failUntil) && now < failUntil;
                 if (broken != null && !repairFailed)
                 {
                     CraftingStation stn = FindRepairStation(cs, broken);
@@ -480,7 +506,11 @@ namespace Companions
         }
         static CraftingStation FindRepairStation(CompanionSetup cs, ItemDrop.ItemData item)
         {
-            Vector3 center = cs.HasHomePosition() ? cs.GetHomePosition() : cs.transform.position;
+            return FindRepairStation(cs, item, cs.HasHomePosition() ? cs.GetHomePosition() : cs.transform.position);
+        }
+        // DD8: within 30 m of center
+        static CraftingStation FindRepairStation(CompanionSetup cs, ItemDrop.ItemData item, Vector3 center)
+        {
             CraftingStation best = null; float bd = float.MaxValue;
             List<CraftingStation> list = MHR_Chests.Stations(center, SearchRadius);
             for (int i = 0; i < list.Count; i++)
@@ -536,11 +566,17 @@ namespace Companions
             if (CompanionsPlugin.LogNormal) Log("Repaired " + fixedCount + " item(s) at " + st.Station.m_name);
             EndTrip(cs, st, ai, mode);
         }
-        static void SpeakBroke(CompanionSetup cs, int kind)
+        static void SpeakBroke(CompanionSetup cs, int kind, float repeat = -1f)
         {
             string key = kind == K_AXE ? "hc_speech_broke_axe" : kind == K_PICK ? "hc_speech_broke_pickaxe" : "hc_speech_broke_tool";
             CompanionTalk t = cs.GetComponent<CompanionTalk>();
-            if (t != null) t.SayProblem("broke:" + kind, ModLocalization.Loc(key));
+            if (t != null) t.Speak(ModLocalization.Loc(key), CompanionTalk.Priority.Problem, "broke:" + kind, repeat);
+        }
+        // DD9: "pickaxe", not "a pickaxe"
+        static string KindNoun(int kind)
+        {
+            string n = KindName(kind);
+            return n.StartsWith("an ") ? n.Substring(3) : n.StartsWith("a ") ? n.Substring(2) : n;
         }
 
         // ---- 1.4.70: emptying bags ----
@@ -599,6 +635,8 @@ namespace Companions
             Vector3 me = cs.transform.position;
             bool hasHome = cs.HasHomePosition();
             Vector3 home = hasHome ? cs.GetHomePosition() : me;
+            // 1.5.97 (F2): with no home it never empties its bags into chests
+            if (!hasHome) { st.UnloadPending = false; st.UnloadActive = false; return false; }
             // 1.4.81: only when actually at home (25 m), not anywhere within HomeTripRange - he walked 54 m back to put
             // away a stack of stone when the job was switched off out in the field (1.4.80 test)
             if (hasHome && Vector3.Distance(me, home) > AtHomeRange()) { st.UnloadActive = false; return false; }   // later, when back home
@@ -1079,7 +1117,7 @@ namespace Companions
         public static HashSet<int> DropsNear(Vector3 center, float radius)
         {
             HashSet<int> ids = new HashSet<int>();
-            foreach (Collider c in Physics.OverlapSphere(center, radius))
+            foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.ToolKeeper1082, center, radius))
             {
                 ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
                 if (d != null) ids.Add(d.GetInstanceID());
@@ -1161,7 +1199,7 @@ namespace Companions
             Vector3 b = chest.transform.position + Vector3.up * target;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
-            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            var hits = MHR_Phys.Ray(ref MHR_Phys.ToolKeeper1164, a, d / len, len, Mask());
             for (int i = 0; i < hits.Length; i++)
             {
                 Collider col = hits[i].collider;
@@ -1337,7 +1375,7 @@ namespace Companions
             Vector3 a = from + Vector3.up * 1.0f, b = to + Vector3.up * 0.5f;
             Vector3 d = b - a; float len = d.magnitude;
             if (len < 0.05f) return true;
-            RaycastHit[] hits = Physics.RaycastAll(a, d / len, len, Mask());
+            var hits = MHR_Phys.Ray(ref MHR_Phys.ToolKeeper1340, a, d / len, len, Mask());
             for (int i = 0; i < hits.Length; i++)
             {
                 Collider col = hits[i].collider;

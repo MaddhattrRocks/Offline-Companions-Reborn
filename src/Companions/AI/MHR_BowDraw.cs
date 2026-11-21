@@ -308,7 +308,7 @@ internal static class MHR_BowDraw
 		{
 			return true;
 		}
-		RaycastHit[] hits = Physics.RaycastAll(from, d / len, len - 0.3f, s_blockMask, QueryTriggerInteraction.Ignore);
+		var hits = MHR_Phys.Ray(ref MHR_Phys.BowDraw311, from, d / len, len - 0.3f, s_blockMask, QueryTriggerInteraction.Ignore);
 		foreach (RaycastHit hit in hits)
 		{
 			if (hit.collider != null && hit.collider.GetComponentInParent<Character>() == null)

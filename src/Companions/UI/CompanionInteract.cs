@@ -1285,7 +1285,8 @@ public class CompanionInteract : MonoBehaviour
 				companionSetup.transform.rotation = Quaternion.LookRotation(vector2.normalized);
 			}
 			component5.FreezeTimer = 1f;
-			component5.SetFollowTarget(vagon.gameObject);
+			component5.FollowAfterHitch(vagon);   // 1.5.89
+			MHR_Cart.NoteHitch(component5, vagon);   // 1.5.97 (C2)
 			vagon.Interact(component4, hold: false, alt: false);
 		}
 		else

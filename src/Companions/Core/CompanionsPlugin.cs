@@ -21,7 +21,7 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	public const string PluginName = "Offline Companions Reborn";
 
-	public const string PluginVersion = "1.5.8";
+	public const string PluginVersion = "1.5.98";
 
 	private static Harmony _harmony;
 
@@ -167,6 +167,22 @@ public class CompanionsPlugin : BaseUnityPlugin
 
 	private void Update()
 	{
+		try
+		{
+			MHR_Perf.Tick(_harmony);   // 1.5.91: [Perf] timing summary on Detailed
+		}
+		catch (Exception ex)
+		{
+			if (CompanionsPlugin.LogNormal) Log.LogWarning("[Perf] " + ex.Message);
+		}
+		try
+		{
+			HarvestController.OvMapTickAll();   // R0: the Ore job's pit maps (one slice of work a frame)
+		}
+		catch (Exception ex)
+		{
+			if (CompanionsPlugin.LogNormal) Log.LogWarning("[PitMap] " + ex.Message);
+		}
 		try
 		{
 			MHR_RespawnTracker.Tick();
