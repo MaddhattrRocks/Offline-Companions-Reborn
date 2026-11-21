@@ -2217,6 +2217,8 @@ public class CompanionAI : BaseAI
 		}
 	}
 
+	private float _airWarpSaidAt;   // T3: the "no ground under you" line, once per 10 s
+
 	internal void TeleportToFollowTarget()
 	{
 		if (m_follow == null)
@@ -2235,6 +2237,17 @@ public class CompanionAI : BaseAI
 			vector.Normalize();
 		}
 		Vector3 position2 = MHR_SafeSpotNear(position, vector);
+		// T3 (test of ea18287: John flew back from his bed about 60 m up; each warp put them beside him in the air - falls of
+		// 43-64 m): only onto ground - none within 3 m under the spot (the player is in the air): no warp, it keeps walking
+		if (!Physics.Raycast(position2 + Vector3.up * 0.5f, Vector3.down, 3.5f, LayerMask.GetMask("Default", "static_solid", "terrain", "piece", "vehicle"), QueryTriggerInteraction.Ignore))
+		{
+			if (CompanionsPlugin.LogDetailed && Time.time >= _airWarpSaidAt)
+			{
+				_airWarpSaidAt = Time.time + 10f;
+				CompanionsPlugin.Log.LogInfo($"[Follow] No warp to you - no ground within 3 m under the spot by you at {position2:F1} (you're in the air)");
+			}
+			return;
+		}
 		base.transform.position = position2;
 		Rigidbody body = _body;
 		if (body != null)

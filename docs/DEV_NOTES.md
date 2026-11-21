@@ -2868,3 +2868,10 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 ### S2 + S4 (the map in the part walk and the drop-down)
 - S2 OreClear (walk to a part's stand place): within 3 m (flat) of the place, a step (0.7 m) or more above its feet, and `OvMapWallAhead` reads a wall, the walk starts the way up (`OvRampBegin(_clStand, null, ...)`), once per part round (`_clRampTried`). The part round waits while it runs; when the way up ends, the walk carries on. Things it never swings at (can't be damaged, a built piece, this vein's own rock) start no way up: the walk carries on and the mover's give-up ends it (60 s wait). Plain rock and things are dealt with by the way up's own R1.2.
 - S4 MHR_Mover.TryDropDown: inside the companion's pit map (`HarvestController.OvMapLowNear`), a landing is refused when the lowest read top/ground within 2 m of it, on the goal's side, is more than the safe drop below where it stands. With no map, or the landing off it, nothing changes.
+
+### T1-T3, S3 tune, S6 (test of ea18287)
+- T1 CompanionSetup death: a tombstone never gets id 0. With no items and no earlier id it gets a new one, because TryStartResurrect refuses id 0.
+- T2 CompanionTombstoneResurrect.DoResurrect: coming back from an empty tombstone (auto or by hand) also copies its id to the companion. It may be the id kept from an earlier death whose tombstone still holds the gear.
+- T3 TeleportToFollowTarget: no warp when there is no ground within 3 m under the spot it picked (the player is in the air). It keeps walking instead. The log line is limited to once per 10 s.
+- S3 tune: during a round, "off its place" means more than 1.0 m flat (`OvPlaceOff`). The walk back still stops within 0.5 m.
+- S6 MHR_Mover.Hop: inside the pit map, a stuck hop whose landing (about 2.8 m on) has map ground more than the safe drop below within 2 m becomes a side step (S4's rule).

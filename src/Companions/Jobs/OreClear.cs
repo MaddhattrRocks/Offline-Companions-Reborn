@@ -96,7 +96,8 @@ public partial class HarvestController
 	private const float OvDirtEvery = 10f;         // GG2: the dirt list is made again every 10 s (and right after a point is done)
 
 	private const float OvStandAt = 0.5f;
-	private const float OvPlaceUpDown = 0.7f;      // S3: on its place = within 0.7 m up or down of it (or of the ground there now)          // GG2: at its place to stand = within 0.5 m of it (flat)
+	private const float OvPlaceUpDown = 0.7f;
+	private const float OvPlaceOff = 1.0f;         // S3 tune (test of ea18287: 190 "off its place" at 0.5 m - a swing nudges it that far): off = more than 1 m (flat)      // S3: on its place = within 0.7 m up or down of it (or of the ground there now)          // GG2: at its place to stand = within 0.5 m of it (flat)
 
 	private OvPart _rpPart;
 
@@ -1338,7 +1339,7 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
-		if (_dgActive && _dgDirt && !_dgSwung && OvDrOffPlace(me))
+		if (_dgActive && _dgDirt && !_dgSwung && OvDrOffPlace(me, OvPlaceOff))
 		{
 			// S3: moved off its place (a fight, a push) - back to it first, its swing count kept
 			OvDigPause("the dirt");
@@ -2053,10 +2054,10 @@ public partial class HarvestController
 
 	// off the place it was given: more than 0.5 m from it (flat), or more than 0.7 m under / over it (the ground there now
 	// counts too: a dig beside it lowers it, a built floor (R2) is above it)
-	private bool OvOffPlace(Vector3 stand)
+	private bool OvOffPlace(Vector3 stand, float flatOff = OvStandAt)
 	{
 		Vector3 me = base.transform.position;
-		if (Flat(me, stand) > OvStandAt)
+		if (Flat(me, stand) > flatOff)
 		{
 			return true;
 		}
@@ -2065,9 +2066,9 @@ public partial class HarvestController
 	}
 
 	// the dirt round's place: as above, and (HH2) feet no more than a step above the ground there
-	private bool OvDrOffPlace(Vector3 me)
+	private bool OvDrOffPlace(Vector3 me, float flatOff = OvStandAt)
 	{
-		return OvOffPlace(_drStand) || me.y - GroundAt(_drStand) > OvStepUp;
+		return OvOffPlace(_drStand, flatOff) || me.y - GroundAt(_drStand) > OvStepUp;
 	}
 
 	// the swing round stops for the walk back; its no-progress and miss counts are kept for when it starts again, so the
@@ -2138,7 +2139,7 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
-		if (_dgActive && _dgClear && _dgPart && !_dgSwung && !_clLadder && OvOffPlace(_clStand))
+		if (_dgActive && _dgClear && _dgPart && !_dgSwung && !_clLadder && OvOffPlace(_clStand, OvPlaceOff))
 		{
 			// S3: moved off its place (a fight, a push) - back to it first, its swing count kept
 			OvDigPause("the part");

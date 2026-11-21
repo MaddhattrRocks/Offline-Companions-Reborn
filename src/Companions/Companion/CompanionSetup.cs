@@ -658,7 +658,9 @@ public class CompanionSetup : MonoBehaviour
 			}
 			long num2 = zDO.GetLong(TombstoneIdHash, 0L);
 			bool flag = _humanoid != null && _humanoid.GetInventory() != null && _humanoid.GetInventory().NrOfItems() > 0;
-			long tombstoneId = (flag ? DateTime.UtcNow.Ticks : num2);
+			// T1 (test of ea18287: two empty deaths in a row after an empty respawn got tombstone id 0, and TryStartResurrect
+			// refuses id 0 - John couldn't bring them back): never 0 - no items and no earlier id gets a new one
+			long tombstoneId = (flag || num2 == 0L) ? DateTime.UtcNow.Ticks : num2;
 			if (!flag && num2 != 0L)
 			{
 				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] No items — preserving existing tombstoneId={num2} " + "so respawned companion can find previous tombstone");

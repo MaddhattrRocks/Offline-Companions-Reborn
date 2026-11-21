@@ -3196,6 +3196,20 @@ namespace Companions
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             // 1.5.70: never hop toward a fire (the hearth stone is a step it would hop up onto)
             if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f) || Lava(pos + dir * 1.5f) || Lava(pos + dir * 3f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+            // S6 (test of ea18287: 4 falls of 5.6-8.3 m from the stuck hop at a trench edge): inside its pit map, the lowest
+            // ground within 2 m of where the hop lands (4 m/s for 0.7 s, about 2.8 m on) must be within the safe drop - S4's rule
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null)
+            {
+                Vector3 land = pos + dir * 2.8f;
+                float low = hv.OvMapLowNear(land, land, 2f);
+                float safe = Mathf.Min(ModConfig.StuckDrop != null ? ModConfig.StuckDrop.Value : 8f, CompanionFallDamagePatch.SafeDrop(c, 0.3f));
+                if (!float.IsNaN(low) && pos.y - low > safe)
+                {
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] no hop toward " + Fmt(land) + " - the pit map has ground " + (pos.y - low).ToString("F1") + " m down within 2 m of it");
+                    Sidestep(ai, c, s, pos, dir, now, tag, why, true); return;
+                }
+            }
             Face(ai, dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();

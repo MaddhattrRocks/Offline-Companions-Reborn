@@ -506,6 +506,16 @@ public class CompanionTombstoneResurrect : MonoBehaviour
 				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Resurrect] Transferred {num} items from tombstone to companion" + (flag5 ? $", {inventory2.NrOfItems()} items left in tombstone" : ""));
 			}
 		}
+		// T2 (same test): back from an EMPTY tombstone - its id is kept too (it may be the one kept from an earlier death whose
+		// tombstone still holds the gear far away; dropping it lost that link and the next empty death got id 0)
+		if (!flag5 && container != null)
+		{
+			long keepId = tombZdo.GetLong(CompanionSetup.TombstoneIdHash, 0L);
+			if (keepId != 0L)
+			{
+				zDO2.Set(CompanionSetup.TombstoneIdHash, keepId);
+			}
+		}
 		CompanionAppearance a = CompanionAppearance.Deserialize(text3);
 		CompanionSetup component5 = gameObject2.GetComponent<CompanionSetup>();
 		if (component5 != null)
