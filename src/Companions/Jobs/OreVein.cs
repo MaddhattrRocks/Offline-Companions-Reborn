@@ -2368,7 +2368,11 @@ public partial class HarvestController
 		{
 			return true;
 		}
-		return r.Bottom.y - GroundAt(q.P) < OvRampRatio * h;
+		// MP6 (the map-path list; silver test: a way out 1.9 m above the trench floor dug down beside it still counted, the
+		// mover won't climb on a vein and T4 never extended it): on a vein with a pit map, usable only while its bottom is
+		// within one hop (OvRtHopUp, 1.1 m) of that floor - else T4 extends it down its own line
+		float limit = p.Map != null && p.Map.Built ? OvRtHopUp : OvRampRatio * h;
+		return r.Bottom.y - GroundAt(q.P) < limit;
 	}
 
 	private static OvSpot OvNearestIn(OvPlan p, Vector3 at)

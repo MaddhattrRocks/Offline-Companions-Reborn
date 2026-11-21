@@ -137,7 +137,7 @@ public partial class HarvestController
 			Vector3 v = _character != null ? _character.GetVelocity() : Vector3.zero;
 			v.y = 0f;
 			Vector3 toward = v.sqrMagnitude > 0.25f ? me + v.normalized * 2f : goal;
-			HarvestController ah = OvBoardAhead(me, toward);
+			HarvestController ah = OvBoardAhead(me, toward, goal);
 			if (ah != null)
 			{
 				Vector3 round = OvBoardSide(me, toward, ah);
@@ -205,7 +205,10 @@ public partial class HarvestController
 	}
 
 	// G1: the nearest other companion on this vein within 1.2 m ahead (flat, within 60 degrees of the way it walks)
-	private HarvestController OvBoardAhead(Vector3 me, Vector3 toward)
+	// MP5 (the map-path list; silver test: Comp and Je at the foot of one way out, each "in the way" of the other, 153 side
+	// steps): only one closer to this walk's goal than this one counts (level within 0.3 m: the older one goes first), so
+	// of two on one narrow way one always walks on
+	private HarvestController OvBoardAhead(Vector3 me, Vector3 toward, Vector3 goal)
 	{
 		Vector3 dir = toward - me;
 		dir.y = 0f;
@@ -225,13 +228,30 @@ public partial class HarvestController
 			Vector3 o = h.transform.position - me;
 			o.y = 0f;
 			float d = o.magnitude;
-			if (d <= OvSideNear && d > 0.01f && Vector3.Dot(o / d, dir) > 0.5f && d < bd)
+			if (d <= OvSideNear && d > 0.01f && Vector3.Dot(o / d, dir) > 0.5f && d < bd && OvBoardInFront(h, me, goal))
 			{
 				bd = d;
 				best = h;
 			}
 		}
 		return best;
+	}
+
+	// MP5: h is in front of this one on the way to goal: closer to it (flat) by more than 0.3 m, or level and older (the lower
+	// network id)
+	private bool OvBoardInFront(HarvestController h, Vector3 me, Vector3 goal)
+	{
+		float dh = Flat(h.transform.position, goal), dm = Flat(me, goal);
+		if (Mathf.Abs(dh - dm) > 0.3f)
+		{
+			return dh < dm;
+		}
+		ZDO zh = h._nview != null ? h._nview.GetZDO() : null, zm = _nview != null ? _nview.GetZDO() : null;
+		if (zh == null || zm == null)
+		{
+			return h.GetInstanceID() < GetInstanceID();
+		}
+		return zh.m_uid.UserID != zm.m_uid.UserID ? zh.m_uid.UserID < zm.m_uid.UserID : zh.m_uid.ID < zm.m_uid.ID;
 	}
 
 	// AA6 (a): a trench point another companion stands on or walks to - waits up to 5 s (looked at once a second), then the

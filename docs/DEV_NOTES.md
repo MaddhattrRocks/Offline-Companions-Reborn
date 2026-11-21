@@ -2875,3 +2875,12 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - T3 TeleportToFollowTarget: no warp when there is no ground within 3 m under the spot it picked (the player is in the air). It keeps walking instead. The log line is limited to once per 10 s.
 - S3 tune: during a round, "off its place" means more than 1.0 m flat (`OvPlaceOff`). The walk back still stops within 0.5 m.
 - S6 MHR_Mover.Hop: inside the pit map, a stuck hop whose landing (about 2.8 m on) has map ground more than the safe drop below within 2 m becomes a side step (S4's rule).
+
+### MP1-MP7 (the map path round: walks in a vein's pit planned on the pit map)
+- MP1 OreRoute.cs `OvMapRoute`: a route on the pit map's 0.5 m squares (A*, 8 neighbours, at most 6000 squares). Stand rule = OvMapStand's (ground with body room, or a built floor); no swim-deep water, no unread squares. Up to 0.7 m walked, up to 1.1 m hopped (+1 cost), drops up to MaxDrop with the mover's steep-run rule (big drops +2), +3 within 1.2 m of another companion's place or goal; no diagonal across a blocked corner. Corners = furthest square walkable in a straight line (walked steps only). Kept until the goal moves 1 m, it is 1.5 m off the route, or a square on it changes (`OvMap.ChangedAt`). Result 1 / 0 (no way; MP4's step kept) / -1 (can't tell). Counts in the `[PitMap]` minute line.
+- MP2 MHR_Mover.Plan: on a vein, the map route replaces the game's route and turns on the straight-line steering (step hop, gap jump). Unstick on a map route: the game's route for 20 s; twice for the goal = not again for it (`MapRoute` / `NoMapUntil` / `MapFails`, cleared on a new goal).
+- MP3 OvStandForPart / OvStandFor: a place that would be chosen is dropped when the map says no way there (not one step too high); at most 5 asked per choice (`OvRtNoWay`, leaves the mover's route alone). None left: wait (2) with "no way there by the pit map".
+- MP4 part and dirt walks: the map's route there blocked only by one step too high -> walk to that step's foot (latched per round) and `OvRampBegin` toward its top; once per round; the foot walk's give-up -> the walk goes on as before.
+- MP5 OreBoard `OvBoardAhead`: only a companion closer to this walk's goal (by 0.3 m; level = lower network id) counts as in the way.
+- MP6 `OvRampUsable`: with a built pit map a way out counts only while its bottom is within 1.1 m of the trench floor beside it (else T4 extends it); 1.5 x height without a map.
+- MP7 overlay (PitMapOverlay on): each companion's map route drawn as cyan dots.

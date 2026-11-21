@@ -1184,6 +1184,7 @@ public partial class HarvestController
 			_drSpot = d;
 			_drStand = stand;
 			_drWalk = true;
+			_drMpTried = _drMpOn = false;   // MP4: one way up at the map's blocking step per round
 			_moveTimer = 0f;
 			_ai?.StopMoving();
 			if (CompanionsPlugin.LogNormal) LogInfo($"Dirt holding up \"{d.Part.C.name}\" of \"{_vp.Name}\" at {MHR_Mover.Fmt(d.P)} (ground {GroundAt(d.P):F2}, the part's bottom {OvPartBottom(d.Part):F2}) - digging it to {d.Goal:F2} from {MHR_Mover.Fmt(stand)} (the bottom of the pit there, ground {stand.y:F2}); {c.Dirt.Count} dirt point(s) and {lows.Count} low part(s) free");
@@ -1386,6 +1387,11 @@ public partial class HarvestController
 				float up = _drStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
+				// MP4: the map's route there blocked by one step too high - the way up at that step's foot
+				if (OvRtWayUpWalk(_drStand, ref _drMpTried, ref _drMpOn, ref _drMpFoot, ref _drMpTop, dt, "the place to dig the dirt from"))
+				{
+					return;
+				}
 				// P3: the place to stand is the bottom of the pit - no steps cut toward it (HH3 removed)
 				if (tooHigh || OvWalkGaveUp(dt, _drStand))
 				{
@@ -1477,21 +1483,23 @@ public partial class HarvestController
 			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{(noStand > 0 ? $" ({noStand} with no place to stand by the pit map)" : "")}";
 			return 2;
 		}
-		float bd = float.MaxValue;
+		// MP3 (the map-path list, John 2026-11-21): nearest first among the lowest; one the map says there is no way to (not
+		// just one step too high - MP4 cuts that on the walk) is dropped; at most 5 asked, the rest taken as they are
+		cand.RemoveAll((Vector3 q) => q.y > low + 0.3f);
+		cand.Sort((Vector3 p1, Vector3 p2) => (Flat(me, p1) + Mathf.Abs(me.y - p1.y)).CompareTo(Flat(me, p2) + Mathf.Abs(me.y - p2.y)));
+		int noWay = 0;
 		foreach (Vector3 pt in cand)
 		{
-			if (pt.y > low + 0.3f)
+			if (noWay < OvRtProbeMax && OvRtNoWay(pt, out _))
 			{
+				noWay++;
 				continue;
 			}
-			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
-			if (d < bd)
-			{
-				bd = d;
-				stand = pt;
-			}
+			stand = pt;
+			return 0;
 		}
-		return 0;
+		why = $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
+		return 2;
 	}
 
 	// ---------- M1: where to stand to hit a part's rock, by the game's own swing ----------
@@ -1596,7 +1604,7 @@ public partial class HarvestController
 			return yc != 0 ? yc : Flat(me, p1).CompareTo(Flat(me, p2));
 		});
 		float band = float.MaxValue, bd = float.MaxValue;
-		int tested = 0, noFit = 0;
+		int tested = 0, noFit = 0, noWay = 0, probes = 0;
 		bool found = false;
 		foreach (Vector3 pt in cand)
 		{
@@ -1614,12 +1622,23 @@ public partial class HarvestController
 			{
 				continue;
 			}
+			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
+			// MP3 (the map-path list, John 2026-11-21): a place that would be chosen is dropped when the map says there is
+			// no way there from where it stands (not just one step too high - MP4 cuts that on the walk); at most 5 asked
+			if ((!found || d < bd) && probes < OvRtProbeMax)
+			{
+				probes++;
+				if (OvRtNoWay(pt, out _))
+				{
+					noWay++;
+					continue;
+				}
+			}
 			if (!found)
 			{
 				found = true;
 				band = pt.y + 0.3f;
 			}
-			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
 			if (d < bd)
 			{
 				bd = d;
@@ -1630,6 +1649,11 @@ public partial class HarvestController
 		if (found)
 		{
 			return 0;
+		}
+		if (noWay > 0)
+		{
+			why = $"no way there by the pit map to the {noWay} place(s) beside it the swing reaches it from";
+			return 2;
 		}
 		stand = cand[0];
 		why = $"no place on the pit ground beside it where the game's pickaxe swing meets its rock first ({tested} looked at{(noFit > 0 ? $", {noFit} with no room for its body" : "")})";
@@ -2039,6 +2063,7 @@ public partial class HarvestController
 		part.Holder = this;
 		_clStand = stand;
 		_clRampTried = false;   // S2: one map way up per round
+		_clMpTried = _clMpOn = false;   // MP4: one way up at the map's blocking step per round
 		_clAim = _standAim;
 		_clWalk = !ladder;
 		_moveTimer = 0f;
@@ -2050,6 +2075,10 @@ public partial class HarvestController
 	// ---------- S3 (test of 05e19c2: a fight moved Je 7 m from its place and 3 m down; it went on swinging at its part from
 	// there, the game dug the ground in front each time and its feet sank 2 m - a hole) ----------
 	private bool _clRampTried;   // S2: this part round already started a way up from the map's wall check
+
+	private bool _clMpTried, _clMpOn, _drMpTried, _drMpOn;   // MP4: per round: the map's blocking step tried / being walked to
+
+	private Vector3 _clMpFoot, _clMpTop, _drMpFoot, _drMpTop;
 	private int _dgBackNoProg = -1, _dgBackMiss;   // S3: the round's swing counts kept while it walks back (-1 = none)
 
 	// off the place it was given: more than 0.5 m from it (flat), or more than 0.7 m under / over it (the ground there now
@@ -2182,6 +2211,11 @@ public partial class HarvestController
 				// never swings at (can't be damaged, a built piece, this vein's own rock): the walk goes on, the mover's
 				// give-up ends it. The way up's own R1.2 strikes a plain rock or hands a thing over; when it ends, this walk
 				// goes on.
+				// MP4: the map's route there blocked by one step too high - the way up at that step's foot
+				if (OvRtWayUpWalk(_clStand, ref _clMpTried, ref _clMpOn, ref _clMpFoot, ref _clMpTop, dt, "the place beside the part"))
+				{
+					return;
+				}
 				if (!_clRampTried && _vp?.Map != null && flat <= OvRampReach && up >= OvStepUp && OvMapWallAhead(_clStand, out byte wk, out Collider wc, out _) == 1)
 				{
 					byte hk = wc != null ? OvMapKind(_vp, _vp.Map, wc) : wk;

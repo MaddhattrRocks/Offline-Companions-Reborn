@@ -54,6 +54,8 @@ namespace Companions
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
             public bool ForcedClimb; public float NextClimbWhyLog;   // 1.5.97: a climb out of a hole asked for straight away (MHR_Follow), and the Detailed "no way up" log's throttle
             public bool Direct; public float NextHop, NoDirectUntil;
+            // MP2: walking a route planned on a vein's pit map; given up on it (20 s) and how often for this goal
+            public bool MapRoute; public float NoMapUntil, NextMapLog; public int MapFails;
             public Door PassDoor; public float PassSide, NextDoorwayCheck;
         }
         class Opened { public Door Door; public float At; }
@@ -62,6 +64,7 @@ namespace Companions
         static readonly Dictionary<int, List<Opened>> s_opened = new Dictionary<int, List<Opened>>();
         static readonly List<Vector3> s_tmp = new List<Vector3>();
         static readonly List<Vector3> s_tmp2 = new List<Vector3>();
+        static readonly List<Vector3> s_mapTmp = new List<Vector3>();   // MP2
         static readonly List<Piece> s_pieces = new List<Piece>();
         static readonly Collider[] s_cols = new Collider[16];
         // 1.4.138: door searches need far more room - inside a house dozens of walls, floors and beams are within 2.5 m and
@@ -191,7 +194,7 @@ namespace Companions
             else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
             {
                 s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.StepUntil = 0f;
-                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; }
+                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; s.MapFails = 0; s.NoMapUntil = 0f; }
             }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
@@ -573,6 +576,7 @@ namespace Companions
         static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
         {
             s.HotOk = false; s.HotCheckAt = -10f;   // W1: a new route is judged again
+            s.MapRoute = false; s.MapFails = 0; s.NoMapUntil = 0f;   // MP2: a new goal tries the map route again
             // 1.5.2: a target that moves about (a skeleton pacing on the tower) mustn't make us forget the ladder on the way to it
             bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
@@ -803,6 +807,35 @@ namespace Companions
                 {
                     if (!wasDirect) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
                     s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;
+                }
+            }
+            // 1.5.98 MP2 (John, 2026-11-21, the map-path list): on a vein, with it and the goal on that vein's pit map, the route
+            // planned on the map's squares (MP1) replaces the game's route - walked with the straight-line steering (the hop at
+            // a step, the jump over a gap). Stuck on it: the game's route for 20 s (Unstick); twice for this goal: not again.
+            s.MapRoute = false;
+            if (!c.IsSwimming() && s.RouteDoor == null && now >= s.NoMapUntil && s.MapFails < 2)
+            {
+                HarvestController hv = ai.GetComponent<HarvestController>();
+                if (hv != null && hv.OnVein)
+                {
+                    int mr = hv.OvMapRoute(pos, goal, s_mapTmp, out string minfo);
+                    if (mr == 1 && s_mapTmp.Count > 0)
+                    {
+                        if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
+                        {
+                            s.NextMapLog = now + 3f;
+                            Dbg("[Move|" + s.Tag + "] map route to " + Fmt(goal) + ": " + minfo + ", " + PathLength(pos, s_mapTmp).ToString("F1") + " m (the game's route: " + (s.Partial ? "partial" : PathLength(pos, s.Path).ToString("F1") + " m") + ")");
+                        }
+                        s.Path.Clear(); s.Path.AddRange(s_mapTmp); s.Corner = 0; s.PathOk = true; s.Partial = false; s.RouteSwim = 0f;
+                        if (!s.HasDetour) s.MainPartial = false;
+                        s.MapRoute = true; s.Direct = true;
+                        hv._rtUsedAt = now;
+                    }
+                    else if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
+                    {
+                        s.NextMapLog = now + 3f;
+                        Dbg("[Move|" + s.Tag + "] no map route to " + Fmt(goal) + " (" + (mr == 0 ? "the map says no way: " : "the map can't tell: ") + minfo + ") - the game's route");
+                    }
                 }
             }
             // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
@@ -1194,6 +1227,13 @@ namespace Companions
             }
             s.AnchorTime = now; s.Anchor = pos;
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
+            // 1.5.98 MP2: stuck on the map route: the game's route for 20 s; the second time for this goal, not again
+            if (s.MapRoute)
+            {
+                s.MapRoute = false; s.Direct = false; s.MapFails++; s.NoMapUntil = now + 20f; s.NextPlan = 0f;
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "for 20 s"));
+                return;
+            }
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
             if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
             // 1.5.91: pulling a cart: no side-steps, hops, climbs or ladders (each one yanked it off the shafts). Open a door

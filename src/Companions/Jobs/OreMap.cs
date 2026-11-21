@@ -60,6 +60,9 @@ public partial class HarvestController
 
 		public float[] Ground, Top, Head, Floor, ReadAt;
 
+		// MP1: when each square's read last changed what it holds (a map route over a changed square is searched again)
+		public float[] ChangedAt;
+
 		public byte[] Kind, Over, Flags;
 
 		// R0.9: the solid layers above the ground at each square, lowest first: square i's layer j is at i * OvMapLayers + j
@@ -78,6 +81,11 @@ public partial class HarvestController
 		public readonly List<Vector3> GoalAt3 = new List<Vector3>();   // ... and walks to (yellow), drawn at that height
 
 		public readonly List<Bounds> Parts = new List<Bounds>();
+
+		// MP7: each companion's map route for the overlay (its position first, then the corners), and their sum to tell a change
+		public readonly List<List<Vector3>> Routes = new List<List<Vector3>>();
+
+		public float RouteSig, RouteAt;
 
 		public readonly Dictionary<int, byte> KindCache = new Dictionary<int, byte>();
 
@@ -266,6 +274,11 @@ public partial class HarvestController
 					s_mapShown.Add(p);
 				}
 			}
+			if (now >= m.RouteAt)
+			{
+				m.RouteAt = now + 0.5f;
+				OvMapRoutesShown(p, m);   // MP7: twice a second, only with the overlay on
+			}
 			if (m.Changed && now >= m.DrawAt)
 			{
 				m.DrawAt = now + OvMapDrawEvery;
@@ -347,6 +360,7 @@ public partial class HarvestController
 		nm.Head = new float[n];
 		nm.Floor = new float[n];
 		nm.ReadAt = new float[n];
+		nm.ChangedAt = new float[n];
 		nm.Kind = new byte[n];
 		nm.Over = new byte[n];
 		nm.Flags = new byte[n];
@@ -378,6 +392,7 @@ public partial class HarvestController
 					nm.Head[b] = m.Head[a];
 					nm.Floor[b] = m.Floor[a];
 					nm.ReadAt[b] = m.ReadAt[a];
+					nm.ChangedAt[b] = m.ChangedAt[a];
 					nm.Kind[b] = m.Kind[a];
 					nm.Over[b] = m.Over[a];
 					nm.Flags[b] = (byte)(m.Flags[a] & MfWater);
@@ -727,9 +742,10 @@ public partial class HarvestController
 		{
 			flags |= MfWater;
 		}
-		if (m.Kind[i] != kind || m.Over[i] != over || m.Flags[i] != flags || Mathf.Abs(m.Top[i] - top) > 0.05f || Mathf.Abs(m.Head[i] - head) > 0.05f || m.ReadAt[i] < 0f)
+		if (layersChanged || m.Kind[i] != kind || m.Over[i] != over || m.Flags[i] != flags || Mathf.Abs(m.Top[i] - top) > 0.05f || Mathf.Abs(m.Head[i] - head) > 0.05f || Mathf.Abs(m.Ground[i] - g) > 0.05f || m.ReadAt[i] < 0f)
 		{
 			m.Changed = true;
+			m.ChangedAt[i] = Time.time;   // MP1
 		}
 		m.Ground[i] = g;
 		m.Floor[i] = floor;
@@ -930,6 +946,34 @@ public partial class HarvestController
 		}
 	}
 
+	// MP7: the companions' map routes for the overlay (only while it is on); a change redraws it
+	private static void OvMapRoutesShown(OvPlan p, OvMap m)
+	{
+		m.Routes.Clear();
+		float sig = 0f;
+		foreach (HarvestController h in p.Workers.Keys)
+		{
+			List<Vector3> rt = h != null && h._vp == p ? h.OvRtShown() : null;
+			if (rt == null)
+			{
+				continue;
+			}
+			List<Vector3> line = new List<Vector3>(rt.Count + 1) { h.transform.position };
+			line.AddRange(rt);
+			m.Routes.Add(line);
+			foreach (Vector3 v in rt)
+			{
+				sig += v.x * 0.37f + v.z * 0.73f + v.y;
+			}
+			sig += rt.Count * 101f;
+		}
+		if (Mathf.Abs(sig - m.RouteSig) > 0.01f)
+		{
+			m.RouteSig = sig;
+			m.Changed = true;
+		}
+	}
+
 	// ---------- R0.7: the log ----------
 	private static void OvMapBuiltLog(OvPlan p, OvMap m, float now)
 	{
@@ -1008,7 +1052,7 @@ public partial class HarvestController
 		if (s_mapFrames > 0)
 		{
 			double ms = s_mapTotalTicks * 1000.0 / Stopwatch.Frequency, max = s_mapMaxTicks * 1000.0 / Stopwatch.Frequency;
-			CompanionsPlugin.Log.LogInfo($"[PitMap] last {now - s_mapStatAt:F0} s: up to {s_mapMaxMaps} map(s) working over {s_mapFrames} frames, {s_mapRays} rays, squares read: {s_mapBuildCells} building, {s_mapEvCells} after digs/hits/parts gone, {s_mapSweepCells} sweeping; time {ms:F1} ms in all ({ms / s_mapFrames:F3} ms a frame), the most in one frame {max:F2} ms");
+			CompanionsPlugin.Log.LogInfo($"[PitMap] last {now - s_mapStatAt:F0} s: up to {s_mapMaxMaps} map(s) working over {s_mapFrames} frames, {s_mapRays} rays, squares read: {s_mapBuildCells} building, {s_mapEvCells} after digs/hits/parts gone, {s_mapSweepCells} sweeping; time {ms:F1} ms in all ({ms / s_mapFrames:F3} ms a frame), the most in one frame {max:F2} ms{OvRtStats()}");
 		}
 		s_mapStatAt = now;
 		s_mapRays = s_mapEvCells = s_mapBuildCells = s_mapSweepCells = s_mapMaxTicks = s_mapTotalTicks = 0L;
@@ -1054,6 +1098,8 @@ public partial class HarvestController
 		private static readonly Color CGoal = new Color(1f, 0.95f, 0.1f, 0.95f);
 
 		private static readonly Color CWater = new Color(0.1f, 0.4f, 1f, 1f);
+
+		private static readonly Color CRoute = new Color(0.1f, 1f, 1f, 0.95f);   // MP7
 
 		public OvMapView()
 		{
@@ -1184,6 +1230,20 @@ public partial class HarvestController
 			foreach (Vector3 c in m.GoalAt3)
 			{
 				Quad(c.x, c.y + 0.1f, c.z, half, CGoal);
+			}
+			// MP7: each companion's map route (cyan dots every 0.25 m)
+			foreach (List<Vector3> rt in m.Routes)
+			{
+				for (int k = 1; k < rt.Count; k++)
+				{
+					Vector3 a = rt[k - 1], b = rt[k];
+					float len = Vector3.Distance(a, b);
+					for (float t = 0f; t < len; t += 0.25f)
+					{
+						Vector3 q = Vector3.Lerp(a, b, t / len);
+						Quad(q.x, q.y + 0.15f, q.z, half * 0.35f, CRoute);
+					}
+				}
 			}
 			_mesh.Clear();
 			_mesh.SetVertices(_v);
