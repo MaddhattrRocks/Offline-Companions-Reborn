@@ -1486,32 +1486,86 @@ public partial class HarvestController
 		// MP3 (the map-path list, John 2026-11-21): nearest first among the lowest; one the map says there is no way to (not
 		// just one step too high - MP4 cuts that on the walk) is dropped; at most 5 asked, the rest taken as they are
 		// D1 (John, 2026-11-21, silver veins only: "avoid the ore other than to clear dirt off it"): on a silver vein the place
-		// must be one where the game's swing from it meets the dirt (or anything but the vein) before the vein's rock; the
-		// lowest such places, not only the lowest of all
+		// must be one where the game's swing from it meets the dirt (or anything but the vein) before the vein's rock.
+		// D1.2 (John 20:23Z: "They should be working from the trench not from the top or the ore"): and only a place on the
+		// trench floor - its ground within 0.7 m of the ground at the trench spot nearest it - never the mound, the top or
+		// the ore. D1.3: none within its swing of the point = it digs in from the trench: the trench-floor place within 3 m
+		// of the point nearest it (the swing check too), its swings cut the bank toward the point (P4's bank cut is work)
 		bool silver = OvIsSilver(_vp);
 		Attack sa = silver ? FindBestTool(2)?.m_shared?.m_attack : null;
-		int oreFirst = 0;
+		int oreFirst = 0, offFloor = 0;
+		bool digIn = false;
 		if (silver)
 		{
-			cand.Sort((Vector3 p1, Vector3 p2) => p1.y.CompareTo(p2.y));
 			List<Vector3> ok = new List<Vector3>();
-			float band = float.MaxValue;
 			foreach (Vector3 q in cand)
 			{
-				if (q.y > band || ok.Count + oreFirst >= OvSwTestMax)
+				if (ok.Count + oreFirst >= OvSwTestMax)
 				{
 					break;
+				}
+				if (!OvOnTrenchFloor(q))
+				{
+					offFloor++;
+					continue;
 				}
 				if (!OvSwingDirtFirst(sa, q, aim))
 				{
 					oreFirst++;
 					continue;
 				}
-				if (ok.Count == 0)
-				{
-					band = q.y + 0.3f;
-				}
 				ok.Add(q);
+			}
+			if (ok.Count == 0)
+			{
+				// D1.3: in from the trench
+				for (float x = Mathf.Floor((aim.x - OvDigInFar) / OvDirtGrid) * OvDirtGrid; x <= aim.x + OvDigInFar + 0.001f; x += OvDirtGrid)
+				{
+					for (float z = Mathf.Floor((aim.z - OvDigInFar) / OvDirtGrid) * OvDirtGrid; z <= aim.z + OvDigInFar + 0.001f; z += OvDirtGrid)
+					{
+						Vector3 q = new Vector3(x, 0f, z);
+						if (Flat(q, aim) <= reach + 0.01f || Flat(q, aim) > OvDigInFar + 0.01f || !OvInPitPt(q) || OvBoardTaken(q) != null)
+						{
+							continue;
+						}
+						q.y = GroundAt(q);
+						int ms = OvMapStand(q, out float mf, out _);
+						if (ms == 0)
+						{
+							continue;
+						}
+						if (ms == 1)
+						{
+							q.y = mf;
+						}
+						if (!OvOnTrenchFloor(q))
+						{
+							continue;
+						}
+						ok.Add(q);
+					}
+				}
+				ok.Sort((Vector3 p1, Vector3 p2) => Flat(p1, aim).CompareTo(Flat(p2, aim)));
+				List<Vector3> fine = new List<Vector3>();
+				foreach (Vector3 q in ok)
+				{
+					if (fine.Count + oreFirst >= OvSwTestMax)
+					{
+						break;
+					}
+					if (!OvSwingDirtFirst(sa, q, aim))
+					{
+						oreFirst++;
+						continue;
+					}
+					fine.Add(q);
+					if (fine.Count >= 3)
+					{
+						break;
+					}
+				}
+				ok = fine;
+				digIn = ok.Count > 0;
 			}
 			cand = ok;
 		}
@@ -1519,7 +1573,10 @@ public partial class HarvestController
 		{
 			cand.RemoveAll((Vector3 q) => q.y > low + 0.3f);
 		}
-		cand.Sort((Vector3 p1, Vector3 p2) => (Flat(me, p1) + Mathf.Abs(me.y - p1.y)).CompareTo(Flat(me, p2) + Mathf.Abs(me.y - p2.y)));
+		if (!digIn)
+		{
+			cand.Sort((Vector3 p1, Vector3 p2) => (Flat(me, p1) + Mathf.Abs(me.y - p1.y)).CompareTo(Flat(me, p2) + Mathf.Abs(me.y - p2.y)));
+		}
 		int noWay = 0;
 		foreach (Vector3 pt in cand)
 		{
@@ -1529,9 +1586,10 @@ public partial class HarvestController
 				continue;
 			}
 			stand = pt;
+			if (digIn && CompanionsPlugin.LogNormal) LogInfo($"No trench-floor place within its swing of the dirt at {MHR_Mover.Fmt(aim)} - digging in toward it from the trench at {MHR_Mover.Fmt(pt)} ({Flat(pt, aim):F1} m from it)");
 			return 0;
 		}
-		why = cand.Count == 0 && oreFirst > 0 ? $"from every place within its swing of it ({oreFirst} looked at) the pickaxe swing meets the silver before the dirt" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
+		why = silver && cand.Count == 0 && oreFirst == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : cand.Count == 0 && oreFirst > 0 ? $"from every place within its swing of it ({oreFirst} looked at) the pickaxe swing meets the silver before the dirt" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
 		return 2;
 	}
 
@@ -1792,6 +1850,15 @@ public partial class HarvestController
 			}
 		}
 		return false;
+	}
+
+	private const float OvDigInFar = 3f;   // D1.3: how far from a dirt point it digs in from the trench
+
+	// D1.2: on the trench floor - the ground at q is within 0.7 m (a step) of the ground at the trench spot nearest it
+	private bool OvOnTrenchFloor(Vector3 q)
+	{
+		OvSpot sp = _vp != null && _vp.Spots.Count > 0 ? OvNearest(q) : null;
+		return sp == null || q.y <= GroundAt(sp.P) + OvStepUp;
 	}
 
 	// D1.1 (Attack.DoMeleeAttack): a hit with no point (the swing's sphere started against the collider, distance 0) is
