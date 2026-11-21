@@ -66,7 +66,7 @@ public partial class HarvestController
 	// MP1: where its feet go on square i (the map's stand rule, OvMapStand, from what is already read: the ground with
 	// its height of open space above it, or the top of a player-built piece with that room above it); NaN = no place to
 	// stand or not read yet
-	private static float OvRtFeet(OvMap m, int i, float hh)
+	private static float OvRtFeet(OvMap m, int i, float hh, float radius = 0f)
 	{
 		if (m.ReadAt[i] < 0f)
 		{
@@ -76,7 +76,7 @@ public partial class HarvestController
 		int li = i * OvMapLayers, lc = m.LCount[i];
 		if (lc == 0 || m.LBot[li] - g >= hh)
 		{
-			return g;
+			return OvRoomOverBody(m, i, g, hh, radius) ? g : float.NaN;
 		}
 		for (int j = 0; j < lc; j++)
 		{
@@ -86,9 +86,63 @@ public partial class HarvestController
 			}
 			float top = m.LTop[li + j];
 			float above = j + 1 < lc ? m.LBot[li + j + 1] - top : float.MaxValue;
-			return above >= hh ? top : float.NaN;
+			return above >= hh && OvRoomOverBody(m, i, top, hh, radius) ? top : float.NaN;
 		}
 		return float.NaN;
+	}
+
+	// SV8 (John 11-21: they hit their heads and get stuck under the vein; head room = full height x body width): standing
+	// on square i with its feet at `feet`, nothing solid hangs into the space its body takes - its height, over every
+	// square its body (the game collider's radius round the square's middle) covers. Only what hangs overhead counts: a
+	// layer whose bottom is more than a step (0.7 m) over its feet and less than its height over them. Ground and things
+	// standing on the ground beside it are walls and steps, left to the walk and the way-up rules as now.
+	private static bool OvRoomOverBody(OvMap m, int i, float feet, float hh, float radius)
+	{
+		if (radius <= 0f)
+		{
+			return true;
+		}
+		int cx = i % m.W, cz = i / m.W;
+		int r = Mathf.CeilToInt(radius / OvMapCell);
+		for (int dz = -r; dz <= r; dz++)
+		{
+			for (int dx = -r; dx <= r; dx++)
+			{
+				int x = cx + dx, z = cz + dz;
+				if (x < 0 || z < 0 || x >= m.W || z >= m.H)
+				{
+					continue;
+				}
+				// the nearest point of square (x, z) to the middle of square i
+				float nx = Mathf.Max(0f, Mathf.Abs(dx) * OvMapCell - OvMapCell * 0.5f), nz = Mathf.Max(0f, Mathf.Abs(dz) * OvMapCell - OvMapCell * 0.5f);
+				if (nx * nx + nz * nz >= radius * radius)
+				{
+					continue;
+				}
+				int j = z * m.W + x;
+				if (m.ReadAt[j] < 0f)
+				{
+					continue;
+				}
+				int lj = j * OvMapLayers, lc = m.LCount[j];
+				for (int k = 0; k < lc; k++)
+				{
+					float bot = m.LBot[lj + k];
+					if (bot > feet + OvStepUp && bot < feet + hh)
+					{
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	// SV8: the companion's body radius, from its game collider
+	private float OvBodyRadius()
+	{
+		CapsuleCollider cc = _character != null ? _character.GetComponent<CapsuleCollider>() : null;
+		return cc != null ? cc.radius * Mathf.Max(Mathf.Abs(cc.transform.lossyScale.x), Mathf.Abs(cc.transform.lossyScale.z)) : 0.5f;
 	}
 
 	private static bool OvRtOnBuilt(OvMap m, int i, float feet)
@@ -104,7 +158,7 @@ public partial class HarvestController
 	// MP1: a square it may stand on (feet not NaN, not water it would swim in)
 	private float OvRtStandOn(OvMap m, int i, float hh, float water, float swim)
 	{
-		float f = OvRtFeet(m, i, hh);
+		float f = OvRtFeet(m, i, hh, OvBodyRadius());
 		if (float.IsNaN(f))
 		{
 			return f;

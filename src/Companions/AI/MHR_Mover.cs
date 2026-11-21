@@ -29,6 +29,7 @@ namespace Companions
             // tried on this trip (like the ladders it tried)
             public int VeinOut; public bool VeinDown; public float NextPitWay; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public int VeinOutStuckN; public float VeinOutStuckRem; public bool VeinOutGiveUp; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
             public bool GaveUp; public float GaveUpAt;
+            public HarvestController Hv; public bool HvLooked;   // SV9: its job controller, looked up once
             public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
             public Door RouteDoor; public Vector3 RouteDoorSpot;
@@ -128,6 +129,10 @@ namespace Companions
         public static bool OnLadderChain(CompanionAI ai) { S s = Peek(ai); return s != null && s.OnChain && Time.time - s.LastGo < 1f; }
         // 1.5.98 (Ore job rebuild): seconds since the current walk last got 0.75 m closer (0 when it is not walking)
         public static float NoHeadway(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? Time.time - s.ProgressTime : 0f; }
+        // SV1 (John 11-21: held only while the other is actually working it): the current walk is stuck by the mover's own
+        // rule - it gave up, or it is on an unstuck step (standing still 2.5 s or no 0.75 m closer for 8 s, reset only when
+        // the route gets 1.5 m shorter)
+        public static bool Stuck(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && (s.GaveUp || s.Ladder > 0); }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -228,6 +233,26 @@ namespace Companions
             if (now >= s.NextPlan || s.Path.Count == 0) Plan(ai, c, s, pos, now);
             s_swimming = c.IsSwimming();
             AdvanceCorner(s, pos);
+            // SV9: on the game's route (not the map's) inside a pit map, the square 0.5 m ahead toward the next corner may
+            // not be one where something hangs over its body (SV8's rule) unless the square it is on is one too (getting
+            // out from under): the walk gives up there, and the job picks another place by its own rules
+            if (!s.MapRoute && !s.HasDetour && s.Path.Count > 0)
+            {
+                if (!s.HvLooked) { s.Hv = ai.GetComponent<HarvestController>(); s.HvLooked = true; }
+                HarvestController hvh = s.Hv;
+                Vector3 nc = NextCorner(s, pos) - pos; nc.y = 0f;
+                if (hvh != null && nc.sqrMagnitude > 0.01f)
+                {
+                    Vector3 ahead = pos + nc.normalized * 0.5f;
+                    if (hvh.OvMapLowHead(ahead) && !hvh.OvMapLowHead(pos))
+                    {
+                        s.GaveUp = true; s.GaveUpAt = now;
+                        Halt(ai, c, s);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the game's route goes under something low at " + Fmt(ahead) + " (the pit map: no room over its body there) - not walking it");
+                        return false;
+                    }
+                }
+            }
             float remain = Remaining(s, pos);
             if (s.NewLeg) { s.NewLeg = false; s.Best = remain; }
             if (remain < s.Best - 0.75f) { s.Best = remain; s.ProgressTime = now; }
@@ -3250,6 +3275,18 @@ namespace Companions
                     Sidestep(ai, c, s, pos, dir, now, tag, why, true); return;
                 }
             }
+            // SV9 (John 11-21: they hit their heads and get stuck under the vein): inside its pit map, the jump only when the
+            // map shows room above it for its height plus the jump's rise along the hop; otherwise a walking step toward the
+            // route's next corner instead (no jump)
+            if (hv != null && hv.OvMapJumpBlocked(pos, dir, out string jw))
+            {
+                Vector3 nc = NextCorner(s, pos) - pos; nc.y = 0f;
+                Vector3 sd = nc.sqrMagnitude > 0.01f ? nc.normalized : dir;
+                Face(ai, sd);
+                s.StepDir = sd; s.StepRun = false; s.StepUntil = now + 0.7f;
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
+                return;
+            }
             Face(ai, dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
@@ -4151,6 +4188,9 @@ namespace Companions
             float v = c.m_jumpForce * (1f + skill * 0.4f) * (MHR_Jump.CanAfford(c) ? 1f : c.m_jumpForceTiredFactor);
             return v * v / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;   // with the margin the mover's hop uses
         }
+        // SV9: the game's own Jump() rise with no margin taken off: speed = jump force x (1 + jump skill x 0.4), x the tired
+        // factor out of stamina; rise = speed^2 / (2 x gravity)
+        public static float JumpRiseFull(Character c) { return JumpRise(c) / 0.85f; }
         public static bool FindWayOut(Character c, Vector3 pos, float water, System.Func<Vector3, bool> skip, out Vector3 best, out string why)
         {
             best = Vector3.zero; why = null;

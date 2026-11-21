@@ -2735,6 +2735,7 @@ public partial class HarvestController
 		}
 		if (OvC().Stopped)
 		{
+			OvStandBy("stopped - every dirt point and part left failed; it starts again when anything in the pit changes");   // SV5
 			_ai?.StopMoving();   // P7: it waits by the vein
 			return;
 		}

@@ -63,6 +63,9 @@ public partial class HarvestController
 		// MP1: when each square's read last changed what it holds (a map route over a changed square is searched again)
 		public float[] ChangedAt;
 
+		// SV3: the last time any square's read changed (a stopped vein starts again after it)
+		public float LastChange = -1f;
+
 		public byte[] Kind, Over, Flags;
 
 		// R0.9: the solid layers above the ground at each square, lowest first: square i's layer j is at i * OvMapLayers + j
@@ -458,8 +461,14 @@ public partial class HarvestController
 		float g = m.Ground[i];
 		float hh = _character != null ? _character.GetHeight() : 1.8f;
 		int li = i * OvMapLayers, lc = m.LCount[i];
+		float rad = OvBodyRadius();
 		if (lc == 0 || m.LBot[li] - g >= hh)
 		{
+			if (!OvRoomOverBody(m, i, g, hh, rad))
+			{
+				why = $"something hangs over the space its body takes there (its height {hh:F1} m, {rad:F1} m round)";   // SV8
+				return 0;
+			}
 			feet = g;
 			return 1;
 		}
@@ -471,7 +480,7 @@ public partial class HarvestController
 			}
 			float top = m.LTop[li + j];
 			float above = j + 1 < lc ? m.LBot[li + j + 1] - top : float.MaxValue;
-			if (above >= hh)
+			if (above >= hh && OvRoomOverBody(m, i, top, hh, rad))
 			{
 				feet = top;
 				return 1;
@@ -489,6 +498,55 @@ public partial class HarvestController
 	// S4 (test of 05e19c2: Je's 1.7 m drop-down landed on a shelf by the trench wall and it went on down, 8.1 m in all): the
 	// lowest top (what a fall would land on) of the read squares within r of `land` on its goal's side (and the landing's
 	// own square). NaN = don't know (no map, landing off the map, nothing read there): the mover's own checks decide.
+	// SV9: a stuck hop from pos toward dir (4 m/s for 0.7 s, about 2.8 m on) would meet something overhead: on the pit map,
+	// a layer whose bottom is more than a step (0.7 m) over the feet and under its height plus the game's jump rise, on
+	// the squares its body (the collider's radius) covers along the hop, 0.5 m apart. Off the map / no map = false.
+	internal bool OvMapJumpBlocked(Vector3 pos, Vector3 dir, out string why)
+	{
+		why = null;
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built || OvMapIndex(m, pos) < 0 || _character == null)
+		{
+			return false;
+		}
+		float hh = _character.GetHeight();
+		float rise = MHR_Water.JumpRiseFull(_character);
+		float rad = OvBodyRadius();
+		for (float t = 0f; t <= 2.8f + 0.001f; t += OvMapCell)
+		{
+			Vector3 q = pos + dir * t;
+			int i = OvMapIndex(m, q);
+			if (i < 0)
+			{
+				break;
+			}
+			if (!OvRoomOverBody(m, i, pos.y, hh + rise, rad))
+			{
+				why = $"the pit map has something overhead {t:F1} m on (its height {hh:F1} m + the jump's {rise:F1} m)";
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// SV9: on the pit map, something hangs over the space its body takes at p's square: a layer's bottom more than a
+	// step (0.7 m) and less than its height over the ground there, on any square its body covers (SV8). Off the map /
+	// no map / not read = false.
+	internal bool OvMapLowHead(Vector3 p)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built || _character == null)
+		{
+			return false;
+		}
+		int i = OvMapIndex(m, p);
+		if (i < 0 || m.ReadAt[i] < 0f)
+		{
+			return false;
+		}
+		return !OvRoomOverBody(m, i, Mathf.Max(m.Ground[i], p.y), _character.GetHeight(), OvBodyRadius());   // on a built floor: from its feet
+	}
+
 	internal float OvMapLowNear(Vector3 land, Vector3 goal, float r)
 	{
 		OvMap m = _vp?.Map;
@@ -746,6 +804,7 @@ public partial class HarvestController
 		{
 			m.Changed = true;
 			m.ChangedAt[i] = Time.time;   // MP1
+			m.LastChange = Time.time;     // SV3
 		}
 		m.Ground[i] = g;
 		m.Floor[i] = floor;
