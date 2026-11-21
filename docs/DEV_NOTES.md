@@ -2854,3 +2854,4 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 ### R3b.1-R3b.2
 - R3b.1 `OvSpotBase` / `OvBodyH`: each trench spot's target = max(floor, lowest bottom of this vein's live part boxes within 2 m flat of the spot - the companion's height); no part near = the whole vein's lowest part - height (p.Goal). Replaces the global "1 m under the lowest part" (OvGoalUnder removed).
 - R3b.2: a trench spot more than 1.2 m below the feet is always walked to (mover way-in), never swung at from above (was: only when more than 0.6 m away flat).
+- R3b.4 leash: not counted while walking (WalkGo within 0.5 s, `_bdWalkAt`) to a board goal inside this vein's pit; the 60 s come-back clock (LeashBackTime) replaced by MHR_Mover.GaveUp (after 0.5 s). The 2-times rule stays for real wandering.

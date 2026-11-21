@@ -500,7 +500,6 @@ public partial class HarvestController
 
 	private const float LeashNear = 10f;
 
-	private const float LeashBackTime = 60f;
 
 	private int _leashId;
 
@@ -4859,10 +4858,12 @@ public partial class HarvestController
 				if (CompanionsPlugin.LogNormal) LogInfo($"Back by the vein at {MHR_Mover.Fmt(me)} ({d:F0} m from it)");
 				return false;
 			}
-			if (Time.time - _leashSince > LeashBackTime)
+			// R3b.4 (John: no timers on walks): the mover's own progress-based give-up decides, not 60 s (after a moment, so
+			// a give-up left over from the walk before doesn't count)
+			if (Time.time - _leashSince > 0.5f && MHR_Mover.GaveUp(_ai))
 			{
 				_leashBack = false;
-				SayGaveUp(GiveUpWhy.OutOfReach, $"couldn't get back to the vein in {LeashBackTime:F0} s");
+				SayGaveUp(GiveUpWhy.OutOfReach, "couldn't get back to the vein (the walk back gave up)");
 				OvLeave("couldn't get back to the vein");
 				_stuckInHole = true;
 				_stuckAt = me;
@@ -4885,6 +4886,12 @@ public partial class HarvestController
 		{
 			return false;
 		}
+		// R3b.4 (test of edb0a24: Comp's route to spot 67, 17 m along the trench, ran 102 m round outside the pit and the
+		// leash made it leave): walking to a work point inside this vein's pit is not wandering off
+		if (_bdGoalOn && Time.time - _bdWalkAt < 0.5f && OvInPitPt(_bdGoal))
+		{
+			return false;
+		}
 		_leashCount++;
 		if (_leashCount >= 2)
 		{
@@ -4903,7 +4910,7 @@ public partial class HarvestController
 			OvResume();
 		}
 		_ai.StopMoving();
-		if (CompanionsPlugin.LogNormal) LogInfo($"{dist:F0} m outside the vein while working it (at {MHR_Mover.Fmt(me)}) - coming back ({LeashBackTime:F0} s at most)");
+		if (CompanionsPlugin.LogNormal) LogInfo($"{dist:F0} m outside the vein while working it (at {MHR_Mover.Fmt(me)}) - coming back");
 		return true;
 	}
 

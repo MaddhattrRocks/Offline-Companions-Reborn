@@ -21,6 +21,8 @@ public partial class HarvestController
 
 	private bool _bdGoalOn;
 
+	private float _bdWalkAt = -1f;   // R3b.4: the last time it walked toward its board goal (WalkGo on a vein)
+
 	private float _bdNextLook;
 
 	private float _bdWaitFrom = -1f;
@@ -119,6 +121,7 @@ public partial class HarvestController
 	private void OvBoardWalk(Vector3 goal, float dt)
 	{
 		Vector3 me = base.transform.position;
+		_bdWalkAt = Time.time;
 		if (!_bdGoalOn || Flat(_bdGoal, goal) > 0.5f)
 		{
 			_bdGoal = goal;
