@@ -668,6 +668,15 @@ public class CompanionSetup : MonoBehaviour
 			bool flag2 = HasHomePosition();
 			Vector3 homePos = (flag2 ? GetHomePosition() : Vector3.zero);
 			int combatStance = zDO.GetInt(CombatStanceHash);
+			// C1 (John 2026-11-21: "Once they get their gear back it should reset their stance to what it was before their
+			// death"): it died while still getting its gear back (Passive, auto-pickup off) - the tombstone keeps the stance and
+			// auto-pickup from before its first death, not the recovery's (that save left Comp, Je and Gunter Passive for good)
+			if (zDO.GetBool(MHR_Recover.RecoveringHash))
+			{
+				combatStance = zDO.GetInt(MHR_Recover.RecoverStanceHash);
+				autoPickup = zDO.GetBool(MHR_Recover.RecoverPickupHash, defaultValue: true);
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Recover] Died before its gear was back - its tombstone keeps the stance {combatStance} and auto-pickup {(autoPickup ? "on" : "off")} from before its first death");
+			}
 			bool hasHomeBed = zDO.GetBool(HasHomeBedHash);
 			Vector3 vec = zDO.GetVec3(HomeBedPosHash, Vector3.zero);
 			CreateCompanionTombstone(text, vector, tombstoneId, prefabName, appearance, ownerId, actionMode, actionModeSchema, follow, stayHome, autoPickup, wander, num != 0, formationSlot, skillsSerialized, flag2, homePos, combatStance, hasHomeBed, vec);

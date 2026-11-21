@@ -414,6 +414,8 @@ public partial class HarvestController
 
 	private Vector3 _dgDugPt;
 
+	private float _dgDugBefore;   // Q1: the ground at the dig's point before the game dug it (NotifyDig)
+
 	private OvPlan _aimLogVp;
 
 	// V5: when the thing handed to the Wood / Stone flow was handed over
@@ -3105,6 +3107,14 @@ public partial class HarvestController
 		{
 			return;   // L2: turned first
 		}
+		// E2 (silver, a point of the dirt list or E3's place): right before each swing, the E1 check from where it actually
+		// stands - it fails: no swing, it repositions (OvDrTick reads _drRepos once the dig is off)
+		if (_dgDirt && !_drForThing && OvIsSilver(_vp) && !OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, base.transform.position, _dgPoint))
+		{
+			_drRepos = "from where it stands the swing would meet the vein, or would not meet the dirt first";
+			OvDigOff();
+			return;
+		}
 		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
 		{
@@ -3270,13 +3280,42 @@ public partial class HarvestController
 			bool bank = dug && _dgDugPt.y >= ft.y + 0.3f && Flat(ft, _dgDugPt) <= Flat(ft, _dgPoint) + 0.3f;
 			// D1 (John, 2026-11-21, silver veins only: "avoid the ore other than to clear dirt off it"): on a silver vein a swing
 			// that only hit the vein's rock is not work - 3 in a row end the round as any other
-			bool oreWork = hitOre && !OvIsSilver(_vp);
+			bool silver = OvIsSilver(_vp) && !_drForThing;
+			bool oreWork = hitOre && !silver;
+			// Q1 (John 2026-11-21, silver: "as long as the pickaxe hits the dirt and causes a change in the dirt it should
+			// count"): the game dug and the ground where it dug went down 0.05 m or more, at any height - not a dig within
+			// 0.5 m (flat) of its own feet (5c: no digging itself into a hole), nor where the ground was already at its lowest
+			// allowed (2 m under the part's bottom, or the game's 8 m limit). The 0.3 m-above-its-feet bank test is not used.
+			bool feetDig = false;
+			if (silver)
+			{
+				feetDig = dug && Flat(ft, _dgDugPt) <= OvFeetDig;
+				float lowest = Mathf.Max(_drSpot != null && _drSpot.Part != null ? OvPartBottom(_drSpot.Part) - OvDeepMax : float.MinValue, OvFloor(_dgDugPt));
+				bank = dug && !feetDig && _dgDugBefore > lowest + OvDigGain && GroundAt(_dgDugPt) <= _dgDugBefore - OvDigGain;
+			}
 			_dgNoProg = drop || bank || carve || oreWork ? 0 : _dgNoProg + 1;
+			// rule 5 (silver): reposition at once when a swing hit the vein (1 hit is the limit - no part breaks from dirt work)
+			// or dug at its own feet; after 2 swings in a row with no work (OvDirtNoProg, every vein)
+			if (silver && after > _dgGoalY + OvDigGain)
+			{
+				if (hitOre)
+				{
+					_drRepos = "a swing hit the vein";
+				}
+				else if (feetDig)
+				{
+					_drRepos = $"a swing dug at its own feet ({MHR_Mover.Fmt(_dgDugPt)})";
+				}
+				else if (_dgNoProg >= OvDirtNoProg)
+				{
+					_drRepos = $"{OvDirtNoProg} swings in a row did no work";
+				}
+			}
 			if ((drop || bank) && _vp != null)
 			{
 				OvC().ProgAt = Time.time;
 			}
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? ", cut into the bank toward it" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || oreWork ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? (silver ? $", dug the dirt ({_dgDugBefore:F2} -> {GroundAt(_dgDugPt):F2})" : ", cut into the bank toward it") : "")}{(feetDig ? ", dug at its own feet" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || oreWork ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
 			if (after <= _dgGoalY + OvDigGain)
 			{
 				_dgReached = true;
@@ -3287,7 +3326,7 @@ public partial class HarvestController
 				_dgLimit = true;
 				OvDigOff();
 			}
-			else if (_dgNoProg >= OvNoProgSwings)
+			else if (_drRepos != null || _dgNoProg >= OvDirtNoProg)
 			{
 				OvDigOff();
 			}
@@ -4867,6 +4906,7 @@ public partial class HarvestController
 	{
 		_dgDugAt = Time.time;
 		_dgDugPt = hitPoint;
+		_dgDugBefore = GroundAt(hitPoint);   // Q1: the ground there before the game's dig (this runs before it digs)
 		OvMapDirty(_vp?.Map, hitPoint, OvMapEventNear);   // R0.3: the pit map's squares within 2 m are read again
 	}
 

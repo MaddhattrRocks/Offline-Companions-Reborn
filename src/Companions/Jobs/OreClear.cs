@@ -171,6 +171,19 @@ public partial class HarvestController
 
 		public readonly Dictionary<long, string> DirtWhy = new Dictionary<long, string>();
 
+		// E2 (silver): each point's tried places (a place it repositioned away from) - cleared when it comes back after a change
+		public readonly Dictionary<long, List<Vector3>> DirtTried = new Dictionary<long, List<Vector3>>();
+
+		// E3 (silver): each point's places it already tried to dig deeper (at most 3 per point) - cleared with the tried list
+		public readonly Dictionary<long, List<Vector3>> DirtDeep = new Dictionary<long, List<Vector3>>();
+
+		// E4: points that came back once because no other dirt point was free (rule 8b) - a second set-aside with nothing
+		// changed waits for a change (8a)
+		public readonly HashSet<long> DirtOnce = new HashSet<long>();
+
+		// E4 (no pit map): the ground within 2 m of a set-aside point when it was set aside (a 5 x 5 grid, 1 m apart)
+		public readonly Dictionary<long, float[]> DirtGround = new Dictionary<long, float[]>();
+
 		// GG3d: the last time something broke or the ground at a dirt point went down
 		public float ProgAt;
 
@@ -652,9 +665,88 @@ public partial class HarvestController
 		return false;
 	}
 
+	// E4 (John 2026-11-21: "No timeout checks... It should be logic based"; "set it aside until the other areas are done or
+	// something changes. Then come back to it"): a set-aside point (DirtCool holds when it was set aside) stays aside until
+	// (8a) a square of the pit map within 2 m of it changed after that (a dig, a hit, a part gone) - or, with no pit map, the
+	// ground within 2 m of it moved 0.1 m - which also clears its tried list and its come-back-once mark; (8b, OvDrChoose)
+	// no other dirt point is free. No clock.
 	private bool OvDirtCooling(OvClear c, OvDirt d)
 	{
-		return c.DirtCool.TryGetValue(d.Key, out float until) && Time.time < until;
+		if (!c.DirtCool.TryGetValue(d.Key, out float at))
+		{
+			return false;
+		}
+		if (!OvDirtChangedNear(c, d, at))
+		{
+			return true;
+		}
+		c.DirtCool.Remove(d.Key);
+		c.DirtTried.Remove(d.Key);
+		c.DirtDeep.Remove(d.Key);
+		c.DirtOnce.Remove(d.Key);
+		c.DirtGround.Remove(d.Key);
+		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} is back on the list: something within 2 m of it changed");
+		return false;
+	}
+
+	private const float OvAsideNear = 2f;      // E4: what "near" a set-aside point is (8a)
+
+	private const float OvAsideMove = 0.1f;    // E4: with no pit map, the ground move that counts as a change
+
+	// E4 (8a): something within 2 m of the point changed after `at`
+	private bool OvDirtChangedNear(OvClear c, OvDirt d, float at)
+	{
+		OvMap m = _vp?.Map;
+		if (m != null && m.Built && m.ChangedAt != null)
+		{
+			int r = Mathf.CeilToInt(OvAsideNear / OvMapCell);
+			int cx = Mathf.FloorToInt((d.P.x - m.X0) / OvMapCell);
+			int cz = Mathf.FloorToInt((d.P.z - m.Z0) / OvMapCell);
+			for (int dz = -r; dz <= r; dz++)
+			{
+				for (int dx = -r; dx <= r; dx++)
+				{
+					int x = cx + dx, z = cz + dz;
+					if (x < 0 || z < 0 || x >= m.W || z >= m.H || (dx * dx + dz * dz) * OvMapCell * OvMapCell > OvAsideNear * OvAsideNear)
+					{
+						continue;
+					}
+					if (m.ChangedAt[z * m.W + x] > at)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+		if (!c.DirtGround.TryGetValue(d.Key, out float[] was))
+		{
+			return false;
+		}
+		float[] now = OvDirtGroundGrid(d.P);
+		for (int i = 0; i < now.Length; i++)
+		{
+			if (Mathf.Abs(now[i] - was[i]) >= OvAsideMove)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// E4: the ground within 2 m of p (a 5 x 5 grid, 1 m apart) - only used with no pit map
+	private float[] OvDirtGroundGrid(Vector3 p)
+	{
+		float[] g = new float[25];
+		int i = 0;
+		for (int dz = -2; dz <= 2; dz++)
+		{
+			for (int dx = -2; dx <= 2; dx++)
+			{
+				g[i++] = GroundAt(new Vector3(p.x + dx, 0f, p.z + dz));
+			}
+		}
+		return g;
 	}
 
 	// L4: a low part (P5: its box touches the ground by the game's own check) - never a ladder part
@@ -1123,6 +1215,26 @@ public partial class HarvestController
 			}
 			lows.Add(part);
 		}
+		// E4 (8b, John: "set it aside until the other areas are done ... Then come back to it"): no other dirt point or low
+		// part is free and none is being worked by another companion - each set-aside point that hasn't come back this way
+		// yet comes back once, its tried list cleared; set aside again with nothing changed, it waits for a change (8a)
+		if (free.Count == 0 && lows.Count == 0 && !others)
+		{
+			foreach (OvDirt d in c.Dirt)
+			{
+				if (!c.DirtCool.ContainsKey(d.Key) || c.DirtOnce.Contains(d.Key) || GroundAt(d.P) <= d.Goal + OvDigGain)
+				{
+					continue;
+				}
+				c.DirtCool.Remove(d.Key);
+				c.DirtTried.Remove(d.Key);
+				c.DirtDeep.Remove(d.Key);
+				c.DirtGround.Remove(d.Key);
+				c.DirtOnce.Add(d.Key);
+				free.Add(d);
+				if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} comes back once: no other dirt point is free");
+			}
+		}
 		// nearest first: a dirt point by its own place, a low part by the nearest point of its box
 		List<KeyValuePair<float, object>> all = new List<KeyValuePair<float, object>>();
 		foreach (OvDirt d in free)
@@ -1167,7 +1279,7 @@ public partial class HarvestController
 				return true;
 			}
 			OvDirt d = (OvDirt)kv.Value;
-			int r = OvStandFor(c, new Vector3(d.P.x, GroundAt(d.P), d.P.z), null, out Vector3 stand, out string why);
+			int r = OvStandFor(c, new Vector3(d.P.x, GroundAt(d.P), d.P.z), null, out Vector3 stand, out string why, d);
 			if (r != 0)
 			{
 				OvDirtCool(c, d, why);
@@ -1204,22 +1316,30 @@ public partial class HarvestController
 		return true;
 	}
 
+	// E4: set aside (no clock - OvDirtCooling says when it comes back)
 	private void OvDirtCool(OvClear c, OvDirt d, string why)
 	{
 		float now = Time.time;
-		c.DirtCool[d.Key] = now + OvCool;
+		c.DirtCool[d.Key] = now;
 		c.DirtFail[d.Key] = now;
 		c.DirtWhy[d.Key] = why;
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built)
+		{
+			c.DirtGround[d.Key] = OvDirtGroundGrid(d.P);
+		}
 		if (d.Holder == this)
 		{
 			d.Holder = null;
 		}
-		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} (under \"{(d.Part.C != null ? d.Part.C.name : "?")}\") waits {OvCool:F0} s: {why}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} (under \"{(d.Part.C != null ? d.Part.C.name : "?")}\") is set aside until something within 2 m of it changes{(c.DirtOnce.Contains(d.Key) ? "" : " or no other dirt point is free")}: {why}");
 	}
 
 	private void OvDrOff()
 	{
 		_dgBackNoProg = -1;   // S3
+		_drRepos = null;      // E2
+		_drDeep = false;      // E3
 		if (_drSpot != null && _drSpot.Holder == this)
 		{
 			_drSpot.Holder = null;
@@ -1312,6 +1432,155 @@ public partial class HarvestController
 		OvRampBegin(goal, null, outOfTrench: false, $"the ground at the base of \"{t.name}\" is dug down and it is still {b.min.y - me.y:F1} m above its feet - a way up beside it");
 	}
 
+	// ---------- E2 / E3 (silver veins, John 2026-11-21): reposition, then mine deeper, then set aside ----------
+	private const int OvDirtNoProg = 2;        // rule 5b: swings in a row with no work before it moves (the stone job's 2)
+
+	private const float OvFeetDig = 0.5f;      // rule 5c: a dig within 0.5 m (flat) of its own feet
+
+	private const float OvDeepMax = 2f;        // rule 6: never lower than 2 m under the bottom of the point's part
+
+	private const float OvDeepStep = 0.5f;     // rule 6: a place is dug down 0.5 m at a time
+
+	private const int OvDeepPlaces = 3;        // rule 6: at most 3 tried places per point are dug deeper
+
+	private string _drRepos;     // rule 5 / E2: why it moves to another place (set by the swing or the check before it)
+
+	private bool _drDeep;        // E3: digging the place it will stand on deeper
+
+	private Vector3 _drDeepPt;   // E3: that place
+
+	private float _drDeepGoal;   // E3: the ground there this step digs to
+
+	// E2: the place it was on goes on the point's tried list; the next place (rules 2-3) that passes E1 and isn't tried;
+	// none: E3 (mine deeper); nothing there either: the point is set aside (E4)
+	private void OvDrRepos(OvClear c, OvDirt d, string why)
+	{
+		if (!c.DirtTried.TryGetValue(d.Key, out List<Vector3> tl))
+		{
+			tl = new List<Vector3>();
+			c.DirtTried[d.Key] = tl;
+		}
+		if (!OvTriedHas(tl, _drStand))
+		{
+			tl.Add(_drStand);
+		}
+		_dgBackNoProg = -1;   // a new place counts its own swings
+		int r = OvStandFor(c, new Vector3(d.P.x, GroundAt(d.P), d.P.z), null, out Vector3 st, out string w, d);
+		if (r == 0)
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Moves for the dirt at {MHR_Mover.Fmt(d.P)}: {why} - to {MHR_Mover.Fmt(st)} ({tl.Count} place(s) tried)");
+			OvDrGoTo(st);
+			return;
+		}
+		if (OvDrDeepNext(c, d, why))
+		{
+			return;
+		}
+		OvDrFail(c, $"{why}; {w}; no place could be dug deeper to work it from");
+	}
+
+	private void OvDrGoTo(Vector3 st)
+	{
+		_drStand = st;
+		_drWalk = true;
+		_drMpTried = _drMpOn = false;
+		_moveTimer = 0f;
+		_ai?.StopMoving();
+	}
+
+	// the lowest the ground may go at q for point d: 2 m under its part's bottom, never past the game's 8 m limit
+	private float OvDeepLowest(OvDirt d, Vector3 q)
+	{
+		return Mathf.Max(d.Part != null ? OvPartBottom(d.Part) - OvDeepMax : float.MinValue, OvFloor(q));
+	}
+
+	// E3 (rule 6, John: "If they need to mine deeper to clear an area that is ok"): the next tried place within its swing
+	// of the point (nearest the point first, at most 3 per point) that can go 0.5 m lower: dug down from beside it (a
+	// place found by the same rules, E1 toward that place, not within 0.5 m of it). True = started.
+	private bool OvDrDeepNext(OvClear c, OvDirt d, string why)
+	{
+		if (!c.DirtTried.TryGetValue(d.Key, out List<Vector3> tl) || tl.Count == 0)
+		{
+			return false;
+		}
+		if (!c.DirtDeep.TryGetValue(d.Key, out List<Vector3> done))
+		{
+			done = new List<Vector3>();
+			c.DirtDeep[d.Key] = done;
+		}
+		float range = FindBestTool(2)?.m_shared?.m_attack != null ? FindBestTool(2).m_shared.m_attack.m_attackRange : 2f;
+		float reach = Mathf.Max(0.8f, range - OvStandAt);
+		List<Vector3> pick = new List<Vector3>();
+		foreach (Vector3 t in tl)
+		{
+			if (Flat(t, d.P) <= reach + 0.01f && !OvTriedHas(done, t))
+			{
+				pick.Add(t);
+			}
+		}
+		pick.Sort((Vector3 a, Vector3 b) => Flat(a, d.P).CompareTo(Flat(b, d.P)));
+		foreach (Vector3 t in pick)
+		{
+			if (done.Count >= OvDeepPlaces)
+			{
+				return false;
+			}
+			done.Add(t);
+			Vector3 q = new Vector3(t.x, GroundAt(t), t.z);
+			float lowest = OvDeepLowest(d, q);
+			if (q.y <= lowest + OvDigGain)
+			{
+				continue;
+			}
+			if (OvStandFor(c, q, null, out Vector3 st, out string w, null, q) != 0)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Can't dig {MHR_Mover.Fmt(q)} deeper for the dirt at {MHR_Mover.Fmt(d.P)}: {w}");
+				continue;
+			}
+			_drDeep = true;
+			_drDeepPt = q;
+			_drDeepGoal = Mathf.Max(q.y - OvDeepStep, lowest);
+			if (CompanionsPlugin.LogNormal) LogInfo($"No place left to work the dirt at {MHR_Mover.Fmt(d.P)} from ({why}) - digging {MHR_Mover.Fmt(q)} down to {_drDeepGoal:F2} from {MHR_Mover.Fmt(st)} to work it from there");
+			OvDrGoTo(st);
+			return true;
+		}
+		return false;
+	}
+
+	// E3: a deeper dig of its place ended - reached = 0.5 m lower: E1 from there for real (passes: it works the point from
+	// there; fails: another 0.5 m while above the lowest allowed); else that place is done with: the next place, or set aside
+	private void OvDrDeepStep(OvClear c, OvDirt d, bool reached, string why)
+	{
+		_drDeep = false;
+		Vector3 q = new Vector3(_drDeepPt.x, GroundAt(_drDeepPt), _drDeepPt.z);
+		if (reached)
+		{
+			Vector3 aim = new Vector3(d.P.x, GroundAt(d.P), d.P.z);
+			if (OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, q, aim))
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Dug {MHR_Mover.Fmt(q)} down - the swing from there meets the dirt at {MHR_Mover.Fmt(d.P)} without the vein: working it from there");
+				OvDrGoTo(q);
+				return;
+			}
+			float lowest = OvDeepLowest(d, q);
+			if (q.y > lowest + OvDigGain)
+			{
+				_drDeep = true;
+				_drDeepPt = q;
+				_drDeepGoal = Mathf.Max(q.y - OvDeepStep, lowest);
+				if (CompanionsPlugin.LogNormal) LogInfo($"Dug {MHR_Mover.Fmt(q)} down - the swing from there still meets the vein: down to {_drDeepGoal:F2} next");
+				return;
+			}
+			why = $"down to its lowest allowed ({lowest:F2}) and the swing from there still meets the vein";
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Stops digging {MHR_Mover.Fmt(q)} deeper: {why}");
+		if (OvDrDeepNext(c, d, why))
+		{
+			return;
+		}
+		OvDrFail(c, "no place to work it from without the swing meeting the vein, even dug deeper");
+	}
+
 	// one frame of digging a dirt point (from OvClearTick while _drSpot is set)
 	private void OvDrTick(OvClear c)
 	{
@@ -1367,6 +1636,15 @@ public partial class HarvestController
 				OvDrThingUp();
 				return;
 			}
+			if (_drDeep)
+			{
+				// E3: the dig of the place it stands to work the point from (reached = 0.5 m deeper; anything else = this
+				// place is done with)
+				string dr = _drRepos;
+				_drRepos = null;
+				OvDrDeepStep(c, d, reached, dr ?? (limit ? "the game's 8 m dig limit" : "its swings did no work"));
+				return;
+			}
 			if (reached)
 			{
 				if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} is down to {GroundAt(d.P):F2} (under \"{d.Part.C.name}\"'s bottom {OvPartBottom(d.Part):F2})");
@@ -1374,7 +1652,15 @@ public partial class HarvestController
 				c.DirtAt = Mathf.Min(c.DirtAt, Time.time - OvDirtEvery + 0.5f);   // the list again in 0.5 s
 				return;
 			}
-			OvDrFail(c, limit ? "it is at the game's 8 m dig limit" : $"{OvNoProgSwings} swings didn't lower the ground there");
+			if (_drRepos != null && !_drForThing)
+			{
+				// E2 / rule 5 (silver): a swing hit the vein, dug at its own feet, or 2 swings did no work - another place
+				string why = _drRepos;
+				_drRepos = null;
+				OvDrRepos(c, d, why);
+				return;
+			}
+			OvDrFail(c, limit ? "it is at the game's 8 m dig limit" : $"{OvDirtNoProg} swings didn't lower the ground there");
 			return;
 		}
 		if (_drWalk)
@@ -1422,6 +1708,22 @@ public partial class HarvestController
 			c.DirtAt = Mathf.Min(c.DirtAt, Time.time - OvDirtEvery + 0.5f);
 			return;
 		}
+		if (_drDeep)
+		{
+			// E3: digging the place it will stand on 0.5 m deeper (from beside it), as a dirt point of its own
+			float dg = GroundAt(_drDeepPt);
+			if (dg <= _drDeepGoal + OvDigGain)
+			{
+				OvDrDeepStep(c, d, true, null);
+				return;
+			}
+			OvDigBegin(new Vector3(_drDeepPt.x, dg, _drDeepPt.z), null, ramp: false);
+			OvDigResume();
+			_dgClear = true;
+			_dgDirt = true;
+			_dgGoalY = _drDeepGoal;
+			return;
+		}
 		OvDigBegin(new Vector3(d.P.x, g, d.P.z), null, ramp: false);
 		OvDigResume();
 		_dgClear = true;
@@ -1437,7 +1739,7 @@ public partial class HarvestController
 	// place to stand for work at `aim` - pit ground (P1) on a 0.5 m grid within its swing (the pickaxe's range less the
 	// 0.5 m the walk stops short: 1.3 m) of the dirt point; the LOWEST of them (within 0.3 m of the lowest: the nearest to
 	// the companion). A part: OvStandForPart (M1). 0 = found, 1 = a part from a ladder, 2 = none.
-	private int OvStandFor(OvClear c, Vector3 aim, OvPart part, out Vector3 stand, out string why)
+	private int OvStandFor(OvClear c, Vector3 aim, OvPart part, out Vector3 stand, out string why, OvDirt dirt = null, Vector3? notNear = null)
 	{
 		if (part != null)
 		{
@@ -1457,7 +1759,7 @@ public partial class HarvestController
 			{
 				Vector3 pt = new Vector3(x, 0f, z);
 				// G2: not within 1.2 m of another companion's place or walk goal (the board)
-				if (Flat(pt, aim) > reach + 0.01f || !OvInPitPt(pt) || OvBoardTaken(pt) != null)
+				if (Flat(pt, aim) > reach + 0.01f || !OvInPitPt(pt) || OvBoardTaken(pt) != null || (notNear.HasValue && Flat(pt, notNear.Value) <= OvFeetDig))
 				{
 					continue;
 				}
@@ -1491,10 +1793,13 @@ public partial class HarvestController
 		// trench floor - its ground within 0.7 m of the ground at the trench spot nearest it - never the mound, the top or
 		// the ore. D1.3: none within its swing of the point = it digs in from the trench: the trench-floor place within 3 m
 		// of the point nearest it (the swing check too), its swings cut the bank toward the point (P4's bank cut is work)
+		// E1 (John 2026-11-21): the check is OvSwingClean - no ray meets the vein first and the swing's first hit is the
+		// ground, at any height. E2: a place on this point's tried list (one it repositioned away from) isn't taken again.
 		bool silver = OvIsSilver(_vp);
 		Attack sa = silver ? FindBestTool(2)?.m_shared?.m_attack : null;
-		int oreFirst = 0, offFloor = 0;
+		int oreFirst = 0, offFloor = 0, triedN = 0;
 		bool digIn = false;
+		List<Vector3> tried = silver && dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
 		if (silver)
 		{
 			List<Vector3> ok = new List<Vector3>();
@@ -1504,12 +1809,17 @@ public partial class HarvestController
 				{
 					break;
 				}
+				if (OvTriedHas(tried, q))
+				{
+					triedN++;
+					continue;
+				}
 				if (!OvOnTrenchFloor(q))
 				{
 					offFloor++;
 					continue;
 				}
-				if (!OvSwingDirtFirst(sa, q, aim))
+				if (!OvSwingClean(sa, q, aim))
 				{
 					oreFirst++;
 					continue;
@@ -1524,7 +1834,7 @@ public partial class HarvestController
 					for (float z = Mathf.Floor((aim.z - OvDigInFar) / OvDirtGrid) * OvDirtGrid; z <= aim.z + OvDigInFar + 0.001f; z += OvDirtGrid)
 					{
 						Vector3 q = new Vector3(x, 0f, z);
-						if (Flat(q, aim) <= reach + 0.01f || Flat(q, aim) > OvDigInFar + 0.01f || !OvInPitPt(q) || OvBoardTaken(q) != null)
+						if (Flat(q, aim) <= reach + 0.01f || Flat(q, aim) > OvDigInFar + 0.01f || !OvInPitPt(q) || OvBoardTaken(q) != null || (notNear.HasValue && Flat(q, notNear.Value) <= OvFeetDig))
 						{
 							continue;
 						}
@@ -1542,6 +1852,11 @@ public partial class HarvestController
 						{
 							continue;
 						}
+						if (OvTriedHas(tried, q))
+						{
+							triedN++;
+							continue;
+						}
 						ok.Add(q);
 					}
 				}
@@ -1553,7 +1868,7 @@ public partial class HarvestController
 					{
 						break;
 					}
-					if (!OvSwingDirtFirst(sa, q, aim))
+					if (!OvSwingClean(sa, q, aim))
 					{
 						oreFirst++;
 						continue;
@@ -1589,7 +1904,7 @@ public partial class HarvestController
 			if (digIn && CompanionsPlugin.LogNormal) LogInfo($"No trench-floor place within its swing of the dirt at {MHR_Mover.Fmt(aim)} - digging in toward it from the trench at {MHR_Mover.Fmt(pt)} ({Flat(pt, aim):F1} m from it)");
 			return 0;
 		}
-		why = silver && cand.Count == 0 && oreFirst == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : cand.Count == 0 && oreFirst > 0 ? $"from every place within its swing of it ({oreFirst} looked at) the pickaxe swing meets the silver before the dirt" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
+		why = silver && cand.Count == 0 && oreFirst == 0 && triedN == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : silver && cand.Count == 0 && (oreFirst > 0 || triedN > 0) ? $"no place left within {OvDigInFar:F0} m of it where the swing meets the dirt without meeting the vein ({oreFirst} checked, {triedN} tried already)" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
 		return 2;
 	}
 
@@ -1854,6 +2169,23 @@ public partial class HarvestController
 
 	private const float OvDigInFar = 3f;   // D1.3: how far from a dirt point it digs in from the trench
 
+	// E2: q is one of the point's tried places (within 0.25 m of one)
+	private static bool OvTriedHas(List<Vector3> tried, Vector3 q)
+	{
+		if (tried == null)
+		{
+			return false;
+		}
+		foreach (Vector3 t in tried)
+		{
+			if (Flat(t, q) < 0.25f)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// D1.2: on the trench floor - the ground at q is within 0.7 m (a step) of the ground at the trench spot nearest it
 	private bool OvOnTrenchFloor(Vector3 q)
 	{
@@ -1872,11 +2204,13 @@ public partial class HarvestController
 		return h.point;
 	}
 
-	// D1: the game's pickaxe swing from feet at pt toward aim (Attack.DoMeleeAttack: the rays in the game's order, the top of
-	// the arc first, each counting its first hit; the game handles the hits in that order and a pickaxe that hit something
-	// before the ground doesn't dig): false = the first thing the swing meets is this vein's rock; true = the ground or
-	// anything else first, or nothing at all
-	private bool OvSwingDirtFirst(Attack a, Vector3 pt, Vector3 aim)
+	// E1 (John 2026-11-21: "clear all the dirt from the silver ore vein WITHOUT hitting the vein"; "only that the strike will
+	// connect" with the dirt, at any height): the game's pickaxe swing from feet at pt toward aim (Attack.DoMeleeAttack: the
+	// rays in the game's order, the top of the arc first; each ray strikes only the first thing it meets; the ground is dug
+	// only when the first thing the swing meets is the ground). True = no ray's first hit is this vein's rock AND the first
+	// thing the swing meets is the ground (above or below its feet); false = a ray meets the vein first, or the swing's
+	// first hit is something else, or it meets nothing at all
+	private bool OvSwingClean(Attack a, Vector3 pt, Vector3 aim)
 	{
 		if (s_swMask < 0)
 		{
@@ -1907,6 +2241,7 @@ public partial class HarvestController
 		Vector3 fwd = yaw * Vector3.forward;
 		Vector3 o = pt + jointUp + Vector3.up * height + yaw * Vector3.right * offset;
 		float half = angle / 2f;
+		bool anyHit = false, groundFirst = false;
 		for (float ang = -half; ang <= half; ang += 4f)
 		{
 			Vector3 dir = yaw * ((vertical ? Quaternion.Euler(ang, 0f, 0f) : Quaternion.Euler(0f, -ang, 0f)) * Vector3.forward);
@@ -1933,9 +2268,17 @@ public partial class HarvestController
 				continue;
 			}
 			MineRock5 m5 = first.GetComponentInParent<MineRock5>();
-			return m5 == null || _vp == null || !_vp.Rocks.Contains(m5);
+			if (m5 != null && _vp != null && _vp.Rocks.Contains(m5))
+			{
+				return false;   // this ray strikes the vein
+			}
+			if (!anyHit)
+			{
+				anyHit = true;
+				groundFirst = first.GetComponentInParent<Heightmap>() != null;
+			}
 		}
-		return true;
+		return anyHit && groundFirst;
 	}
 
 	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
