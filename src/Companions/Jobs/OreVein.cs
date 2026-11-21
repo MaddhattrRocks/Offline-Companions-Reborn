@@ -171,7 +171,7 @@ public partial class HarvestController
 
 	private const float OvWaterFloor = 29.5f;      // C2.5
 
-	private const float OvGoalUnder = 1.0f;        // C2.6: the trench goal, 1 m under the vein's lowest part
+	private const float OvBaseNear = 2f;           // R3b.1: the vein parts whose box comes within 2 m (flat) of a spot set its depth
 
 	private const float OvLapStep = 2.0f;          // C2.7
 
@@ -1059,6 +1059,43 @@ public partial class HarvestController
 	// uses), buried parts included
 	private static readonly List<MHR_Vein.Area> s_ovJoinAreas = new List<MHR_Vein.Area>();
 
+	// R3b.1: this companion's height (the depth under the vein a spot goes)
+	private float OvBodyH()
+	{
+		return _character != null ? _character.GetHeight() : 1.8f;
+	}
+
+	// R3b.1 (John, 2026-11-21: "no more than a NPC height under the ore vein"): the vein's base beside a spot - the lowest
+	// bottom of this vein's live part boxes (the same boxes the plan's ring is made from) that come within 2 m (flat) of
+	// it; none = the whole vein's lowest part
+	private float OvSpotBase(OvPlan p, Vector3 pos)
+	{
+		float low = float.MaxValue;
+		foreach (MineRock5 rock in p.Rocks)
+		{
+			if (rock == null || !MHR_Vein.Areas(rock, s_ovJoinAreas, out bool haveBounds))
+			{
+				continue;
+			}
+			Vector3 origin = rock.transform.position;
+			foreach (MHR_Vein.Area ha in s_ovJoinAreas)
+			{
+				if (ha.Health <= 0f || ha.Collider == null || !ha.Collider.gameObject.activeSelf)
+				{
+					continue;
+				}
+				Vector3 c = haveBounds ? origin + ha.BoundPos : ha.Collider.bounds.center;
+				Vector3 h = haveBounds ? ha.BoundSize : ha.Collider.bounds.size * 0.5f;
+				float dx = Mathf.Max(0f, Mathf.Abs(pos.x - c.x) - h.x), dz = Mathf.Max(0f, Mathf.Abs(pos.z - c.z) - h.z);
+				if (dx * dx + dz * dz <= OvBaseNear * OvBaseNear)
+				{
+					low = Mathf.Min(low, c.y - h.y);
+				}
+			}
+		}
+		return low < float.MaxValue ? low : p.Goal + OvBodyH();
+	}
+
 	private static void OvPartBoxes(MineRock5 r, List<Bounds> into)
 	{
 		into.Clear();
@@ -1160,7 +1197,7 @@ public partial class HarvestController
 		p.LastWork = now;
 		s_ovPlans.Add(p);
 		OvLoad(p);   // F3: the vein's saved progress (a plan made after a load)
-		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for the vein \"{p.Name}\": {p.Rocks.Count} deposit(s), {p.Seen} part(s) seen, a ring of {p.Spots.Count} spots 1 m out from them; the trench goal is {p.Goal:F1} (1 m under the vein's lowest part, never under the floor); lap 1 takes each spot down 2 m at most{joined}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Plan for the vein \"{p.Name}\": {p.Rocks.Count} deposit(s), {p.Seen} part(s) seen, a ring of {p.Spots.Count} spots 1 m out from them; each spot down to one companion height ({OvBodyH():F1} m) under the vein beside it (never under the floor; {p.Goal:F1} where no part is within {OvBaseNear:F0} m); lap 1 takes each spot down 2 m at most{joined}");
 		return p;
 	}
 
@@ -1215,7 +1252,7 @@ public partial class HarvestController
 		}
 		p.Seen = seen;
 		p.Box = box;
-		p.Goal = lowest - OvGoalUnder;
+		p.Goal = lowest - OvBodyH();   // R3b.1: the fallback - one companion height under the whole vein's lowest part
 		List<Vector2> hull = OvHull(pts);
 		Vector2 mid = Vector2.zero;
 		foreach (Vector2 v in hull)
@@ -1290,7 +1327,7 @@ public partial class HarvestController
 				s.P = pos;
 			}
 			s.Floor = OvFloor(pos);
-			s.Target = Mathf.Max(s.Floor, p.Goal);
+			s.Target = Mathf.Max(s.Floor, OvSpotBase(p, pos) - OvBodyH());   // R3b.1
 			OvSpot old = null;
 			if (keep != null)
 			{
@@ -2908,7 +2945,9 @@ public partial class HarvestController
 			}
 			// GG2: a dirt point of the dirt list, or a part, is swung at from where it stands (its place was chosen outside
 			// the parts' boxes) - never walked closer
-			if (!_dgDirt && !_dgPart && (flat > reach * 0.9f || (below && flat > 0.6f)))
+			// R3b.2 (test of 83bb2a6: Gunter swung at spot 76 from the edge 3 m above it and dug out its own footing): a spot
+			// more than 1.2 m below its feet is always walked to (the mover goes in by a way out), never swung at from above
+			if (!_dgDirt && !_dgPart && (flat > reach * 0.9f || below))
 			{
 				_dgWalking = true;
 				float up = GroundAt(_dgPoint) - me.y;
@@ -3425,7 +3464,7 @@ public partial class HarvestController
 			}
 			sp.P = np;
 			sp.Floor = OvFloor(np);
-			sp.Target = Mathf.Max(sp.Floor, p.Goal);
+			sp.Target = Mathf.Max(sp.Floor, OvSpotBase(p, np) - OvBodyH());   // R3b.1
 			float g = GroundAt(np);
 			sp.LapStart = g;
 			sp.OpenLap = p.Lap;
