@@ -2917,3 +2917,4 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - K3: the mover's walking hop only when MHR_Jump.CanAfford (stamina for a full jump).
 - K4: a pause on the same goal (shift within 1.5 m, same task) without a 0.6 m flat move from the stuck anchor doesn't restart the stuck clocks or the unstuck step; the pause time isn't counted (John's choice). Covers pauses over 2 s too (the route is still re-planned).
 - K5: trench spots: a companion stuck on its walk (MHR_Mover.Stuck) doesn't hold its spot or keep spots within 2 m / 4 m of it; the stuck one lets go when another takes it (the SV1 take-over).
+- V4 (log 2f290f42, Rock_4 loop 1232x in 24 s): a thing a way up's swing meets is handed to the Wood / Stone flow once (it works the whole object by its own rules); the same way up meeting it a second time gives up on that spot (_rpBad, as the other way-up give-ups). Reset per way up (OvRampBegin).

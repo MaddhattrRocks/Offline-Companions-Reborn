@@ -497,6 +497,7 @@ public partial class HarvestController
 
 	// G1: where a way up met the game's dig limit this lap (no new way up from within 2 m of it)
 	private readonly List<Vector3> _rpBad = new List<Vector3>();
+	private readonly HashSet<int> _rpMet = new HashSet<int>();   // V4: the things this way up's swings met (handed over once)
 
 	private int _rpBadLap = -1;
 
@@ -3280,6 +3281,15 @@ public partial class HarvestController
 				OvDigOff();
 				return;
 			}
+			// V4 (log 2f290f42: Gunter's way up struck Rock_4, handed it to the Stone flow, got it back and struck it again,
+			// 1232 times in 24 s): a thing this way up's swing meets is handed to the Wood / Stone flow once; when the same
+			// way up meets it a second time, the way up gives up on this spot (another spot's way up is cut instead)
+			if (thing != null && _rpActive && _dgRamp && !_rpMet.Add(thing.GetInstanceID()))
+			{
+				_rpBad.Add(_rpStart);
+				OvRampFail($"its swing met \"{thing.name}\" a second time (it was handed to the {(mode == 1 ? "Wood" : "Stone")} job once already)");
+				return;
+			}
 			if (thing != null)
 			{
 				int id = thing.GetInstanceID();
@@ -3692,6 +3702,7 @@ public partial class HarvestController
 	private void OvRampBegin(Vector3 goal, OvSpot spot, bool outOfTrench, string why)
 	{
 		Vector3 me = base.transform.position;
+		_rpMet.Clear();   // V4: a new way up
 		if (_vp != null && _rpBadLap != _vp.Lap)
 		{
 			_rpBadLap = _vp.Lap;
