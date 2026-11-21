@@ -1747,7 +1747,11 @@ public partial class HarvestController
 		for (float ang = -half; ang <= half; ang += 4f)
 		{
 			Vector3 dir = yaw * ((vertical ? Quaternion.Euler(ang, 0f, 0f) : Quaternion.Euler(0f, -ang, 0f)) * Vector3.forward);
-			if (!part.C.Raycast(new Ray(o, dir), out RaycastHit rh, range))
+			// D1.1: a ray that doesn't meet the rock is skipped, unless the swing starts against it (the game counts that)
+			Bounds sb = part.C.bounds;
+			sb.Expand(width * 2f);
+			RaycastHit rh = default(RaycastHit);
+			if (!part.C.Raycast(new Ray(o, dir), out rh, range) && !sb.Contains(o))
 			{
 				continue;
 			}
@@ -1762,7 +1766,7 @@ public partial class HarvestController
 				{
 					continue;
 				}
-				Vector3 hp = h.point == Vector3.zero && h.distance == 0f ? o : h.point;
+				Vector3 hp = OvSwingPoint(h, o, dir, range);   // D1.1: the game's point for a swing that starts against it
 				if (angle < 180f && Vector3.Dot(hp - o, fwd) <= 0f)
 				{
 					continue;
@@ -1788,6 +1792,17 @@ public partial class HarvestController
 			}
 		}
 		return false;
+	}
+
+	// D1.1 (Attack.DoMeleeAttack): a hit with no point (the swing's sphere started against the collider, distance 0) is
+	// at the end of the ray for a mesh (a rock's), else the collider's closest point to the start; any other hit is where it is
+	private static Vector3 OvSwingPoint(RaycastHit h, Vector3 o, Vector3 dir, float range)
+	{
+		if (h.point == Vector3.zero && h.normal == -dir)
+		{
+			return h.collider is MeshCollider ? o + dir * range : h.collider.ClosestPoint(o);
+		}
+		return h.point;
 	}
 
 	// D1: the game's pickaxe swing from feet at pt toward aim (Attack.DoMeleeAttack: the rays in the game's order, the top of
@@ -1838,7 +1853,7 @@ public partial class HarvestController
 				{
 					continue;
 				}
-				Vector3 hp = h.point == Vector3.zero && h.distance == 0f ? o : h.point;
+				Vector3 hp = OvSwingPoint(h, o, dir, range);   // D1.1: the game's point for a swing that starts against it
 				if (angle < 180f && Vector3.Dot(hp - o, fwd) <= 0f)
 				{
 					continue;
