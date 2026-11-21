@@ -3218,6 +3218,9 @@ namespace Companions
                     if (drop < 1.2f) continue;                                             // still our floor
                     if (drop > maxDrop) break;                                             // too far down this way
                     if (MHR_Water.DepthAt(hit.point) > 1.0f) break;
+                    // R3a.3 (test of 9dfc40e: Comp's 3.2 m drop ran on down to 8.1 m and killed it): the DD5 steep run from the
+                    // landing on in the same way - a slope that keeps going down past the safe drop is no landing
+                    if (SteepAhead(hit.point, dir, 0.5f, maxDrop - drop) > 0f) break;
                     float flatAfter = Flat(hit.point, goal);
                     if (flatAfter >= here) break;                                          // 1.5.98 CC5 (test 12: a 1.7 m drop that landed 2.2 m farther, 4 times): only a drop that lands nearer it (flat)
                     float score = Mathf.Abs(hit.point.y - goal.y) * 2f + flatAfter * 0.3f + drop * 0.2f;

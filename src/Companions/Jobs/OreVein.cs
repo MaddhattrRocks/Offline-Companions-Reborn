@@ -3334,7 +3334,11 @@ public partial class HarvestController
 		}
 		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
 		// vein's ore restarts the spot's 30 s clock
-		_dgLastProg = prog || oreProg || dug || rockHit;
+		// R3a.2 (test of 9dfc40e: 9 swings at spot 28 dug 0.2-0.4 m beside it, the spot never went down): for a trench
+		// spot, only the spot's own ground going down, the vein's ore or a plain rock carved counts - "the game dug
+		// somewhere" counts only for ramp steps
+		bool dugCounts = dug && (_dgRamp || _dgSpot == null);
+		_dgLastProg = prog || oreProg || dugCounts || rockHit;
 		_dgDamage |= prog || oreProg || dug || rockHit;   // M3: this dig lowered the ground or damaged a rock
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
 		if (prog || oreProg)
@@ -3798,6 +3802,10 @@ public partial class HarvestController
 				OvRampWorldStop(mc.name, mc);
 				return;
 			}
+			if (OvRampVeinStop(mc))
+			{
+				return;
+			}
 			if (hk == MkBuilt)
 			{
 				// R1.2 (John, 2026-11-21): a player-built piece - no swing (companions never damage builds), this way up gives up
@@ -3820,6 +3828,10 @@ public partial class HarvestController
 				if (OvIsWorldSolid(fc))
 				{
 					OvRampWorldStop(fc.name, fc);
+					return;
+				}
+				if (OvRampVeinStop(fc))
+				{
 					return;
 				}
 				// the vein's rock, the ground, or a thing (the dig's H1 hands a thing to the Wood / Stone flow): a swing at
@@ -3855,6 +3867,10 @@ public partial class HarvestController
 				OvRampWorldStop(sc.name, sc);
 				return;
 			}
+			if (OvRampVeinStop(sc))
+			{
+				return;
+			}
 			if (_vp != null && OvInBlocker(_vp, ahead, 0f))
 			{
 				OvRampWorldStop(OvBlockerAt(_vp, ahead), null);
@@ -3881,6 +3897,20 @@ public partial class HarvestController
 
 	// Z1: the way up meets an object that can't be damaged - its box is kept (X1), no new way up from where this one began
 	// this lap, and this one gives up
+	// R3a.1 (John, 2026-11-18: a way out must never go through the vein): the first thing on the swing line is this vein's
+	// own rock - no swing, this way up gives up (not noted as a blocker); plain boulders are still carved through
+	private bool OvRampVeinStop(Collider c)
+	{
+		MineRock5 m = c != null ? c.GetComponentInParent<MineRock5>() : null;
+		if (m == null || _vp == null || !_vp.Rocks.Contains(m))
+		{
+			return false;
+		}
+		_rpBad.Add(_rpStart);
+		OvRampFail($"the step in front is the vein's own rock \"{c.name}\" (a way up never goes through the vein)");
+		return true;
+	}
+
 	// Z1 / R1.2: a swing at the first thing on the swing line where it was hit (the rock itself, not its box)
 	private void OvRampStrike(Collider fc, Vector3 fat, string why)
 	{

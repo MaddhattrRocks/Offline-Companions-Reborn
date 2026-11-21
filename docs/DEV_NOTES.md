@@ -2843,3 +2843,8 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - R2.2 OvStandFor and R2.3 OvStandForPart drop "no" candidates (before the body/swing tests) and use the built floor's height as the feet; "don't know" keeps today's behaviour.
 - R2.4 OvBoardSide: a side the map says is no place to stand costs +10 (like a taken side).
 - R2.5 removed the never-read `_bdHwBest` / `_bdHwTime`.
+
+### R3a.1-R3a.3
+- R3a.1 `OvRampVeinStop`: a way up whose swing line meets this vein's own rock (R1.2 map wall, Z1 strike, ground-wall swing) gives up (`_rpBad` + OvRampFail); plain boulders are still carved.
+- R3a.2: a trench-spot swing counts as progress only when the spot's ground goes down, the vein's ore is hit or a plain rock is carved; "dug somewhere" counts only for ramp steps. 30 s spot clock kept as backstop.
+- R3a.3 MHR_Mover.TryDropDown: a landing whose DD5 steep run (SteepAhead) continues past the remaining safe drop is refused.
