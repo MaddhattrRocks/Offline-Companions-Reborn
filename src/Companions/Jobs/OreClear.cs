@@ -2037,6 +2037,7 @@ public partial class HarvestController
 		_clFor = part;
 		part.Holder = this;
 		_clStand = stand;
+		_clRampTried = false;   // S2: one map way up per round
 		_clAim = _standAim;
 		_clWalk = !ladder;
 		_moveTimer = 0f;
@@ -2047,6 +2048,7 @@ public partial class HarvestController
 
 	// ---------- S3 (test of 05e19c2: a fight moved Je 7 m from its place and 3 m down; it went on swinging at its part from
 	// there, the game dug the ground in front each time and its feet sank 2 m - a hole) ----------
+	private bool _clRampTried;   // S2: this part round already started a way up from the map's wall check
 	private int _dgBackNoProg = -1, _dgBackMiss;   // S3: the round's swing counts kept while it walks back (-1 = none)
 
 	// off the place it was given: more than 0.5 m from it (flat), or more than 0.7 m under / over it (the ground there now
@@ -2173,6 +2175,24 @@ public partial class HarvestController
 				float up = _clStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
 				bool tooHigh = up >= OvRampRatio * hh && flat <= OvRampReach;
+				// S2 (the radar; test of 05e19c2: the walk to a part never looked at what was in front, only waited for the
+				// mover to give up): within 3 m of the place, a step up or more above its feet, and the map's squares in front
+				// read a wall - the way up from here now, once per round (R1.3's check on trench walks). Not for something it
+				// never swings at (can't be damaged, a built piece, this vein's own rock): the walk goes on, the mover's
+				// give-up ends it. The way up's own R1.2 strikes a plain rock or hands a thing over; when it ends, this walk
+				// goes on.
+				if (!_clRampTried && _vp?.Map != null && flat <= OvRampReach && up >= OvStepUp && OvMapWallAhead(_clStand, out byte wk, out Collider wc, out _) == 1)
+				{
+					byte hk = wc != null ? OvMapKind(_vp, _vp.Map, wc) : wk;
+					MineRock5 wm = wc != null ? wc.GetComponentInParent<MineRock5>() : null;
+					if (hk != MkFixed && hk != MkBuilt && (wm == null || !_vp.Rocks.Contains(wm)))
+					{
+						_clRampTried = true;
+						_ai?.StopMoving();
+						OvRampBegin(_clStand, null, outOfTrench: false, $"the map reads {OvMapKindName(wk)} in front on the way to the place beside the part, {up:F1} m up, {flat:F1} m away");
+						return;
+					}
+				}
 				// P3: the place to stand is the bottom of the pit - no steps cut toward it (HH3 removed)
 				if (tooHigh || OvWalkGaveUp(dt, _clStand))
 				{

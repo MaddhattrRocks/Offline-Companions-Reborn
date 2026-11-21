@@ -3222,6 +3222,7 @@ namespace Companions
             float maxDrop = Mathf.Min(ModConfig.StuckDrop != null ? ModConfig.StuckDrop.Value : 8f, CompanionFallDamagePatch.SafeDrop(c, 0.3f));
             float here = Flat(pos, goal);
             float bestScore = float.MaxValue; Vector3 bestDir = Vector3.zero, bestLand = Vector3.zero; float bestEdge = 0f;
+            HarvestController hv = null; bool hvLooked = false;   // S4: its pit map (looked up once, at the first landing)
             for (int k = 0; k < 16; k++)
             {
                 Vector3 dir = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
@@ -3242,6 +3243,15 @@ namespace Companions
                     // below and fell 8.9 m): the same steep run from the landing toward the goal
                     Vector3 onward = goal - hit.point; onward.y = 0f;
                     if (onward.sqrMagnitude > 0.25f && SteepAhead(hit.point, onward.normalized, 0.5f, maxDrop - drop) > 0f) break;
+                    // S4 (the radar; test of 05e19c2: Je's 1.7 m drop landed on a shelf, then 8.1 m in all): inside a vein's
+                    // pit map, the lowest ground within 2 m of the landing on the goal's side must be within the safe drop
+                    // from here (outside a map: as before)
+                    if (!hvLooked) { hv = ai.GetComponent<HarvestController>(); hvLooked = true; }
+                    if (hv != null)
+                    {
+                        float low = hv.OvMapLowNear(hit.point, goal, 2f);
+                        if (!float.IsNaN(low) && pos.y - low > maxDrop) break;
+                    }
                     float flatAfter = Flat(hit.point, goal);
                     if (flatAfter >= here) break;                                          // 1.5.98 CC5 (test 12: a 1.7 m drop that landed 2.2 m farther, 4 times): only a drop that lands nearer it (flat)
                     float score = Mathf.Abs(hit.point.y - goal.y) * 2f + flatAfter * 0.3f + drop * 0.2f;

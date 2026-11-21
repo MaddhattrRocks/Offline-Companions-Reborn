@@ -469,6 +469,41 @@ public partial class HarvestController
 		return 0;
 	}
 
+	// ---------- S4: the lowest ground round a drop-down's landing, from the map ----------
+
+	// S4 (test of 05e19c2: Je's 1.7 m drop-down landed on a shelf by the trench wall and it went on down, 8.1 m in all): the
+	// lowest top (what a fall would land on) of the read squares within r of `land` on its goal's side (and the landing's
+	// own square). NaN = don't know (no map, landing off the map, nothing read there): the mover's own checks decide.
+	internal float OvMapLowNear(Vector3 land, Vector3 goal, float r)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || OvMapIndex(m, land) < 0)
+		{
+			return float.NaN;
+		}
+		Vector3 tg = goal - land;
+		tg.y = 0f;
+		bool anyWay = tg.sqrMagnitude < 0.25f;
+		float low = float.MaxValue;
+		for (float dx = -r; dx <= r + 0.01f; dx += OvMapCell)
+		{
+			for (float dz = -r; dz <= r + 0.01f; dz += OvMapCell)
+			{
+				if (dx * dx + dz * dz > r * r || (!anyWay && dx * tg.x + dz * tg.z < 0f))
+				{
+					continue;
+				}
+				int i = OvMapIndex(m, new Vector3(land.x + dx, land.y, land.z + dz));
+				if (i < 0 || m.ReadAt[i] < 0f)
+				{
+					continue;
+				}
+				low = Mathf.Min(low, Mathf.Max(m.Ground[i], m.Top[i]));
+			}
+		}
+		return low == float.MaxValue ? float.NaN : low;
+	}
+
 	// ---------- R1.1: what is in front, from the map ----------
 
 	private const float OvMapAheadNear = 0.5f;     // R1.1: the squares 0.5 m ...
