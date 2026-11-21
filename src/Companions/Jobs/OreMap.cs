@@ -10,7 +10,10 @@ namespace Companions;
 // companion on it: the pit (everything inside the trench's outer wall, the plan's pit cells) and 8 m round it, in squares
 // of 0.5 m. Each square: the terrain ground, the top solid surface and what it is (one ray down), the open space above the
 // ground and what closes it (one ray up), and how far the game still lets the ground be dug (8 m under its first height).
-// The companions' squares come from the board. R0 is data only: nothing reads the map yet (R1-R3 will, each its own list).
+// R0.9 (John 11-21 00:02Z: "the map only is hitting the top of things"): the same two rays keep every solid thing they
+// pass, joined into up to 4 layers per square (bottom, top, kind), so overhangs, open space under the vein and stacked
+// parts are there; a side is where a neighbour square has nothing solid at that height. R0.8: the vein has a worker while
+// any companion is still assigned to it. The companions' squares come from the board. R0 is data only: nothing reads the map yet (R1-R3 will, each its own list).
 // Cost: work only while the vein has a worker, a fixed slice a frame (200 squares building / after events, 40 sweeping);
 // the overlay (config Advanced/PitMapOverlay, off by default) is redrawn at most once a second.
 public partial class HarvestController
@@ -37,7 +40,9 @@ public partial class HarvestController
 
 	private const float OvMapDrawEvery = 1f;       // R0.6: the overlay redrawn at most once a second
 
-	private const float OvMapWorkerStale = 5f;     // a worker entry not refreshed for 5 s is not counted
+	private const int OvMapLayers = 4;             // R0.9: solid layers kept per square (the lowest 4 above the ground)
+
+	private const float OvMapJoin = 0.05f;         // R0.9: two solid spans less than 5 cm apart are one layer
 
 	// what a square's top (or the thing above its ground) is
 	internal const byte MkNone = 0, MkGround = 1, MkOre = 2, MkRock = 3, MkThing = 4, MkBuilt = 5, MkFixed = 6, MkSkip = 255;
@@ -57,11 +62,20 @@ public partial class HarvestController
 
 		public byte[] Kind, Over, Flags;
 
+		// R0.9: the solid layers above the ground at each square, lowest first: square i's layer j is at i * OvMapLayers + j
+		public float[] LBot, LTop;
+
+		public byte[] LKind, LCount;
+
 		public bool[] Dirty;
 
 		public readonly List<int> DirtyList = new List<int>();
 
 		public readonly List<int> CrewMarked = new List<int>();
+
+		public readonly List<Vector3> CrewAt3 = new List<Vector3>();   // R0.9: where each companion stands (white) ...
+
+		public readonly List<Vector3> GoalAt3 = new List<Vector3>();   // ... and walks to (yellow), drawn at that height
 
 		public readonly List<Bounds> Parts = new List<Bounds>();
 
@@ -80,7 +94,12 @@ public partial class HarvestController
 		public OvMapView View;
 	}
 
-	private static readonly RaycastHit[] s_mapHits = new RaycastHit[16];
+	private static readonly RaycastHit[] s_mapHits = new RaycastHit[32];
+
+	private static readonly RaycastHit[] s_mapUpHits = new RaycastHit[32];
+
+	// R0.9: one square's spans while it is read (bottom, top, kind), before they are joined into layers
+	private static readonly List<Vector3> s_mapSpans = new List<Vector3>();
 
 	private static readonly List<Bounds> s_mapParts = new List<Bounds>();
 
@@ -137,10 +156,12 @@ public partial class HarvestController
 	// one plan's map for this frame; true = it worked (the vein has a worker)
 	private static bool OvMapTick(OvPlan p, float now)
 	{
+		// R0.8 (log 58676f4a: the map read itself again 3 times while all three were clearing pit things): on the vein =
+		// any companion still assigned to it (its plan is this one), whatever it is doing for it - not "worked it lately"
 		bool active = false;
-		foreach (KeyValuePair<HarvestController, float> w in p.Workers)
+		foreach (HarvestController h in p.Workers.Keys)
 		{
-			if (w.Key != null && w.Key._vp == p && now - w.Value <= OvMapWorkerStale)
+			if (h != null && h._vp == p)
 			{
 				active = true;
 				break;
@@ -330,6 +351,10 @@ public partial class HarvestController
 		nm.Over = new byte[n];
 		nm.Flags = new byte[n];
 		nm.Dirty = new bool[n];
+		nm.LBot = new float[n * OvMapLayers];
+		nm.LTop = new float[n * OvMapLayers];
+		nm.LKind = new byte[n * OvMapLayers];
+		nm.LCount = new byte[n];
 		for (int i = 0; i < n; i++)
 		{
 			nm.ReadAt[i] = -1f;
@@ -356,6 +381,13 @@ public partial class HarvestController
 					nm.Kind[b] = m.Kind[a];
 					nm.Over[b] = m.Over[a];
 					nm.Flags[b] = (byte)(m.Flags[a] & MfWater);
+					nm.LCount[b] = m.LCount[a];
+					for (int j = 0; j < OvMapLayers; j++)
+					{
+						nm.LBot[b * OvMapLayers + j] = m.LBot[a * OvMapLayers + j];
+						nm.LTop[b * OvMapLayers + j] = m.LTop[a * OvMapLayers + j];
+						nm.LKind[b * OvMapLayers + j] = m.LKind[a * OvMapLayers + j];
+					}
 					if (m.Dirty[a])
 					{
 						nm.Dirty[b] = true;
@@ -404,16 +436,20 @@ public partial class HarvestController
 		float g = GroundAt(c);
 		c.y = g;
 		float floor = TFloorFrom(c, g);
-		// (b) the top solid surface, one ray straight down from 3 m above the vein's top (or the ground, if higher)
+		// (b) R0.9: every solid thing on the square's line, from 3 m above the vein's top (or the ground, if higher) down to
+		// the ground: one ray down gives each thing's top face, one ray up from just above the ground gives each thing's
+		// bottom face (the game reports each collider once per ray: where the ray first meets it)
 		float from = Mathf.Max(g, m.TopY) + OvMapAbove;
 		float top = g;
 		byte kind = MkNone;
 		int k = Physics.RaycastNonAlloc(new Vector3(c.x, from, c.z), Vector3.down, s_mapHits, from - g + 1f, s_mapMask, QueryTriggerInteraction.Ignore);
+		int ku = Physics.RaycastNonAlloc(new Vector3(c.x, g + 0.05f, c.z), Vector3.up, s_mapUpHits, from - g, s_mapMask, QueryTriggerInteraction.Ignore);
+		s_mapSpans.Clear();
 		float best = float.MaxValue;
 		for (int h = 0; h < k; h++)
 		{
 			RaycastHit rh = s_mapHits[h];
-			if (rh.distance >= best || rh.collider == null)
+			if (rh.collider == null)
 			{
 				continue;
 			}
@@ -422,37 +458,99 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			best = rh.distance;
-			top = rh.point.y;
-			kind = kk;
+			if (rh.distance < best)
+			{
+				// the top surface (R0.1, as before)
+				best = rh.distance;
+				top = rh.point.y;
+				kind = kk;
+			}
+			if (kk == MkGround)
+			{
+				continue;
+			}
+			// its bottom: where the up-ray met the same collider; not met = the up-ray started inside it, so it reaches
+			// down into the ground (its bottom is the ground)
+			float bot = g;
+			for (int u = 0; u < ku; u++)
+			{
+				if (s_mapUpHits[u].collider == rh.collider)
+				{
+					bot = Mathf.Min(s_mapUpHits[u].point.y, rh.point.y);
+					break;
+				}
+			}
+			s_mapSpans.Add(new Vector3(bot, rh.point.y, kk));
 		}
-		// (c) the open space above the ground, one ray straight up from just above it
+		// a thing the up-ray met that the down-ray didn't: the down-ray started inside it (it rises above the ray's start)
+		for (int u = 0; u < ku; u++)
+		{
+			RaycastHit uh = s_mapUpHits[u];
+			if (uh.collider == null || uh.collider.gameObject.layer == s_mapTerrain)
+			{
+				continue;
+			}
+			bool seen = false;
+			for (int h = 0; h < k; h++)
+			{
+				if (s_mapHits[h].collider == uh.collider)
+				{
+					seen = true;
+					break;
+				}
+			}
+			byte kk = seen ? MkSkip : OvMapKind(p, m, uh.collider);
+			if (kk != MkSkip)
+			{
+				s_mapSpans.Add(new Vector3(uh.point.y, from, kk));
+			}
+		}
+		// joined into layers, lowest first: spans that overlap or are under 5 cm apart are one layer; its kind, when they
+		// differ: this vein's part first, then can't be damaged, built, rock / stone, a thing
+		s_mapSpans.Sort((Vector3 a, Vector3 b) => a.x.CompareTo(b.x));
+		int li = i * OvMapLayers, lc = 0;
+		bool layersChanged = false;
+		float lb = 0f, lt = 0f;
+		byte lk = MkNone;
+		for (int sIdx = 0; sIdx <= s_mapSpans.Count; sIdx++)
+		{
+			bool last = sIdx == s_mapSpans.Count;
+			Vector3 sp = last ? default(Vector3) : s_mapSpans[sIdx];
+			if (!last && sIdx > 0 && sp.x <= lt + OvMapJoin)
+			{
+				lt = Mathf.Max(lt, sp.y);
+				lk = OvMapKindFirst(lk, (byte)sp.z);
+				continue;
+			}
+			if (sIdx > 0 && lc < OvMapLayers)
+			{
+				layersChanged |= lc >= m.LCount[i] || Mathf.Abs(m.LBot[li + lc] - lb) > 0.05f || Mathf.Abs(m.LTop[li + lc] - lt) > 0.05f || m.LKind[li + lc] != lk;
+				m.LBot[li + lc] = lb;
+				m.LTop[li + lc] = lt;
+				m.LKind[li + lc] = lk;
+				lc++;
+			}
+			if (!last)
+			{
+				lb = sp.x;
+				lt = sp.y;
+				lk = (byte)sp.z;
+			}
+		}
+		layersChanged |= lc != m.LCount[i];
+		m.LCount[i] = (byte)lc;
+		// (c) the open space above the ground: up to the lowest layer (none = open, counted to 10 m); a lowest layer that
+		// starts at the ground = no open space under it
 		float head = OvMapHeadMax;
 		byte over = MkNone;
-		k = Physics.RaycastNonAlloc(new Vector3(c.x, g + 0.05f, c.z), Vector3.up, s_mapHits, OvMapHeadMax, s_mapMask, QueryTriggerInteraction.Ignore);
-		best = float.MaxValue;
-		for (int h = 0; h < k; h++)
+		if (lc > 0)
 		{
-			RaycastHit rh = s_mapHits[h];
-			if (rh.distance >= best || rh.collider == null || rh.collider.gameObject.layer == s_mapTerrain)
-			{
-				continue;
-			}
-			byte kk = OvMapKind(p, m, rh.collider);
-			if (kk == MkSkip)
-			{
-				continue;
-			}
-			best = rh.distance;
-			head = rh.point.y - g;
-			over = kk;
+			head = Mathf.Min(OvMapHeadMax, m.LBot[li] - g <= OvMapJoin ? 0f : m.LBot[li] - g);
+			over = m.LKind[li];
 		}
-		// a ray that starts inside a thing doesn't see it: the down-ray found something above the ground here and the
-		// up-ray nothing, so that thing reaches down into the ground (no open space under it)
-		if (over == MkNone && kind != MkGround && kind != MkNone && top > g + 0.1f)
+		if (layersChanged)
 		{
-			head = 0f;
-			over = kind;
+			m.Changed = true;
 		}
 		byte flags = (byte)(m.Flags[i] & (MfCrew | MfGoal));
 		if (ZoneSystem.instance != null && top < ZoneSystem.instance.m_waterLevel)
@@ -472,6 +570,25 @@ public partial class HarvestController
 		m.Flags[i] = flags;
 		m.ReadAt[i] = Time.time;
 		s_mapRays += 3;
+	}
+
+	// R0.9: which kind a joined layer is, when its spans differ
+	private static byte OvMapKindFirst(byte a, byte b)
+	{
+		return OvMapKindRank(b) > OvMapKindRank(a) ? b : a;
+	}
+
+	private static int OvMapKindRank(byte k)
+	{
+		switch (k)
+		{
+		case MkOre: return 5;
+		case MkFixed: return 4;
+		case MkBuilt: return 3;
+		case MkRock: return 2;
+		case MkThing: return 1;
+		default: return 0;
+		}
 	}
 
 	// what a collider is (kept per collider for this vein); MkSkip = not counted (a creature or companion)
@@ -606,6 +723,8 @@ public partial class HarvestController
 			sum += i;
 		}
 		m.CrewMarked.Clear();
+		m.CrewAt3.Clear();
+		m.GoalAt3.Clear();
 		foreach (HarvestController h in p.Workers.Keys)
 		{
 			if (h == null || h._vp != p)
@@ -617,6 +736,7 @@ public partial class HarvestController
 			{
 				m.Flags[i] |= MfCrew;
 				m.CrewMarked.Add(i);
+				m.CrewAt3.Add(h.transform.position);
 			}
 			if (h._bdGoalOn)
 			{
@@ -625,6 +745,7 @@ public partial class HarvestController
 				{
 					m.Flags[g] |= MfGoal;
 					m.CrewMarked.Add(g);
+					m.GoalAt3.Add(h._bdGoal);
 				}
 			}
 		}
@@ -672,9 +793,21 @@ public partial class HarvestController
 				}
 			}
 		}
-		long bytes = (long)n * (5 * 4 + 3 + 1);
+		long bytes = (long)n * (5 * 4 + 3 + 1 + 1 + OvMapLayers * 9);
+		int layered = 0, multi = 0;
+		for (int i = 0; i < n; i++)
+		{
+			if (m.LCount[i] > 0)
+			{
+				layered++;
+			}
+			if (m.LCount[i] > 1)
+			{
+				multi++;
+			}
+		}
 		string what = m.BuildWhy;
-		CompanionsPlugin.Log.LogInfo($"[Gather] Pit map of \"{p.Name}\" {what}: {m.W} x {m.H} squares ({m.W * OvMapCell:F0} x {m.H * OvMapCell:F0} m, x {m.X0:F0} to {m.X0 + m.W * OvMapCell:F0}, z {m.Z0:F0} to {m.Z0 + m.H * OvMapCell:F0}), in {now - m.BuildStart:F1} s over {m.BuildFrames} frames, {m.BuildRays} rays, {bytes / 1024} KB. Tops: ground {kinds[MkGround]}, vein part {kinds[MkOre]}, rock/stone {kinds[MkRock]}, tree/thing {kinds[MkThing]}, built {kinds[MkBuilt]}, can't be damaged {kinds[MkFixed]}, nothing found {kinds[MkNone]}; under water {water}. Vein parts reaching down to the ground: {oreDown} squares; open space under a vein part: {gapUnder} squares");
+		CompanionsPlugin.Log.LogInfo($"[Gather] Pit map of \"{p.Name}\" {what}: {m.W} x {m.H} squares ({m.W * OvMapCell:F0} x {m.H * OvMapCell:F0} m, x {m.X0:F0} to {m.X0 + m.W * OvMapCell:F0}, z {m.Z0:F0} to {m.Z0 + m.H * OvMapCell:F0}), in {now - m.BuildStart:F1} s over {m.BuildFrames} frames, {m.BuildRays} rays, {bytes / 1024} KB. Tops: ground {kinds[MkGround]}, vein part {kinds[MkOre]}, rock/stone {kinds[MkRock]}, tree/thing {kinds[MkThing]}, built {kinds[MkBuilt]}, can't be damaged {kinds[MkFixed]}, nothing found {kinds[MkNone]}; under water {water}. Vein parts reaching down to the ground: {oreDown} squares; open space under a vein part: {gapUnder} squares. Squares with something standing above the ground: {layered} ({multi} with 2 or more layers)");
 	}
 
 	private static void OvMapStats(float now, long ticks, int maps)
@@ -783,6 +916,9 @@ public partial class HarvestController
 			_go = null;
 		}
 
+		// R0.9: per square the ground, then each solid layer: its top, its underside (when there is open space under it),
+		// and a side face toward each neighbour square that doesn't have solid stuff at those heights; a ground step of more
+		// than 0.5 m to a neighbour is a wall face too (the trench walls)
 		public void Draw(OvMap m)
 		{
 			if (_mesh == null)
@@ -803,46 +939,161 @@ public partial class HarvestController
 						continue;
 					}
 					float cx = m.X0 + (x + 0.5f) * OvMapCell, cz = m.Z0 + (z + 0.5f) * OvMapCell;
+					float g = m.Ground[i];
 					byte f = m.Flags[i];
-					Color col;
-					if ((f & MfCrew) != 0)
+					int li = i * OvMapLayers, lc = m.LCount[i];
+					bool touching = lc > 0 && m.LBot[li] <= g + OvMapJoin;
+					// the ground: the companions' squares on it, purple where something hangs over it, else green
+					Color gc = lc > 0 && !touching ? CUnder : CGround;
+					if (!touching)
 					{
-						col = CCrew;
+						Quad(cx, g + 0.05f, cz, half, Wet(gc, f));
 					}
-					else if ((f & MfGoal) != 0)
+					// the ground's wall faces (a step over 0.5 m down to a neighbour)
+					for (int d = 0; d < 4; d++)
 					{
-						col = CGoal;
-					}
-					else
-					{
-						switch (m.Kind[i])
+						int nx = x + DX[d], nz = z + DZ[d];
+						if (nx < 0 || nz < 0 || nx >= m.W || nz >= m.H)
 						{
-						case MkGround: col = CGround; break;
-						case MkOre: col = m.Over[i] == MkOre && m.Head[i] <= 0.05f ? COreDown : COre; break;
-						case MkRock: col = CRock; break;
-						case MkThing: col = CThing; break;
-						case MkBuilt: col = CBuilt; break;
-						case MkFixed: col = CFixed; break;
-						default: continue;
+							continue;
 						}
-						if ((f & MfWater) != 0)
+						int ni = nz * m.W + nx;
+						if (m.ReadAt[ni] >= 0f && g - m.Ground[ni] > 0.5f)
 						{
-							col = Color.Lerp(col, CWater, 0.4f);
+							Side(cx, cz, d, m.Ground[ni], g, CGroundWall);
 						}
 					}
-					Quad(cx, m.Top[i] + 0.05f, cz, half, col);
-					// open space under something: purple at ground level
-					if (m.Over[i] != MkNone && m.Head[i] > 0.05f && m.Head[i] < OvMapHeadMax)
+					// the layers
+					for (int j = 0; j < lc; j++)
 					{
-						Quad(cx, m.Ground[i] + 0.05f, cz, half * 0.8f, CUnder);
+						float b = m.LBot[li + j], t = m.LTop[li + j];
+						byte k = m.LKind[li + j];
+						Color col = KindColor(k, j == 0 && touching);
+						Quad(cx, t + 0.05f, cz, half, Wet(col, t < WaterLevel() ? MfWater : (byte)0));
+						if (!(j == 0 && touching))
+						{
+							Quad(cx, b - 0.05f, cz, half, Color.Lerp(col, Color.black, 0.35f));
+						}
+						for (int d = 0; d < 4; d++)
+						{
+							int nx = x + DX[d], nz = z + DZ[d];
+							if (nx < 0 || nz < 0 || nx >= m.W || nz >= m.H)
+							{
+								continue;
+							}
+							int ni = nz * m.W + nx;
+							if (m.ReadAt[ni] < 0f)
+							{
+								continue;
+							}
+							// the heights of this layer the neighbour has nothing solid at (its ground counts as solid
+							// below its ground height)
+							_open.Clear();
+							_open.Add(new Vector2(Mathf.Max(b, m.Ground[ni]), t));
+							int nl = ni * OvMapLayers;
+							for (int q = 0; q < m.LCount[ni]; q++)
+							{
+								Cut(m.LBot[nl + q], m.LTop[nl + q]);
+							}
+							foreach (Vector2 o in _open)
+							{
+								if (o.y - o.x > 0.05f)
+								{
+									Side(cx, cz, d, o.x, o.y, Color.Lerp(col, Color.black, 0.15f));
+								}
+							}
+						}
 					}
 				}
+			}
+			// the companions (white) and their walk goals (yellow), at their own heights
+			foreach (Vector3 c in m.CrewAt3)
+			{
+				Quad(c.x, c.y + 0.1f, c.z, half, CCrew);
+			}
+			foreach (Vector3 c in m.GoalAt3)
+			{
+				Quad(c.x, c.y + 0.1f, c.z, half, CGoal);
 			}
 			_mesh.Clear();
 			_mesh.SetVertices(_v);
 			_mesh.SetColors(_c);
 			_mesh.SetTriangles(_t, 0);
 			_mesh.RecalculateBounds();
+		}
+
+		private static readonly int[] DX = { 1, -1, 0, 0 };
+
+		private static readonly int[] DZ = { 0, 0, 1, -1 };
+
+		private static readonly Color CGroundWall = new Color(0.45f, 0.35f, 0.2f, 0.45f);
+
+		private readonly List<Vector2> _open = new List<Vector2>();
+
+		private static float WaterLevel()
+		{
+			return ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : float.MinValue;
+		}
+
+		private static Color Wet(Color c, byte f)
+		{
+			return (f & MfWater) != 0 ? Color.Lerp(c, CWater, 0.4f) : c;
+		}
+
+		private static Color KindColor(byte k, bool down)
+		{
+			switch (k)
+			{
+			case MkOre: return down ? COreDown : COre;
+			case MkRock: return CRock;
+			case MkThing: return CThing;
+			case MkBuilt: return CBuilt;
+			case MkFixed: return CFixed;
+			default: return CGround;
+			}
+		}
+
+		// removes [b, t] from the open heights
+		private void Cut(float b, float t)
+		{
+			for (int o = _open.Count - 1; o >= 0; o--)
+			{
+				Vector2 r = _open[o];
+				if (t <= r.x || b >= r.y)
+				{
+					continue;
+				}
+				_open.RemoveAt(o);
+				if (b > r.x)
+				{
+					_open.Add(new Vector2(r.x, b));
+				}
+				if (t < r.y)
+				{
+					_open.Add(new Vector2(t, r.y));
+				}
+			}
+		}
+
+		// a vertical face on the square's edge toward neighbour d, from height y0 to y1 (both faces drawn)
+		private void Side(float cx, float cz, int d, float y0, float y1, Color col)
+		{
+			float h = OvMapCell * 0.5f;
+			float ex = cx + DX[d] * h, ez = cz + DZ[d] * h;
+			float ax = DZ[d] != 0 ? h : 0f, az = DX[d] != 0 ? h : 0f;
+			int b = _v.Count;
+			_v.Add(new Vector3(ex - ax, y0, ez - az));
+			_v.Add(new Vector3(ex - ax, y1, ez - az));
+			_v.Add(new Vector3(ex + ax, y1, ez + az));
+			_v.Add(new Vector3(ex + ax, y0, ez + az));
+			for (int k = 0; k < 4; k++)
+			{
+				_c.Add(col);
+			}
+			_t.Add(b); _t.Add(b + 1); _t.Add(b + 2);
+			_t.Add(b); _t.Add(b + 2); _t.Add(b + 3);
+			_t.Add(b); _t.Add(b + 2); _t.Add(b + 1);
+			_t.Add(b); _t.Add(b + 3); _t.Add(b + 2);
 		}
 
 		private void Quad(float x, float y, float z, float h, Color col)

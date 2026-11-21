@@ -1715,9 +1715,16 @@ public partial class HarvestController : MonoBehaviour
 			// 1.5.95: a worn-out tool in hand is swapped too (its swings did nothing)
 			flag3 = flag3 || Worn(rightItem);
 		}
+		if (!flag3)
+		{
+			_wrongToolSaid = null;
+		}
 		if (flag3)
 		{
-			if (CompanionsPlugin.LogDetailed) Log(string.Format("Wrong/missing tool: \"{0}\" — re-equipping for mode={1}", rightItem?.m_shared?.m_name ?? "NONE", mode2));
+			// R0.10 (log 58676f4a: 217 of these in a second while an axe swing finished): written once per tool and job
+			string said = (rightItem?.m_shared?.m_name ?? "NONE") + "|" + mode2;
+			if (CompanionsPlugin.LogDetailed && said != _wrongToolSaid) Log(string.Format("Wrong/missing tool: \"{0}\" — re-equipping for mode={1}", rightItem?.m_shared?.m_name ?? "NONE", mode2));
+			_wrongToolSaid = said;
 			ItemDrop.ItemData itemData = FindBestTool(mode2);
 			if (itemData == null)
 			{
@@ -2157,6 +2164,8 @@ public partial class HarvestController : MonoBehaviour
 			LogWarn("After equip: rightItem=\"NONE\" — EQUIP FAILED (will retry). " + $"Tried to equip \"{tool.m_shared.m_name}\" type={tool.m_shared.m_itemType} " + "inAttack=" + (_humanoid.InAttack() ? "true" : "false"));
 		}
 	}
+
+	private string _wrongToolSaid;   // R0.10: the last "Wrong/missing tool" line (tool | job), written once until it changes
 
 	private void LogInfo(string msg)
 	{
