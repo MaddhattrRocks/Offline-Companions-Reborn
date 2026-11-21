@@ -2831,3 +2831,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 ### Next steps
 - Test: run the companion out of arrows against something, and confirm it now closes to melee range with the axe instead of hovering at bow distance. `[Ranged]`/`[EQUIPDIAG]` logs already confirm the weapon swap is correct — this round is purely about whether the companion's *movement* now matches.
 - Everything else from 1.4.27's next-steps list is still open/unchanged (flee-threshold test, `AIGateDiag` "just sits there" report, roadmap items).
+
+### R0.11 + R1.1-R1.3 (pit map: walls)
+- R0.11: a vein part the map's up-ray doesn't meet gets its bottom from its own game box (clamped to ground..top), so open space under the vein is counted.
+- R1.1 `OvMapWallAhead`: squares 0.5 m and 1 m ahead of where the companion faces (within 60 degrees of toward the goal); a layer with bottom below head height and top more than a step (0.7 m) above the feet is a wall; the square is re-read first; the aim comes from OvFirstOnSwing. Answers wall / clear / don't know.
+- R1.2 OvRampTick: no ground step in front -> the map is asked before the 1 s headway test. Swing line meets something that can't be damaged -> OvRampWorldStop; a built piece -> no swing, this way up fails; else the Z1 strike (now `OvRampStrike`, shared with Z1). The 1 s test stays as the fallback.
+- R1.3 OvDigTick: a map wall toward the spot starts the way up at once; the 3 s no-headway test stays as the fallback.

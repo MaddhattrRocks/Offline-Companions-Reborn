@@ -2976,6 +2976,14 @@ public partial class HarvestController
 				{
 					return;
 				}
+				// R1.3 (the radar): the map's squares in front read a wall - the way up starts now, not after 3 s with no
+				// headway (that test below stays for a clear or unknown map answer)
+				if (!_dgBushOn && q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && OvMapWallAhead(_dgPoint, out byte dk, out _, out _) == 1)
+				{
+					OvDigOff();
+					OvRampBegin(_dgPoint, q, outOfTrench: false, $"the map reads {OvMapKindName(dk)} in front, toward spot {q.Idx + 1}, {up:F1} m up");
+					return;
+				}
 				if (!_dgBushOn && q != null && !q.RampTried && flat <= OvRampReach && up >= OvStepUp && _dgHwTime >= OvNoHeadway)
 				{
 					OvDigOff();
@@ -3779,6 +3787,27 @@ public partial class HarvestController
 		}
 		bool against = _rpHwTime >= OvRampHeadway && ga > me.y + 0.1f;
 		bool wall = ga > me.y + OvStepUp || (against && !atLimit);
+		// R1.1 / R1.2 (the radar): not a ground step - the map's squares in front decide at once, before the 1 s headway
+		// test below (which stays for a clear or unknown map answer; other companions are never on the map, so G6 still
+		// goes round them there). What the game's swing line meets first decides what is done.
+		if (ga <= me.y + OvStepUp && OvMapWallAhead(_rpGoal, out byte mk, out Collider mc, out Vector3 mat) == 1)
+		{
+			byte hk = OvMapKind(_vp, _vp.Map, mc);
+			if (hk == MkFixed)
+			{
+				OvRampWorldStop(mc.name, mc);
+				return;
+			}
+			if (hk == MkBuilt)
+			{
+				// R1.2 (John, 2026-11-21): a player-built piece - no swing (companions never damage builds), this way up gives up
+				_rpBad.Add(_rpStart);
+				OvRampFail($"the step in front is \"{mc.name}\", a built piece (no swing at builds)");
+				return;
+			}
+			OvRampStrike(mc, mat, $"the map reads {OvMapKindName(mk)} in front");
+			return;
+		}
 		// G6: not when what it is up against is another companion (G1 goes round it)
 		if (!wall && _rpHwTime >= OvRampHeadway && !OvOtherAhead(me, _rpGoal))
 		{
@@ -3795,16 +3824,7 @@ public partial class HarvestController
 				}
 				// the vein's rock, the ground, or a thing (the dig's H1 hands a thing to the Wood / Stone flow): a swing at
 				// the point it was hit, the rock itself (not its box)
-				if (Flat(fat, _rpStepPt) > 0.5f)
-				{
-					_rpStepPt = fat;
-					_rpNoProg = 0;
-				}
-				_rpHwTime = 0f;
-				_ai?.StopMoving();
-				if (CompanionsPlugin.LogNormal) LogInfo($"The way up: up against \"{fc.name}\" at {MHR_Mover.Fmt(fat)} (the ground in front reads {ga - me.y:F1} m above its feet) - swinging at it");
-				OvDigBegin(fat, null, ramp: true);
-				_dgStrike = true;
+				OvRampStrike(fc, fat, $"the ground in front reads {ga - me.y:F1} m above its feet");
 				return;
 			}
 		}
@@ -3861,6 +3881,21 @@ public partial class HarvestController
 
 	// Z1: the way up meets an object that can't be damaged - its box is kept (X1), no new way up from where this one began
 	// this lap, and this one gives up
+	// Z1 / R1.2: a swing at the first thing on the swing line where it was hit (the rock itself, not its box)
+	private void OvRampStrike(Collider fc, Vector3 fat, string why)
+	{
+		if (Flat(fat, _rpStepPt) > 0.5f)
+		{
+			_rpStepPt = fat;
+			_rpNoProg = 0;
+		}
+		_rpHwTime = 0f;
+		_ai?.StopMoving();
+		if (CompanionsPlugin.LogNormal) LogInfo($"The way up: up against \"{fc.name}\" at {MHR_Mover.Fmt(fat)} ({why}) - swinging at it");
+		OvDigBegin(fat, null, ramp: true);
+		_dgStrike = true;
+	}
+
 	private void OvRampWorldStop(string name, Collider c)
 	{
 		if (c != null && _vp != null)

@@ -422,6 +422,86 @@ public partial class HarvestController
 		return x < 0 || z < 0 || x >= m.W || z >= m.H ? -1 : z * m.W + x;
 	}
 
+	// ---------- R1.1: what is in front, from the map ----------
+
+	private const float OvMapAheadNear = 0.5f;     // R1.1: the squares 0.5 m ...
+
+	private const float OvMapAheadFar = 1f;        // ... and 1 m in front of where it faces
+
+	// R1.1: the map's answer for the squares 0.5 m and 1 m in front of where this companion faces (only while it faces
+	// within 60 degrees of toward): 1 = a wall (a layer whose bottom is below its head and whose top is more than a step
+	// above its feet; the square is read again first), 0 = clear, -1 = don't know (no map, off the map, a square not
+	// read yet, not facing toward, or the game's swing line toward it meets nothing). kind = the layer's kind, fc / fat =
+	// the first thing on the game's swing line toward it and where it was hit (the rock itself, never its box).
+	private int OvMapWallAhead(Vector3 toward, out byte kind, out Collider fc, out Vector3 fat)
+	{
+		kind = MkNone;
+		fc = null;
+		fat = toward;
+		OvMap m = _vp?.Map;
+		if (m == null)
+		{
+			return -1;
+		}
+		Vector3 me = base.transform.position;
+		Vector3 face = base.transform.forward;
+		face.y = 0f;
+		Vector3 to = toward - me;
+		to.y = 0f;
+		if (face.sqrMagnitude < 0.0001f || to.sqrMagnitude < 0.0001f)
+		{
+			return -1;
+		}
+		face.Normalize();
+		if (Vector3.Dot(face, to.normalized) <= 0.5f)
+		{
+			return -1;
+		}
+		float head = me.y + (_character != null ? _character.GetHeight() : 1.8f);
+		float step = me.y + OvStepUp;
+		float swingY = OvSwingFrom().y;
+		for (int s = 0; s < 2; s++)
+		{
+			Vector3 pt = me + face * (s == 0 ? OvMapAheadNear : OvMapAheadFar);
+			int i = OvMapIndex(m, pt);
+			if (i < 0 || m.ReadAt[i] < 0f)
+			{
+				return -1;
+			}
+			OvMapRead(_vp, m, i);
+			int li = i * OvMapLayers;
+			for (int j = 0; j < m.LCount[i]; j++)
+			{
+				float b = m.LBot[li + j], t = m.LTop[li + j];
+				if (b >= head || t <= step)
+				{
+					continue;
+				}
+				kind = m.LKind[li + j];
+				int cx = i % m.W, cz = i / m.W;
+				Vector3 aim = new Vector3(m.X0 + (cx + 0.5f) * OvMapCell, Mathf.Clamp(swingY, b, t), m.Z0 + (cz + 0.5f) * OvMapCell);
+				fc = OvFirstOnSwing(aim, out fat);
+				return fc != null ? 1 : -1;
+			}
+		}
+		return 0;
+	}
+
+	// R1.1: a kind's name for the log
+	private static string OvMapKindName(byte k)
+	{
+		switch (k)
+		{
+			case MkGround: return "ground";
+			case MkOre: return "the vein's rock";
+			case MkRock: return "rock";
+			case MkThing: return "a thing";
+			case MkBuilt: return "a built piece";
+			case MkFixed: return "something that can't be damaged";
+			default: return "nothing";
+		}
+	}
+
 	// ---------- R0.1: read one square ----------
 	private static void OvMapRead(OvPlan p, OvMap m, int i)
 	{
@@ -472,13 +552,21 @@ public partial class HarvestController
 			// its bottom: where the up-ray met the same collider; not met = the up-ray started inside it, so it reaches
 			// down into the ground (its bottom is the ground)
 			float bot = g;
+			bool met = false;
 			for (int u = 0; u < ku; u++)
 			{
 				if (s_mapUpHits[u].collider == rh.collider)
 				{
 					bot = Mathf.Min(s_mapUpHits[u].point.y, rh.point.y);
+					met = true;
 					break;
 				}
+			}
+			if (!met && kk == MkOre)
+			{
+				// R0.11 (log f7ee9ca6: 10 squares of open space under the vein, 311 before): a vein part the up-ray didn't
+				// meet (its rock may have no bottom face) - its bottom is its own game box's bottom, never below the ground
+				bot = Mathf.Clamp(rh.collider.bounds.min.y, g, rh.point.y);
 			}
 			s_mapSpans.Add(new Vector3(bot, rh.point.y, kk));
 		}
