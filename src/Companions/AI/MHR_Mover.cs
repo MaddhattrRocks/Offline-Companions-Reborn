@@ -23,6 +23,7 @@ namespace Companions
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
             public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun; public float DropStepUntil, DropFromY;   // T1 / U1: the step TryDropDown started (its end time) and the height it stepped off from
+            public Vector3 DropLand; public bool HasDropLand;   // S1: where the last drop-down of this walk landed
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
             // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
             // tried on this trip (like the ladders it tried)
@@ -190,7 +191,7 @@ namespace Companions
             else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
             {
                 s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.StepUntil = 0f;
-                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; }
+                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; }
             }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
@@ -598,7 +599,7 @@ namespace Companions
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.DoorBlocked = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
-            s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
+            s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f; s.HasDropLand = false;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
@@ -1225,7 +1226,23 @@ namespace Companions
             if (step == 0 && TryStartLadderClimb(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
             if (step == 0 && TryHopUp(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
             if (step == 0 && TryLadderDown(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
-            if (step == 0 && TryDropDown(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
+            if (step == 0)
+            {
+                // S1 (test of 05e19c2: Comp dropped the same 1.3 m onto the same ledge 20+ times in 2.5 minutes, walked back up
+                // by its route each time - every drop started the stuck steps over, so the mover never gave up): a drop-down
+                // that lands within 1 m of where the last one of this walk landed doesn't start them over - the side step,
+                // hop, detour and give-up come next
+                Vector3 lastLand = s.DropLand; bool hadLand = s.HasDropLand;
+                if (TryDropDown(ai, c, s, pos, now, tag))
+                {
+                    if (hadLand && Vector3.Distance(s.DropLand, lastLand) <= 1f)
+                    {
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the same drop-down as before (lands at " + Fmt(s.DropLand) + ") - the stuck steps go on");
+                    }
+                    else s.Ladder = 0;
+                    return;
+                }
+            }
             // 1.4.82: down in a pit with no route out: climb out like a player before anything else
             if (step == 0 && TryStartClimb(ai, c, s, pos, now, tag, why)) { s.Ladder = 0; return; }
             switch (step)
@@ -3237,6 +3254,7 @@ namespace Companions
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
             s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil; s.DropFromY = pos.y;
+            s.DropLand = bestLand; s.HasDropLand = true;   // S1
             if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
             return true;
         }

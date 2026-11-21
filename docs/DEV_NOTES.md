@@ -2860,3 +2860,7 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - R3c.1 `OvAfterPopOpen`: the target scan's "every part left is under the ground" skip doesn't apply while this vein's plan saw the pop and its clear isn't Done/Stopped.
 - R3c.2: after the pop, OvClearTick picks a loose item (pick-only `OvLooseTick(c, standBy: false)`, not in an attack) before leftover parts / dirt / the part round; loose ore is picked before stone.
 - R3c.3: OvStuckCheck returns early after a pop while a loose item is still there and not cooling.
+
+### S1 + S3 (test of 05e19c2: Comp's drop-down loop, Je's hole)
+- S1 MHR_Mover.Unstick: a drop-down that lands within 1 m of the last drop-down's landing in the same walk (`DropLand` / `HasDropLand`, cleared on a new goal or Reset) no longer sets the stuck steps back to 0, so side step, hop, detour and give-up follow. Every other drop-down works as before.
+- S3 OreClear: between swings, a part round (not from a ladder) or a dirt round checks that the companion is still on its stand place (`OvOffPlace`: within 0.5 m flat and 0.7 m up or down of the place or of the ground there now; dirt also keeps HH2's step-above rule). If it isn't, it pauses (`OvDigPause`, the 3-swing no-progress and 20-miss counts are kept) and walks back. The walk's arrival test is the same check. The counts come back with `OvDigResume`; there is no cooldown on the part. If it can't get back, the walk's existing give-up ends the round with the usual 60 s wait.

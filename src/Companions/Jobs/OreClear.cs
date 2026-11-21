@@ -95,7 +95,8 @@ public partial class HarvestController
 
 	private const float OvDirtEvery = 10f;         // GG2: the dirt list is made again every 10 s (and right after a point is done)
 
-	private const float OvStandAt = 0.5f;          // GG2: at its place to stand = within 0.5 m of it (flat)
+	private const float OvStandAt = 0.5f;
+	private const float OvPlaceUpDown = 0.7f;      // S3: on its place = within 0.7 m up or down of it (or of the ground there now)          // GG2: at its place to stand = within 0.5 m of it (flat)
 
 	private OvPart _rpPart;
 
@@ -1216,6 +1217,7 @@ public partial class HarvestController
 
 	private void OvDrOff()
 	{
+		_dgBackNoProg = -1;   // S3
 		if (_drSpot != null && _drSpot.Holder == this)
 		{
 			_drSpot.Holder = null;
@@ -1336,6 +1338,14 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
+		if (_dgActive && _dgDirt && !_dgSwung && OvDrOffPlace(me))
+		{
+			// S3: moved off its place (a fight, a push) - back to it first, its swing count kept
+			OvDigPause("the dirt");
+			_drWalk = true;
+			_moveTimer = 0f;
+			return;
+		}
 		if (_dgActive && _dgDirt)
 		{
 			OvDigTick();
@@ -1370,7 +1380,7 @@ public partial class HarvestController
 			float flat = Flat(me, _drStand);
 			// HH2: there = within 0.5 m (flat) and on that ground - feet no more than a step above the ground there now (standing on a part above the
 			// place is not there: it goes on, and the mover's give-up (Z4) ends it)
-			if (flat > OvStandAt || me.y - GroundAt(_drStand) > OvStepUp)
+			if (OvDrOffPlace(me))
 			{
 				float up = _drStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
@@ -1406,6 +1416,7 @@ public partial class HarvestController
 			return;
 		}
 		OvDigBegin(new Vector3(d.P.x, g, d.P.z), null, ramp: false);
+		OvDigResume();
 		_dgClear = true;
 		_dgDirt = true;
 		_dgGoalY = d.Goal;
@@ -2034,8 +2045,55 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"Mining \"{_vp.Name}\"{(low ? "" : " (no dirt holds it up now)")}: {(low ? "a low part that goes into the ground (P5)" : ladder ? $"a part too high to hit from the ground beside it - from a ladder" : _clPopWhy ?? "the lowest part")} \"{part.C.name}\" at {MHR_Mover.Fmt(part.Centre)}, bottom {OvPartBottom(part):F1}{(part.Why != null ? " (" + part.Why + ")" : part.Held ? " (held by other parts)" : " (not held - it falls when a part breaks)")}{(ladder ? "" : $" - from {MHR_Mover.Fmt(stand)}, swinging at its rock at {MHR_Mover.Fmt(_standAim)}")}");
 	}
 
+	// ---------- S3 (test of 05e19c2: a fight moved Je 7 m from its place and 3 m down; it went on swinging at its part from
+	// there, the game dug the ground in front each time and its feet sank 2 m - a hole) ----------
+	private int _dgBackNoProg = -1, _dgBackMiss;   // S3: the round's swing counts kept while it walks back (-1 = none)
+
+	// off the place it was given: more than 0.5 m from it (flat), or more than 0.7 m under / over it (the ground there now
+	// counts too: a dig beside it lowers it, a built floor (R2) is above it)
+	private bool OvOffPlace(Vector3 stand)
+	{
+		Vector3 me = base.transform.position;
+		if (Flat(me, stand) > OvStandAt)
+		{
+			return true;
+		}
+		float g = GroundAt(stand);
+		return me.y < Mathf.Min(stand.y, g) - OvPlaceUpDown || me.y > Mathf.Max(stand.y, g) + OvPlaceUpDown;
+	}
+
+	// the dirt round's place: as above, and (HH2) feet no more than a step above the ground there
+	private bool OvDrOffPlace(Vector3 me)
+	{
+		return OvOffPlace(_drStand) || me.y - GroundAt(_drStand) > OvStepUp;
+	}
+
+	// the swing round stops for the walk back; its no-progress and miss counts are kept for when it starts again, so the
+	// walk back never starts the 3-swing / 20-swing ends over
+	private void OvDigPause(string what)
+	{
+		_dgBackNoProg = _dgNoProg;
+		_dgBackMiss = _dgPartMiss;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Off its place for {what} ({Flat(base.transform.position, _dgPart ? _clStand : _drStand):F1} m away) - back to it first, {_dgNoProg} swing(s) in a row without work kept");
+		OvDigOff();
+		_dgClear = false;
+		_dgPart = false;
+		_dgDirt = false;
+	}
+
+	private void OvDigResume()
+	{
+		if (_dgBackNoProg >= 0)
+		{
+			_dgNoProg = _dgBackNoProg;
+			_dgPartMiss = _dgBackMiss;
+			_dgBackNoProg = -1;
+		}
+	}
+
 	private void OvClOff()
 	{
+		_dgBackNoProg = -1;   // S3
 		_clFor = null;
 		_clWalk = false;
 		OvLnOff();
@@ -2078,6 +2136,14 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
+		if (_dgActive && _dgClear && _dgPart && !_dgSwung && !_clLadder && OvOffPlace(_clStand))
+		{
+			// S3: moved off its place (a fight, a push) - back to it first, its swing count kept
+			OvDigPause("the part");
+			_clWalk = true;
+			_moveTimer = 0f;
+			return;
+		}
 		if (_dgActive && _dgClear)
 		{
 			OvDigTick();
@@ -2102,7 +2168,7 @@ public partial class HarvestController
 		if (_clWalk)
 		{
 			float flat = Flat(me, _clStand);
-			if (flat > OvStandAt)
+			if (OvOffPlace(_clStand))
 			{
 				float up = _clStand.y - me.y;
 				float hh = _character != null ? _character.GetHeight() : 1.8f;
@@ -2129,6 +2195,7 @@ public partial class HarvestController
 		// the nearest point of its box; 3 swings that neither hit it nor dig toward it end the round (K3)
 		Vector3 bp = _clAim;
 		OvDigBegin(bp, null, ramp: false);
+		OvDigResume();
 		_dgClear = true;
 		_dgPart = true;
 		_dgGoalY = me.y;
