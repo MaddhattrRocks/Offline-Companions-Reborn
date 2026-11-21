@@ -221,7 +221,6 @@ public partial class HarvestController
 
 	private const float OvOutSide = 3f;            // C6: 3 m outside the ring
 
-	private const float OvSpotIdle = 30f;          // J1: 30 s of work on a spot without the ground going down: skipped this lap
 
 	private const float OvHeadwayGain = 0.3f;      // J2: getting 0.3 m closer is headway
 
@@ -321,11 +320,8 @@ public partial class HarvestController
 	private bool _dgThingChecked;
 
 	// J1: the spot's own clock (work time on it in this lap without the ground going down)
-	private OvSpot _spFor;
 
-	private int _spLap;
 
-	private float _spIdle;
 
 	// J2 / H4: the job's own headway check while walking to dirt (best flat distance, and the walking time since)
 	private float _dgHwBest;
@@ -2825,45 +2821,6 @@ public partial class HarvestController
 		}
 	}
 
-	// J1: work on a spot (walking to it, swinging, catching its breath, cutting a bush on it) counts toward 30 s; the ground
-	// going down (or a swing landing on the vein's ore or on the bush it cuts) starts the 30 s again. True = skipped.
-	private bool OvSpotClock(float dt)
-	{
-		OvSpot q = _dgSpot;
-		if (q == null || _vp == null)
-		{
-			return false;
-		}
-		if (_spFor != q || _spLap != _vp.Lap)
-		{
-			_spFor = q;
-			_spLap = _vp.Lap;
-			_spIdle = 0f;
-		}
-		_spIdle += dt;
-		if (_spIdle < OvSpotIdle)
-		{
-			return false;
-		}
-		// Z1 (test 10): a pit thing it was cutting where it stands counts as left once (two = left for this vein)
-		GameObject bush = _dgBushOn ? _dgBush : null;
-		OvDigOff();
-		if (bush != null)
-		{
-			OvPitLeftNote(bush);
-		}
-		OvSkip(q, $"{OvSpotIdle:F0} s of work on it without the ground going down", normal: true);
-		return true;
-	}
-
-	private void OvSpotProgress()
-	{
-		if (_dgSpot != null && _spFor == _dgSpot)
-		{
-			_spIdle = 0f;
-		}
-	}
-
 	// H4: another companion on this vein within 1.2 m ahead (toward the dirt it walks to)
 	private bool OvOtherAhead(Vector3 me, Vector3 toward)
 	{
@@ -2894,10 +2851,6 @@ public partial class HarvestController
 	{
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
-		if (OvSpotClock(dt))
-		{
-			return;
-		}
 		bool busy = _humanoid != null && (_humanoid.InAttack() || _humanoid.InDodge());
 		if (_dgSwung)
 		{
@@ -3140,7 +3093,6 @@ public partial class HarvestController
 		{
 			// B1: the swing took the bush down - cut, not a miss
 			if (CompanionsPlugin.LogNormal) LogInfo($"Cut the bush at {MHR_Mover.Fmt(_dgPoint)} - back to the trench");
-			OvSpotProgress();
 			OvDigOff();
 			_dgLastProg = true;
 			return;
@@ -3163,7 +3115,6 @@ public partial class HarvestController
 				{
 					_dgBushNoDmg = 0;
 					_dgBushHp = hp;
-					OvSpotProgress();
 				}
 				if (_dgBushNoDmg >= OvBushMiss)
 				{
@@ -3191,7 +3142,7 @@ public partial class HarvestController
 		bool dug = _dgDugAt >= _dgSwungAt;   // V2: the game dug where this swing landed
 		// DD3 (John 2026-11-19: "A rock does not matter and should be carved through"): a swing that hit a plain rock (a
 		// MineRock5 that isn't this vein) is work on the spot - the game breaks its parts until the dirt is reached; it
-		// counts like a dig (the 3-swing rule), not toward the 30 s clock, so a rock that won't break still ends the spot
+		// counts like a dig (the 3-swing rule)
 		bool rockHit = hitThing && _ovThingHitGo.GetComponentInParent<MineRock5>() != null;
 		string dugAt = dug ? $", dug at {MHR_Mover.Fmt(_dgDugPt)}" : "";
 		if (hitThing)
@@ -3332,8 +3283,6 @@ public partial class HarvestController
 			OvSkip(ts, $"its swing hit \"{tn}\", a thing it left, and changed nothing", normal: true);
 			return;
 		}
-		// V2: a swing the game dug for counts as doing something (the 3-swing rule); only the point going down or the
-		// vein's ore restarts the spot's 30 s clock
 		// R3a.2 (test of 9dfc40e: 9 swings at spot 28 dug 0.2-0.4 m beside it, the spot never went down): for a trench
 		// spot, only the spot's own ground going down, the vein's ore or a plain rock carved counts - "the game dug
 		// somewhere" counts only for ramp steps
@@ -3341,10 +3290,6 @@ public partial class HarvestController
 		_dgLastProg = prog || oreProg || dugCounts || rockHit;
 		_dgDamage |= prog || oreProg || dug || rockHit;   // M3: this dig lowered the ground or damaged a rock
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
-		if (prog || oreProg)
-		{
-			OvSpotProgress();
-		}
 		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{dugAt}{(oreProg ? " - hit the vein's ore" : prog || dug ? "" : rockHit ? $" - carving through the rock \"{_ovThingHitGo.name}\"" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
 		{

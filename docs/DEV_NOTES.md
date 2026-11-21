@@ -2848,3 +2848,5 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - R3a.1 `OvRampVeinStop`: a way up whose swing line meets this vein's own rock (R1.2 map wall, Z1 strike, ground-wall swing) gives up (`_rpBad` + OvRampFail); plain boulders are still carved.
 - R3a.2: a trench-spot swing counts as progress only when the spot's ground goes down, the vein's ore is hit or a plain rock is carved; "dug somewhere" counts only for ramp steps. 30 s spot clock kept as backstop.
 - R3a.3 MHR_Mover.TryDropDown: a landing whose DD5 steep run (SteepAhead) continues past the remaining safe drop is refused.
+- R3a.4 TryDropDown: the steep-run check also runs from the landing toward the goal (a narrow shelf the walk goes off is refused).
+- R3a.5: the J1 30 s spot clock (OvSpotClock / OvSpotProgress) is removed - it was timing walks; spots end by OvWalkGaveUp (route progress), the 3-swing rule, the bush give-up and the 5 s board wait.

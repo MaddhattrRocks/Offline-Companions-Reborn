@@ -3221,6 +3221,10 @@ namespace Companions
                     // R3a.3 (test of 9dfc40e: Comp's 3.2 m drop ran on down to 8.1 m and killed it): the DD5 steep run from the
                     // landing on in the same way - a slope that keeps going down past the safe drop is no landing
                     if (SteepAhead(hit.point, dir, 0.5f, maxDrop - drop) > 0f) break;
+                    // R3a.4 (test of a9add55: Gunter landed on a narrow trench-wall shelf, then walked on toward the goal 8-12 m
+                    // below and fell 8.9 m): the same steep run from the landing toward the goal
+                    Vector3 onward = goal - hit.point; onward.y = 0f;
+                    if (onward.sqrMagnitude > 0.25f && SteepAhead(hit.point, onward.normalized, 0.5f, maxDrop - drop) > 0f) break;
                     float flatAfter = Flat(hit.point, goal);
                     if (flatAfter >= here) break;                                          // 1.5.98 CC5 (test 12: a 1.7 m drop that landed 2.2 m farther, 4 times): only a drop that lands nearer it (flat)
                     float score = Mathf.Abs(hit.point.y - goal.y) * 2f + flatAfter * 0.3f + drop * 0.2f;
