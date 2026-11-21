@@ -3172,7 +3172,7 @@ public partial class HarvestController : MonoBehaviour
 					LogWarn($"  Tier SKIP \"{harvestCandidateWithType.name}\" — requires tier {minToolTier}, " + $"best tool tier={bestToolTier} (need bronze pickaxe tier≥1 for copper/silver)");
 				}
 			}
-			else if (type == "MineRock5" && mode == 3 && !InDungeonAt(base.transform.position) && VeinAllUnder(harvestCandidateWithType.GetComponent<MineRock5>()))
+			else if (type == "MineRock5" && mode == 3 && !InDungeonAt(base.transform.position) && VeinAllUnder(harvestCandidateWithType.GetComponent<MineRock5>()) && !OvAfterPopOpen(harvestCandidateWithType.GetComponent<MineRock5>()))
 			{
 				// part 2 M5: all that's left of this vein is under the ground - finished
 				if (underSkips++ == 0 && CompanionsPlugin.LogDetailed) Log($"  Skipping \"{harvestCandidateWithType.name}\" - every part left of it is under the ground");

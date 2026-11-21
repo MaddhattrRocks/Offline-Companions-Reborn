@@ -484,6 +484,12 @@ public partial class HarvestController
 			OvLooseTick(c);   // F2: the loose item it is going for
 			return true;
 		}
+		// R3c.2 (log 7f376ab0: zero pickups after the pop): once the pop is seen, a loose item it can take comes before
+		// leftover parts, dirt and the part round - between swings only, and without standing by for other companions' items
+		if (OvPopped(c) && _humanoid != null && !_humanoid.InAttack() && OvLooseTick(c, standBy: false))
+		{
+			return true;
+		}
 		if (_clFor != null)
 		{
 			// FF1: between swings of the round, the pit list first
@@ -822,7 +828,7 @@ public partial class HarvestController
 
 	// true = busy with the list (going for an item, or taking its ore to the dump to make room); false = nothing on it it
 	// can take
-	private bool OvLooseTick(OvClear c)
+	private bool OvLooseTick(OvClear c, bool standBy = true)
 	{
 		if (_humanoid == null || _humanoid.GetInventory() == null)
 		{
@@ -898,6 +904,11 @@ public partial class HarvestController
 				continue;
 			}
 			float d = Flat(me, l.D.transform.position);
+			// R3c.2 (John, 2026-11-20: ore over stone in the bags): the nearest ore first, stone only when no ore is left it can take
+			if (!l.Ore)
+			{
+				d += 10000f;
+			}
 			if (d < bd)
 			{
 				bd = d;
@@ -920,6 +931,10 @@ public partial class HarvestController
 			return true;
 		}
 		// another companion is still going for an item: the vein isn't done yet (it stands by)
+		if (!standBy)
+		{
+			return false;   // R3c.2: the pick-only call goes on to the leftover parts
+		}
 		foreach (OvLoose l in c.Loose.Values)
 		{
 			if (l.Holder != null && l.Holder != this && l.Holder._lsItem == l && OvLooseHere(l))
@@ -1016,6 +1031,24 @@ public partial class HarvestController
 	private static bool OvPopped(OvClear c)
 	{
 		return c.PopSeen;
+	}
+
+	// R3c.1 (log 7f376ab0: back from the chest trip, the scan skipped the popped vein as "every part left of it is under
+	// the ground" - idle): this vein's plan saw the pop and its after-pop work (leftover parts, loose items) isn't done
+	internal static bool OvAfterPopOpen(MineRock5 m)
+	{
+		if (m == null)
+		{
+			return false;
+		}
+		foreach (OvPlan p in s_ovPlans)
+		{
+			if (p.Rocks.Contains(m) && s_ovClear.TryGetValue(p, out OvClear c) && c.PopSeen && !c.Done && !c.Stopped)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private bool OvPopDone(OvClear c)
@@ -1888,6 +1921,17 @@ public partial class HarvestController
 	private void OvStuckCheck(OvClear c)
 	{
 		float now = Time.time;
+		// R3c.3: after the pop, never while a loose item is still in the pit and not cooling down
+		if (OvPopped(c))
+		{
+			foreach (OvLoose l in c.Loose.Values)
+			{
+				if (OvLooseHere(l) && now >= l.CoolUntil)
+				{
+					return;
+				}
+			}
+		}
 		bool failed = false;
 		foreach (OvDirt d in c.Dirt)
 		{
