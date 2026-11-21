@@ -2910,3 +2910,10 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - SV7 (all veins): part waits (`OvPartCool`) have no clock: set aside (`CoolAt`) until a pit map square within 2 m of the part's box changes (no map: the ground over the box and 2 m round it moves 0.1 m), or once when no other part is free (OvOreChoose; low parts in OvDrChoose's 8b). Loose items keep OvCool (not in this list).
 - SV8 (all veins) `OvRoomOverBody`: map stand places and map route squares also need no layer hanging between a step (0.7 m) and its height over its feet on every square its body (game collider radius) covers.
 - SV9 (all veins): the mover's stuck hop is skipped when `OvMapJumpBlocked` finds a layer under height + `MHR_Water.JumpRiseFull` (the game's Jump() rise, no margin) along the 2.8 m hop - a walking step toward the next route corner instead; on the game's route inside a pit map the walk gives up when the square 0.5 m ahead has something low over the body (`OvMapLowHead`) and the square it is on doesn't.
+
+## 1.5.98 K1-K5 (log 58064830, first silver pop by the companions)
+- K1: a vein whose every part fell (the game removed the rock) still runs the after-pop pit pickup from the saved plan (OvTick / OvResume no longer need the rock).
+- K2: a vein companion catching its breath (the swing's rest line) stands still, no walking or hopping, until GatherResumeStamina.
+- K3: the mover's walking hop only when MHR_Jump.CanAfford (stamina for a full jump).
+- K4: a pause on the same goal (shift within 1.5 m, same task) without a 0.6 m flat move from the stuck anchor doesn't restart the stuck clocks or the unstuck step; the pause time isn't counted (John's choice). Covers pauses over 2 s too (the route is still re-planned).
+- K5: trench spots: a companion stuck on its walk (MHR_Mover.Stuck) doesn't hold its spot or keep spots within 2 m / 4 m of it; the stuck one lets go when another takes it (the SV1 take-over).
