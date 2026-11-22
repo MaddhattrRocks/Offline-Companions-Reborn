@@ -48,6 +48,9 @@ public partial class HarvestController
 	internal const byte MkNone = 0, MkGround = 1, MkOre = 2, MkRock = 3, MkThing = 4, MkBuilt = 5, MkFixed = 6, MkSkip = 255;
 
 	// square flags
+	// I3: what a square's last change was
+	private const byte OvChgLayers = 1, OvChgKind = 2, OvChgTop = 4, OvChgFlags = 8, OvChgOpen = 16, OvChgGround = 32, OvChgFirst = 64;
+
 	private const byte MfWater = 1, MfCrew = 2, MfGoal = 4, MfVein = 8;   // G2: MfVein = the square's middle is over a live vein part
 
 	private sealed class OvMap
@@ -62,6 +65,9 @@ public partial class HarvestController
 
 		// MP1: when each square's read last changed what it holds (a map route over a changed square is searched again)
 		public float[] ChangedAt;
+
+		// I3 (John 11-22 Q3): what the last change of each square was (OvChgLayers .. OvChgFirst bits) - for the log only
+		public byte[] ChangedWhy;
 
 		// SV3: the last time any square's read changed (a stopped vein starts again after it)
 		public float LastChange = -1f;
@@ -364,6 +370,7 @@ public partial class HarvestController
 		nm.Floor = new float[n];
 		nm.ReadAt = new float[n];
 		nm.ChangedAt = new float[n];
+		nm.ChangedWhy = new byte[n];   // I3
 		nm.Kind = new byte[n];
 		nm.Over = new byte[n];
 		nm.Flags = new byte[n];
@@ -396,6 +403,7 @@ public partial class HarvestController
 					nm.Floor[b] = m.Floor[a];
 					nm.ReadAt[b] = m.ReadAt[a];
 					nm.ChangedAt[b] = m.ChangedAt[a];
+					nm.ChangedWhy[b] = m.ChangedWhy[a];   // I3
 					nm.Kind[b] = m.Kind[a];
 					nm.Over[b] = m.Over[a];
 					nm.Flags[b] = (byte)(m.Flags[a] & (MfWater | MfVein));   // G2: the vein flag is kept too
@@ -554,6 +562,29 @@ public partial class HarvestController
 			}
 		}
 		return false;
+	}
+
+	// I3 (John 11-22 Q3): the square the last "changed near" test found, and what changed there - for the log line only
+	private int _chgSq = -1;
+
+	private string OvChgSaid()
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || m.ChangedWhy == null || _chgSq < 0 || _chgSq >= m.ChangedWhy.Length)
+		{
+			return "";
+		}
+		byte w = m.ChangedWhy[_chgSq];
+		List<string> l = new List<string>();
+		if ((w & OvChgLayers) != 0) l.Add("layers");
+		if ((w & OvChgKind) != 0) l.Add("kind");
+		if ((w & OvChgTop) != 0) l.Add("top");
+		if ((w & OvChgFlags) != 0) l.Add("flags");
+		if ((w & OvChgOpen) != 0) l.Add("open space");
+		if ((w & OvChgGround) != 0) l.Add("ground");
+		if ((w & OvChgFirst) != 0) l.Add("first read");
+		float x = m.X0 + (_chgSq % m.W + 0.5f) * OvMapCell, z = m.Z0 + (_chgSq / m.W + 0.5f) * OvMapCell;
+		return $" (square ({x:F1}, {z:F1}): {(l.Count == 0 ? "?" : string.Join(", ", l))} changed at {m.ChangedAt[_chgSq]:F1}) (I3)";
 	}
 
 	// F6: p is on its vein's pit map, on a square that has been read
@@ -847,10 +878,20 @@ public partial class HarvestController
 				break;
 			}
 		}
-		if (layersChanged || m.Kind[i] != kind || m.Over[i] != over || m.Flags[i] != flags || Mathf.Abs(m.Top[i] - top) > 0.05f || Mathf.Abs(m.Head[i] - head) > 0.05f || Mathf.Abs(m.Ground[i] - g) > 0.05f || m.ReadAt[i] < 0f)
+		// I3: which of the 7 things changed (the same tests as before, now kept per square for the log)
+		byte why = 0;
+		if (layersChanged) why |= OvChgLayers;
+		if (m.Kind[i] != kind) why |= OvChgKind;
+		if (Mathf.Abs(m.Top[i] - top) > 0.05f) why |= OvChgTop;
+		if (m.Flags[i] != flags) why |= OvChgFlags;
+		if (m.Over[i] != over || Mathf.Abs(m.Head[i] - head) > 0.05f) why |= OvChgOpen;
+		if (Mathf.Abs(m.Ground[i] - g) > 0.05f) why |= OvChgGround;
+		if (m.ReadAt[i] < 0f) why |= OvChgFirst;
+		if (why != 0)
 		{
 			m.Changed = true;
 			m.ChangedAt[i] = Time.time;   // MP1
+			m.ChangedWhy[i] = why;        // I3
 			m.LastChange = Time.time;     // SV3
 		}
 		m.Ground[i] = g;

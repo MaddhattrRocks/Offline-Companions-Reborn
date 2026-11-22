@@ -35,6 +35,8 @@ public partial class HarvestController
 
 		public string ClosedWhy;
 
+		public float ClosedAt = -1f;   // I1b: when it was closed (a pit map change within 2 m after it reopens it)
+
 		public bool Done;
 
 		public string DoneWhy;
@@ -145,6 +147,10 @@ public partial class HarvestController
 
 		public bool DoneSaid;
 
+		public bool DoneChecked;   // I1: a "done" read from the save (or set at a lap end) was checked against the ground
+
+		public float ClosedChkAt;  // I1b: the next look at the closed spots (every 2 s, as H2)
+
 
 
 		// A1: each companion's own stretch of the ring (first spot, how many spots), for the lap / spot count / workers in SKey
@@ -196,7 +202,6 @@ public partial class HarvestController
 
 	private const float OvLapStep = 2.0f;          // C2.7
 
-	private const int OvMaxLaps = 5;               // C2.7
 
 	private const float OvLapMinGain = 0.3f;       // C2.7
 
@@ -698,8 +703,9 @@ public partial class HarvestController
 			{
 				continue;   // nothing saved on this deposit
 			}
-			p.Lap = Mathf.Clamp(lap, 1, OvMaxLaps);
+			p.Lap = Mathf.Max(lap, 1);   // I1: no lap cap
 			p.Done = z.GetInt(OvKeyDone, 0) == 1;
+			p.DoneChecked = false;       // I1: checked against the ground on the first vein tick
 			p.RingFixed = p.RingFixed || p.Done || p.Lap > 1;
 			p.Ramps.Clear();
 			foreach (string w in z.GetString(OvKeyWays, "").Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries))
@@ -1492,12 +1498,14 @@ public partial class HarvestController
 		{
 			s.Closed = true;
 			s.ClosedWhy = "water it would swim in";
+			s.ClosedAt = Time.time;   // I1b
 			return;
 		}
 		if (!PrivateArea.CheckAccess(s.P, 0f, flash: false) || Location.IsInsideNoBuildLocation(s.P))
 		{
 			s.Closed = true;
 			s.ClosedWhy = "a ward or a no-build area";
+			s.ClosedAt = Time.time;   // I1b
 			return;
 		}
 		foreach (Collider c in Physics.OverlapSphere(s.P + Vector3.up * 0.5f, 1.0f, LayerMask.GetMask("piece", "piece_nonsolid"), QueryTriggerInteraction.Ignore))
@@ -1506,6 +1514,7 @@ public partial class HarvestController
 			{
 				s.Closed = true;
 				s.ClosedWhy = "a building";
+				s.ClosedAt = Time.time;   // I1b
 				return;
 			}
 		}
@@ -1695,6 +1704,124 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"The ring round \"{p.Name}\" is made again with {joined.Count} more deposit(s): {before} -> {p.Spots.Count} spots (work done kept); the trench is dug round it from lap 1 (H2)");
 	}
 
+	// I1 (John 11-22 Q4: "I dont think the trench should ever be fully 'closed'"): any spot not closed and more than 0.3 m
+	// above its goal reopens the trench - lap 1 again, each spot above its goal down 2 m at most this lap, the workers'
+	// current work dropped (as H2). It ends: a lap where no spot went down 0.3 m is done and doesn't reopen (OvLapEnd).
+	private bool OvReopenCheck(OvPlan p, string why)
+	{
+		int high = 0;
+		foreach (OvSpot s in p.Spots)
+		{
+			if (!s.Closed && GroundAt(s.P) > s.Target + 0.3f)
+			{
+				high++;
+			}
+		}
+		if (high == 0)
+		{
+			return false;
+		}
+		foreach (HarvestController h in p.Workers.Keys)
+		{
+			if (h != null)
+			{
+				h._ovSpot = null;
+				h._ovIdx = -1;
+				h.OvDrOff();
+				h.OvClOff();
+			}
+		}
+		p.Done = false;
+		p.DoneSaid = false;
+		p.Lap = 1;
+		p.RingFixed = false;
+		int open = 0;
+		foreach (OvSpot s in p.Spots)
+		{
+			if (s.Closed)
+			{
+				continue;
+			}
+			float g = GroundAt(s.P);
+			s.Skip = false;
+			s.SkipWhy = null;
+			s.RampTried = false;
+			s.Holder = null;
+			if (g > s.Target + OvDigGain)
+			{
+				s.Done = false;
+				s.DoneWhy = null;
+				s.LapStart = g;
+				s.OpenLap = p.Lap;
+				s.LapDepth = Mathf.Max(s.Target, g - OvLapStep);
+				open++;
+			}
+			else
+			{
+				s.Done = true;
+				s.DoneWhy = "at the trench goal";
+			}
+		}
+		OvSave(p);
+		if (CompanionsPlugin.LogNormal) LogInfo($"The trench round \"{p.Name}\" is open again ({why}): {high} spot(s) more than 0.3 m above the goal, {open} spot(s) opened - lap 1, each down 2 m at most this lap (I1)");
+		return true;
+	}
+
+	// I1b (John 11-22 18:06Z: "They should be able to re-examine a location if something changes"): every 2 s, a spot
+	// closed for good is opened again when a pit map square within 2 m of it changed after it was closed; the closed
+	// checks run again at once (still true = closed again, from now). One above its goal on a done trench reopens it (I1).
+	private void OvClosedRecheck(OvPlan p)
+	{
+		if (Time.time < p.ClosedChkAt)
+		{
+			return;
+		}
+		p.ClosedChkAt = Time.time + OvGrowEvery;
+		bool reopen = false;
+		foreach (OvSpot s in p.Spots)
+		{
+			if (!s.Closed || s.ClosedAt < 0f || !OvChangedNearPt(s.P, s.ClosedAt))
+			{
+				continue;
+			}
+			string was = s.ClosedWhy;
+			string chg = OvChgSaid();
+			s.Closed = false;
+			s.ClosedWhy = null;
+			s.ClosedAt = -1f;
+			OvClosedCheck(s);
+			if (s.Closed)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {s.Idx + 1} looked at again (something within 2 m changed{chg}): still closed - {s.ClosedWhy} (I1b)");
+				continue;
+			}
+			float g = GroundAt(s.P);
+			s.Skip = false;
+			s.SkipWhy = null;
+			s.Holder = null;
+			if (g > s.Target + OvDigGain)
+			{
+				s.Done = false;
+				s.DoneWhy = null;
+				s.LapStart = g;
+				s.OpenLap = p.Lap;
+				s.LapDepth = Mathf.Max(s.Target, g - OvLapStep);
+			}
+			else
+			{
+				s.Done = true;
+				s.DoneWhy = "at the trench goal";
+			}
+			string left = s.Done ? "at its goal" : (g - s.Target).ToString("F1") + " m above its goal";
+			if (CompanionsPlugin.LogNormal) LogInfo($"Trench spot {s.Idx + 1} looked at again (something within 2 m changed{chg}): open again (it was closed: {was}), {left} (I1b)");
+			reopen |= p.Done && g > s.Target + 0.3f;
+		}
+		if (reopen)
+		{
+			OvReopenCheck(p, "a closed spot opened again");
+		}
+	}
+
 	// C2.3: a part seen outside the ring makes the ring again (at most every 2 s, until lap 1 is complete)
 	private void OvGrow(OvPlan p)
 	{
@@ -1791,9 +1918,11 @@ public partial class HarvestController
 			p.RingFixed = true;
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"Lap {p.Lap} of the trench round \"{p.Name}\" is over: {done} spots done, {skipped} skipped, {closed} closed for good; the most any spot went down this lap: {best:F1} m");
-		if (p.Lap >= OvMaxLaps || best < OvLapMinGain)
+		// I1 (John 11-22 Q-I1a): no lap cap - a lap where no spot went down 0.3 m ends the trench
+		if (best < OvLapMinGain)
 		{
 			p.Done = true;
+			p.DoneChecked = true;
 			OvSave(p);   // F3
 			return;
 		}
@@ -1829,6 +1958,7 @@ public partial class HarvestController
 		if (open == 0)
 		{
 			p.Done = true;
+			p.DoneChecked = true;
 			OvSave(p);   // F3
 			return;
 		}
@@ -2018,7 +2148,14 @@ public partial class HarvestController
 		}
 		OvGrow(p);
 		OvFoundJoin(p);   // H2
+		OvClosedRecheck(p);   // I1b
 		OvRampChecks(p);  // H4
+		// I1 (John 11-22 Q4): a "done" from the save is checked against the ground once
+		if (p.Done && !p.DoneChecked)
+		{
+			p.DoneChecked = true;
+			OvReopenCheck(p, "the saved trench said done");
+		}
 		if (p.Done)
 		{
 			OvDoneTick();
@@ -4012,8 +4149,9 @@ public partial class HarvestController
 		}
 		if (!movedHit)
 		{
-			// X2: no place beside it toward the vein's centre - this spot is left out (never tried again on this vein)
+			// X2: no place beside it toward the vein's centre - this spot is left out (I1b: until something near it changes)
 			hit.Closed = true;
+			hit.ClosedAt = Time.time;   // I1b
 			hit.ClosedWhy = $"blocked by \"{wb.name}\" (it can't be damaged) with no place beside it toward the vein";
 			if (hit.Holder == this)
 			{

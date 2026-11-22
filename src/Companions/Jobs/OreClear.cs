@@ -834,7 +834,7 @@ public partial class HarvestController
 		c.DirtDeep.Remove(d.Key);
 		c.DirtOnce.Remove(d.Key);
 		c.DirtGround.Remove(d.Key);
-		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} is back on the list: something within 2 m of it changed");
+		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} is back on the list: something within 2 m of it changed{OvChgSaid()}");
 		return false;
 	}
 
@@ -845,6 +845,7 @@ public partial class HarvestController
 	// E4 (8a): something within 2 m of the point changed after `at`
 	private bool OvDirtChangedNear(OvClear c, OvDirt d, float at)
 	{
+		_chgSq = -1;   // I3
 		OvMap m = _vp?.Map;
 		if (m != null && m.Built && m.ChangedAt != null)
 		{
@@ -862,6 +863,7 @@ public partial class HarvestController
 					}
 					if (m.ChangedAt[z * m.W + x] > at)
 					{
+						_chgSq = z * m.W + x;   // I3
 						return true;
 					}
 				}
@@ -1429,7 +1431,7 @@ public partial class HarvestController
 		if (l.D != null && OvChangedNearPt(l.D.transform.position, l.AsideAt))
 		{
 			l.AsideAt = -1f;
-			if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{MHR_List.Local(l.D.m_itemData.m_shared.m_name)}\" in the pit is back on the list: something within 2 m of it changed");
+			if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{MHR_List.Local(l.D.m_itemData.m_shared.m_name)}\" in the pit is back on the list: something within 2 m of it changed{OvChgSaid()}");
 			return false;
 		}
 		return true;
@@ -1438,6 +1440,7 @@ public partial class HarvestController
 	// F5: on the pit map, a square within 2 m of p changed after `at` (no map = false)
 	private bool OvChangedNearPt(Vector3 p, float at)
 	{
+		_chgSq = -1;   // I3
 		OvMap m = _vp?.Map;
 		if (m == null || !m.Built || m.ChangedAt == null)
 		{
@@ -1457,6 +1460,7 @@ public partial class HarvestController
 				}
 				if (m.ChangedAt[z * m.W + x] > at)
 				{
+					_chgSq = z * m.W + x;   // I3
 					return true;
 				}
 			}
@@ -1971,8 +1975,11 @@ public partial class HarvestController
 	// F9: h holds a place on the point and is another companion working it (SV1's test: swinging, or walking and closer)
 	private bool OvDirtSlotBusy(OvDirt d, HarvestController h)
 	{
-		return h != null && h != this && h.isActiveAndEnabled && h._drSpot == d && h._vp == _vp && h.OvHolderWorking(h._drWalk);
+		// I2 (John 11-22 Q2: free to take over if no one is actually at it): the holder counts only within 3 m (flat) of it
+		return h != null && h != this && h.isActiveAndEnabled && h._drSpot == d && h._vp == _vp && h.OvHolderWorking(h._drWalk) && Flat(h.transform.position, d.P) <= OvDirtHoldNear;
 	}
+
+	private const float OvDirtHoldNear = 3f;   // I2
 
 	// F9: the other companion working the point (null = none)
 	private HarvestController OvDirtOther(OvDirt d)
@@ -3262,13 +3269,14 @@ public partial class HarvestController
 		part.CoolAt = -1f;
 		part.CoolOnce = false;
 		part.CoolGround = null;
-		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(part.C != null ? part.C.name : "?")}\" is back on the list: something within 2 m of it changed");
+		if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{(part.C != null ? part.C.name : "?")}\" is back on the list: something within 2 m of it changed{OvChgSaid()}");
 		return false;
 	}
 
 	// SV7: a pit map square within 2 m of the box (flat) changed after `at`; with no map, the ground there moved 0.1 m
 	private bool OvBoxChangedNear(Vector3 centre, Vector3 half, float at, float[] was)
 	{
+		_chgSq = -1;   // I3
 		OvMap m = _vp?.Map;
 		if (m != null && m.Built && m.ChangedAt != null)
 		{
@@ -3286,6 +3294,7 @@ public partial class HarvestController
 				{
 					if (m.ChangedAt[z * m.W + x] > at)
 					{
+						_chgSq = z * m.W + x;   // I3
 						return true;
 					}
 				}
