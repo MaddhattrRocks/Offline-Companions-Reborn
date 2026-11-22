@@ -800,6 +800,11 @@ public partial class HarvestController : MonoBehaviour
 			OvBackToPit();
 			return;
 		}
+		// R1 (John 11-22 Q3): idle on no vein - a kept pit within 20 m with its rock gone and items still on its list is joined
+		if (mode == 3 && _ovBack == null && _vp == null && _vFor == null && _state == HarvestState.Idle && !_ovOut && (_ai == null || _ai.PendingDepositContainer == null) && !MHR_GatherRules.TripBusy(this) && OvJoinPit())
+		{
+			return;
+		}
 		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or tossed), so it never gets overloaded
 		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && (_ai == null || _ai.PendingDepositContainer == null) && MHR_GatherRules.StoneDue(this) && MHR_GatherRules.StartPile(this))
 		{

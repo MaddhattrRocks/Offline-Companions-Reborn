@@ -2963,3 +2963,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - L3 (MHR_Mover): pit map routes while on its vein's pit (OvOnPit), the cleanup after the pop included.
 - L5 (StoneDue / StartPile): the Ore job builds a stone pile only on its pit; off it, only the existing toss when too heavy.
 - L6 (OvAxeTick): no working pickaxe left in its bag = it says so once, axe work in the pit first (DD8), then the pit's loose items and stone; nothing left it can take = out of the vein as before; a working pickaxe in the bag sends it back to the work.
+
+## P1, R1, R2 (log 0acd24d1, 2026-11-22)
+- P1 step 1 (OvStuckCheck -> OvLowerTry, silver): before stopping, trench spots within 3 m of dirt points set aside for "no place within 3 m of it to work it from" get the goal 2.56 m under the point's part bottom (1.0 m swing height + 1.8 m x sin 60 top ray; never under the 8 m floor, never higher than before); the trench reopens (OvReopenCheck) only when a goal went deeper in that call, so each spot is lowered once.
+- P1 step 2 (OvLowerStep2 / OvLowTick): then, per such point, the pit squares every 0.5 m on the line from its nearest deepened spot (dug to its goal) toward it, up to the first square from which the point is within the swing, get the same goal; lowered one at a time from the square before it with the dirt dig (every silver swing check), its own feet may go down to the square's goal (Q-P1d a). Done or failed once; a failed square ends its line. Lowering digs don't count as dirt progress (ProgAt).
+- R1 (OvJoinPit, HarvestController idle block): an idle Ore companion on no vein or trip, within 20 m of a kept plan whose rock is gone and whose item list isn't empty, joins its cleanup by OvBackToPit; a pit it left is joined again only after its item list or pit map changed.
+- R2 (CompanionAI follow warp): a log line with who, from, to and why.

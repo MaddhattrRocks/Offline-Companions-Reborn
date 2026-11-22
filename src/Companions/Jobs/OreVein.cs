@@ -938,6 +938,75 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogNormal) LogInfo($"Back to the pit of \"{p.Name}\" after its trip - the pit's list again");
 	}
 
+	// R1 (John 11-22 21:05Z Q3 yes, 21:25Z): when it left each kept pit's cleanup (it joins that pit again only after a change)
+	private readonly Dictionary<OvPlan, float> _ovJoinLeft = new Dictionary<OvPlan, float>();
+
+	private const float OvJoinNear = 20f;   // R1 (Q3: 20 m): within 20 m (flat) of the pit's nearest trench spot
+
+	// R1: in the Ore job, idle, on no vein and on no trip (the caller's checks), a kept plan within 20 m whose rock is gone
+	// and whose pit's item list isn't empty: it joins that pit's cleanup by the back-to-pit path (OvBackToPit). It joins a pit
+	// it left only after that pit's item list or pit map changed since. True = it joined.
+	internal bool OvJoinPit()
+	{
+		Vector3 me = base.transform.position;
+		OvPlan best = null;
+		float bd = float.MaxValue;
+		foreach (OvPlan p in s_ovPlans)
+		{
+			if (p == null || p.Spots.Count == 0 || !s_ovClear.TryGetValue(p, out OvClear c))
+			{
+				continue;
+			}
+			bool live = false;
+			foreach (MineRock5 r in p.Rocks)
+			{
+				if (r != null && r.gameObject.activeInHierarchy)
+				{
+					live = true;
+					break;
+				}
+			}
+			if (live)
+			{
+				continue;   // the rock is there: the scan finds it and joins the plan as before
+			}
+			int items = 0;
+			foreach (OvLoose l in c.Loose.Values)
+			{
+				if (OvLooseHere(l))
+				{
+					items++;
+				}
+			}
+			if (items == 0)
+			{
+				continue;
+			}
+			if (_ovJoinLeft.TryGetValue(p, out float left) && c.LooseChangedAt <= left && (p.Map == null || p.Map.LastChange <= left))
+			{
+				continue;   // nothing changed since it left this pit
+			}
+			float d = float.MaxValue;
+			foreach (OvSpot sp in p.Spots)
+			{
+				d = Mathf.Min(d, Flat(me, sp.P));
+			}
+			if (d <= OvJoinNear && d < bd)
+			{
+				bd = d;
+				best = p;
+			}
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		if (CompanionsPlugin.LogNormal) LogInfo($"Joining the cleanup of the pit of \"{best.Name}\" ({bd:F0} m away): its rock is gone and items are still on its list (R1)");
+		_ovBack = best;
+		OvBackToPit();
+		return true;
+	}
+
 	// build 2: lets go of the part it holds or mines
 	private void OvPartRelease()
 	{
@@ -2113,6 +2182,10 @@ public partial class HarvestController
 				return;
 			}
 			OvClearGone();
+			if (_vp != null)
+			{
+				_ovJoinLeft[_vp] = Time.time;   // R1: it joins this pit again only after its item list or its pit map changed
+			}
 			OvLeave("the vein is gone");
 			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)
 			return;
@@ -3922,6 +3995,13 @@ public partial class HarvestController
 			if (silver)
 			{
 				feetDig = dug && (Flat(ft, _dgDugPt) <= OvFeetDig || floorDug);
+				// P1 step 2 (John 11-22 21:36Z, Q-P1d (a)): lowering a square, a swing may lower its own feet while they stay
+				// at or above the square's goal
+				if (_lwOn && feetDig && GroundAt(ft) >= _dgGoalY - OvDigGain)
+				{
+					feetDig = false;
+					floorDug = false;
+				}
 				float lowest = Mathf.Max(_drSpot != null && _drSpot.Part != null ? OvPartBottom(_drSpot.Part) - OvDeepMax : float.MinValue, OvFloor(_dgDugPt));
 				bank = dug && !feetDig && _dgDugBefore > lowest + OvDigGain && GroundAt(_dgDugPt) <= _dgDugBefore - OvDigGain;
 				// F7 (b): the dug point is now under the lowest allowed (2 m under the part's bottom, or the game's 8 m limit)
@@ -3954,7 +4034,9 @@ public partial class HarvestController
 					_drRepos = $"{OvDirtNoProg} swings in a row did no work";
 				}
 			}
-			if ((drop || bank) && _vp != null)
+			// P1 step 2: lowering a square is not progress on the dirt points (they come back only when something within 2 m
+			// of them changes), so the lowering goes on square by square
+			if ((drop || bank) && _vp != null && !_lwOn)
 			{
 				OvC().ProgAt = Time.time;
 			}

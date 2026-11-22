@@ -185,6 +185,11 @@ public partial class HarvestController
 
 		public float LooseAt = -100f;
 
+		public float LooseChangedAt = -1f;   // R1: the last time an item came onto the list or left it
+
+		// P1 step 2: per dirt point (its key), the squares lowered toward it from its nearest deepened trench spot
+		public readonly Dictionary<long, List<OvLowSq>> LowLines = new Dictionary<long, List<OvLowSq>>();
+
 		public bool Done;
 
 		public bool Stopped;
@@ -743,6 +748,15 @@ public partial class HarvestController
 			OvDrTick(c);
 			return true;
 		}
+		if (_lwSq != null)
+		{
+			if (OvPitBetween())
+			{
+				return true;
+			}
+			OvLowTick(c);   // P1 step 2
+			return true;
+		}
 		// Y1 / Y6a: a way out first, then the things in the pit
 		if (OvFirst())
 		{
@@ -1009,6 +1023,21 @@ public partial class HarvestController
 	// John (2026-11-20): "They need to clean the entire pit of ore"; "Can we do a shared sweep that marks all the ore parts
 	// and the NPC update the list as they pick up the ore? With some timed auto sweep"; stone and wood tossed in the pit go
 	// on it too; no time limits on the job, only for getting stuck.
+	// P1 step 2: one square of a tunnel toward a dirt point - lowered to its goal from the square before it (or the spot)
+	private sealed class OvLowSq
+	{
+		public Vector3 P;
+		public Vector3 From;      // where it stands to dig it: the square before it, or the deepened trench spot
+		public float Goal;
+		public OvLowSq Prev;
+		public bool Done;
+		public bool Failed;
+		public HarvestController Holder;
+	}
+
+	private OvLowSq _lwSq;        // P1 step 2: the square it is lowering
+	private bool _lwOn;           // P1 step 2: its dig is on (its own feet may go down to the square's goal, Q-P1d (a))
+
 	private sealed class OvLoose
 	{
 		public ItemDrop D;
@@ -1099,6 +1128,7 @@ public partial class HarvestController
 			if (!c.Loose.ContainsKey(id))
 			{
 				c.Loose[id] = new OvLoose { D = d, Name = name, Ore = ore };
+				c.LooseChangedAt = now;   // R1
 			}
 		}
 		List<int> gone = new List<int>();
@@ -1112,6 +1142,7 @@ public partial class HarvestController
 		foreach (int id in gone)
 		{
 			c.Loose.Remove(id);
+			c.LooseChangedAt = now;   // R1
 		}
 	}
 
@@ -1237,6 +1268,7 @@ public partial class HarvestController
 				if (_humanoid.Pickup(l.D.gameObject, autoequip: false, autoPickupDelay: false))
 				{
 					c.Loose.Remove(l.D.gameObject.GetInstanceID());
+					c.LooseChangedAt = now;   // R1
 					if (CompanionsPlugin.LogDetailed) Log($"Picked up {count}x {MHR_List.Local(what)} in the pit ({c.Loose.Count} on the pit's list)");
 					OvLooseOff();
 				}
@@ -2107,6 +2139,7 @@ public partial class HarvestController
 
 	private void OvDrOff()
 	{
+		OvLwOff();            // P1 step 2: dropping the dirt work drops a lowering too
 		_dgBackNoProg = -1;   // S3
 		_drRepos = null;      // E2
 		_drDeep = false;      // E3
@@ -3717,10 +3750,283 @@ public partial class HarvestController
 		{
 			return;   // only waiting for a hammer or a ladder spot: it stands by (it said so once)
 		}
+		// P1 (John 11-22 21:23-21:25Z, log 0acd24d1): on silver, before stopping, the ground near the dirt points it had no
+		// place to work from is lowered so it can reach them
+		if (OvIsSilver(_vp) && OvLowerTry(c))
+		{
+			return;
+		}
 		c.Stopped = true;
 		c.StoppedAt = now;
 		c.Done = true;
 		OvClearSay(c);
+	}
+
+	// ---------- P1 (John 11-22 21:23-21:25Z, log 0acd24d1): lower the ground near dirt it can't reach (silver) ----------
+	// The pickaxe's swing starts 1.0 m above the feet and its top ray rises 1.8 m x sin 60 = 1.56 m more, so from feet
+	// 2.56 m under a part's bottom no ray of the swing can reach the part, and under the vein the body (1.9 m) fits.
+	private const float OvLowerUnder = 2.56f;
+
+	// a dirt point set aside because no place within 3 m of it could work it (OvStandFor's silver reason)
+	private static bool OvNoPlaceWhy(OvClear c, OvDirt d)
+	{
+		return c.DirtWhy.TryGetValue(d.Key, out string w) && w != null && w.StartsWith("no place within");
+	}
+
+	// the goal for the ground near a point: 2.56 m under its part's bottom, never under the game's 8 m floor there
+	private float OvLowerGoal(OvDirt d, Vector3 at)
+	{
+		return Mathf.Max(OvFloor(at), OvPartBottom(d.Part) - OvLowerUnder);
+	}
+
+	// Step 1: the trench spots within 3 m (OvDigInFar) of such points get that deeper goal (never a higher one) and the
+	// trench reopens for the spots above it (I1, OvReopenCheck) - only when a goal went deeper in this call, so each spot
+	// is lowered once. Then step 2. True = the trench was reopened, or step 2 has work (the clearing waits for it).
+	private bool OvLowerTry(OvClear c)
+	{
+		OvPlan p = _vp;
+		if (p == null || p.Spots.Count == 0)
+		{
+			return false;
+		}
+		int pts = 0, deeper = 0;
+		foreach (OvDirt d in c.Dirt)
+		{
+			if (d.Part == null || !OvNoPlaceWhy(c, d))
+			{
+				continue;
+			}
+			pts++;
+			foreach (OvSpot s in p.Spots)
+			{
+				if (s.Closed || Flat(s.P, d.P) > OvDigInFar + 0.01f)
+				{
+					continue;
+				}
+				float g = OvLowerGoal(d, s.P);
+				if (g < s.Target - 0.01f)
+				{
+					s.Target = g;
+					deeper++;
+				}
+			}
+		}
+		if (pts == 0)
+		{
+			return false;
+		}
+		if (deeper > 0 && CompanionsPlugin.LogNormal) LogInfo($"{pts} dirt point(s) of \"{p.Name}\" have no place to work them from: {deeper} trench spot goal(s) within {OvDigInFar:F0} m of them set to {OvLowerUnder:F2} m under the part's bottom (not under the game's 8 m floor) - so the swing can't reach the vein and there is room under it (P1)");
+		// only when a spot's goal went deeper now: a spot is lowered once (a lap that can't take it there isn't run again)
+		if (deeper > 0 && OvReopenCheck(p, "P1: the trench beside dirt it can't reach goes deeper"))
+		{
+			return true;
+		}
+		return OvLowerStep2(c);
+	}
+
+	// Step 2 (John 11-22 21:23Z: "If they need to clear more of the surrounding area to get to the points ... that is ok"):
+	// for each such point, the pit squares every 0.5 m on the straight line from its nearest deepened trench spot (one at its
+	// deeper goal) toward it, up to the first square from which the point is within its swing, get the same goal (2.56 m
+	// under the part's bottom, not under the 8 m floor). They are lowered one at a time, nearest the spot first, each from
+	// the square before it. A square is lowered once: done, or failed (a failed square ends its line). True = it took a
+	// square, or another companion is on one (it stands by).
+	private bool OvLowerStep2(OvClear c)
+	{
+		OvPlan p = _vp;
+		float range = FindBestTool(2)?.m_shared?.m_attack != null ? FindBestTool(2).m_shared.m_attack.m_attackRange : 2f;
+		float reach = Mathf.Max(0.8f, range - OvStandAt);
+		foreach (OvDirt d in c.Dirt)
+		{
+			if (d.Part == null || !OvNoPlaceWhy(c, d) || c.LowLines.ContainsKey(d.Key))
+			{
+				continue;
+			}
+			List<OvLowSq> line = new List<OvLowSq>();
+			c.LowLines[d.Key] = line;
+			OvSpot from = null;
+			float fd = float.MaxValue;
+			foreach (OvSpot s in p.Spots)
+			{
+				float g = OvLowerGoal(d, s.P);
+				if (s.Closed || s.Target > g + 0.01f || GroundAt(s.P) > s.Target + 0.3f)
+				{
+					continue;   // not a deepened spot that is dug to its goal
+				}
+				float f = Flat(s.P, d.P);
+				if (f < fd)
+				{
+					fd = f;
+					from = s;
+				}
+			}
+			if (from == null)
+			{
+				continue;
+			}
+			Vector3 dir = d.P - from.P;
+			dir.y = 0f;
+			float len = dir.magnitude;
+			if (len < 0.01f)
+			{
+				continue;
+			}
+			dir /= len;
+			Vector3 at = new Vector3(from.P.x, GroundAt(from.P), from.P.z);
+			OvLowSq prev = null;
+			for (float t = OvDirtGrid; t < len; t += OvDirtGrid)
+			{
+				Vector3 q = from.P + dir * t;
+				q.y = GroundAt(q);
+				if (!OvInPitPt(q))
+				{
+					break;
+				}
+				OvLowSq sq = new OvLowSq { P = q, From = prev != null ? prev.P : at, Goal = OvLowerGoal(d, q), Prev = prev };
+				sq.Done = q.y <= sq.Goal + OvDigGain;
+				line.Add(sq);
+				prev = sq;
+				if (Flat(q, d.P) <= reach)
+				{
+					break;   // from here the point is within its swing
+				}
+			}
+			if (line.Count > 0 && CompanionsPlugin.LogNormal) LogInfo($"No place to work the dirt at {MHR_Mover.Fmt(d.P)} from even with the deeper trench: {line.Count} square(s) from trench spot {from.Idx + 1} toward it get its goal ({line[0].Goal:F2}, {OvLowerUnder:F2} m under the part's bottom) - lowered one by one, each from the one before it (P1)");
+		}
+		Vector3 me = base.transform.position;
+		OvLowSq best = null;
+		float bd = float.MaxValue;
+		bool othersOn = false;
+		foreach (List<OvLowSq> line in c.LowLines.Values)
+		{
+			foreach (OvLowSq sq in line)
+			{
+				if (sq.Failed)
+				{
+					break;   // a failed square ends its line
+				}
+				if (sq.Done)
+				{
+					continue;
+				}
+				if (sq.Holder != null && sq.Holder != this && sq.Holder.isActiveAndEnabled && sq.Holder._lwSq == sq)
+				{
+					othersOn = true;
+					break;
+				}
+				if (sq.Prev != null && !sq.Prev.Done)
+				{
+					break;
+				}
+				float dd = Flat(me, sq.From);
+				if (dd < bd)
+				{
+					bd = dd;
+					best = sq;
+				}
+				break;   // only the first open square of each line
+			}
+		}
+		if (best != null)
+		{
+			best.Holder = this;
+			_lwSq = best;
+			_lwOn = false;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Lowering the square at {MHR_Mover.Fmt(best.P)} to {best.Goal:F2} from {MHR_Mover.Fmt(best.From)} (P1)");
+			return true;
+		}
+		if (othersOn)
+		{
+			OvStandBy("another companion is lowering the ground toward the dirt it can't reach (P1)");
+			return true;
+		}
+		return false;
+	}
+
+	private void OvLwOff()
+	{
+		if (_lwSq != null && _lwSq.Holder == this)
+		{
+			_lwSq.Holder = null;
+		}
+		_lwSq = null;
+		if (_lwOn)
+		{
+			_lwOn = false;
+			OvDigOff();
+			_dgDirt = false;
+			_dgClear = false;
+		}
+	}
+
+	// P1 step 2: to the square before it, then the existing dirt dig (OvDigBegin / OvDigTick, every silver swing check) down
+	// to the square's goal. Ends: the square at its goal (done), or the dig ended short of it / the walk gave up (failed).
+	private void OvLowTick(OvClear c)
+	{
+		OvLowSq sq = _lwSq;
+		float dt = Time.deltaTime;
+		if (_lwOn && _dgActive)
+		{
+			OvDigTick();
+			if (_dgActive)
+			{
+				return;
+			}
+		}
+		if (_lwOn)
+		{
+			// the dig ended
+			bool limit = _dgLimit;
+			string why = _drRepos;
+			_drRepos = null;
+			_lwOn = false;
+			_dgDirt = false;
+			_dgClear = false;
+			if (_state != HarvestState.Vein)
+			{
+				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the square stays its own
+			}
+			if (GroundAt(sq.P) <= sq.Goal + OvDigGain)
+			{
+				sq.Done = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The square at {MHR_Mover.Fmt(sq.P)} is down to {GroundAt(sq.P):F2} (goal {sq.Goal:F2}) (P1)");
+			}
+			else
+			{
+				sq.Failed = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The square at {MHR_Mover.Fmt(sq.P)} stopped at {GroundAt(sq.P):F2} (goal {sq.Goal:F2}): {why ?? (limit ? "the game's 8 m dig limit" : $"{OvDirtNoProg} swings did no work")} - its line ends here (P1)");
+			}
+			OvLwOff();
+			c.DirtAt = Mathf.Min(c.DirtAt, Time.time - OvDirtEvery + 0.5f);   // the dirt list again in 0.5 s
+			return;
+		}
+		if (GroundAt(sq.P) <= sq.Goal + OvDigGain)
+		{
+			sq.Done = true;
+			OvLwOff();
+			return;
+		}
+		Vector3 me = base.transform.position;
+		Vector3 stand = new Vector3(sq.From.x, GroundAt(sq.From), sq.From.z);
+		if (Flat(me, stand) > 0.5f || me.y - stand.y > OvStepUp)
+		{
+			if (OvWalkGaveUp(dt, stand))
+			{
+				sq.Failed = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(stand)} to lower the square at {MHR_Mover.Fmt(sq.P)} - its line ends here (P1)");
+				OvLwOff();
+				return;
+			}
+			OvWalk(stand, 0.25f, Flat(me, stand) > 8f, dt);
+			return;
+		}
+		_ai?.StopMoving();
+		OvDigBegin(new Vector3(sq.P.x, GroundAt(sq.P), sq.P.z), null, ramp: false);
+		OvDigResume();
+		_dgClear = true;
+		_dgDirt = true;
+		_dgGoalY = sq.Goal;
+		_lwOn = true;
 	}
 
 	// the trench spot nearest the part (flat, to its box) that no other companion stands on or walks to (the way-out check)

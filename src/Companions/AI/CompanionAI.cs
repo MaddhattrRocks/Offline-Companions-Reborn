@@ -1481,7 +1481,11 @@ public class CompanionAI : BaseAI
 			// the stairs) keeps walking (user: "they just appeared next to me")
 			if (num > FollowTeleportDist && (num > FollowTeleportDist * 1.5f || (!MHR_Mover.CanSee(base.transform.position, position) && !MHR_Mover.Progressing(this))))
 			{
+				// R2 (John 11-22 Q4: yes): the follow warp is logged - who, from where to where, and why
+				Vector3 wasAt = base.transform.position;
+				string why = num > FollowTeleportDist * 1.5f ? $"{num:F0} m behind you, more than 1.5 x the {FollowTeleportDist:F0} m warp distance" : $"{num:F0} m behind you (warp distance {FollowTeleportDist:F0} m), out of sight and not getting closer";
 				TeleportToFollowTarget();
+				if (CompanionsPlugin.LogNormal && Vector3.Distance(wasAt, base.transform.position) > 0.5f) CompanionsPlugin.Log.LogInfo($"[Follow] {m_character.m_name} warped to you from {MHR_Mover.Fmt(wasAt)} to {MHR_Mover.Fmt(base.transform.position)}: {why}");
 			}
 		}
 		if (_rest != null && _rest.IsNavigating)
