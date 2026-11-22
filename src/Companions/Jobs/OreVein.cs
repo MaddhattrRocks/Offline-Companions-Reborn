@@ -256,6 +256,13 @@ public partial class HarvestController
 
 	private bool _ovPitOpen;   // F1: this vein's pit is open for its stone and wood piles (from the pop)
 
+	// 1.5.98 F1 (log cdfe000a: after the pop every trip ended the cleanup - the way back needed the rock, gone with the pop):
+	// a trip off the pit (ore to a chest, too heavy) during the cleanup keeps the plan here, and it goes back to the pit's
+	// list once the trip is over
+	private OvPlan _ovBack;
+
+	private bool _ovTrip;   // F1: the OvLeaveOut being started is a trip (the chest trip, too heavy / bag full)
+
 	private int _vFirstSide = -1;
 
 	private OvSpot _ovSpot;
@@ -315,6 +322,11 @@ public partial class HarvestController
 	private float _dgSwungAt;
 
 	private float _dgBefore;
+
+	// F7 (a): the ground at its feet and 4 points at its body radius when the swing started (where it stood then)
+	private readonly float[] _dgFeetG = new float[5];
+
+	private Vector3 _dgFeetAt;
 
 	private int _dgNoProg;
 
@@ -556,6 +568,9 @@ public partial class HarvestController
 	// G4: on a vein (its own work or a thing it clears for the trench): the mover's cliff climb is off
 	internal bool OnVein => _vFor != null;
 
+	// F1: on the pit - the rock is there, or the rock is gone and its plan is kept for the cleanup (the pit is open)
+	internal bool OvOnPit => _vFor != null || (_vp != null && _ovPitOpen);
+
 	// ---------- the floor (C2.5) ----------
 	// the lowest the game lets the ground at p go: 8 m under its first height (TerrainComp keeps the change within 8 m)
 	private static float TFloorAt(Vector3 p)
@@ -719,6 +734,7 @@ public partial class HarvestController
 		_vFor = _target;
 		_vRock = rock;
 		_vp = p;
+		_ovBack = null;   // F1: a new vein - no way back to the last pit
 		_ovPitOpen = false;
 		MHR_GatherRules.ClosePit(this);   // F1: the last vein's pit is closed for stone piles
 		_ovAxeDone = false;
@@ -807,6 +823,9 @@ public partial class HarvestController
 	// lets go of the vein (the plan stays for the others, and for this one when it comes back)
 	private void OvLeave(string why, bool quiet = false)
 	{
+		// F1: a trip off the pit during the cleanup (the rock gone, the pit open) - the plan is kept for the way back
+		OvPlan back = _ovTrip && _vFor == null && _vp != null && _ovPitOpen ? _vp : null;
+		_ovTrip = false;
 		OvPartRelease();
 		OvRelease();
 		OvDigOff();
@@ -847,19 +866,35 @@ public partial class HarvestController
 		{
 			RestoreLoadout();
 		}
+		_ovBack = back;
+		if (back != null && CompanionsPlugin.LogNormal) LogInfo($"A trip off the pit of \"{back.Name}\" ({why}) - back to the pit's list after it");
+	}
+
+	// F1: the trip off the pit is over (no deposit, pile, toss or ore trip going on) - back to the pit's list
+	internal void OvBackToPit()
+	{
+		OvPlan p = _ovBack;
+		_ovBack = null;
+		if (p == null || !s_ovPlans.Contains(p))
+		{
+			return;
+		}
+		_vp = p;
+		_vFor = null;
+		_vRock = null;
+		_ovPitOpen = false;
+		p.Workers[this] = Time.time;
+		p.LastWork = Time.time;
+		_ai?.SetFollowTarget(null);
+		_state = HarvestState.Vein;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Back to the pit of \"{p.Name}\" after its trip - the pit's list again");
 	}
 
 	// build 2: lets go of the part it holds or mines
 	private void OvPartRelease()
 	{
-		if (_rpPart != null && _rpPart.Holder == this)
-		{
-			_rpPart.Holder = null;
-		}
-		if (_clFor != null && _clFor.Holder == this)
-		{
-			_clFor.Holder = null;
-		}
+		OvPartUnclaim(_rpPart);   // F9
+		OvPartUnclaim(_clFor);
 		_rpPart = null;
 		OvLooseOff();   // F2: and the loose item it had
 		OvClOff();
@@ -869,7 +904,7 @@ public partial class HarvestController
 	// C6: leaving the vein - out of the trench first when it's in it, toward dest
 	private void OvLeaveOut(Vector3 dest, string why)
 	{
-		if (_vFor == null || _ovOut)
+		if ((_vFor == null && _vp == null) || _ovOut)
 		{
 			return;
 		}
@@ -895,6 +930,7 @@ public partial class HarvestController
 	private void OvJobOff()
 	{
 		_stuckInHole = false;
+		_ovBack = null;   // F1: the job changed - no way back to the pit
 		if (_vFor == null || _ovOut)
 		{
 			return;
@@ -1821,6 +1857,12 @@ public partial class HarvestController
 			if (!OvPick())
 			{
 				OvLapEnd(p);
+				// F11 (c) (John 11-21 23:30Z: no waiting - work on something else; 11-22 04:24Z Q6): no open spot left - the
+				// loose items in the pit it can take (the pit's list); none = it stands by
+				if (!p.Done && _humanoid != null && !_humanoid.InAttack() && OvLooseTick(OvC(), standBy: false))
+				{
+					return;
+				}
 				_ai?.StopMoving();
 				return;
 			}
@@ -2030,21 +2072,37 @@ public partial class HarvestController
 			}
 		}
 		bool other = false;
+		bool near4 = false;
 		if (found < 0)
 		{
-			// A2: its stretch is done - the nearest open spot 4 m from every other companion and its spot; else it stands by
-			float bd = float.MaxValue;
+			// A2: its stretch is done - the nearest open spot 4 m from every other companion and its spot; F11 (b): none -
+			// the nearest open spot no one has, even within 4 m (the board's 1.2 m still keeps them apart); else it stands by
+			float bd = float.MaxValue, bn = float.MaxValue;
+			int foundNear = -1;
 			for (int i = 0; i < n; i++)
 			{
-				if (OvOpen(spots[i]) && !OvTaken(spots[i]) && OvApartFromOthers(spots[i].P))
+				if (OvOpen(spots[i]) && !OvTaken(spots[i]))
 				{
 					float d = Flat(me, spots[i].P);
-					if (d < bd)
+					if (OvApartFromOthers(spots[i].P))
 					{
-						bd = d;
-						found = i;
+						if (d < bd)
+						{
+							bd = d;
+							found = i;
+						}
+					}
+					else if (d < bn)
+					{
+						bn = d;
+						foundNear = i;
 					}
 				}
+			}
+			if (found < 0 && foundNear >= 0)
+			{
+				found = foundNear;
+				near4 = true;
 			}
 			other = found >= 0;
 		}
@@ -2054,7 +2112,7 @@ public partial class HarvestController
 			{
 				_ovStandSaid = true;
 				_ovStandLap = _vp.Lap;
-				if (CompanionsPlugin.LogNormal) LogInfo($"Its stretch of the trench is done for lap {_vp.Lap} and every open spot is within 4 m of another companion - standing by until the lap ends");
+				if (CompanionsPlugin.LogNormal) LogInfo($"Its stretch of the trench is done for lap {_vp.Lap} and every open spot is another companion's - the pit's loose items, else standing by until the lap ends");
 			}
 			return false;
 		}
@@ -2063,7 +2121,7 @@ public partial class HarvestController
 		s.Holder = this;
 		_ovSpot = s;
 		_ovIdx = found;
-		if (CompanionsPlugin.LogDetailed) Log($"Trench spot {found + 1}/{n} (lap {_vp.Lap}) at {MHR_Mover.Fmt(s.P)}, {Flat(me, s.P):F1} m away{(other ? " - its stretch is done, the nearest open spot 4 m from the others" : "")}; ground {GroundAt(s.P):F2}, this lap down to {s.LapDepth:F2}");
+		if (CompanionsPlugin.LogDetailed) Log($"Trench spot {found + 1}/{n} (lap {_vp.Lap}) at {MHR_Mover.Fmt(s.P)}, {Flat(me, s.P):F1} m away{(other ? (near4 ? " - its stretch is done, the nearest open spot (within 4 m of another companion, F11)" : " - its stretch is done, the nearest open spot 4 m from the others") : "")}; ground {GroundAt(s.P):F2}, this lap down to {s.LapDepth:F2}");
 		return true;
 	}
 
@@ -2864,7 +2922,6 @@ public partial class HarvestController
 		_dgPart = false;
 		_dgDirt = false;
 		_dgStrike = false;
-		_bdWaitFrom = -1f;   // AA6: a new point - its own wait
 		_bdNextPick = 0f;
 		// J1: the walk clock starts here only (not each time it goes from swinging back to walking)
 		_moveTimer = 0f;
@@ -3166,6 +3223,7 @@ public partial class HarvestController
 			_dgSwung = true;
 			_dgSwungAt = Time.time;
 			_dgBefore = g;
+			OvFeetRead(_dgFeetG, out _dgFeetAt);   // F7 (a)
 			OvSweepLog(swItem);
 		}
 	}
@@ -3333,24 +3391,39 @@ public partial class HarvestController
 			// 0.5 m (flat) of its own feet (5c: no digging itself into a hole), nor where the ground was already at its lowest
 			// allowed (2 m under the part's bottom, or the game's 8 m limit). The 0.3 m-above-its-feet bank test is not used.
 			bool feetDig = false;
+			// F7 (a) (log cdfe000a: Je's digs 0.5-0.7 m in front took its own floor from 147.4 down to 145.8): the ground at
+			// its feet or at its body radius went down 0.05 m or more with this swing = it dug its own floor (every vein)
+			bool floorDug = dug && OvFeetWentDown(_dgFeetG, _dgFeetAt);
+			bool tooDeep = false;
 			if (silver)
 			{
-				feetDig = dug && Flat(ft, _dgDugPt) <= OvFeetDig;
+				feetDig = dug && (Flat(ft, _dgDugPt) <= OvFeetDig || floorDug);
 				float lowest = Mathf.Max(_drSpot != null && _drSpot.Part != null ? OvPartBottom(_drSpot.Part) - OvDeepMax : float.MinValue, OvFloor(_dgDugPt));
 				bank = dug && !feetDig && _dgDugBefore > lowest + OvDigGain && GroundAt(_dgDugPt) <= _dgDugBefore - OvDigGain;
+				// F7 (b): the dug point is now under the lowest allowed (2 m under the part's bottom, or the game's 8 m limit)
+				tooDeep = dug && _drSpot != null && _drSpot.Part != null && GroundAt(_dgDugPt) < lowest;
 			}
 			_dgNoProg = drop || bank || carve || oreWork ? 0 : _dgNoProg + 1;
 			// rule 5 (silver): reposition at once when a swing hit the vein (1 hit is the limit - no part breaks from dirt work)
 			// or dug at its own feet; after 2 swings in a row with no work (OvDirtNoProg, every vein)
+			// F7 (a), every vein: it dug its own floor - another place at once
+			if (!silver && floorDug && after > _dgGoalY + OvDigGain)
+			{
+				_drRepos = "a swing dug its own floor";
+			}
 			if (silver && after > _dgGoalY + OvDigGain)
 			{
-				if (hitOre)
+				if (tooDeep)
+				{
+					_drRepos = $"a swing dug the ground at {MHR_Mover.Fmt(_dgDugPt)} lower than 2 m under the part (or the game's 8 m limit)";
+				}
+				else if (hitOre)
 				{
 					_drRepos = "a swing hit the vein";
 				}
 				else if (feetDig)
 				{
-					_drRepos = $"a swing dug at its own feet ({MHR_Mover.Fmt(_dgDugPt)})";
+					_drRepos = floorDug ? $"a swing dug its own floor ({MHR_Mover.Fmt(_dgDugPt)})" : $"a swing dug at its own feet ({MHR_Mover.Fmt(_dgDugPt)})";
 				}
 				else if (_dgNoProg >= OvDirtNoProg)
 				{
@@ -3361,7 +3434,7 @@ public partial class HarvestController
 			{
 				OvC().ProgAt = Time.time;
 			}
-			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? (silver ? $", dug the dirt ({_dgDugBefore:F2} -> {GroundAt(_dgDugPt):F2})" : ", cut into the bank toward it") : "")}{(feetDig ? ", dug at its own feet" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || oreWork ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
+			if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)} (holds up a part): ground {_dgBefore:F2} -> {after:F2}, goal {_dgGoalY:F2}{(bank ? (silver ? $", dug the dirt ({_dgDugBefore:F2} -> {GroundAt(_dgDugPt):F2})" : ", cut into the bank toward it") : "")}{(floorDug ? ", dug its own floor" : feetDig ? ", dug at its own feet" : "")}{(tooDeep ? ", under the lowest allowed" : "")}{(hitOre ? ", hit the vein's rock" : "")}{(carve ? $", carving the rock \"{_ovThingHitGo.name}\"" : "")}{dugAt}{(drop || bank || carve || oreWork ? "" : $" - nothing  ({_dgNoProg} in a row)")}, feet {base.transform.position.y:F2}");
 			if (after <= _dgGoalY + OvDigGain)
 			{
 				_dgReached = true;
@@ -3699,6 +3772,50 @@ public partial class HarvestController
 	}
 
 	// ---------- C5: the way up (a ramp) ----------
+	private const float OvRampVeinGap = 0.5f;   // F12: a silver way up's line keeps 0.5 m from every part's box (flat)
+
+	// F12: the way up from `from` to `to` goes away from the vein (its goal farther from the nearest part's box than its
+	// start) and its line keeps 0.5 m (flat) from every part's box, looked at every 0.25 m
+	private bool OvRampOuterOk(Vector3 from, Vector3 to, out string why)
+	{
+		why = null;
+		if (_vp == null || !s_ovClear.TryGetValue(_vp, out OvClear c) || c.ById.Count == 0)
+		{
+			return true;
+		}
+		float d0 = OvNearPartFlat(c, from), d1 = OvNearPartFlat(c, to);
+		if (d1 <= d0)
+		{
+			why = $"its goal is no farther from the vein than where it starts ({d1:F1} m vs {d0:F1} m)";
+			return false;
+		}
+		float len = Flat(from, to);
+		for (float t = 0f; t <= len + 0.001f; t += 0.25f)
+		{
+			Vector3 q = Vector3.Lerp(from, to, len > 0.001f ? t / len : 0f);
+			float dq = OvNearPartFlat(c, q);
+			if (dq < OvRampVeinGap)
+			{
+				why = $"its line passes {dq:F1} m from the vein's rock at {MHR_Mover.Fmt(q)}";
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// F12: the flat distance from q to the nearest part's game box
+	private static float OvNearPartFlat(OvClear c, Vector3 q)
+	{
+		float best = float.MaxValue;
+		foreach (OvPart part in c.ById.Values)
+		{
+			Bounds b = new Bounds(part.Centre, part.Half * 2f);
+			Vector3 k = b.ClosestPoint(new Vector3(q.x, b.center.y, q.z));
+			best = Mathf.Min(best, Flat(k, q));
+		}
+		return best;
+	}
+
 	private void OvRampBegin(Vector3 goal, OvSpot spot, bool outOfTrench, string why)
 	{
 		Vector3 me = base.transform.position;
@@ -3719,6 +3836,26 @@ public partial class HarvestController
 					return;
 				}
 			}
+		}
+		// F12 (John 11-21 23:30Z, silver only: "no reason to be carving a way up from under the silver ... from the outside
+		// wall of the trench"): a way up inside the pit is cut only when its goal is farther from the vein than its start and
+		// its line (flat) never comes within 0.5 m of a part's box; else it isn't cut - the goal is reached by the way out on
+		// the trench's outer wall nearest it (R4: cut there when there is none near, else the walk takes the one there is).
+		// Getting out (outOfTrench) and the R4 way out's own cut aren't held to it (they go straight out from the floor).
+		if (!outOfTrench && !_woActive && OvIsSilver(_vp) && !OvRampOuterOk(me, goal, out string ow))
+		{
+			if (spot != null)
+			{
+				spot.RampTried = true;
+			}
+			OvSpot ns = OvNearest(goal);
+			bool cut = ns != null && OvWayOutNeeded(ns);
+			if (CompanionsPlugin.LogNormal) LogInfo($"No way up cut toward {MHR_Mover.Fmt(goal)} ({why}): {ow} - silver: only from the trench's outer wall; {(cut ? $"cutting the way out at trench spot {ns.Idx + 1}" : "the way out there is walked")}");
+			if (cut)
+			{
+				OvWayOutHere(ns, null, "a way up on silver only from the trench's outer wall");
+			}
+			return;
 		}
 		_rpActive = true;
 		_rpGoal = goal;
@@ -4159,7 +4296,7 @@ public partial class HarvestController
 		}
 		if (_rpPart != null)
 		{
-			_rpPart.Holder = null;   // build 2 (P5): the walk to the part comes next (RampTried is set)
+			OvPartUnclaim(_rpPart);   // build 2 (P5): the walk to the part comes next (RampTried is set); F9: its place
 			_rpPart = null;
 			return;
 		}

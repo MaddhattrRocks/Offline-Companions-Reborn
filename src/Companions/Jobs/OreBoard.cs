@@ -12,7 +12,6 @@ public partial class HarvestController
 
 	private const float OvBoardLine = 1.0f;      // AA6 (b): a working companion within 1 m of the straight line: detour
 
-	private const float OvBoardWait = 5f;        // AA6 (a): a trench point waits up to 5 s
 
 	private const float OvBoardLadderWait = 20f; // AA6: a ladder in use: wait 2 m away up to 20 s
 
@@ -24,8 +23,6 @@ public partial class HarvestController
 	private float _bdWalkAt = -1f;   // R3b.4: the last time it walked toward its board goal (WalkGo on a vein)
 
 	private float _bdNextLook;
-
-	private float _bdWaitFrom = -1f;
 
 	private float _bdNextPick;
 
@@ -254,8 +251,9 @@ public partial class HarvestController
 		return zh.m_uid.UserID != zm.m_uid.UserID ? zh.m_uid.UserID < zm.m_uid.UserID : zh.m_uid.ID < zm.m_uid.ID;
 	}
 
-	// AA6 (a): a trench point another companion stands on or walks to - waits up to 5 s (looked at once a second), then the
-	// spot is skipped this lap. True = waiting (or skipped).
+	// AA6 (a): a trench point another companion stands on or walks to (looked at once a second). F11 (a) (John 11-21 23:30Z:
+	// "no waiting - go work on something else"): no 5 s wait - the spot is skipped at once this lap and it takes the next.
+	// True = skipped.
 	private bool OvBoardTrenchWait()
 	{
 		if (Time.time >= _bdNextPick)
@@ -265,23 +263,12 @@ public partial class HarvestController
 		}
 		if (_bdBlock == null)
 		{
-			_bdWaitFrom = -1f;
 			return false;
 		}
-		if (_bdWaitFrom < 0f)
-		{
-			_bdWaitFrom = Time.time;
-			if (CompanionsPlugin.LogDetailed) Log($"Another companion stands at or is going to {MHR_Mover.Fmt(_dgPoint)} - waiting (up to {OvBoardWait:F0} s)");
-		}
-		_ai?.StopMoving();
-		if (Time.time - _bdWaitFrom >= OvBoardWait)
-		{
-			OvSpot q = _dgSpot;
-			_bdWaitFrom = -1f;
-			_bdBlock = null;
-			OvDigOff();
-			OvSkip(q, $"another companion was working there for {OvBoardWait:F0} s", normal: true);
-		}
+		OvSpot q = _dgSpot;
+		_bdBlock = null;
+		OvDigOff();
+		OvSkip(q, "another companion stands at or is going to that point - the next spot instead (no wait)", normal: true);
 		return true;
 	}
 

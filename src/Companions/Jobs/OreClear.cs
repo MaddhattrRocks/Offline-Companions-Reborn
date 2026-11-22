@@ -73,6 +73,8 @@ public partial class HarvestController
 		public int LadderTrees;   // Z4: trees taken for its ladder's wood (at most 3)
 
 		public HarvestController Holder;
+
+		public HarvestController Holder2;  // F9: a second companion, from more than a quarter turn round it
 	}
 
 	// GG2: one point of the dirt list
@@ -87,6 +89,8 @@ public partial class HarvestController
 		public OvPart Part;
 
 		public HarvestController Holder;
+
+		public HarvestController Holder2;   // F9: a second companion, from more than a quarter turn round it
 	}
 
 	private const float OvPartsEvery = 2f;         // P2: the parts are looked at every 2 s (and after a break)
@@ -140,6 +144,20 @@ public partial class HarvestController
 		public readonly List<OvPart> Parts = new List<OvPart>();
 
 		public readonly Dictionary<int, OvPart> ById = new Dictionary<int, OvPart>();
+
+		// F10 (silver): the vein's middle line - the middle of each 1 m slice along its long direction, joined slice to slice
+		public readonly List<Vector3> Mid = new List<Vector3>();
+
+		public int MidParts = -1;   // how many parts it was made from (made again when that changes)
+
+		// F2 (John 11-21 23:30Z / 11-22 04:24Z / 05:43Z): the pit's one stone dump all companions use after the pop
+		public bool StoneDumpHas;
+
+		public Vector3 StoneDump;
+
+		public HarvestController StoneTaker;   // the one companion taking stone off the dump for a pile (one at a time)
+
+		public float NoPileAt = -1f;           // a stone pile couldn't be placed then - none tried until the pit map changes
 
 		public float At = -100f;
 
@@ -264,7 +282,7 @@ public partial class HarvestController
 						c.ProgAt = Time.time;    // GG3: a part broke - progress (the stuck rule)
 						c.DirtAt = -100f;        // GG2: the dirt list is looked at again
 					}
-					if (c.ById.TryGetValue(id, out OvPart gone) && gone.Holder == null)
+					if (c.ById.TryGetValue(id, out OvPart gone) && gone.Holder == null && gone.Holder2 == null)
 					{
 						popped++;   // it was standing at the last look and nobody was mining it
 					}
@@ -467,16 +485,31 @@ public partial class HarvestController
 		}
 	}
 
+	// F9 (John 11-21 23:13Z / 23:30Z): at most two on a part - held by others only when both its places are other
+	// companions working it
 	private bool OvPartHeldByOther(OvPart part)
 	{
-		HarvestController h = part.Holder;
+		return OvPartSlotBusy(part, 1) && OvPartSlotBusy(part, 2);
+	}
+
+	// one of the part's two places (F9) is another companion working it (a stale holder is cleared)
+	private bool OvPartSlotBusy(OvPart part, int slot)
+	{
+		HarvestController h = slot == 1 ? part.Holder : part.Holder2;
 		if (h == null || h == this)
 		{
 			return false;
 		}
-		if (h == null || !h.isActiveAndEnabled || h._vp != _vp || (h._rpPart != part && h._clFor != part))
+		if (!h.isActiveAndEnabled || h._vp != _vp || (h._rpPart != part && h._clFor != part))
 		{
-			part.Holder = null;
+			if (slot == 1)
+			{
+				part.Holder = null;
+			}
+			else
+			{
+				part.Holder2 = null;
+			}
 			return false;
 		}
 		// SV1 (V1, John 11-21: "held by another" is free to take over if no one is actually at it working it)
@@ -485,6 +518,46 @@ public partial class HarvestController
 			return false;
 		}
 		return true;
+	}
+
+	// F9: the other companion working the part (null = none)
+	private HarvestController OvPartOther(OvPart part)
+	{
+		return OvPartSlotBusy(part, 1) ? part.Holder : OvPartSlotBusy(part, 2) ? part.Holder2 : null;
+	}
+
+	// F9: takes a place on the part - the first unless another companion is working it there (then the second)
+	private void OvPartClaim(OvPart part)
+	{
+		if (part.Holder == this || part.Holder2 == this)
+		{
+			return;
+		}
+		if (!OvPartSlotBusy(part, 1))
+		{
+			part.Holder = this;
+		}
+		else
+		{
+			part.Holder2 = this;
+		}
+	}
+
+	// F9: lets go of its place on the part
+	private void OvPartUnclaim(OvPart part)
+	{
+		if (part == null)
+		{
+			return;
+		}
+		if (part.Holder == this)
+		{
+			part.Holder = null;
+		}
+		if (part.Holder2 == this)
+		{
+			part.Holder2 = null;
+		}
 	}
 
 	// SV5: why it stands by, said once and again only when the reason changes (cleared when it starts work)
@@ -649,11 +722,16 @@ public partial class HarvestController
 		}
 		c.DirtAt = now;
 		Dictionary<long, HarvestController> held = new Dictionary<long, HarvestController>();
+		Dictionary<long, HarvestController> held2 = new Dictionary<long, HarvestController>();   // F9
 		foreach (OvDirt d in c.Dirt)
 		{
 			if (d.Holder != null && d.Holder._drSpot == d && d.Holder._vp == _vp)
 			{
 				held[d.Key] = d.Holder;
+			}
+			if (d.Holder2 != null && d.Holder2._drSpot == d && d.Holder2._vp == _vp)
+			{
+				held2[d.Key] = d.Holder2;
 			}
 		}
 		Dictionary<long, OvDirt> byKey = new Dictionary<long, OvDirt>();
@@ -691,6 +769,14 @@ public partial class HarvestController
 			if (byKey.TryGetValue(kv.Key, out OvDirt nd))
 			{
 				nd.Holder = kv.Value;
+				kv.Value._drSpot = nd;
+			}
+		}
+		foreach (KeyValuePair<long, HarvestController> kv in held2)
+		{
+			if (byKey.TryGetValue(kv.Key, out OvDirt nd))
+			{
+				nd.Holder2 = kv.Value;
 				kv.Value._drSpot = nd;
 			}
 		}
@@ -843,7 +929,9 @@ public partial class HarvestController
 
 		public HarvestController Holder;
 
-		public float CoolUntil;
+		public float AsideAt = -1f;   // F5: set aside at (a failed try) - back when something within 2 m changes; -1 = not aside
+
+		public bool Once;             // F5: it came back once with nothing else left
 	}
 
 	private const float OvLooseEvery = 5f;      // the shared look at the pit
@@ -902,7 +990,14 @@ public partial class HarvestController
 			d.Load();
 			string name = MHR_GatherRules.DropName(d);
 			bool ore = MHR_GatherRules.IsOreItem(d.m_itemData);
-			if (!ore && name != "Stone" && name != "Wood")
+			// F4 (John 11-21 23:30Z / 11-22 04:24Z): any other item the game's own auto-pickup takes is on the list too (not
+			// what a player dropped - the game's OnPlayerDrop clears that flag); stone and wood as before (also tossed ones)
+			if (!ore && name != "Stone" && name != "Wood" && !d.m_autoPickup)
+			{
+				continue;
+			}
+			// F2: stone tossed where the walk to the stone dump gave up is left there
+			if (name == "Stone" && MHR_GatherRules.LeftStone(d.gameObject))
 			{
 				continue;
 			}
@@ -938,13 +1033,44 @@ public partial class HarvestController
 	// 0 = it takes it now, 1 = not now (someone else's, cooling, not enough for a pile), 2 = only its weight / bag stops it
 	private int OvLooseTakes(OvClear c, OvLoose l, Inventory inv, Dictionary<string, int> pileOk)
 	{
-		if (!OvLooseHere(l) || (l.Holder != null && l.Holder != this && l.Holder._lsItem == l) || Time.time < l.CoolUntil)
+		if (!OvLooseHere(l) || (l.Holder != null && l.Holder != this && l.Holder._lsItem == l) || OvLooseAside(l))
 		{
 			return 1;
 		}
-		if (!l.Ore)
+		// F4: wood and the other items are taken whatever the count (wood is piled when there is enough, else it stays in
+		// the bag - StartPile); only stone keeps the pile rule
+		if (l.Name == "Stone" && _ovPitOpen)
 		{
-			// stone / wood: only while what lies in the pit and what it carries make one more pile it can build now (a
+			// F2 (after the pop): stone lying away from the stone dump is taken whatever the count (it goes to the dump, or
+			// into a pile); stone on the dump only by the one companion taking it for a pile, and only when the dump's stone
+			// and its own make a full pile it can place now
+			if (OvAtStoneDump(c, l.D.transform.position))
+			{
+				if (c.StoneTaker != null && c.StoneTaker != this && c.StoneTaker.isActiveAndEnabled && c.StoneTaker._vp == _vp)
+				{
+					return 1;
+				}
+				if (!MHR_GatherRules.PileCost(this, "Stone", out int dcost) || OvNoPileNow(c))
+				{
+					return 1;
+				}
+				int have = MHR_GatherRules.CountStone(inv);
+				foreach (OvLoose o in c.Loose.Values)
+				{
+					if (o.Name == "Stone" && OvLooseHere(o) && !OvLooseAside(o) && OvAtStoneDump(c, o.D.transform.position))
+					{
+						have += o.D.m_itemData.m_stack;
+					}
+				}
+				if (have < dcost)
+				{
+					return 1;
+				}
+			}
+		}
+		else if (l.Name == "Stone")
+		{
+			// stone: only while what lies in the pit and what it carries make one more pile it can build now (a
 			// last bit short of a pile stays where it is)
 			if (!pileOk.TryGetValue(l.Name, out int ok))
 			{
@@ -961,7 +1087,7 @@ public partial class HarvestController
 					}
 					foreach (OvLoose o in c.Loose.Values)
 					{
-						if (o.Name == l.Name && OvLooseHere(o) && Time.time >= o.CoolUntil)
+						if (o.Name == l.Name && OvLooseHere(o) && !OvLooseAside(o))
 						{
 							have += o.D.m_itemData.m_stack;
 						}
@@ -1062,15 +1188,21 @@ public partial class HarvestController
 			}
 			float d = Flat(me, l.D.transform.position);
 			// R3c.2 (John, 2026-11-20: ore over stone in the bags): the nearest ore first, stone only when no ore is left it can take
+			// F4: wood and the other items only when no ore or stone is left it can take
 			if (!l.Ore)
 			{
-				d += 10000f;
+				d += l.Name == "Stone" ? 10000f : 20000f;
 			}
 			if (d < bd)
 			{
 				bd = d;
 				best = l;
 			}
+		}
+		if (best != null && best.Name == "Stone" && _ovPitOpen && OvAtStoneDump(c, best.D.transform.position))
+		{
+			if (c.StoneTaker != this && CompanionsPlugin.LogNormal) LogInfo("Taking stone off the stone dump for a pile (the one companion doing it)");
+			c.StoneTaker = this;   // F2
 		}
 		if (best != null)
 		{
@@ -1081,10 +1213,35 @@ public partial class HarvestController
 			_lsStart = now;
 			return true;
 		}
+		// F2: nothing it can take - it isn't taking stone off the dump now; its stone that makes no pile goes to the dump
+		if (c.StoneTaker == this)
+		{
+			c.StoneTaker = null;
+		}
+		if (_ovPitOpen && OvStoneToDump(c))
+		{
+			return true;
+		}
 		// full: ore still in the pit that only its weight stops - its ore to the dump first (the existing dump trip), then on
 		if (heavyLeft && MHR_GatherRules.HasOre(_humanoid) && OvHeavyDump())
 		{
 			if (CompanionsPlugin.LogNormal) LogInfo("Full with ore from the pit - taking it to the ore dump, then back to the pit's list");
+			return true;
+		}
+		// F5: nothing else it can take - each set-aside item that hasn't come back yet comes back once
+		bool back = false;
+		foreach (OvLoose l in c.Loose.Values)
+		{
+			if (OvLooseHere(l) && l.AsideAt >= 0f && !l.Once && (l.Holder == null || l.Holder == this || l.Holder._lsItem != l))
+			{
+				l.AsideAt = -1f;
+				l.Once = true;
+				back = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{MHR_List.Local(l.D.m_itemData.m_shared.m_name)}\" in the pit comes back once: nothing else is left it can take");
+			}
+		}
+		if (back)
+		{
 			return true;
 		}
 		// another companion is still going for an item: the vein isn't done yet (it stands by)
@@ -1103,12 +1260,208 @@ public partial class HarvestController
 		return false;
 	}
 
-	// a failed try: the item waits 60 s (not a permanent skip) and goes back on the list
+	// ---------- F2: the stone dump ----------
+	private const float OvStoneDumpNear = 2.5f;   // F2: on the dump = within 2.5 m of it (the ore dump's own test, OvLooseScan)
+
+	private bool OvAtStoneDump(OvClear c, Vector3 p)
+	{
+		return c.StoneDumpHas && Flat(p, c.StoneDump) <= OvStoneDumpNear;
+	}
+
+	// F2: no stone pile is tried until the pit map changes after one couldn't be placed
+	private bool OvNoPileNow(OvClear c)
+	{
+		if (c.NoPileAt < 0f)
+		{
+			return false;
+		}
+		OvMap m = _vp?.Map;
+		if (m != null && m.LastChange > c.NoPileAt)
+		{
+			c.NoPileAt = -1f;
+			if (CompanionsPlugin.LogNormal) LogInfo("The pit changed - stone piles are tried again");
+			return false;
+		}
+		return true;
+	}
+
+	// F2: the stone dump (made when first needed: the first stone pile spot the game allows in the pit, else the trench
+	// floor at the trench spot nearest it at least 2.5 m from the ore dump)
+	internal bool OvStoneDumpAt(out Vector3 at)
+	{
+		at = Vector3.zero;
+		if (_vp == null || !_ovPitOpen)
+		{
+			return false;
+		}
+		OvClear c = OvC();
+		if (!c.StoneDumpHas)
+		{
+			if (MHR_GatherRules.StonePileSpot(this, out Vector3 sp))
+			{
+				OvStoneDumpSet(c, sp, "the first stone pile spot the game allows in the pit");
+			}
+			else
+			{
+				bool hasOre = PitDumpFor(out Vector3 od);
+				OvSpot best = null;
+				float bd = float.MaxValue;
+				Vector3 me = base.transform.position;
+				foreach (OvSpot q in _vp.Spots)
+				{
+					Vector3 f = new Vector3(q.P.x, GroundAt(q.P), q.P.z);
+					if (hasOre && Flat(f, od) < OvStoneDumpNear)
+					{
+						continue;
+					}
+					float d = Flat(me, f);
+					if (d < bd)
+					{
+						bd = d;
+						best = q;
+					}
+				}
+				if (best == null)
+				{
+					return false;
+				}
+				OvStoneDumpSet(c, new Vector3(best.P.x, GroundAt(best.P), best.P.z), $"no stone pile spot - the trench floor at trench spot {best.Idx + 1}");
+			}
+		}
+		at = c.StoneDump;
+		at.y = GroundAt(at);
+		return true;
+	}
+
+	// F2: the stone dump, if there is one yet (none is made here)
+	internal bool OvStoneDumpHas(out Vector3 at)
+	{
+		at = Vector3.zero;
+		if (_vp == null || !_ovPitOpen || !s_ovClear.TryGetValue(_vp, out OvClear c) || !c.StoneDumpHas)
+		{
+			return false;
+		}
+		at = c.StoneDump;
+		return true;
+	}
+
+	private void OvStoneDumpSet(OvClear c, Vector3 at, string why)
+	{
+		c.StoneDump = at;
+		c.StoneDumpHas = true;
+		if (CompanionsPlugin.LogNormal) LogInfo($"The stone dump for \"{_vp.Name}\": {MHR_Mover.Fmt(at)} ({why}) - all the pit's stone goes there");
+	}
+
+	// F2: called by StartPile - a stone pile is being built after the pop: it isn't taking stone off the dump any more, and
+	// the first one's spot is the stone dump when there is none yet
+	internal void OvStonePileStarted(Vector3 spot)
+	{
+		if (_vp == null || !_ovPitOpen)
+		{
+			return;
+		}
+		OvClear c = OvC();
+		if (c.StoneTaker == this)
+		{
+			c.StoneTaker = null;
+		}
+		if (!c.StoneDumpHas)
+		{
+			OvStoneDumpSet(c, spot, "the first stone pile's spot");
+		}
+	}
+
+	// F2: called by StartPile - no place the game allows for a stone pile: none tried again until the pit map changes
+	internal void OvNoPile()
+	{
+		if (_vp == null || !_ovPitOpen)
+		{
+			return;
+		}
+		OvClear c = OvC();
+		if (c.NoPileAt < 0f && CompanionsPlugin.LogNormal) LogInfo("No place the game allows for a stone pile - the stone goes to the stone dump; no pile tried until the pit changes");
+		c.NoPileAt = Time.time;
+		if (c.StoneTaker == this)
+		{
+			c.StoneTaker = null;
+		}
+	}
+
+	// F2: no stone pile is tried now (the pit hasn't changed since one couldn't be placed)
+	internal bool OvNoPileNow()
+	{
+		return _vp != null && _ovPitOpen && OvNoPileNow(OvC());
+	}
+
+	// F2: its stone that makes no pile it can place now (fewer than a pile, or no pile tried now) - walked to the stone dump
+	// and dropped there (the toss, the player's drop). True = started.
+	private bool OvStoneToDump(OvClear c)
+	{
+		int have = MHR_GatherRules.CountStone(_humanoid.GetInventory());
+		if (have <= 0)
+		{
+			return false;
+		}
+		bool pile = MHR_GatherRules.PileCost(this, "Stone", out int cost) && have >= cost && !OvNoPileNow(c);
+		if (pile || !OvStoneDumpAt(out Vector3 at))
+		{
+			return false;   // a pile's worth: StartPile builds it (StoneDue)
+		}
+		return MHR_GatherRules.TossAt(this, "Stone", at, $"its {have} stone (short of a pile, or no pile now) to the stone dump");
+	}
+
+	// F5 (John 11-21 23:40Z: logic, not a timer - the 60 s wait goes): a failed try sets the item aside until something
+	// within 2 m of it changes on the pit map; with nothing else left it comes back once (OvLooseTick), then it is ignored
 	private void OvLooseCool(OvLoose l, string why)
 	{
-		l.CoolUntil = Time.time + OvCool;
-		if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{(l.D != null ? MHR_List.Local(l.D.m_itemData.m_shared.m_name) : "?")}\" in the pit waits 60 s: {why}");
+		l.AsideAt = Time.time;
+		if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{(l.D != null ? MHR_List.Local(l.D.m_itemData.m_shared.m_name) : "?")}\" in the pit is set aside until something within 2 m of it changes{(l.Once ? "" : " or nothing else is left")}: {why}");
 		OvLooseOff();
+	}
+
+	// F5: set aside and nothing within 2 m of it changed since (a change puts it back on the list)
+	private bool OvLooseAside(OvLoose l)
+	{
+		if (l.AsideAt < 0f)
+		{
+			return false;
+		}
+		if (l.D != null && OvChangedNearPt(l.D.transform.position, l.AsideAt))
+		{
+			l.AsideAt = -1f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The loose \"{MHR_List.Local(l.D.m_itemData.m_shared.m_name)}\" in the pit is back on the list: something within 2 m of it changed");
+			return false;
+		}
+		return true;
+	}
+
+	// F5: on the pit map, a square within 2 m of p changed after `at` (no map = false)
+	private bool OvChangedNearPt(Vector3 p, float at)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built || m.ChangedAt == null)
+		{
+			return false;
+		}
+		int r = Mathf.CeilToInt(OvAsideNear / OvMapCell);
+		int cx = Mathf.FloorToInt((p.x - m.X0) / OvMapCell);
+		int cz = Mathf.FloorToInt((p.z - m.Z0) / OvMapCell);
+		for (int dz = -r; dz <= r; dz++)
+		{
+			for (int dx = -r; dx <= r; dx++)
+			{
+				int x = cx + dx, z = cz + dz;
+				if (x < 0 || z < 0 || x >= m.W || z >= m.H || (dx * dx + dz * dz) * OvMapCell * OvMapCell > OvAsideNear * OvAsideNear)
+				{
+					continue;
+				}
+				if (m.ChangedAt[z * m.W + x] > at)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private void OvLooseOff()
@@ -1251,6 +1604,7 @@ public partial class HarvestController
 		List<OvDirt> free = new List<OvDirt>();
 		List<OvPart> lows = new List<OvPart>();
 		bool others = false;
+		bool othersDirt = false;   // F8: a dirt point another companion is working
 		string othersWhy = null;   // SV5
 		foreach (OvDirt d in c.Dirt)
 		{
@@ -1260,10 +1614,12 @@ public partial class HarvestController
 				continue;
 			}
 			// SV1: another companion's point is taken over when that companion isn't working it
-			if (d.Holder != null && d.Holder != this && d.Holder.isActiveAndEnabled && d.Holder._drSpot == d && d.Holder._vp == _vp && d.Holder.OvHolderWorking(d.Holder._drWalk))
+			// F9 (John 11-21 23:13Z / 23:30Z): at most two on a point - full only when both are other companions working it
+			if (OvDirtSlotBusy(d, d.Holder) && OvDirtSlotBusy(d, d.Holder2))
 			{
 				others = true;
-				othersWhy ??= $"the dirt at {MHR_Mover.Fmt(d.P)} is {d.Holder.OvName()}'s ({d.Holder.OvName()} is {d.Holder.OvHolderDoing(d.Holder._drWalk)})";
+				othersDirt = true;
+				othersWhy ??= $"the dirt at {MHR_Mover.Fmt(d.P)} is {d.Holder.OvName()}'s and {d.Holder2.OvName()}'s (two on it)";
 				continue;
 			}
 			free.Add(d);
@@ -1281,6 +1637,29 @@ public partial class HarvestController
 				continue;
 			}
 			lows.Add(part);
+		}
+		// F8 (John 11-21 23:13Z / 23:30Z, silver only): a low part (in the ground at the game's dig limit) is mined only once
+		// all the dirt the game lets them dig is done - no dirt point free, none another companion is working, none set aside
+		// that hasn't had its one return (E4)
+		if (OvIsSilver(_vp) && lows.Count > 0)
+		{
+			bool dirtLeft = free.Count > 0 || othersDirt;
+			if (!dirtLeft)
+			{
+				foreach (OvDirt d in c.Dirt)
+				{
+					if (c.DirtCool.ContainsKey(d.Key) && !c.DirtOnce.Contains(d.Key) && GroundAt(d.P) > d.Goal + OvDigGain)
+					{
+						dirtLeft = true;
+						break;
+					}
+				}
+			}
+			if (dirtLeft)
+			{
+				if (CompanionsPlugin.LogDetailed) Log($"{lows.Count} low part(s) wait until the dirt is done (silver)");
+				lows.Clear();
+			}
 		}
 		// E4 (8b, John: "set it aside until the other areas are done ... Then come back to it"): no other dirt point or low
 		// part is free and none is being worked by another companion - each set-aside point that hasn't come back this way
@@ -1315,6 +1694,11 @@ public partial class HarvestController
 				if (CompanionsPlugin.LogNormal) LogInfo($"The low part \"{(part.C != null ? part.C.name : "?")}\" comes back once: no other dirt point or low part is free");
 			}
 		}
+		// F8: after the set-aside dirt came back (E4), that dirt goes first too
+		if (OvIsSilver(_vp) && free.Count > 0)
+		{
+			lows.Clear();
+		}
 		// nearest first: a dirt point by its own place, a low part by the nearest point of its box
 		List<KeyValuePair<float, object>> all = new List<KeyValuePair<float, object>>();
 		foreach (OvDirt d in free)
@@ -1326,31 +1710,32 @@ public partial class HarvestController
 			all.Add(new KeyValuePair<float, object>(Flat(me, OvBoxNear(part, me)), part));
 		}
 		all.Sort((KeyValuePair<float, object> a, KeyValuePair<float, object> b) => a.Key.CompareTo(b.Key));
-		// SV6 (silver; John 11-21: "work from BOTH sides", the check on the dirt that remains, following the vein's shape):
-		// with no free point or low part within 3 m of it, it goes where the most dirt is left - the one with the most
-		// other free dirt points within 3 m of it first, nearest first on a tie
-		if (OvIsSilver(_vp) && all.Count > 1 && all[0].Key > OvDigInFar)
+		// F10 (John 11-20 20:59Z / 11-21 23:30Z / 11-22 04:24Z, silver only; replaces SV6): each companion works its own side of
+		// the vein's middle line first (a point up to 0.5 m past the line counts as its side too); the other side only when
+		// its own side has no free point - then its side switches and it goes round by the trench
+		if (OvIsSilver(_vp) && OvMidLine(c))
 		{
-			Dictionary<object, int> near = new Dictionary<object, int>();
+			if (_mlPlan != _vp || _mlSide == 0)
+			{
+				_mlPlan = _vp;
+				_mlSide = OvMidSide(c, me, out _) >= 0f ? 1 : -1;
+				if (CompanionsPlugin.LogNormal) LogInfo($"Its side of the middle line of \"{_vp.Name}\": {(_mlSide > 0 ? "A" : "B")} (where it stands)");
+			}
+			bool own = false;
 			foreach (KeyValuePair<float, object> kv in all)
 			{
-				Vector3 at = kv.Value is OvDirt od ? od.P : OvBoxNear((OvPart)kv.Value, me);
-				int n = 0;
-				foreach (OvDirt o in free)
+				if (kv.Value is OvDirt od && OvMidOwn(c, od.P))
 				{
-					if (o != kv.Value && Flat(o.P, at) <= OvDigInFar)
-					{
-						n++;
-					}
+					own = true;
+					break;
 				}
-				near[kv.Value] = n;
 			}
-			all.Sort((KeyValuePair<float, object> a, KeyValuePair<float, object> b) =>
+			if (!own && all.Exists((KeyValuePair<float, object> kv) => kv.Value is OvDirt))
 			{
-				int bc = near[b.Value].CompareTo(near[a.Value]);
-				return bc != 0 ? bc : a.Key.CompareTo(b.Key);
-			});
-			if (CompanionsPlugin.LogDetailed) Log($"No free dirt within {OvDigInFar:F0} m - going where the most dirt is left ({near[all[0].Value]} other free point(s) within {OvDigInFar:F0} m of it)");
+				_mlSide = -_mlSide;
+				if (CompanionsPlugin.LogNormal) LogInfo($"No free dirt left on its side of the middle line - to the other side ({(_mlSide > 0 ? "A" : "B")})");
+			}
+			all.RemoveAll((KeyValuePair<float, object> kv) => kv.Value is OvDirt od2 && !OvMidOwn(c, od2.P));
 		}
 		int tries = 0;
 		foreach (KeyValuePair<float, object> kv in all)
@@ -1386,6 +1771,15 @@ public partial class HarvestController
 			}
 			OvDirt d = (OvDirt)kv.Value;
 			int r = OvStandFor(c, new Vector3(d.P.x, GroundAt(d.P), d.P.z), null, out Vector3 stand, out string why, d);
+			if (r != 0 && OvDirtOther(d) != null)
+			{
+				// F9: no place more than a quarter turn round it from the companion already on it - left to that one (not
+				// set aside)
+				others = true;
+				othersDirt = true;
+				othersWhy ??= $"the dirt at {MHR_Mover.Fmt(d.P)} is {OvDirtOther(d).OvName()}'s ({why})";
+				continue;
+			}
 			if (r != 0)
 			{
 				OvDirtCool(c, d, why);
@@ -1398,7 +1792,7 @@ public partial class HarvestController
 				OvWayOutHere(ws);
 				return true;
 			}
-			d.Holder = this;
+			OvDirtClaim(d);   // F9
 			_drSpot = d;
 			_sbWhy = null;   // SV5
 			_drStand = stand;
@@ -1444,7 +1838,176 @@ public partial class HarvestController
 		{
 			d.Holder = null;
 		}
+		if (d.Holder2 == this)
+		{
+			d.Holder2 = null;   // F9
+		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} (under \"{(d.Part.C != null ? d.Part.C.name : "?")}\") is set aside until something within 2 m of it changes{(c.DirtOnce.Contains(d.Key) ? "" : " or no other dirt point is free")}: {why}");
+	}
+
+	// F10: the side it works (1 / -1, 0 = not chosen yet) and the plan that side is for
+	private int _mlSide;
+
+	private OvPlan _mlPlan;
+
+	private const float OvMidSlice = 1f;   // F10: the slices along the vein the middle is found in (John OK 11-22 04:29Z)
+
+	private const float OvMidBand = 0.5f;  // F10: a point up to 0.5 m past the line is worked from either side
+
+	// F10: the middle line - the long direction is the main axis of the part centres (flat); in each 1 m slice along it the
+	// middle is halfway between the vein's two outer edges across it (the parts' game boxes in that slice); the middles are
+	// joined slice to slice, so the line bends with the vein. False = fewer than 2 slices (no line).
+	private bool OvMidLine(OvClear c)
+	{
+		if (c.MidParts == c.ById.Count)
+		{
+			return c.Mid.Count >= 2;
+		}
+		c.MidParts = c.ById.Count;
+		c.Mid.Clear();
+		if (c.ById.Count == 0)
+		{
+			return false;
+		}
+		float mx = 0f, mz = 0f;
+		foreach (OvPart p in c.ById.Values)
+		{
+			mx += p.Centre.x;
+			mz += p.Centre.z;
+		}
+		mx /= c.ById.Count;
+		mz /= c.ById.Count;
+		float sxx = 0f, szz = 0f, sxz = 0f;
+		foreach (OvPart p in c.ById.Values)
+		{
+			float dx = p.Centre.x - mx, dz = p.Centre.z - mz;
+			sxx += dx * dx;
+			szz += dz * dz;
+			sxz += dx * dz;
+		}
+		float ang = 0.5f * Mathf.Atan2(2f * sxz, sxx - szz);
+		Vector3 ax = new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang));
+		Vector3 pr = new Vector3(-ax.z, 0f, ax.x);
+		Vector3 o = new Vector3(mx, 0f, mz);
+		float t0 = float.MaxValue, t1 = float.MinValue;
+		foreach (OvPart p in c.ById.Values)
+		{
+			OvBoxSpan(p, o, ax, out float a0, out float a1);
+			t0 = Mathf.Min(t0, a0);
+			t1 = Mathf.Max(t1, a1);
+		}
+		for (float t = t0; t < t1; t += OvMidSlice)
+		{
+			float lo = float.MaxValue, hi = float.MinValue;
+			foreach (OvPart p in c.ById.Values)
+			{
+				OvBoxSpan(p, o, ax, out float a0, out float a1);
+				if (a1 < t || a0 > t + OvMidSlice)
+				{
+					continue;
+				}
+				OvBoxSpan(p, o, pr, out float b0, out float b1);
+				lo = Mathf.Min(lo, b0);
+				hi = Mathf.Max(hi, b1);
+			}
+			if (lo > hi)
+			{
+				continue;
+			}
+			c.Mid.Add(o + ax * (t + OvMidSlice * 0.5f) + pr * ((lo + hi) * 0.5f));
+		}
+		if (CompanionsPlugin.LogNormal && c.Mid.Count >= 2) LogInfo($"The middle line of \"{_vp.Name}\": {c.Mid.Count} points from {MHR_Mover.Fmt(c.Mid[0])} to {MHR_Mover.Fmt(c.Mid[c.Mid.Count - 1])} ({c.ById.Count} parts, {OvMidSlice:F0} m slices)");
+		return c.Mid.Count >= 2;
+	}
+
+	// F10: a part's game box (flat corners) projected on dir from o
+	private static void OvBoxSpan(OvPart p, Vector3 o, Vector3 dir, out float a0, out float a1)
+	{
+		a0 = float.MaxValue;
+		a1 = float.MinValue;
+		for (int i = 0; i < 4; i++)
+		{
+			Vector3 k = new Vector3(p.Centre.x + ((i & 1) == 0 ? -p.Half.x : p.Half.x), 0f, p.Centre.z + ((i & 2) == 0 ? -p.Half.z : p.Half.z));
+			float v = Vector3.Dot(k - o, dir);
+			a0 = Mathf.Min(a0, v);
+			a1 = Mathf.Max(a1, v);
+		}
+	}
+
+	// F10: the signed flat distance of p from the middle line (its nearest piece; + one side, - the other); dist = how far
+	private float OvMidSide(OvClear c, Vector3 p, out float dist)
+	{
+		dist = float.MaxValue;
+		float side = 0f;
+		for (int i = 0; i + 1 < c.Mid.Count; i++)
+		{
+			Vector3 a = c.Mid[i], b = c.Mid[i + 1];
+			Vector3 ab = b - a;
+			ab.y = 0f;
+			Vector3 ap = p - a;
+			ap.y = 0f;
+			float len = ab.sqrMagnitude;
+			float t = len > 0.0001f ? Mathf.Clamp01(Vector3.Dot(ap, ab) / len) : 0f;
+			Vector3 q = a + ab * t;
+			q.y = 0f;
+			Vector3 pq = new Vector3(p.x, 0f, p.z) - new Vector3(q.x, 0f, q.z);
+			float d = pq.magnitude;
+			if (d < dist)
+			{
+				dist = d;
+				float cr = ab.x * ap.z - ab.z * ap.x;
+				side = cr >= 0f ? d : -d;
+			}
+		}
+		return side;
+	}
+
+	// F10: p is on its own side of the middle line, or within 0.5 m past it
+	private bool OvMidOwn(OvClear c, Vector3 p)
+	{
+		return _mlSide == 0 || OvMidSide(c, p, out _) * _mlSide >= -OvMidBand;
+	}
+
+	// F9: h holds a place on the point and is another companion working it (SV1's test: swinging, or walking and closer)
+	private bool OvDirtSlotBusy(OvDirt d, HarvestController h)
+	{
+		return h != null && h != this && h.isActiveAndEnabled && h._drSpot == d && h._vp == _vp && h.OvHolderWorking(h._drWalk);
+	}
+
+	// F9: the other companion working the point (null = none)
+	private HarvestController OvDirtOther(OvDirt d)
+	{
+		return OvDirtSlotBusy(d, d.Holder) ? d.Holder : OvDirtSlotBusy(d, d.Holder2) ? d.Holder2 : null;
+	}
+
+	// F9: q is more than a quarter turn (90 degrees, flat) round `about` from `other`
+	private static bool OvQuarterOk(Vector3 q, Vector3 about, Vector3 other)
+	{
+		Vector3 a = q - about, b = other - about;
+		a.y = 0f;
+		b.y = 0f;
+		if (a.sqrMagnitude < 0.0001f || b.sqrMagnitude < 0.0001f)
+		{
+			return false;
+		}
+		return Vector3.Dot(a.normalized, b.normalized) < 0f;
+	}
+
+	// F9: takes a place on the point - the first one unless another companion is working it there (then the second)
+	private void OvDirtClaim(OvDirt d)
+	{
+		if (d.Holder == this || d.Holder2 == this)
+		{
+			return;
+		}
+		if (!OvDirtSlotBusy(d, d.Holder))
+		{
+			d.Holder = this;
+		}
+		else
+		{
+			d.Holder2 = this;
+		}
 	}
 
 	private void OvDrOff()
@@ -1455,6 +2018,10 @@ public partial class HarvestController
 		if (_drSpot != null && _drSpot.Holder == this)
 		{
 			_drSpot.Holder = null;
+		}
+		if (_drSpot != null && _drSpot.Holder2 == this)
+		{
+			_drSpot.Holder2 = null;   // F9
 		}
 		_drSpot = null;
 		_drWalk = false;
@@ -1550,6 +2117,67 @@ public partial class HarvestController
 	private const float OvFeetDig = 0.5f;      // rule 5c: a dig within 0.5 m (flat) of its own feet
 
 	private const float OvDeepMax = 2f;        // rule 6: never lower than 2 m under the bottom of the point's part
+
+	// F7 (a): the ground at its feet and 4 points at its body radius (forward, back, left, right)
+	private void OvFeetRead(float[] into, out Vector3 at)
+	{
+		at = base.transform.position;
+		float r = OvBodyRadius();
+		into[0] = GroundAt(at);
+		into[1] = GroundAt(at + Vector3.forward * r);
+		into[2] = GroundAt(at + Vector3.back * r);
+		into[3] = GroundAt(at + Vector3.left * r);
+		into[4] = GroundAt(at + Vector3.right * r);
+	}
+
+	// F7 (a): any of those went down 0.05 m (OvDigGain) or more since they were read
+	private bool OvFeetWentDown(float[] was, Vector3 at)
+	{
+		float r = OvBodyRadius();
+		Vector3[] pts = { at, at + Vector3.forward * r, at + Vector3.back * r, at + Vector3.left * r, at + Vector3.right * r };
+		for (int i = 0; i < 5; i++)
+		{
+			if (was[i] - GroundAt(pts[i]) >= OvDigGain)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ---------- F7 (d): the pickaxe's own dig, read from the game (Attack.SpawnOnHitTerrain's prefab, its TerrainOp) ----------
+	private static readonly Dictionary<string, float> s_digR = new Dictionary<string, float>();
+
+	// the largest radius the dig changes the ground's height with (level, raise / lower, smooth - each only when switched
+	// on; paint only colours the ground, so it isn't counted). 0 = the game has no TerrainOp on it (F7 (d) is off)
+	private float OvDigRadius(ItemDrop.ItemData pick)
+	{
+		GameObject pf = pick?.m_shared?.m_spawnOnHitTerrain;
+		if (pf == null)
+		{
+			return 0f;
+		}
+		if (s_digR.TryGetValue(pf.name, out float r))
+		{
+			return r;
+		}
+		r = 0f;
+		TerrainOp op = pf.GetComponentInChildren<TerrainOp>();
+		if (op != null && op.m_settings != null)
+		{
+			TerrainOp.Settings st = op.m_settings;
+			if (st.m_level) r = Mathf.Max(r, st.m_levelRadius);
+			if (st.m_raise) r = Mathf.Max(r, st.m_raiseRadius);
+			if (st.m_smooth) r = Mathf.Max(r, st.m_smoothRadius);
+			if (CompanionsPlugin.LogNormal) LogInfo($"The pickaxe's dig \"{pf.name}\" (the game's TerrainOp): level {(st.m_level ? st.m_levelRadius.ToString("F2") + " m" : "off")}, raise/lower {(st.m_raise ? st.m_raiseRadius.ToString("F2") + " m" : "off")}, smooth {(st.m_smooth ? st.m_smoothRadius.ToString("F2") + " m" : "off")}, paint {(st.m_paintCleared ? st.m_paintRadius.ToString("F2") + " m (not counted)" : "off")} - the dig radius used: {r:F2} m");
+		}
+		else if (CompanionsPlugin.LogNormal)
+		{
+			LogInfo($"The pickaxe's dig \"{pf.name}\" has no TerrainOp - the dig radius check (F7 d) is off");
+		}
+		s_digR[pf.name] = r;
+		return r;
+	}
 
 	private const float OvDeepStep = 0.5f;     // rule 6: a place is dug down 0.5 m at a time
 
@@ -1719,10 +2347,11 @@ public partial class HarvestController
 			OvDrOff();
 			return;
 		}
-		else if (d.Holder != null && d.Holder != this)
+		else if (d.Holder != this && d.Holder2 != this)
 		{
 			// SV1: another companion took the point over while this one wasn't working it (stuck on the way): let it go
-			if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} was taken over by {d.Holder.OvName()} (this one was stuck on the way to it) - picking again");
+			// F9: it is in neither of the point's two places
+			if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} was taken over by {(d.Holder != null ? d.Holder.OvName() : d.Holder2 != null ? d.Holder2.OvName() : "another companion")} (this one was stuck on the way to it) - picking again");
 			_ai?.StopMoving();
 			OvDrOff();
 			return;
@@ -1926,9 +2555,17 @@ public partial class HarvestController
 				low = Mathf.Min(low, pt.y);
 			}
 		}
+		// F9 (John 11-21 23:30Z: "stand places > a quarter turn apart around the item"): with another companion on the point,
+		// only a place more than 90 degrees round the point (flat, about its centre) from that one's place
+		HarvestController opp = dirt != null ? OvDirtOther(dirt) : null;
+		int quarter = 0;
+		if (opp != null)
+		{
+			quarter = cand.RemoveAll((Vector3 q) => !OvQuarterOk(q, aim, opp._drStand));
+		}
 		if (cand.Count == 0)
 		{
-			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{(noStand > 0 ? $" ({noStand} with no place to stand by the pit map)" : "")}";
+			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{(noStand > 0 ? $" ({noStand} with no place to stand by the pit map)" : "")}{(quarter > 0 ? $" ({quarter} not a quarter turn round it from {opp.OvName()})" : "")}";
 			return 2;
 		}
 		// MP3 (the map-path list, John 2026-11-21): nearest first among the lowest; one the map says there is no way to (not
@@ -1943,9 +2580,24 @@ public partial class HarvestController
 		// ground, at any height. E2: a place on this point's tried list (one it repositioned away from) isn't taken again.
 		bool silver = OvIsSilver(_vp);
 		Attack sa = silver ? FindBestTool(2)?.m_shared?.m_attack : null;
+		// F10: on silver, a stand place on its own side of the middle line only
+		bool midOn = silver && dirt != null && _mlPlan == _vp && _mlSide != 0 && OvMidLine(c);
+		int otherSide = 0;
+		if (midOn)
+		{
+			otherSide = cand.RemoveAll((Vector3 q) => OvMidSide(c, q, out _) * _mlSide < 0f);
+		}
 		int oreFirst = 0, offFloor = 0, triedN = 0;
 		bool digIn = false;
-		List<Vector3> tried = silver && dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
+		// F7 (a): every vein - a place it repositioned away from (it dug its own floor there) isn't taken again for this point
+		List<Vector3> tried = dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
+		// F7 (c) / (d), silver: a place already more than 2 m under the point's part isn't taken; with the pickaxe's dig
+		// radius from the game, nor one where the swing's dig there would reach its own feet or body, or the ground under
+		// 2 m below the part
+		float tooLowY = silver && dirt != null && dirt.Part != null ? OvPartBottom(dirt.Part) - OvDeepMax : float.MinValue;
+		float digR = silver ? OvDigRadius(FindBestTool(2)) : 0f;
+		float bodyR = OvBodyRadius();
+		int tooLow = 0, digsSelf = 0;
 		if (silver)
 		{
 			List<Vector3> ok = new List<Vector3>();
@@ -1960,14 +2612,24 @@ public partial class HarvestController
 					triedN++;
 					continue;
 				}
+				if (q.y < tooLowY)
+				{
+					tooLow++;
+					continue;
+				}
 				if (!OvOnTrenchFloor(q))
 				{
 					offFloor++;
 					continue;
 				}
-				if (!OvSwingClean(sa, q, aim))
+				if (!OvSwingClean(sa, q, aim, out Vector3 dg1))
 				{
 					oreFirst++;
+					continue;
+				}
+				if (digR > 0f && (Flat(dg1, q) <= digR + bodyR || dg1.y < tooLowY))
+				{
+					digsSelf++;
 					continue;
 				}
 				ok.Add(q);
@@ -2003,6 +2665,20 @@ public partial class HarvestController
 							triedN++;
 							continue;
 						}
+						if (q.y < tooLowY)
+						{
+							tooLow++;
+							continue;
+						}
+						if (opp != null && !OvQuarterOk(q, aim, opp._drStand))
+						{
+							continue;   // F9
+						}
+						if (midOn && OvMidSide(c, q, out _) * _mlSide < 0f)
+						{
+							otherSide++;
+							continue;   // F10
+						}
 						ok.Add(q);
 					}
 				}
@@ -2014,9 +2690,14 @@ public partial class HarvestController
 					{
 						break;
 					}
-					if (!OvSwingClean(sa, q, aim))
+					if (!OvSwingClean(sa, q, aim, out Vector3 dg2))
 					{
 						oreFirst++;
+						continue;
+					}
+					if (digR > 0f && (Flat(dg2, q) <= digR + bodyR || dg2.y < tooLowY))
+					{
+						digsSelf++;
 						continue;
 					}
 					fine.Add(q);
@@ -2032,6 +2713,16 @@ public partial class HarvestController
 		}
 		else
 		{
+			if (tried != null)
+			{
+				// F7 (a): its tried places out first, then the lowest of what is left
+				cand.RemoveAll((Vector3 q) => OvTriedHas(tried, q));
+				low = float.MaxValue;
+				foreach (Vector3 q in cand)
+				{
+					low = Mathf.Min(low, q.y);
+				}
+			}
 			cand.RemoveAll((Vector3 q) => q.y > low + 0.3f);
 		}
 		if (!digIn)
@@ -2050,7 +2741,8 @@ public partial class HarvestController
 			if (digIn && CompanionsPlugin.LogNormal) LogInfo($"No trench-floor place within its swing of the dirt at {MHR_Mover.Fmt(aim)} - digging in toward it from the trench at {MHR_Mover.Fmt(pt)} ({Flat(pt, aim):F1} m from it)");
 			return 0;
 		}
-		why = silver && cand.Count == 0 && oreFirst == 0 && triedN == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : silver && cand.Count == 0 && (oreFirst > 0 || triedN > 0) ? $"no place left within {OvDigInFar:F0} m of it where the swing meets the dirt without meeting the vein ({oreFirst} checked, {triedN} tried already)" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it";
+		string sideNote = otherSide > 0 ? $" ({otherSide} place(s) on the other side of the middle line left out)" : "";
+		why = (silver && cand.Count == 0 && (tooLow > 0 || digsSelf > 0) && oreFirst == 0 && triedN == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from ({tooLow} more than 2 m under the part, {digsSelf} where the swing's dig ({digR:F2} m) would reach its own feet or under 2 m below the part)" : silver && cand.Count == 0 && oreFirst == 0 && triedN == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : silver && cand.Count == 0 && (oreFirst > 0 || triedN > 0) ? $"no place left within {OvDigInFar:F0} m of it where the swing meets the dirt without meeting the vein ({oreFirst} checked, {triedN} tried already)" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
 		return 2;
 	}
 
@@ -2128,6 +2820,17 @@ public partial class HarvestController
 					continue;
 				}
 				cand.Add(pt);
+			}
+		}
+		// F9: with another companion on the part, only a place more than 90 degrees round its centre from that one's place
+		HarvestController opp = OvPartOther(part);
+		if (opp != null)
+		{
+			int qn = cand.RemoveAll((Vector3 q) => !OvQuarterOk(q, part.Centre, opp._clStand));
+			if (cand.Count == 0 && qn > 0)
+			{
+				why = $"no place beside it more than a quarter turn round it from {opp.OvName()} ({qn})";
+				return 2;
 			}
 		}
 		if (cand.Count == 0 && taken > 0)
@@ -2358,6 +3061,13 @@ public partial class HarvestController
 	// first hit is something else, or it meets nothing at all
 	private bool OvSwingClean(Attack a, Vector3 pt, Vector3 aim)
 	{
+		return OvSwingClean(a, pt, aim, out _);
+	}
+
+	// F7 (d): dig = where the game digs on that swing (the first ray's hit, when it is the ground)
+	private bool OvSwingClean(Attack a, Vector3 pt, Vector3 aim, out Vector3 dig)
+	{
+		dig = Vector3.zero;
 		if (s_swMask < 0)
 		{
 			s_swMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "terrain", "character", "character_net", "character_ghost", "hitbox", "character_noenv", "vehicle");
@@ -2394,6 +3104,7 @@ public partial class HarvestController
 			int n = width > 0f ? Physics.SphereCastNonAlloc(o, width, dir, s_swHits, Mathf.Max(0f, range - width), s_swMask, QueryTriggerInteraction.Ignore) : Physics.RaycastNonAlloc(o, dir, s_swHits, range, s_swMask, QueryTriggerInteraction.Ignore);
 			Collider first = null;
 			float fd = float.MaxValue;
+			Vector3 fp = Vector3.zero;
 			for (int i = 0; i < n; i++)
 			{
 				RaycastHit h = s_swHits[i];
@@ -2408,6 +3119,7 @@ public partial class HarvestController
 				}
 				first = h.collider;
 				fd = h.distance;
+				fp = hp;
 			}
 			if (first == null)
 			{
@@ -2422,6 +3134,10 @@ public partial class HarvestController
 			{
 				anyHit = true;
 				groundFirst = first.GetComponentInParent<Heightmap>() != null;
+				if (groundFirst)
+				{
+					dig = fp;
+				}
 			}
 		}
 		return anyHit && groundFirst;
@@ -2732,7 +3448,7 @@ public partial class HarvestController
 		{
 			foreach (OvLoose l in c.Loose.Values)
 			{
-				if (OvLooseHere(l) && now >= l.CoolUntil)
+				if (OvLooseHere(l) && !OvLooseAside(l))
 				{
 					return;
 				}
@@ -2837,7 +3553,7 @@ public partial class HarvestController
 	private void OvClBegin(OvPart part, Vector3 stand, bool ladder, bool low = false)
 	{
 		_clFor = part;
-		part.Holder = this;
+		OvPartClaim(part);   // F9
 		_sbWhy = null;   // SV5
 		_clStand = stand;
 		_clRampTried = false;   // S2: one map way up per round
@@ -2929,20 +3645,18 @@ public partial class HarvestController
 			c.Mined++;
 			c.ProgAt = Time.time;
 			c.DirtAt = -100f;
-			if (part.Holder == this)
-			{
-				part.Holder = null;
-			}
+			OvPartUnclaim(part);   // F9
 			if (CompanionsPlugin.LogNormal) LogInfo($"Mined the part \"{(part.C != null ? part.C.name : "?")}\" of \"{_vp.Name}\" - picking up, then looking at what still holds it up");
 			OvClOff();
 			OvPartsLook(c, true);
 			OvPartDrops(part.Centre);
 			return;
 		}
-		if (part.Holder != null && part.Holder != this)
+		if (part.Holder != this && part.Holder2 != this)
 		{
 			// SV1: another companion took the part over while this one wasn't working it (stuck on the way): let it go
-			if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{part.C.name}\" was taken over by {part.Holder.OvName()} (this one was stuck on the way to it) - picking again");
+			// F9: it is in neither of the part's two places
+			if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{part.C.name}\" was taken over by {(part.Holder != null ? part.Holder.OvName() : part.Holder2 != null ? part.Holder2.OvName() : "another companion")} (this one was stuck on the way to it) - picking again");
 			_ai?.StopMoving();
 			OvClOff();
 			return;
@@ -3051,10 +3765,7 @@ public partial class HarvestController
 		{
 			return;
 		}
-		if (root.Holder == this)
-		{
-			root.Holder = null;
-		}
+		OvPartUnclaim(root);   // F9
 		OvPartCool(root, why, wait);
 		OvPartsLook(OvC(), true);
 	}
@@ -3433,7 +4144,7 @@ public partial class HarvestController
 		}
 		foreach (OvPart part in c.ById.Values)
 		{
-			if (part.Holder == null && !part.Out)
+			if (part.Holder == null && part.Holder2 == null && !part.Out)
 			{
 				c.Popped++;
 			}

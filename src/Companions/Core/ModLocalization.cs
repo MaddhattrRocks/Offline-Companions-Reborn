@@ -356,6 +356,7 @@ public static class ModLocalization
 			{ "hc_speech_vein_ward", "There's a ward here - I can't dig at this {0}." },
 			{ "hc_speech_stuck_in_hole", "I'm stuck in this hole." },
 			{ "hc_speech_ore_left_here", "No chest nearby - I've left the ore in a pile here." },
+			{ "hc_speech_chests_full", "The chests are full. We need another chest." },
 			{ "hc_speech_cook_cooking", "Let me cook something." },
 			{ "hc_speech_cook_brewing", "Brewing a batch." },
 			{ "hc_speech_cook_fermenter", "Into the fermenter." },

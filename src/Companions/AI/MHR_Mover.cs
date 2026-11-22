@@ -56,7 +56,10 @@ namespace Companions
             public bool ForcedClimb; public float NextClimbWhyLog;   // 1.5.97: a climb out of a hole asked for straight away (MHR_Follow), and the Detailed "no way up" log's throttle
             public bool Direct; public float NextHop, NoDirectUntil;
             // MP2: walking a route planned on a vein's pit map; given up on it (20 s) and how often for this goal
-            public bool MapRoute; public float NoMapUntil, NextMapLog; public int MapFails;
+            public bool MapRoute; public float NextMapLog; public int MapFails;
+            // F13 (log cdfe000a: "the game's route for 20 s" - a clock): stuck on the map route, the game's route is used until
+            // the pit map changes along the rest of that route (MapHeldAt = when it got stuck, MapHeldPath = the rest of it)
+            public bool MapHeld; public float MapHeldAt; public readonly List<Vector3> MapHeldPath = new List<Vector3>();
             public Door PassDoor; public float PassSide, NextDoorwayCheck;
         }
         class Opened { public Door Door; public float At; }
@@ -218,7 +221,7 @@ namespace Companions
             else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
             {
                 s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.StepUntil = 0f;
-                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; s.MapFails = 0; s.NoMapUntil = 0f; }
+                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; s.MapFails = 0; s.MapHeld = false; }
             }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
@@ -255,7 +258,8 @@ namespace Companions
             // SV9: on the game's route (not the map's) inside a pit map, the square 0.5 m ahead toward the next corner may
             // not be one where something hangs over its body (SV8's rule) unless the square it is on is one too (getting
             // out from under): the walk gives up there, and the job picks another place by its own rules
-            if (!s.MapRoute && !s.HasDetour && s.Path.Count > 0)
+            // F6 (John 11-21 23:40Z: head room on every move): detours too
+            if (!s.MapRoute && s.Path.Count > 0)
             {
                 if (!s.HvLooked) { s.Hv = ai.GetComponent<HarvestController>(); s.HvLooked = true; }
                 HarvestController hvh = s.Hv;
@@ -309,6 +313,14 @@ namespace Companions
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
                     if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
+                    return false;
+                }
+                // F6 (log cdfe000a: Je's unstuck side step and the step that replaced a jump took it under the vein): every
+                // step on the ground stops where there is no room over its body ahead (a jump in the air was checked before it)
+                if (c.IsOnGround() && !c.IsSwimming() && !HeadOk(ai, c, s, pos, s.StepDir))
+                {
+                    s.StepUntil = 0f; Halt(ai, c, s);
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step at " + Fmt(pos) + " - no head room ahead");
                     return false;
                 }
                 Steer(ai, c, s, s.StepDir, s.StepRun, false); return false;
@@ -623,7 +635,7 @@ namespace Companions
         static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
         {
             s.HotOk = false; s.HotCheckAt = -10f;   // W1: a new route is judged again
-            s.MapRoute = false; s.MapFails = 0; s.NoMapUntil = 0f;   // MP2: a new goal tries the map route again
+            s.MapRoute = false; s.MapFails = 0; s.MapHeld = false;   // MP2: a new goal tries the map route again
             // 1.5.2: a target that moves about (a skeleton pacing on the tower) mustn't make us forget the ladder on the way to it
             bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
@@ -858,12 +870,18 @@ namespace Companions
             }
             // 1.5.98 MP2 (John, 2026-11-21, the map-path list): on a vein, with it and the goal on that vein's pit map, the route
             // planned on the map's squares (MP1) replaces the game's route - walked with the straight-line steering (the hop at
-            // a step, the jump over a gap). Stuck on it: the game's route for 20 s (Unstick); twice for this goal: not again.
+            // a step, the jump over a gap). Stuck on it: the game's route until the pit map changes along it (F13, Unstick); twice for this goal: not again.
             s.MapRoute = false;
-            if (!c.IsSwimming() && s.RouteDoor == null && now >= s.NoMapUntil && s.MapFails < 2)
+            if (!c.IsSwimming() && s.RouteDoor == null && s.MapFails < 2)
             {
                 HarvestController hv = ai.GetComponent<HarvestController>();
-                if (hv != null && hv.OnVein)
+                // F13: after getting stuck on it, the map route again only once the pit map changed along the rest of it
+                if (s.MapHeld && hv != null && hv.OvMapChangedAlong(s.MapHeldPath, s.MapHeldAt))
+                {
+                    s.MapHeld = false;
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the pit map changed along the map route it got stuck on - the map route again");
+                }
+                if (hv != null && hv.OnVein && !s.MapHeld)
                 {
                     int mr = hv.OvMapRoute(pos, goal, s_mapTmp, out string minfo);
                     if (mr == 1 && s_mapTmp.Count > 0)
@@ -1274,11 +1292,16 @@ namespace Companions
             }
             s.AnchorTime = now; s.Anchor = pos;
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
-            // 1.5.98 MP2: stuck on the map route: the game's route for 20 s; the second time for this goal, not again
+            // 1.5.98 MP2: stuck on the map route: the game's route; the second time for this goal, not again. F13: until the pit
+            // map changes along the rest of the route it got stuck on (no 20 s clock)
             if (s.MapRoute)
             {
-                s.MapRoute = false; s.Direct = false; s.MapFails++; s.NoMapUntil = now + 20f; s.NextPlan = 0f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "for 20 s"));
+                s.MapHeldPath.Clear();
+                s.MapHeldPath.Add(pos);
+                for (int i = s.Corner; i < s.Path.Count; i++) s.MapHeldPath.Add(s.Path[i]);
+                s.MapHeld = true; s.MapHeldAt = now;
+                s.MapRoute = false; s.Direct = false; s.MapFails++; s.NextPlan = 0f;
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
                 return;
             }
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
@@ -1389,7 +1412,8 @@ namespace Companions
             }
             if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
             // 1.5.2: never step back off a ledge either (user log: stuck at the top of a ladder, it stepped back down the shaft)
-            Vector3 pick = SafeClear(pos, a) ? a : SafeClear(pos, b) ? b : SafeClear(pos, back) ? back : side;
+            // F6: only a way with room over its body
+            Vector3 pick = SafeClear(pos, a) && HeadOk(ai, c, s, pos, a) ? a : SafeClear(pos, b) && HeadOk(ai, c, s, pos, b) ? b : SafeClear(pos, back) && HeadOk(ai, c, s, pos, back) ? back : HeadOk(ai, c, s, pos, side) ? side : Vector3.zero;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
             if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
         }
@@ -1737,6 +1761,22 @@ namespace Companions
             s.HasDetour = true; s.Detour = via; s.DetourUntil = now + secs;
             Plan(ai, c, s, ai.transform.position, now);
             return true;
+        }
+
+        // F6 (John 11-21 23:40Z: "Everything should have a headroom check"): a step toward dir has room over its body - on
+        // its pit map the square 0.5 m on (SV8's rule: full height x body radius), off it the game's physics 0.8 m on (the
+        // step look-ahead) for its height - or the place it is on has none either (getting out from under, SV9's rule)
+        static bool HeadOk(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f || c == null) return true;
+            dir.Normalize();
+            if (!s.HvLooked) { s.Hv = ai.GetComponent<HarvestController>(); s.HvLooked = true; }
+            HarvestController hv = s.Hv;
+            Vector3 q = pos + dir * 0.5f;
+            if (hv != null && hv.OvMapCovers(q)) return !hv.OvMapLowHead(q) || hv.OvMapLowHead(pos);
+            float hh = c.GetHeight();
+            return HeadRoom(pos + dir * 0.8f, hh) || !HeadRoom(pos, hh);
         }
 
         // nothing but ladder within `height` above a spot
@@ -3304,6 +3344,8 @@ namespace Companions
             {
                 Vector3 nc = NextCorner(s, pos) - pos; nc.y = 0f;
                 Vector3 sd = nc.sqrMagnitude > 0.01f ? nc.normalized : dir;
+                // F6: that step too only with room over its body; else the side step (which picks a way with room)
+                if (!HeadOk(ai, c, s, pos, sd)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
                 Face(ai, sd);
                 s.StepDir = sd; s.StepRun = false; s.StepUntil = now + 0.7f;
                 if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");

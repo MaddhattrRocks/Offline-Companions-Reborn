@@ -164,17 +164,28 @@ namespace Companions
                 int have = CountIn(hum.GetInventory(), item);
                 if (have <= 0) continue;
                 int cost;
+                // F2: after the pop, no stone pile is tried until the pit changes once one couldn't be placed - to the dump
+                if (item == "Stone" && h.OvNoPileNow() && h.OvStoneDumpAt(out Vector3 nd)) return TossAt(h, item, nd, "no stone pile now - its stone to the stone dump");
                 if (CanBuild(h, p, hum, item, out cost) && have >= cost)
                 {
                     string why;
                     p.PileItem = item;
                     if (FindBuildSpot(h, p, out why))
                     {
+                        if (item == "Stone") h.OvStonePileStarted(p.BuildSpot);   // F2
                         p.Trip = YardTrip.Build; p.Arrived = false;
                         p.PilePoint = StandFor(h, p.BuildSpot);
                         p.PileActive = true; p.PileUntil = Time.time + 25f;
                         if (CompanionsPlugin.LogNormal) Info("Building a " + PileWord(item) + " pile (" + have + " " + PileWord(item) + ", " + cost + " a pile)");
                         return true;
+                    }
+                    // F2 (John 11-22 04:24Z: "Toss the stone in a stone dump location. All NPC should use the same location"):
+                    // after the pop, no 60 s wait - no pile tried until the pit changes, and the stone goes to the stone dump
+                    Vector3 sd;
+                    if (item == "Stone" && h.OvStoneDumpAt(out sd))
+                    {
+                        h.OvNoPile();
+                        return TossAt(h, item, sd, "no place for a stone pile (" + why + ") - its stone to the stone dump");
                     }
                     p.NoBuildUntil = Time.time + 60f;
                     if (Time.time >= p.NextNoBuildLog)
@@ -209,6 +220,9 @@ namespace Companions
 
         static bool StartToss(HarvestController h, Per p, string item)
         {
+            // F2: after the pop the stone goes to the pit's one stone dump (walked there, then dropped), not anywhere
+            Vector3 sd;
+            if (item == "Stone" && h.OvStoneDumpAt(out sd)) return TossAt(h, item, sd, "too heavy - its stone to the stone dump");
             p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false; p.TossToCap = false;
             p.PileActive = true; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
             p.PilePoint = h.transform.position;
@@ -325,7 +339,15 @@ namespace Companions
                 n = Mathf.Clamp(Mathf.CeilToInt(capOver / Mathf.Max(0.01f, stack.GetWeight() / Mathf.Max(1, stack.m_stack))), 1, stack.m_stack);
             }
             string tossed = p.TossJunk ? (stack.m_dropPrefab != null ? stack.m_dropPrefab.name : stack.m_shared.m_name) : PileWord(p.PileItem);
-            if (PlayerDrop(hum, stack, n))
+            // F2 (John 11-22 05:49Z: can't get to the stone dump - "Just toss it"): what it tosses then is left where it
+            // lands (not on the pit's list again), so it isn't carried back and forth
+            List<ItemDrop> left = p.TossLeave ? new List<ItemDrop>() : null;
+            s_dropInto = left;
+            bool dropped;
+            try { dropped = PlayerDrop(hum, stack, n); }
+            finally { s_dropInto = null; }
+            if (left != null) foreach (ItemDrop ld in left) if (ld != null) s_leftStone.Add(ld.gameObject.GetInstanceID());
+            if (dropped)
             {
                 if (p.TossJunk) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " (junk) to get under its weight limit"); }
                 else if (p.TossToCap) { if (CompanionsPlugin.LogNormal) Info("Tossed " + n + " " + tossed + " to get to what it can carry"); }
@@ -345,6 +367,40 @@ namespace Companions
             }
             p.NextToss = Time.time + 0.5f;
             return true;
+        }
+
+        // F2: the toss (the player's drop, one stack every 0.5 s) at `at`: walked there first (the mover), then tossed. The
+        // walk ends there (within 1.5 m), or where the mover gives up on it (tossed where it is then).
+        internal static bool TossAt(HarvestController h, string item, Vector3 at, string why)
+        {
+            Per p = P(h);
+            if (p.PileActive) return true;
+            p.Trip = YardTrip.Toss; p.PileItem = item; p.TossJunk = false; p.TossToCap = false;
+            p.PileActive = true; p.PileUntil = float.MaxValue; p.NextToss = Time.time + 0.2f;
+            p.PilePoint = at; p.TossWalk = true; p.TossWalkGo = false; p.TossLeave = false;
+            if (CompanionsPlugin.LogNormal) Info("Taking " + why + " at " + MHR_Mover.Fmt(at));
+            return true;
+        }
+
+        // F2: stone tossed where the walk to the stone dump gave up - left where it is (the pit's list skips it)
+        static readonly HashSet<int> s_leftStone = new HashSet<int>();
+        internal static bool LeftStone(GameObject go) { return go != null && s_leftStone.Contains(go.GetInstanceID()); }
+
+        // F2: how much stone is in the bag
+        internal static int CountStone(Inventory inv) { return inv == null ? 0 : CountIn(inv, "Stone"); }
+
+        // F2: the first place the game allows a stone pile in the pit (FindBuildSpot's own checks), without building it
+        internal static bool StonePileSpot(HarvestController h, out Vector3 spot)
+        {
+            spot = Vector3.zero;
+            Per p = P(h);
+            string was = p.PileItem; p.PileItem = "Stone";
+            bool hadBuild = p.BuildHas; Vector3 bs = p.BuildSpot; Quaternion br = p.BuildRot;
+            string why;
+            bool ok = FindBuildSpot(h, p, out why);
+            if (ok) spot = p.BuildSpot;
+            p.PileItem = was; p.BuildHas = hadBuild; p.BuildSpot = bs; p.BuildRot = br;
+            return ok;
         }
 
         internal static bool HasOre(Humanoid hum)
@@ -464,8 +520,20 @@ namespace Companions
                 {
                     p.Collect = true; p.CollectAt = dump; p.CollectGot = false; p.CollectWalkUntil = 0f;
                 }
+                // F3: no dump - an ore pile next to a full chest that has storage with room now (a new chest)
+                else if (popped && OrePileToCarry(h, h.transform.position, out dump))
+                {
+                    p.Collect = true; p.CollectAt = dump; p.CollectGot = false; p.CollectWalkUntil = 0f;
+                }
             }
             catch (Exception e) { Warn("AfterVein: " + e.Message); }
+        }
+
+        // F1: a pile, toss or ore trip is going on, the ore is due to go in, or the dump is being carried to storage
+        internal static bool TripBusy(HarvestController h)
+        {
+            Per p = P(h);
+            return p.PileActive || p.OreDue || p.Collect;
         }
 
         // the ore after a vein (called each frame from the job; true = busy with it)
@@ -526,6 +594,14 @@ namespace Companions
                     p.CollectWalkUntil = 0f;
                     return true;
                 }
+                // F3: the dump is empty - an ore pile next to a full chest whose ore now has storage with room (a new chest) next
+                Vector3 pile;
+                if (!any && OrePileToCarry(h, p.CollectAt, out pile) && Vector3.Distance(pile, p.CollectAt) > 2f)
+                {
+                    if (CompanionsPlugin.LogNormal) Info("The ore dump is empty - carrying the ore pile at " + MHR_Mover.Fmt(pile) + " to storage with room");
+                    p.CollectAt = pile; p.CollectGot = false; p.CollectWalkUntil = 0f;
+                    return true;
+                }
                 CollectEnd(p, any ? "it can't carry any of what is left" : "the ore dump is empty");
                 return false;
             }
@@ -541,6 +617,58 @@ namespace Companions
             }
             ai.MHR_Go(Time.deltaTime, at, 1.0f, false, "Collect");
             return true;
+        }
+
+        // F3: ore piles left next to full chests (shared by all companions), and which piles' chests were said to be full
+        static readonly List<Vector3> s_orePiles = new List<Vector3>();
+        static readonly HashSet<Vector2Int> s_fullSaid = new HashSet<Vector2Int>();
+        static Vector2Int PileKey(Vector3 at) { return new Vector2Int(Mathf.RoundToInt(at.x / 4f), Mathf.RoundToInt(at.z / 4f)); }
+
+        // F3: the nearest player-built chest (not a cart or ship) within 30 m of the vein (or of the companion, off the vein)
+        // that it may use but that is full (the drop-off's own checks, ChestNo); null = none
+        static Container FullChestNear(HarvestController h)
+        {
+            int f0, s0;
+            Bounds b = VeinBounds(h, out f0, out s0);
+            Vector3 me = h.transform.position;
+            Container best = null; float bd = float.MaxValue;
+            foreach (Container c in MHR_Chests.Near(b.center, 30f + Mathf.Max(b.extents.x, b.extents.z)))
+            {
+                if (c == null || c.GetComponentInParent<Vagon>() != null || c.GetComponentInParent<Ship>() != null) continue;
+                Vector3 cp = c.transform.position;
+                if (Vector3.Distance(b.ClosestPoint(cp), cp) > 30f) continue;
+                if (ChestNo(h, c) != "full") continue;
+                float d = Vector3.Distance(me, cp);
+                if (d < bd) { bd = d; best = c; }
+            }
+            return best;
+        }
+
+        // F3: the ore pile by a full chest within 25 m of `at` that has storage with room within 20 m of it now
+        static bool OrePileToCarry(HarvestController h, Vector3 at, out Vector3 pile)
+        {
+            pile = Vector3.zero;
+            s_orePiles.RemoveAll(op => !OreLying(op));
+            foreach (Vector3 op in s_orePiles)
+            {
+                if (Vector3.Distance(op, at) > 25f) continue;
+                if (DropOff(h, op, 20f) == null) continue;
+                pile = op; return true;
+            }
+            return false;
+        }
+
+        // F3: ore still lying within 2.5 m of the pile point
+        static bool OreLying(Vector3 at)
+        {
+            int k = Physics.OverlapSphereNonAlloc(at + Vector3.up, CollectNear, s_collectBuf, LayerMask.GetMask("item"));
+            for (int i = 0; i < k; i++)
+            {
+                Collider c = s_collectBuf[i];
+                ItemDrop d = c != null && c.attachedRigidbody != null ? c.attachedRigidbody.GetComponent<ItemDrop>() : null;
+                if (d != null && d.m_itemData != null) { d.Load(); if (IsOreItem(d.m_itemData)) return true; }
+            }
+            return false;
         }
 
         static void CollectEnd(Per p, string why)
@@ -574,6 +702,9 @@ namespace Companions
                 // D4: every 2 m of the popped vein's pit ground, nearest the companion first
                 Vector3 me = h.transform.position;
                 list.AddRange(p.VoidSpots);
+                // F2: with a stone dump, the pile goes next to it (the spots nearest the dump first)
+                Vector3 sd;
+                if (p.PileItem == "Stone" && h.OvStoneDumpHas(out sd)) me = sd;
                 list.Sort((Vector3 x, Vector3 y) => (x - me).sqrMagnitude.CompareTo((y - me).sqrMagnitude));
                 return list;
             }
@@ -841,11 +972,23 @@ namespace Companions
             p.OreTrip = false;
             if (c != null)
             {
+                s_fullSaid.Remove(PileKey(c.transform.position));   // F3: a chest with room again - it may ask again later
                 if (CompanionsPlugin.LogNormal) Info(why + " - putting the ore in \"" + c.m_name + "\" " + Vector3.Distance(h.transform.position, c.transform.position).ToString("F0") + "m away");
                 h.ResetToIdle();
                 h.RestoreLoadout();
                 ai.SetPendingDeposit(c, hum, IsOreItem);
                 p.TooHeavy = false; p.PackFull = false;
+                return true;
+            }
+            // F3 (John 11-21 23:40Z: "If those chests are full make a pile of ore near them and ask for another chest to be
+            // built"): every player-built chest within 30 m of the vein is full - the ore goes in a pile by the nearest one
+            Container full = FullChestNear(h);
+            if (full != null)
+            {
+                Vector3 cp = full.transform.position;
+                p.Trip = YardTrip.Ore; p.OreByChest = true; p.OreChestAt = cp;
+                p.PilePoint = cp; p.PileActive = true; p.PileUntil = Time.time + 25f;
+                if (CompanionsPlugin.LogNormal) Info(why + " and every chest by the vein is full - taking the ore to a pile next to \"" + full.m_name + "\" at " + MHR_Mover.Fmt(cp));
                 return true;
             }
             EnsureOreSpot(h, p);
@@ -865,6 +1008,28 @@ namespace Companions
             if (away.sqrMagnitude > 0.01f) h.transform.rotation = Quaternion.LookRotation(away.normalized);
             // FF3: on the vein's ore dump with player-built storage (chest, cart, ship) with room within 20 m: only enough to
             // get under its weight limit, then the rest goes out to the storage; no storage: all of it
+            bool byChest = p.OreByChest; p.OreByChest = false;
+            if (byChest)
+            {
+                // F3: facing the full chest, so the pile lands between it and the companion (it stops within 1.5 m of it)
+                Vector3 to = p.OreChestAt - h.transform.position; to.y = 0f;
+                if (to.sqrMagnitude > 0.01f) h.transform.rotation = Quaternion.LookRotation(to.normalized);
+                int k = 0;
+                List<ItemDrop.ItemData> its = new List<ItemDrop.ItemData>(inv.GetAllItems());
+                foreach (ItemDrop.ItemData it in its) { if (!IsOreItem(it)) continue; int count = it.m_stack; if (PlayerDrop(hum, it, count)) k += count; }
+                p.PackFull = false;
+                if (k > 0)
+                {
+                    Vector3 key = p.OreChestAt;
+                    bool known = false;
+                    foreach (Vector3 op in s_orePiles) if (Vector3.Distance(op, key) <= 2f) { known = true; break; }
+                    if (!known) s_orePiles.Add(key);
+                    if (CompanionsPlugin.LogNormal) Info("Every chest by the vein is full - left " + k + " ore in a pile next to the chest at " + MHR_Mover.Fmt(key));
+                    if (s_fullSaid.Add(PileKey(key)))
+                        h.GetComponent<CompanionTalk>()?.SayProblem("chests_full", ModLocalization.Loc("hc_speech_chests_full"));
+                }
+                return;
+            }
             bool pit = p.PitDump; p.PitDump = false;
             Container store = pit ? DropOff(h, h.transform.position, 20f) : null;
             if (store != null)

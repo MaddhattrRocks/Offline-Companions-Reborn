@@ -532,6 +532,42 @@ public partial class HarvestController
 	// SV9: on the pit map, something hangs over the space its body takes at p's square: a layer's bottom more than a
 	// step (0.7 m) and less than its height over the ground there, on any square its body covers (SV8). Off the map /
 	// no map / not read = false.
+	// F13: a square of its pit map along pts (each piece looked at every 0.5 m, the map's square) changed after `at`
+	internal bool OvMapChangedAlong(List<Vector3> pts, float at)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built || m.ChangedAt == null || pts == null || pts.Count == 0)
+		{
+			return false;
+		}
+		for (int k = 0; k < pts.Count; k++)
+		{
+			Vector3 a = pts[k], b = k + 1 < pts.Count ? pts[k + 1] : pts[k];
+			float len = Flat(a, b);
+			for (float t = 0f; t <= len + 0.001f; t += OvMapCell)
+			{
+				int i = OvMapIndex(m, Vector3.Lerp(a, b, len > 0.001f ? t / len : 0f));
+				if (i >= 0 && m.ChangedAt[i] > at)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// F6: p is on its vein's pit map, on a square that has been read
+	internal bool OvMapCovers(Vector3 p)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built)
+		{
+			return false;
+		}
+		int i = OvMapIndex(m, p);
+		return i >= 0 && m.ReadAt[i] >= 0f;
+	}
+
 	internal bool OvMapLowHead(Vector3 p)
 	{
 		OvMap m = _vp?.Map;

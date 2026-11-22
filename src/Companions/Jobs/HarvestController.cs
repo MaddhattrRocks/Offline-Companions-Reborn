@@ -784,7 +784,8 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		// 1.5.98 (C3.2): a thing in the trench handed to the Wood / Stone flow is over (gone or given up): back to the vein
-		if (_vFor != null && _state == HarvestState.Idle)
+		// F1 (log cdfe000a): also with the rock gone and the plan kept (the cleanup after the pop) - its pit's list again
+		if ((_vFor != null || _vp != null) && _state == HarvestState.Idle)
 		{
 			if (mode == 3)
 			{
@@ -792,6 +793,12 @@ public partial class HarvestController : MonoBehaviour
 				return;
 			}
 			OvLeave("the job changed");
+		}
+		// F1: a trip off the pit during the cleanup is over (no deposit, pile, toss, ore trip or dump carry going on)
+		if (mode == 3 && _ovBack != null && _vp == null && _vFor == null && _state == HarvestState.Idle && !_ovOut && (_ai == null || _ai.PendingDepositContainer == null) && !MHR_GatherRules.TripBusy(this))
+		{
+			OvBackToPit();
+			return;
 		}
 		// 1.5.95: Ore job - the stone is dealt with as it goes (a stone pile, or tossed), so it never gets overloaded
 		if (mode == 3 && _humanoid != null && !_humanoid.InAttack() && (_ai == null || _ai.PendingDepositContainer == null) && MHR_GatherRules.StoneDue(this) && MHR_GatherRules.StartPile(this))
@@ -804,12 +811,12 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		// T3: at 90% of what it can carry on its vein with a player-built chest within 20 m of the pit - its ore to that chest
-		if (mode == 3 && _vFor != null && OvChestTrip())
+		if (mode == 3 && OvOnPit && OvChestTrip())
 		{
 			return;
 		}
 		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
-		if (mode == 3 && _vFor != null && (IsOverweight() || MHR_GatherRules.PackFull(this)))
+		if (mode == 3 && OvOnPit && (IsOverweight() || MHR_GatherRules.PackFull(this)))
 		{
 			// G8: its stone and wood go off to one side right here and it keeps working; only ore (or nothing to toss)
 			// takes it away from the vein. A4: in the middle of a swing it waits for the swing to end first.
@@ -826,6 +833,7 @@ public partial class HarvestController : MonoBehaviour
 			{
 				return;
 			}
+			_ovTrip = true;   // F1: a trip - back to the pit's list after it during the cleanup
 			OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 owGoal, out string owWhat) ? owGoal : base.transform.position, IsOverweight() ? "it's carrying too much" : "its bag is full");
 			return;
 		}

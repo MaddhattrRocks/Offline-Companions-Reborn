@@ -202,7 +202,7 @@ public partial class HarvestController
 
 	private bool OvChestTrip()
 	{
-		if (_vp == null || _vFor == null || _ovOut || _humanoid == null || _humanoid.InAttack() || _vp.Spots.Count == 0)
+		if (_vp == null || !OvOnPit || _ovOut || _humanoid == null || _humanoid.InAttack() || _vp.Spots.Count == 0)
 		{
 			return false;
 		}
@@ -264,6 +264,7 @@ public partial class HarvestController
 		{
 			return;
 		}
+		_ovTrip = true;   // F1: a trip - back to the pit's list after it during the cleanup
 		OvLeaveOut(c.transform.position, "taking its ore to \"" + c.m_name + "\"");
 	}
 }

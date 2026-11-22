@@ -38,6 +38,10 @@ namespace Companions
             public bool PitDump, OreStore, Collect, CollectGot; public Vector3 CollectAt; public float CollectWalkUntil;
             // T3: the chest by the vein the ore trip (90% of what it can carry) is for - used even if it is over 20 m from where it gets out
             public Container OreChest; public bool OreTrip; public Vector3 OreTripAt; public float OreTripR;   // W5: the 90% trip's pit (its centre and trench radius)
+            // F3: this ore trip is to the pile next to a full chest (at OreChestAt)
+            public bool OreByChest; public Vector3 OreChestAt;
+            // F2: this toss walks to PilePoint (the stone dump) first
+            public bool TossWalk, TossWalkGo, TossLeave;
         }
         static readonly Dictionary<int, Per> s_per = new Dictionary<int, Per>();
         static readonly List<Piece> s_pieces = new List<Piece>();
@@ -468,7 +472,16 @@ namespace Companions
                 // 1.5.96: tossing stone off to one side where it stands (no walking)
                 if (p.Trip == YardTrip.Toss)
                 {
+                    // F2: the walk to the stone dump first - there (1.5 m), or the mover gave up: the toss starts
+                    if (p.TossWalk)
+                    {
+                        if (d > 1.5f && (!p.TossWalkGo || !MHR_Mover.GaveUp(pai))) { p.TossWalkGo = true; pai.MHR_Go(Time.deltaTime, p.PilePoint, 1.0f, false, "Pile"); return true; }
+                        if (d > 1.5f && CompanionsPlugin.LogNormal) Info("Couldn't get to the stone dump - tossing its stone here (left where it lands)");
+                        p.TossLeave = d > 1.5f;
+                        p.TossWalk = false; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
+                    }
                     if (TossTick(h, p, pai)) return true;
+                    p.TossLeave = false;   // F2
                     p.PileActive = false;
                     h.ResetToIdle();
                     return true;
