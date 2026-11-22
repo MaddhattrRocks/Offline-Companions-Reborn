@@ -46,6 +46,35 @@ public partial class HarvestController
 
 	private bool OvHeavyDump()
 	{
+		// S4 (John 11-22 22:10Z: "the ore dump should be a last resort"): a chest the 90% trip would use (player-built, room
+		// for its ore, within 20 m of the pit) - straight there, only ore goes in, then back to the pit's list; none = the dump
+		if (_vp != null && _vp.Spots.Count > 0 && _humanoid != null && _humanoid.GetInventory() != null)
+		{
+			ItemDrop.ItemData ore = null;
+			foreach (ItemDrop.ItemData it in _humanoid.GetInventory().GetAllItems())
+			{
+				if (MHR_GatherRules.IsOreItem(it))
+				{
+					ore = it;
+					break;
+				}
+			}
+			if (ore != null)
+			{
+				float r = 0f;
+				foreach (OvSpot sp in _vp.Spots)
+				{
+					r = Mathf.Max(r, Flat(sp.P, _vp.Center));
+				}
+				r += OvThingRadius;
+				Container best = OvTripChest(this, _vp.Center, r, ore);
+				if (best != null && MHR_GatherRules.OreToChest(this, best, _vp.Center, r))
+				{
+					if (CompanionsPlugin.LogNormal) LogInfo($"Full with ore - taking it straight to \"{best.m_name}\" {Flat(base.transform.position, best.transform.position):F0}m away, not the ore dump (S4)");
+					return true;
+				}
+			}
+		}
 		if (!OvDumpSpot(out Vector3 dump))
 		{
 			return false;
@@ -265,6 +294,13 @@ public partial class HarvestController
 			return;
 		}
 		_ovTrip = true;   // F1: a trip - back to the pit's list after it during the cleanup
+		// S4a: a chest standing on the pit's ground - walked to with the pit's map route, without leaving the trench first
+		if (_vp != null && OvInPitPt(c.transform.position))
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"\"{c.m_name}\" stands in the pit - walking to it on the pit map, not out of the trench first (S4a)");
+			OvLeave("taking its ore to \"" + c.m_name + "\" in the pit");
+			return;
+		}
 		OvLeaveOut(c.transform.position, "taking its ore to \"" + c.m_name + "\"");
 	}
 }

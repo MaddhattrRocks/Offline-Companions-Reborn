@@ -944,8 +944,8 @@ public partial class HarvestController
 	private const float OvJoinNear = 20f;   // R1 (Q3: 20 m): within 20 m (flat) of the pit's nearest trench spot
 
 	// R1: in the Ore job, idle, on no vein and on no trip (the caller's checks), a kept plan within 20 m whose rock is gone
-	// and whose pit's item list isn't empty: it joins that pit's cleanup by the back-to-pit path (OvBackToPit). It joins a pit
-	// it left only after that pit's item list or pit map changed since. True = it joined.
+	// and whose pit's item list holds an item it would take (S2): it joins that pit's cleanup by the back-to-pit path
+	// (OvBackToPit). It joins a pit it left only after that pit's item list changed since. True = it joined.
 	internal bool OvJoinPit()
 	{
 		Vector3 me = base.transform.position;
@@ -970,21 +970,29 @@ public partial class HarvestController
 			{
 				continue;   // the rock is there: the scan finds it and joins the plan as before
 			}
+			// S2 (log ebd571a0: 362 joins, each with nothing it could take): only items the cleanup would take - still there,
+			// no other companion's, not set aside, not stone on the stone dump (the dump may stay, Q1)
 			int items = 0;
 			foreach (OvLoose l in c.Loose.Values)
 			{
-				if (OvLooseHere(l))
+				if (!OvLooseHere(l) || l.AsideAt >= 0f || (l.Holder != null && l.Holder != this && l.Holder._lsItem == l))
 				{
-					items++;
+					continue;
 				}
+				if (l.Name == "Stone" && OvAtStoneDump(c, l.D.transform.position))
+				{
+					continue;
+				}
+				items++;
 			}
 			if (items == 0)
 			{
 				continue;
 			}
-			if (_ovJoinLeft.TryGetValue(p, out float left) && c.LooseChangedAt <= left && (p.Map == null || p.Map.LastChange <= left))
+			// S2: a pit it left is joined again only after its item list changed (the pit map changes all the time)
+			if (_ovJoinLeft.TryGetValue(p, out float left) && c.LooseChangedAt <= left)
 			{
-				continue;   // nothing changed since it left this pit
+				continue;
 			}
 			float d = float.MaxValue;
 			foreach (OvSpot sp in p.Spots)
@@ -2184,7 +2192,7 @@ public partial class HarvestController
 			OvClearGone();
 			if (_vp != null)
 			{
-				_ovJoinLeft[_vp] = Time.time;   // R1: it joins this pit again only after its item list or its pit map changed
+				_ovJoinLeft[_vp] = Time.time;   // R1/S2: it joins this pit again only after its item list changed
 			}
 			OvLeave("the vein is gone");
 			MHR_GatherRules.AfterVein(this);   // Q2: the ore after the vein (its own, then the ore dump's)

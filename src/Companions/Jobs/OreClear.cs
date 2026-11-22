@@ -187,6 +187,9 @@ public partial class HarvestController
 
 		public float LooseChangedAt = -1f;   // R1: the last time an item came onto the list or left it
 
+		public HarvestController DumpCarryBy;   // S5: who carried the ore dump to storage last, and when it started
+		public float DumpCarryAt = -1f;
+
 		// P1 step 2: per dirt point (its key), the squares lowered toward it from its nearest deepened trench spot
 		public readonly Dictionary<long, List<OvLowSq>> LowLines = new Dictionary<long, List<OvLowSq>>();
 
@@ -1064,8 +1067,8 @@ public partial class HarvestController
 	private static readonly Collider[] s_lsBuf = new Collider[512];
 
 	// the vein's list: looked at by whichever companion finds it due (every 5 s), read by the others. On it: ore, stone
-	// and wood lying on the pit ground (the ring and the trench), tossed or not - except ore on the ore dump (the dump
-	// carry takes that to storage).
+	// and wood lying on the pit map's area (S3; the pit ground before the map is built), tossed or not - except ore on the
+	// ore dump (the dump carry takes that to storage).
 	private void OvLooseScan(OvClear c)
 	{
 		float now = Time.time;
@@ -1080,8 +1083,18 @@ public partial class HarvestController
 			r = Mathf.Max(r, Flat(sp.P, _vp.Center));
 		}
 		r += OvThingRadius + 8f;   // + 8 m: the pit's depth (the game's dig limit), the look is a sphere
+		Vector3 lookAt = _vp.Center;
+		OvMap lm = _vp.Map;
+		bool onMap = lm != null && lm.Built;
+		if (onMap)
+		{
+			// S3 (John 11-22 Q1 / 22:06Z: anything in the pit, tossed piles too): the whole pit map's area
+			float hw = lm.W * OvMapCell * 0.5f, hh = lm.H * OvMapCell * 0.5f;
+			lookAt = new Vector3(lm.X0 + hw, _vp.Center.y, lm.Z0 + hh);
+			r = Mathf.Sqrt(hw * hw + hh * hh) + 8f;
+		}
 		bool hasDump = PitDumpFor(out Vector3 dump);
-		int n = Physics.OverlapSphereNonAlloc(_vp.Center, r, s_lsBuf, _itemLayerMask);
+		int n = Physics.OverlapSphereNonAlloc(lookAt, r, s_lsBuf, _itemLayerMask);
 		HashSet<int> seen = new HashSet<int>();
 		for (int i = 0; i < n; i++)
 		{
@@ -1102,7 +1115,7 @@ public partial class HarvestController
 				continue;
 			}
 			Vector3 at = d.transform.position;
-			if (!OvInPitPt(at))
+			if (onMap ? !OvOnMapArea(lm, at) : !OvInPitPt(at))
 			{
 				continue;
 			}
@@ -1120,7 +1133,8 @@ public partial class HarvestController
 			{
 				continue;
 			}
-			if (ore && hasDump && Flat(at, dump) <= 2.5f)
+			// S3b: "on the ore dump" = inside the same 2.5 m ball round the dump the dump carry looks in (CollectTick)
+			if (ore && hasDump && Vector3.Distance(at, dump + Vector3.up) <= 2.5f)
 			{
 				seen.Remove(id);
 				continue;   // on the ore dump
@@ -1144,6 +1158,34 @@ public partial class HarvestController
 			c.Loose.Remove(id);
 			c.LooseChangedAt = now;   // R1
 		}
+	}
+
+	// S5: one companion at a time; after a carry that picked up nothing it starts again only once the pit's item list changed
+	private bool OvDumpCarry(OvClear c)
+	{
+		if (!PitDumpFor(out Vector3 dump))
+		{
+			return false;
+		}
+		HarvestController by = c.DumpCarryBy;
+		if (by != null && by != this && by.isActiveAndEnabled && MHR_GatherRules.Collecting(by))
+		{
+			return false;
+		}
+		if (by != null && c.DumpCarryAt >= 0f && !MHR_GatherRules.Collecting(by) && !MHR_GatherRules.CollectTook(by) && c.LooseChangedAt <= c.DumpCarryAt)
+		{
+			return false;
+		}
+		if (!MHR_GatherRules.StartDumpCarry(this, dump))
+		{
+			return false;
+		}
+		c.DumpCarryBy = this;
+		c.DumpCarryAt = Time.time;
+		if (CompanionsPlugin.LogNormal) LogInfo($"Nothing else on the pit's list it can take - carrying the ore at the ore dump {MHR_Mover.Fmt(dump)} to storage near it, then back to the pit's list (S5)");
+		_ovTrip = true;
+		OvLeave("carrying the ore dump to storage", quiet: true);
+		return true;
 	}
 
 	private static bool OvLooseHere(OvLoose l)
@@ -1344,10 +1386,15 @@ public partial class HarvestController
 		{
 			return true;
 		}
-		// full: ore still in the pit that only its weight stops - its ore to the dump first (the existing dump trip), then on
+		// full: ore still in the pit that only its weight stops - its ore to a chest (S4), else to the dump, then on
 		if (heavyLeft && MHR_GatherRules.HasOre(_humanoid) && OvHeavyDump())
 		{
-			if (CompanionsPlugin.LogNormal) LogInfo("Full with ore from the pit - taking it to the ore dump, then back to the pit's list");
+			if (CompanionsPlugin.LogNormal) LogInfo("Full with ore from the pit - taking it away (a chest, else the ore dump), then back to the pit's list");
+			return true;
+		}
+		// S5: nothing else it can take - the ore at the dump goes to storage with room within 20 m of it (the dump carry)
+		if (_ovPitOpen && OvDumpCarry(c))
+		{
 			return true;
 		}
 		// F5: nothing else it can take - each set-aside item that hasn't come back yet comes back once
@@ -3374,6 +3421,12 @@ public partial class HarvestController
 		return want != null ? wantHit : anyHit && groundFirst;
 	}
 
+	// S3: inside the pit map's squares (its whole area)
+	private static bool OvOnMapArea(OvMap m, Vector3 pt)
+	{
+		return pt.x >= m.X0 && pt.x < m.X0 + m.W * OvMapCell && pt.z >= m.Z0 && pt.z < m.Z0 + m.H * OvMapCell;
+	}
+
 	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
 	// ground is first worked out: inside the ring or within 2 m of a trench spot (the old test).
 	private bool OvInPitPt(Vector3 pt)
@@ -3779,7 +3832,7 @@ public partial class HarvestController
 		return Mathf.Max(OvFloor(at), OvPartBottom(d.Part) - OvLowerUnder);
 	}
 
-	// Step 1: the trench spots within 3 m (OvDigInFar) of such points get that deeper goal (never a higher one) and the
+	// Step 1 (S1): each such point's nearest open trench spot, at any distance, gets that deeper goal (never a higher one) and the
 	// trench reopens for the spots above it (I1, OvReopenCheck) - only when a goal went deeper in this call, so each spot
 	// is lowered once. Then step 2. True = the trench was reopened, or step 2 has work (the clearing waits for it).
 	private bool OvLowerTry(OvClear c)
@@ -3797,16 +3850,28 @@ public partial class HarvestController
 				continue;
 			}
 			pts++;
+			// S1 (log ebd571a0: the nearest spots were 4.6-5.2 m away, none within 3 m): its one nearest open spot, at any distance
+			OvSpot near = null;
+			float nd = float.MaxValue;
 			foreach (OvSpot s in p.Spots)
 			{
-				if (s.Closed || Flat(s.P, d.P) > OvDigInFar + 0.01f)
+				if (s.Closed)
 				{
 					continue;
 				}
-				float g = OvLowerGoal(d, s.P);
-				if (g < s.Target - 0.01f)
+				float f = Flat(s.P, d.P);
+				if (f < nd)
 				{
-					s.Target = g;
+					nd = f;
+					near = s;
+				}
+			}
+			if (near != null)
+			{
+				float g = OvLowerGoal(d, near.P);
+				if (g < near.Target - 0.01f)
+				{
+					near.Target = g;
 					deeper++;
 				}
 			}
@@ -3815,7 +3880,7 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		if (deeper > 0 && CompanionsPlugin.LogNormal) LogInfo($"{pts} dirt point(s) of \"{p.Name}\" have no place to work them from: {deeper} trench spot goal(s) within {OvDigInFar:F0} m of them set to {OvLowerUnder:F2} m under the part's bottom (not under the game's 8 m floor) - so the swing can't reach the vein and there is room under it (P1)");
+		if (deeper > 0 && CompanionsPlugin.LogNormal) LogInfo($"{pts} dirt point(s) of \"{p.Name}\" have no place to work them from: {deeper} trench spot goal(s) (each point's nearest spot) set to {OvLowerUnder:F2} m under the part's bottom (not under the game's 8 m floor) - so the swing can't reach the vein and there is room under it (P1)");
 		// only when a spot's goal went deeper now: a spot is lowered once (a lap that can't take it there isn't run again)
 		if (deeper > 0 && OvReopenCheck(p, "P1: the trench beside dirt it can't reach goes deeper"))
 		{

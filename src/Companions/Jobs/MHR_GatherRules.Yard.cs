@@ -614,12 +614,27 @@ namespace Companions
             {
                 ai.StopMoving();
                 if (!next.CanPickup(false)) { next.RequestOwn(); return true; }
-                if (hum.Pickup(next.gameObject, false, false)) p.CollectGot = true;
+                if (hum.Pickup(next.gameObject, false, false)) { p.CollectGot = true; p.CollectTook = true; }
                 return true;
             }
             ai.MHR_Go(Time.deltaTime, at, 1.0f, false, "Collect");
             return true;
         }
+
+        // S5 (John 11-22 22:10Z: the ore dump "should be cleared if there is a nearby chest"): during the cleanup, the existing
+        // dump carry (CollectTick) when ore lies at the dump and storage with room is within 20 m of it. False = not started.
+        internal static bool StartDumpCarry(HarvestController h, Vector3 dump)
+        {
+            Per p = P(h);
+            if (p.PileActive || p.OreDue || p.Collect) return false;
+            if (!OreLying(dump) || DropOff(h, dump, 20f) == null) return false;
+            p.Collect = true; p.CollectAt = dump; p.CollectGot = false; p.CollectWalkUntil = 0f; p.CollectTook = false;
+            return true;
+        }
+
+        // S5: this companion's dump carry is going on / its last one picked up anything
+        internal static bool Collecting(HarvestController h) { return h != null && P(h).Collect; }
+        internal static bool CollectTook(HarvestController h) { return h != null && P(h).CollectTook; }
 
         // F3: ore piles left next to full chests (shared by all companions), and which piles' chests were said to be full
         static readonly List<Vector3> s_orePiles = new List<Vector3>();
