@@ -2945,3 +2945,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - I1b: a spot closed for good (water, ward/no-build, building, object that can't be damaged) keeps its close time; every 2 s, a pit map change within 2 m after that reopens it and re-runs the closed checks. A reopened spot above its goal on a done trench reopens it (I1).
 - I2: a dirt point's holder counts only within 3 m (flat) of it; otherwise another companion may take it.
 - I3: each pit map square keeps which thing changed last (layers, kind, top, flags, open space, ground, first read); the "back on the list" lines name the square and the change.
+
+## J1-J4 (log abe9c2a8, 2026-11-22)
+- J1: silver dirt whose ground is above its part's top may be dug from a place up on the dirt (all other swing checks stay); below the part's top the trench-floor rule applies again.
+- J2: plain-rock pieces a vein part rests on (the game's rule: breakable, lower than the vein's centre) are listed at each parts look and mined with the part round, before the dirt; on silver the place and each swing must meet the piece, never the vein, first.
+- J3: a layers-only change of a pit map square logs the old and new layers.
+- J4: mover lines carry the companion's name; stuck lines name the first thing ahead within 1.5 m.

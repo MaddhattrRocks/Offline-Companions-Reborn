@@ -69,6 +69,9 @@ public partial class HarvestController
 		// I3 (John 11-22 Q3): what the last change of each square was (OvChgLayers .. OvChgFirst bits) - for the log only
 		public byte[] ChangedWhy;
 
+		// J3 (John 11-22 Q4): for a square whose last change was its layers only, the old and new layers - for the log only
+		public readonly Dictionary<int, string> LayerSaid = new Dictionary<int, string>();
+
 		// SV3: the last time any square's read changed (a stopped vein starts again after it)
 		public float LastChange = -1f;
 
@@ -584,7 +587,24 @@ public partial class HarvestController
 		if ((w & OvChgGround) != 0) l.Add("ground");
 		if ((w & OvChgFirst) != 0) l.Add("first read");
 		float x = m.X0 + (_chgSq % m.W + 0.5f) * OvMapCell, z = m.Z0 + (_chgSq / m.W + 0.5f) * OvMapCell;
-		return $" (square ({x:F1}, {z:F1}): {(l.Count == 0 ? "?" : string.Join(", ", l))} changed at {m.ChangedAt[_chgSq]:F1}) (I3)";
+		string ls = m.LayerSaid.TryGetValue(_chgSq, out string lv) ? "; layers " + lv + " (J3)" : "";
+		return $" (square ({x:F1}, {z:F1}): {(l.Count == 0 ? "?" : string.Join(", ", l))} changed at {m.ChangedAt[_chgSq]:F1}{ls}) (I3)";
+	}
+
+	private static readonly float[] s_oldBot = new float[OvMapLayers], s_oldTop = new float[OvMapLayers];
+
+	private static readonly byte[] s_oldKind = new byte[OvMapLayers];
+
+	// J3: layers as text: count, then each layer's bottom-top and kind
+	private static string OvLayersText(int n, float[] bot, float[] top, byte[] kind, int at)
+	{
+		System.Text.StringBuilder sb = new System.Text.StringBuilder();
+		sb.Append(n);
+		for (int j = 0; j < n && j < OvMapLayers; j++)
+		{
+			sb.Append(j == 0 ? ": " : ", ").Append(bot[at + j].ToString("F2")).Append('-').Append(top[at + j].ToString("F2")).Append(' ').Append(OvMapKindName(kind[at + j]));
+		}
+		return sb.ToString();
 	}
 
 	// F6: p is on its vein's pit map, on a square that has been read
@@ -819,6 +839,14 @@ public partial class HarvestController
 		// differ: this vein's part first, then can't be damaged, built, rock / stone, a thing
 		s_mapSpans.Sort((Vector3 a, Vector3 b) => a.x.CompareTo(b.x));
 		int li = i * OvMapLayers, lc = 0;
+		// J3: the old layers kept (no text made unless the change is layers only - this runs for every square read)
+		int oldN = m.LCount[i];
+		for (int j = 0; j < OvMapLayers; j++)
+		{
+			s_oldBot[j] = m.LBot[li + j];
+			s_oldTop[j] = m.LTop[li + j];
+			s_oldKind[j] = m.LKind[li + j];
+		}
 		bool layersChanged = false;
 		float lb = 0f, lt = 0f;
 		byte lk = MkNone;
@@ -892,6 +920,14 @@ public partial class HarvestController
 			m.Changed = true;
 			m.ChangedAt[i] = Time.time;   // MP1
 			m.ChangedWhy[i] = why;        // I3
+			if (why == OvChgLayers)
+			{
+				m.LayerSaid[i] = OvLayersText(oldN, s_oldBot, s_oldTop, s_oldKind, 0) + " -> " + OvLayersText(lc, m.LBot, m.LTop, m.LKind, li);   // J3
+			}
+			else
+			{
+				m.LayerSaid.Remove(i);
+			}
 			m.LastChange = Time.time;     // SV3
 		}
 		m.Ground[i] = g;

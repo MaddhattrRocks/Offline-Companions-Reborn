@@ -3673,6 +3673,13 @@ public partial class HarvestController
 		}
 		// E2 (silver, a point of the dirt list or E3's place): right before each swing, the E1 check from where it actually
 		// stands - it fails: no swing, it repositions (OvDrTick reads _drRepos once the dig is off)
+		// J2 (silver): a rock piece's swing - from where it actually stands no ray may meet the vein first
+		if (_dgPart && _clFor != null && _clFor.IsRock && OvIsSilver(_vp) && !OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, base.transform.position, _dgPoint, out _, _clFor.C))
+		{
+			_clRockWhy = "from where it stands the swing at the rock piece would meet the vein first";
+			OvDigOff();
+			return;
+		}
 		if (_dgDirt && !_drForThing && OvIsSilver(_vp))
 		{
 			bool clean = OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, base.transform.position, _dgPoint, out Vector3 sdg);
@@ -3926,6 +3933,17 @@ public partial class HarvestController
 				OvDigOff();
 			}
 			return;
+		}
+		if (_dgPart && _clFor != null && _clFor.IsRock)
+		{
+			// J2: a rock piece's round - a swing on that rock is progress; on silver a swing that met the vein ends the round
+			if (hitOre && OvIsSilver(_vp))
+			{
+				_clRockWhy = "a swing at the rock piece hit the vein";
+				OvDigOff();
+				return;
+			}
+			hitOre = rockHit && _ovThingHitGo.GetComponentInParent<MineRock5>() == _clFor.Rock;
 		}
 		if (_dgPart)
 		{

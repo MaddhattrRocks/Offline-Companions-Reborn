@@ -75,6 +75,8 @@ public partial class HarvestController
 		public HarvestController Holder;
 
 		public HarvestController Holder2;  // F9: a second companion, from more than a quarter turn round it
+
+		public bool IsRock;       // J2: a piece of a plain rock (not this vein) that a part of the vein rests on
 	}
 
 	// GG2: one point of the dirt list
@@ -144,6 +146,13 @@ public partial class HarvestController
 		public readonly List<OvPart> Parts = new List<OvPart>();
 
 		public readonly Dictionary<int, OvPart> ById = new Dictionary<int, OvPart>();
+
+		// J2 (John 11-22 18:41Z: "clear the stone so that is either not held up by the ground or it is not holding up the
+		// ore vein"): the plain-rock pieces a part of the vein rests on (the game's rule, lower than the vein's centre),
+		// made again at each parts look; RockById keeps each piece's set-aside and holders between looks
+		public readonly List<OvPart> RockPieces = new List<OvPart>();
+
+		public readonly Dictionary<int, OvPart> RockById = new Dictionary<int, OvPart>();
 
 		// F10 (silver): the vein's middle line - the middle of each 1 m slice along its long direction, joined slice to slice
 		public readonly List<Vector3> Mid = new List<Vector3>();
@@ -259,6 +268,7 @@ public partial class HarvestController
 			s_cTerrain = LayerMask.NameToLayer("terrain");
 		}
 		c.Parts.Clear();
+		c.RockPieces.Clear();   // J2
 		int alive = 0, popped = 0;
 		foreach (MineRock5 rock in _vp.Rocks)
 		{
@@ -459,6 +469,12 @@ public partial class HarvestController
 			{
 				part.OnWorld = true;   // X2: held by a thing that can never go - this part has to be mined
 			}
+			// J2: every plain-rock piece this part rests on by the game's rule (a breakable thing lower than the vein's
+			// centre), whatever else holds the part
+			if (m != null && !OvSameOre(_vp, m) && o.transform.position.y < origin.y && o.GetComponentInParent<IDestructible>() != null)
+			{
+				OvRockPieceNote(c, o, m);
+			}
 			if (part.Root)
 			{
 				continue;
@@ -484,6 +500,73 @@ public partial class HarvestController
 			}
 		}
 	}
+
+	// J2: a plain-rock piece goes on this look's list once (its set-aside and holders kept from the last look)
+	private void OvRockPieceNote(OvClear c, Collider o, MineRock5 m)
+	{
+		int id = o.GetInstanceID();
+		if (!c.RockById.TryGetValue(id, out OvPart rp))
+		{
+			rp = new OvPart { Rock = m, C = o, IsRock = true };
+			c.RockById[id] = rp;
+		}
+		if (c.RockPieces.Contains(rp))
+		{
+			return;
+		}
+		Bounds b = o.bounds;
+		rp.Centre = b.center;
+		rp.Half = b.extents;
+		rp.Why = "a vein part rests on it";
+		c.RockPieces.Add(rp);
+	}
+
+	// J2: the nearest rock piece it can work (not set aside, not two others on it) gets a round of the part's own kind
+	// (OvClRound: its place, the swing at the piece's own rock, 3 swings without work end it, set aside until something
+	// within 2 m changes). True = a round started.
+	private bool OvRockFirst(OvClear c)
+	{
+		if (c.RockPieces.Count == 0)
+		{
+			return false;
+		}
+		Vector3 me = base.transform.position;
+		List<OvPart> pick = new List<OvPart>();
+		foreach (OvPart rp in c.RockPieces)
+		{
+			if (rp.C == null || !rp.C.gameObject.activeInHierarchy || OvPartCooling(rp) || OvPartHeldByOther(rp))
+			{
+				continue;
+			}
+			pick.Add(rp);
+		}
+		pick.Sort((OvPart a, OvPart b) => Flat(me, a.Centre).CompareTo(Flat(me, b.Centre)));
+		int tries = 0;
+		foreach (OvPart rp in pick)
+		{
+			if (tries++ >= 6)
+			{
+				break;   // the rest next look
+			}
+			int r = OvStandForPart(rp, out Vector3 stand, out string why);
+			if (r != 0)
+			{
+				OvPartCool(rp, why, wait: false);
+				continue;
+			}
+			OvSpot ws = OvClSpotFor(rp);
+			if (ws != null && OvWayOutNeeded(ws))
+			{
+				OvWayOutHere(ws);
+				return true;
+			}
+			OvClBegin(rp, stand, ladder: false);
+			return true;
+		}
+		return false;
+	}
+
+	private string _clRockWhy;   // J2: why a rock piece's round stopped on silver (its swing would meet / met the vein)
 
 	// F9 (John 11-21 23:13Z / 23:30Z): at most two on a part - held by others only when both its places are other
 	// companions working it
@@ -667,6 +750,11 @@ public partial class HarvestController
 		}
 		// Z2: a tree, log, stump or rock a part rests on is cleared first, the Wood / Stone job's way
 		if (OvHoldFirst(c))
+		{
+			return true;
+		}
+		// J2: the plain-rock pieces a part of the vein rests on, before the dirt and the parts
+		if (Time.time >= _clNextPick && OvRockFirst(c))
 		{
 			return true;
 		}
@@ -2665,6 +2753,10 @@ public partial class HarvestController
 		}
 		int oreFirst = 0, offFloor = 0, triedN = 0;
 		bool digIn = false;
+		// J1 (John 11-22 18:41Z: dirt above the vein may be dug from on the dirt; "Dirt that is on top of the ore should get
+		// cleared as they clear under it"): while the point's ground is above its part's top, a place up on the dirt is
+		// allowed too (every other check stays); once it is down to the part's top, the trench-floor rule again
+		bool dirtAbove = silver && dirt != null && dirt.Part != null && GroundAt(dirt.P) > dirt.Part.Centre.y + dirt.Part.Half.y;
 		// F7 (a): every vein - a place it repositioned away from (it dug its own floor there) isn't taken again for this point
 		List<Vector3> tried = dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
 		// F7 (c) / G1, silver: a place already more than 2 m under the point's part isn't taken; nor one where the game's
@@ -2692,7 +2784,7 @@ public partial class HarvestController
 					tooLow++;
 					continue;
 				}
-				if (!OvOnTrenchFloor(q))
+				if (!dirtAbove && !OvOnTrenchFloor(q))   // J1
 				{
 					offFloor++;
 					continue;
@@ -2736,7 +2828,7 @@ public partial class HarvestController
 						{
 							q.y = mf;
 						}
-						if (!OvOnTrenchFloor(q))
+						if (!dirtAbove && !OvOnTrenchFloor(q))   // J1
 						{
 							continue;
 						}
@@ -2963,6 +3055,11 @@ public partial class HarvestController
 			{
 				continue;
 			}
+			// J2 (silver): a rock piece only from where no ray of the swing meets the vein first
+			if (part.IsRock && OvIsSilver(_vp) && !OvSwingClean(a, pt, part.Centre, out _, part.C))
+			{
+				continue;
+			}
 			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
 			// MP3 (the map-path list, John 2026-11-21): a place that would be chosen is dropped when the map says there is
 			// no way there from where it stands (not just one step too high - MP4 cuts that on the walk); at most 5 asked
@@ -3151,9 +3248,11 @@ public partial class HarvestController
 	}
 
 	// F7 (d): dig = where the game digs on that swing (the first ray's hit, when it is the ground)
-	private bool OvSwingClean(Attack a, Vector3 pt, Vector3 aim, out Vector3 dig)
+	// J2: want = a rock piece - then true = no ray's first hit is the vein and some ray's first hit is that piece
+	private bool OvSwingClean(Attack a, Vector3 pt, Vector3 aim, out Vector3 dig, Collider want = null)
 	{
 		dig = Vector3.zero;
+		bool wantHit = false;
 		if (s_swMask < 0)
 		{
 			s_swMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "terrain", "character", "character_net", "character_ghost", "hitbox", "character_noenv", "vehicle");
@@ -3216,6 +3315,10 @@ public partial class HarvestController
 			{
 				return false;   // this ray strikes the vein (H2: or another vein of its ore)
 			}
+			if (want != null && first == want)
+			{
+				wantHit = true;   // J2
+			}
 			if (!anyHit)
 			{
 				anyHit = true;
@@ -3226,7 +3329,7 @@ public partial class HarvestController
 				}
 			}
 		}
-		return anyHit && groundFirst;
+		return want != null ? wantHit : anyHit && groundFirst;
 	}
 
 	// P1: on the pit's ground (K7: inside the trench ring and the trench). Before the pit's
@@ -3641,6 +3744,7 @@ public partial class HarvestController
 	private void OvClBegin(OvPart part, Vector3 stand, bool ladder, bool low = false)
 	{
 		_clFor = part;
+		_clRockWhy = null;   // J2
 		OvPartClaim(part);   // F9
 		_sbWhy = null;   // SV5
 		_clStand = stand;
@@ -3729,8 +3833,12 @@ public partial class HarvestController
 			if (part.C != null)
 			{
 				c.ById.Remove(part.C.GetInstanceID());
+				c.RockById.Remove(part.C.GetInstanceID());   // J2
 			}
-			c.Mined++;
+			if (!part.IsRock)
+			{
+				c.Mined++;
+			}
 			c.ProgAt = Time.time;
 			c.DirtAt = -100f;
 			OvPartUnclaim(part);   // F9
@@ -3777,7 +3885,7 @@ public partial class HarvestController
 				return;   // a swing hit a thing and handed it to the Wood / Stone flow: the round goes on after it
 			}
 			// K3: why the round ended
-			OvClFail(_dgLimit ? $"digging toward it from {MHR_Mover.Fmt(me)} reached the game's 8 m dig limit" : _dgPartMiss >= OvPartMissMax ? $"{OvPartMissMax} swings from {MHR_Mover.Fmt(me)} without hitting it" : $"{OvNoProgSwings} swings in a row from {MHR_Mover.Fmt(me)} neither hit it nor dug toward it");
+			OvClFail(_clRockWhy != null ? _clRockWhy + $" (from {MHR_Mover.Fmt(me)})" : _dgLimit ? $"digging toward it from {MHR_Mover.Fmt(me)} reached the game's 8 m dig limit" : _dgPartMiss >= OvPartMissMax ? $"{OvPartMissMax} swings from {MHR_Mover.Fmt(me)} without hitting it" : $"{OvNoProgSwings} swings in a row from {MHR_Mover.Fmt(me)} neither hit it nor dug toward it");
 			return;
 		}
 		if (_clLadder)

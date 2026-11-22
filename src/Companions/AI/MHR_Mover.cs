@@ -97,6 +97,23 @@ namespace Companions
             return c != null && s_s.TryGetValue(c.gameObject.GetInstanceID(), out s) ? s : null;
         }
         static void Dbg(string msg) { if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug(msg); }
+        // J4 (John 11-22: which companion, and what it is stuck on): the companion the mover is working for, for the log
+        static string Who() { return s_ctxChar != null ? "|" + s_ctxChar.m_name : ""; }
+
+        // J4: the first thing straight ahead at chest height within 1.5 m (its own colliders and triggers skipped) - log only
+        static string AheadSaid(Character c, Vector3 pos, Vector3 dir)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return "";
+            RaycastHit[] hits = Physics.RaycastAll(pos + Vector3.up * 1.0f, dir.normalized, 1.5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            float best = float.MaxValue; string name = null;
+            foreach (RaycastHit h in hits)
+            {
+                if (h.collider == null || (c != null && h.collider.transform.IsChildOf(c.transform)) || h.distance >= best) continue;
+                best = h.distance; name = h.collider.transform.root.name;
+            }
+            return name != null ? ", ahead of it " + best.ToString("F1") + " m: \"" + name + "\"" : ", nothing ahead within 1.5 m";
+        }
         public static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
         static float Flat(Vector3 a, Vector3 b) { return new Vector2(a.x - b.x, a.z - b.z).magnitude; }
 
@@ -244,7 +261,7 @@ namespace Companions
             {
                 // W3: the mover gave up on this way out - the next one (it is not taken again in this walk)
                 s.VeinOutTried.Add(s.VeinOutId);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] no way to " + Fmt(s.VeinOutAt) + " on the way out of the trench - the next way");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] no way to " + Fmt(s.VeinOutAt) + " on the way out of the trench - the next way");
                 s.VeinOut = 0; s.HasDetour = false; s.GaveUp = false; VeinLeg(s);
                 Plan(ai, c, s, pos, now);
             }
@@ -271,7 +288,7 @@ namespace Companions
                     {
                         s.GaveUp = true; s.GaveUpAt = now;
                         Halt(ai, c, s);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the game's route goes under something low at " + Fmt(ahead) + " (the pit map: no room over its body there) - not walking it");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] the game's route goes under something low at " + Fmt(ahead) + " (the pit map: no room over its body there) - not walking it");
                         return false;
                     }
                 }
@@ -293,7 +310,7 @@ namespace Companions
             {
                 if (now < s.DescendUntil) { Descend(ai, c, s, pos, now, tag); return false; }
                 MarkBadLadder(s.ClimbLadderId, now, 300f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get down the ladder (got to " + Fmt(pos) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get down the ladder (got to " + Fmt(pos) + ")");
                 s.DescendLadder = false;
             }
 
@@ -312,7 +329,7 @@ namespace Companions
                 if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && ((!dropStep && LedgeAhead(pos, s.StepDir, 0.8f, out _)) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopped a step - a drop, fire or spikes ahead");
                     return false;
                 }
                 // F6 (log cdfe000a: Je's unstuck side step and the step that replaced a jump took it under the vein): every
@@ -320,7 +337,7 @@ namespace Companions
                 if (c.IsOnGround() && !c.IsSwimming() && !HeadOk(ai, c, s, pos, s.StepDir))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step at " + Fmt(pos) + " - no head room ahead");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopped a step at " + Fmt(pos) + " - no head room ahead");
                     return false;
                 }
                 Steer(ai, c, s, s.StepDir, s.StepRun, false); return false;
@@ -336,8 +353,8 @@ namespace Companions
             // waiting on the bank until there's stamina for the swim
             if (s.WaitStamina)
             {
-                if (Stamina(ai) >= s.NeedStamina) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 30f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] rested enough to swim across"); }
-                else if (now - s.WaitStart > 40f) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 60f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] waited long enough - swimming across"); }
+                if (Stamina(ai) >= s.NeedStamina) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 30f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] rested enough to swim across"); }
+                else if (now - s.WaitStart > 40f) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 60f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] waited long enough - swimming across"); }
                 else { Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; return false; }
             }
 
@@ -376,7 +393,7 @@ namespace Companions
                 {
                     s.LadderPending = false; s.HasDetour = false; s.DescendUntil = now + 10f;
                     if (s.PendingChain != null && s.PendingDown && s.PendingChain.Count >= 2) { StartChain(s, s.PendingChain, 0, pos, now, tag, true); s.PendingChain = null; return false; }
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the top of the ladder - going down");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the top of the ladder - going down");
                     return false;
                 }
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
@@ -385,19 +402,19 @@ namespace Companions
                     if (s.PendingChain != null && !s.PendingDown && s.PendingChain.Count >= 2) { StartChain(s, s.PendingChain, 0, pos, now, tag); s.PendingChain = null; return false; }
                     s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     NoteLadderClimb(s, now, tag);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the foot of the ladder - climbing");
                     return false;
                 }
                 if (!s.DescendLadder && pos.y < s.ClimbBase.y - 1.5f && c.IsOnGround())
                 {
                     s.LadderPending = false; s.HasDetour = false; s.NextLadderClimbSearch = 0f; s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
                     Plan(ai, c, s, pos, now);
                 }
                 else if (now > s.DetourUntil || !s.HasDetour)
                 {
                     s.LadderPending = false; s.HasDetour = false; MarkBadLadder(s.ClimbLadderId, now, 120f);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to the " + (s.DescendLadder ? "top of the ladder at " + Fmt(s.DescendTop) : "foot of the ladder at " + Fmt(s.ClimbBase)));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get to the " + (s.DescendLadder ? "top of the ladder at " + Fmt(s.DescendTop) : "foot of the ladder at " + Fmt(s.ClimbBase)));
                     s.DescendLadder = false;
                     Plan(ai, c, s, pos, now);
                 }
@@ -415,20 +432,20 @@ namespace Companions
                 {
                     s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
                     s.HasDetour = true; s.Detour = s.VeinOutTop; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the " + (s.VeinDown ? "top" : "bottom") + " of the way out of the trench - going " + (s.VeinDown ? "down" : "up") + " to " + Fmt(s.VeinOutTop));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the " + (s.VeinDown ? "top" : "bottom") + " of the way out of the trench - going " + (s.VeinDown ? "down" : "up") + " to " + Fmt(s.VeinOutTop));
                     Plan(ai, c, s, pos, now);
                 }
                 else if (there)
                 {
                     s.VeinOut = 0; s.HasDetour = false;
                     s.VeinOutTried.Add(s.VeinOutId);   // U3: used - not taken again in this walk (a top on the pit's edge can't send it back down)
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.VeinDown ? "down" : "up") + " the way out of the trench at " + Fmt(pos));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (s.VeinDown ? "down" : "up") + " the way out of the trench at " + Fmt(pos));
                     Plan(ai, c, s, pos, now);
                 }
                 else if (s.VeinOutGiveUp)
                 {
                     s.VeinOutTried.Add(s.VeinOutId);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " (stuck twice with its route no shorter) - the next way");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " (stuck twice with its route no shorter) - the next way");
                     VeinLeg(s);
                     s.VeinOut = 0; s.HasDetour = false;
                     Plan(ai, c, s, pos, now);
@@ -471,7 +488,7 @@ namespace Companions
                 if (MHR_Cart.AroundCart(c, pos, target, 0.6f, out via, s.GoalCart))
                 {
                     target = via;
-                    if (CompanionsPlugin.LogDetailed && now - s.CartLog > 3f) { s.CartLog = now; Dbg("[Move|" + tag + "] walking round a cart, via " + Fmt(via)); }
+                    if (CompanionsPlugin.LogDetailed && now - s.CartLog > 3f) { s.CartLog = now; Dbg("[Move|" + tag + Who() + "] walking round a cart, via " + Fmt(via)); }
                 }
             }
 
@@ -517,7 +534,7 @@ namespace Companions
             {
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping the gap at " + Fmt(pos + dir * 0.8f));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping the gap at " + Fmt(pos + dir * 0.8f));
                 return false;
             }
 
@@ -538,7 +555,7 @@ namespace Companions
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 6f; v.z = dir.z * 6f; rb.linearVelocity = v; }
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping over a fire at " + Fmt(pos + dir * 1.2f));
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping over a fire at " + Fmt(pos + dir * 1.2f));
                     return false;
                 }
                 Vector3 round;
@@ -553,7 +570,7 @@ namespace Companions
                 else
                 {
                     Halt(ai, c, s);
-                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stopping at the edge of the lava at " + Fmt(pos + dir * 0.9f)); }
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stopping at the edge of the lava at " + Fmt(pos + dir * 0.9f)); }
                     if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
                     return false;
                 }
@@ -576,7 +593,7 @@ namespace Companions
                     Vector3 along = Vector3.Cross(Vector3.up, off);
                     if (Vector3.Dot(along, dir) < 0f) along = -along;
                     dir = (along + off * (spikeClose ? 1.5f : 0.6f)).normalized;
-                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] keeping off the spikes at " + Fmt(cp)); }
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] keeping off the spikes at " + Fmt(cp)); }
                 }
             }
 
@@ -589,7 +606,7 @@ namespace Companions
                 if (LedgeAhead(pos, dir, 0.7f, out drop))
                 {
                     Halt(ai, c, s);
-                    if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopping at the edge at " + Fmt(pos + dir * 0.7f) + " (" + drop.ToString("F1") + "m down)"); }
+                    if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopping at the edge at " + Fmt(pos + dir * 0.7f) + " (" + drop.ToString("F1") + "m down)"); }
                     if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
                     return false;
                 }
@@ -645,7 +662,7 @@ namespace Companions
             // halfway by every reset (log: 9 "climbing out ... try 1", none finished)
             bool keepForced = !s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
             if (!s.ClimbLadder && now < s.ClimbUntil && !keepForced && CompanionsPlugin.LogDetailed)
-                Dbg("[Move|" + s.Tag + "] climb out at " + Fmt(s.ClimbTop) + " dropped: " + (s.Tag != tag ? "a new task (" + tag + ")" : "the new goal " + Fmt(goal) + " isn't above it"));
+                Dbg("[Move|" + s.Tag + Who() + "] climb out at " + Fmt(s.ClimbTop) + " dropped: " + (s.Tag != tag ? "a new task (" + tag + ")" : "the new goal " + Fmt(goal) + " isn't above it"));
             bool wasForced = s.ForcedClimb;
             int cTries = s.ClimbTries; List<Vector3> cTried = keepForced ? new List<Vector3>(s.ClimbTried) : null;
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
@@ -709,7 +726,7 @@ namespace Companions
             s.UseLadder = best; s.LadderUntil = now + 20f;
             s.HasDetour = true; s.Detour = best.transform.position; s.DetourUntil = s.LadderUntil; s.NextPlan = 0f;
             s.StepUntil = 0f; s.ClimbUntil = 0f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be - going up the ladder at " + Fmt(best.transform.position));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be - going up the ladder at " + Fmt(best.transform.position));
             return true;
         }
 
@@ -717,7 +734,7 @@ namespace Companions
         static bool UseLadderNow(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             Ladder l = s.UseLadder;
-            if (l == null || now > s.LadderUntil) { if (s.UseLadder != null || (object)s.UseLadder != null) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get to the ladder"); } s.UseLadder = null; return false; }
+            if (l == null || now > s.LadderUntil) { if (s.UseLadder != null || (object)s.UseLadder != null) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get to the ladder"); } s.UseLadder = null; return false; }
             if (Vector3.Distance(pos, l.transform.position) >= l.m_useDistance - 0.1f) return false;
             Humanoid h = c as Humanoid;
             if (h == null) { s.UseLadder = null; return false; }
@@ -725,7 +742,7 @@ namespace Companions
             s.LaddersUsed.Add(l);
             s.UseLadder = null; s.HasDetour = false; s.NextPlan = 0f; s.Path.Clear();
             s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue; s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = ai.transform.position;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] went up the ladder to " + Fmt(ai.transform.position));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] went up the ladder to " + Fmt(ai.transform.position));
             return true;
         }
 
@@ -786,7 +803,7 @@ namespace Companions
                     {
                         s.HasDetour = true; s.Detour = start; s.DetourUntil = now + 3f;
                         s.Path.Clear(); s.Path.Add(start);
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no route from " + Fmt(pos) + " - stepping to " + Fmt(start) + " to find one");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no route from " + Fmt(pos) + " - stepping to " + Fmt(start) + " to find one");
                     }
                 }
             }
@@ -821,9 +838,9 @@ namespace Companions
                             if (dryLen <= wetLen * 1.5f + extra)
                             {
                                 s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false; swim = 0f; s.RouteSwim = 0f;
-                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the water (" + dryLen.ToString("F0") + "m) instead of swimming (" + wetLen.ToString("F0") + "m)");
+                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the water (" + dryLen.ToString("F0") + "m) instead of swimming (" + wetLen.ToString("F0") + "m)");
                             }
-                            else if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] swimming: the dry way is " + dryLen.ToString("F0") + "m against " + wetLen.ToString("F0") + "m");
+                            else if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] swimming: the dry way is " + dryLen.ToString("F0") + "m against " + wetLen.ToString("F0") + "m");
                         }
                     }
                     if (swim > 0.5f)
@@ -837,7 +854,7 @@ namespace Companions
                             if (GetPath(pos, goal, s_tmp, Pathfinding.AgentType.HumanoidAvoidWater, true))
                             {
                                 s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false;
-                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] too tired to swim " + swim.ToString("F0") + "m - going around the water");
+                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] too tired to swim " + swim.ToString("F0") + "m - going around the water");
                             }
                             else { s.TooTired = true; s.NeedStamina = need; }   // stops at the water's edge (see TryWaterJump)
                         }
@@ -860,11 +877,11 @@ namespace Companions
                 if (!line && straight < 25f && longWay && s_hopWhy != null && now >= s.NextLineLog)
                 {
                     s.NextLineLog = now + 15f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] taking the " + len.ToString("F0") + "m way round, not straight (" + straight.ToString("F0") + "m): " + s_hopWhy);
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] taking the " + len.ToString("F0") + "m way round, not straight (" + straight.ToString("F0") + "m): " + s_hopWhy);
                 }
                 if (line && (longWay || hops > 0))
                 {
-                    if (!wasDirect) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
+                    if (!wasDirect) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
                     s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;
                 }
             }
@@ -879,7 +896,7 @@ namespace Companions
                 if (s.MapHeld && hv != null && hv.OvMapChangedAlong(s.MapHeldPath, s.MapHeldAt))
                 {
                     s.MapHeld = false;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the pit map changed along the map route it got stuck on - the map route again");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the pit map changed along the map route it got stuck on - the map route again");
                 }
                 if (hv != null && hv.OnVein && !s.MapHeld)
                 {
@@ -889,7 +906,7 @@ namespace Companions
                         if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
                         {
                             s.NextMapLog = now + 3f;
-                            Dbg("[Move|" + s.Tag + "] map route to " + Fmt(goal) + ": " + minfo + ", " + PathLength(pos, s_mapTmp).ToString("F1") + " m (the game's route: " + (s.Partial ? "partial" : PathLength(pos, s.Path).ToString("F1") + " m") + ")");
+                            Dbg("[Move|" + s.Tag + Who() + "] map route to " + Fmt(goal) + ": " + minfo + ", " + PathLength(pos, s_mapTmp).ToString("F1") + " m (the game's route: " + (s.Partial ? "partial" : PathLength(pos, s.Path).ToString("F1") + " m") + ")");
                         }
                         s.Path.Clear(); s.Path.AddRange(s_mapTmp); s.Corner = 0; s.PathOk = true; s.Partial = false; s.RouteSwim = 0f;
                         if (!s.HasDetour) s.MainPartial = false;
@@ -899,7 +916,7 @@ namespace Companions
                     else if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
                     {
                         s.NextMapLog = now + 3f;
-                        Dbg("[Move|" + s.Tag + "] no map route to " + Fmt(goal) + " (" + (mr == 0 ? "the map says no way: " : "the map can't tell: ") + minfo + ") - the game's route");
+                        Dbg("[Move|" + s.Tag + Who() + "] no map route to " + Fmt(goal) + " (" + (mr == 0 ? "the map says no way: " : "the map can't tell: ") + minfo + ") - the game's route");
                     }
                 }
             }
@@ -913,7 +930,7 @@ namespace Companions
                 // side, that door isn't the answer (1.4.77 log: back and forth through the same gate six times)
                 Door skip = now - s.LastRouteDoorAt < 30f ? s.LastRouteDoor : null;
                 Vector3 spot; Door d = RouteDoor(pos, goal, out spot, skip);
-                if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
+                if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
                 // 1.4.84: no door either: a spot the route does reach, from which the rest can be hopped (stairs)
                 else if (!c.IsSwimming())
                 {
@@ -921,7 +938,7 @@ namespace Companions
                     if (FindHopBridge(pos, goal, out b) && Flat(pos, b) > 1.0f)
                     {
                         s.HasDetour = true; s.Detour = b; s.DetourUntil = now + 10f + Flat(pos, b) * 0.5f; s.NextPlan = 0f;
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no route to " + Fmt(goal) + " - going to " + Fmt(b) + " to hop the rest");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no route to " + Fmt(goal) + " - going to " + Fmt(b) + " to hop the rest");
                     }
                 }
             }
@@ -942,7 +959,7 @@ namespace Companions
                 bool was = s.HotOk;
                 s.HotOk = MHR_Heat.HeatProof(s_ctxChar) || (!MHR_Heat.NoGo(s_ctxChar) && MHR_Heat.RouteHeatPeak(s_ctxChar, pos, s.Path, 80f) < MHR_Heat.Threshold(s_ctxChar) * MHR_Heat.RouteMargin);
                 s_ctxHotOk = s.HotOk;
-                if (s.HotOk != was && CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] water that burns on the way: " + (s.HotOk ? "short enough to cross" : "keeping out of it"));
+                if (s.HotOk != was && CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] water that burns on the way: " + (s.HotOk ? "short enough to cross" : "keeping out of it"));
             }
             if (MHR_Heat.Gradient(pos) <= 0f && !WorldGenerator.IsAshlands(pos.x, pos.z)) return;
             if (LavaPaint(goal)) return;
@@ -965,16 +982,16 @@ namespace Companions
                             if (LavaRing(p, prev, next, i == 0, out way))
                             {
                                 s.Path.InsertRange(i, way);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] going round the lava at " + Fmt(p) + " by " + way.Count + " spots"); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] going round the lava at " + Fmt(p) + " by " + way.Count + " spots"); }
                                 return;
                             }
                             if (s.Tag != FollowTag)
                             {
                                 s.GaveUp = true; s.GaveUpAt = now;
-                                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is over lava at " + Fmt(p) + " - not going");
+                                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] the only way to " + Fmt(goal) + " is over lava at " + Fmt(p) + " - not going");
                                 return;
                             }
-                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the route crosses lava at " + Fmt(p) + " and there's no clear way round - keeping to its edge"); }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] the route crosses lava at " + Fmt(p) + " and there's no clear way round - keeping to its edge"); }
                             return;
                         }
                     }
@@ -1065,7 +1082,7 @@ namespace Companions
                             if (FireBypass(fire, prev, dir, next, out a, out b))
                             {
                                 s.Path.Insert(i, b); s.Path.Insert(i, a);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
                                 return;
                             }
                             // 1.5.70: a ring of spots round the fire, the shortest chain of clear stretches through them (log
@@ -1073,7 +1090,7 @@ namespace Companions
                             if (FireRing(fire, prev, next, i == 0, out way))
                             {
                                 s.Path.InsertRange(i, way);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " by " + way.Count + " spots round it"); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the fire at " + Fmt(fire.transform.position) + " by " + way.Count + " spots round it"); }
                                 return;
                             }
                             // no way round: a job leaves this errand (it skips that chest/target - Repair and Restock sorting
@@ -1081,10 +1098,10 @@ namespace Companions
                             if (s.Tag != FollowTag)
                             {
                                 s.GaveUp = true; s.GaveUpAt = now;
-                                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is through the fire at " + Fmt(fire.transform.position) + " - not going");
+                                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the only way to " + Fmt(goal) + " is through the fire at " + Fmt(fire.transform.position) + " - not going");
                                 return;
                             }
-                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
                             return;
                         }
                     }
@@ -1301,11 +1318,11 @@ namespace Companions
                 for (int i = s.Corner; i < s.Path.Count; i++) s.MapHeldPath.Add(s.Path[i]);
                 s.MapHeld = true; s.MapHeldAt = now;
                 s.MapRoute = false; s.Direct = false; s.MapFails++; s.NextPlan = 0f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
                 return;
             }
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
-            if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
+            if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
             // 1.5.91: pulling a cart: no side-steps, hops, climbs or ladders (each one yanked it off the shafts). Open a door
             // that's in the way, then try new routes, then wait (CartFollow stands still until the player moves on).
             if (MHR_Cart.Pulling(c))
@@ -1319,12 +1336,12 @@ namespace Companions
                 if (cstep < 3)
                 {
                     s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck with a cart (" + why + ") at " + Fmt(pos) + " - a new route, no side-steps while pulling");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck with a cart (" + why + ") at " + Fmt(pos) + " - a new route, no side-steps while pulling");
                     return;
                 }
                 s.GaveUp = true; s.GaveUpAt = now;
                 Halt(ai, c, s);
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck with a cart at " + Fmt(pos) + " - waiting");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck with a cart at " + Fmt(pos) + " - waiting");
                 return;
             }
             int step = s.Ladder++;
@@ -1347,7 +1364,7 @@ namespace Companions
                 {
                     if (hadLand && Vector3.Distance(s.DropLand, lastLand) <= 1f)
                     {
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] the same drop-down as before (lands at " + Fmt(s.DropLand) + ") - the stuck steps go on");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] the same drop-down as before (lands at " + Fmt(s.DropLand) + ") - the stuck steps go on");
                     }
                     else s.Ladder = 0;
                     return;
@@ -1376,7 +1393,7 @@ namespace Companions
                         // after two full rounds of this without getting any closer, stop
                         if (++s.Passes > 2) { s.Ladder = 99; Unstick(ai, c, s, pos, target, now, tag, still, noCloser); return; }
                         Vector3 det;
-                        if (FindDetour(pos, s.Goal, dir, out det)) { s.HasDetour = true; s.Detour = det; s.DetourUntil = now + 6f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - trying another way via " + Fmt(det)); return; }
+                        if (FindDetour(pos, s.Goal, dir, out det)) { s.HasDetour = true; s.Detour = det; s.DetourUntil = now + 6f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + " - trying another way via " + Fmt(det)); return; }
                         Hop(ai, c, s, pos, dir, now, tag, why);
                         return;
                     }
@@ -1384,7 +1401,7 @@ namespace Companions
                 default:
                     s.GaveUp = true; s.GaveUpAt = now;
                     Halt(ai, c, s);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
                     // 1.5.42: say so when it's about you or your order (following, a move order, a fight, a hunt); for a job
                     // it's only the reason in its status (user, speech review: "I can't get up there")
                     {
@@ -1407,7 +1424,7 @@ namespace Companions
             {
                 Vector3 wpick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, side) ? side : -side;
                 s.StepDir = wpick; s.StepRun = false; s.StepUntil = now + 1.2f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - swimming to the side");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - swimming to the side");
                 return;
             }
             if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
@@ -1415,7 +1432,7 @@ namespace Companions
             // F6: only a way with room over its body
             Vector3 pick = SafeClear(pos, a) && HeadOk(ai, c, s, pos, a) ? a : SafeClear(pos, b) && HeadOk(ai, c, s, pos, b) ? b : SafeClear(pos, back) && HeadOk(ai, c, s, pos, back) ? back : HeadOk(ai, c, s, pos, side) ? side : Vector3.zero;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - stepping back to the side");
         }
 
         // ---------- climbing out ----------
@@ -1479,7 +1496,7 @@ namespace Companions
             s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false; s.ClimbLadder = false; s.ForcedClimb = true; s.LastGo = now;
             s.GaveUp = false; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] in a hole " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] in a hole " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
             return true;
         }
 
@@ -1488,7 +1505,7 @@ namespace Companions
         {
             if (why == null || !CompanionsPlugin.LogDetailed || now < s.NextClimbWhyLog) return;
             s.NextClimbWhyLog = now + 10f;
-            Dbg("[Move|" + tag + "] no way to climb out at " + Fmt(pos) + " up to " + needY.ToString("F1") + ":" + why.ToString());
+            Dbg("[Move|" + tag + Who() + "] no way to climb out at " + Fmt(pos) + " up to " + needY.ToString("F1") + ":" + why.ToString());
         }
 
         // 1.5.2: a built ladder (Valheim's wooden ladders are steep stairs a player hops up - user: "The player kind of hops
@@ -1510,7 +1527,7 @@ namespace Companions
             if (u.x >= 4f)
             {
                 MarkBadLadder(s.ClimbLadderId, now, 180f); s.LadderUses.Remove(s.ClimbLadderId);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
             }
         }
         static readonly Dictionary<int, float> s_badLadders = new Dictionary<int, float>();
@@ -1832,10 +1849,10 @@ namespace Companions
             ChainStepReset(s, pos, now);
             if (down)
             {
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] going down a chain of " + (chain.Count - idx) + " ladders to " + chain[chain.Count - 1].Bottom.ToString("F1") + " (first top " + Fmt(chain[idx].TopSpot) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] going down a chain of " + (chain.Count - idx) + " ladders to " + chain[chain.Count - 1].Bottom.ToString("F1") + " (first top " + Fmt(chain[idx].TopSpot) + ")");
                 return;
             }
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] climbing a chain of " + (chain.Count - idx) + " ladders up to " + chain[chain.Count - 1].Top.ToString("F1") + " (first foot " + Fmt(chain[idx].Foot) + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] climbing a chain of " + (chain.Count - idx) + " ladders up to " + chain[chain.Count - 1].Top.ToString("F1") + " (first foot " + Fmt(chain[idx].Foot) + ")");
         }
 
         static void ChainStepReset(S s, Vector3 pos, float now)
@@ -1897,7 +1914,7 @@ namespace Companions
                 if (s.ChainIdx >= s.Chain.Count)
                 {
                     RememberChain(s.Chain, now);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] up the ladders at " + Fmt(pos));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] up the ladders at " + Fmt(pos));
                     EndChain(s, now);
                     // walk on off the last one the way it faces - not over a harmful drop
                     float edge;
@@ -1905,7 +1922,7 @@ namespace Companions
                     return;
                 }
                 st = s.Chain[s.ChainIdx];
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] next ladder (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), foot at " + Fmt(st.Foot));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] next ladder (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), foot at " + Fmt(st.Foot));
             }
             // fell off: back onto the chain at the ladder whose foot is on this level, else give it up
             if (c.IsOnGround() && pos.y < st.Foot.y - 1.0f)
@@ -1914,10 +1931,10 @@ namespace Companions
                     if (Mathf.Abs(s.Chain[i].Foot.y - pos.y) < 1.0f && Flat(pos, s.Chain[i].Foot) < 6f)
                     {
                         s.ChainIdx = i; ChainStepReset(s, pos, now);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders - back on at ladder " + (i + 1) + "/" + s.Chain.Count);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off the ladders - back on at ladder " + (i + 1) + "/" + s.Chain.Count);
                         return;
                     }
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders (now at " + Fmt(pos) + ") - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off the ladders (now at " + Fmt(pos) + ") - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -1937,7 +1954,7 @@ namespace Companions
             if (!lifted && maxSt > 0f && c.IsOnGround())
             {
                 float st0 = Stamina(ai);
-                if (now >= s.ChainRestUntil && st0 < maxSt * 0.15f) { s.ChainRestUntil = now + 8f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] getting my breath back on the landing (" + (st0 / maxSt * 100f).ToString("F0") + "% stamina)"); }
+                if (now >= s.ChainRestUntil && st0 < maxSt * 0.15f) { s.ChainRestUntil = now + 8f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] getting my breath back on the landing (" + (st0 / maxSt * 100f).ToString("F0") + "% stamina)"); }
                 if (now < s.ChainRestUntil)
                 {
                     if (st0 >= maxSt * 0.4f) s.ChainRestUntil = 0f;
@@ -1982,7 +1999,7 @@ namespace Companions
             if (now - s.ChainProgressAt > 6f)
             {
                 MarkBadLadder(st.Id, now, 120f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck on ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck on ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -1992,7 +2009,7 @@ namespace Companions
             if (!lifted && c.IsOnGround() && LedgeAhead(pos, dir, 0.5f, out drop))
             {
                 Halt(ai, c, s);
-                if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] edge ahead on the ladders at " + Fmt(pos + dir * 0.5f) + " (" + drop.ToString("F1") + "m down) - not stepping off"); }
+                if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] edge ahead on the ladders at " + Fmt(pos + dir * 0.5f) + " (" + drop.ToString("F1") + "m down) - not stepping off"); }
                 return;
             }
             ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(dir), 540f * Time.deltaTime);
@@ -2018,7 +2035,7 @@ namespace Companions
                     if (++s.ChainJumps > 6)
                     {
                         MarkBadLadder(st.Id, now, 120f);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
                         EndChain(s, now);
                         return;
                     }
@@ -2026,7 +2043,7 @@ namespace Companions
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 2.5f; bv.z = dir.z * 2.5f; rb.linearVelocity = bv; }
                     s.ChainJumpAt = now + 1.0f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
                 }
             }
         }
@@ -2089,12 +2106,12 @@ namespace Companions
                 ChainStepReset(s, pos, now);
                 if (s.ChainIdx >= s.Chain.Count)
                 {
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] down the ladders at " + Fmt(pos));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] down the ladders at " + Fmt(pos));
                     EndChain(s, now);
                     return;
                 }
                 st = s.Chain[s.ChainIdx];
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] next ladder down (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), top at " + Fmt(st.TopSpot));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] next ladder down (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), top at " + Fmt(st.TopSpot));
             }
             // fell past it: carry on from the ladder whose top is on this level, else look again
             if (c.IsOnGround() && pos.y < st.Bottom - 1.0f)
@@ -2103,7 +2120,7 @@ namespace Companions
                     if (Mathf.Abs(s.Chain[i].Top - pos.y) < 1.2f)
                     {
                         s.ChainIdx = i; ChainStepReset(s, pos, now);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] slipped down the ladders - carrying on from ladder " + (i + 1) + "/" + s.Chain.Count);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] slipped down the ladders - carrying on from ladder " + (i + 1) + "/" + s.Chain.Count);
                         return;
                     }
                 EndChain(s, now);
@@ -2134,7 +2151,7 @@ namespace Companions
             if (now - s.ChainProgressAt > 6f)
             {
                 MarkBadLadder(st.Id, now, 120f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck going down ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck going down ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -2244,7 +2261,7 @@ namespace Companions
                         names.Add(nm.Replace("(Clone)", ""));
                         if (names.Count >= 8) break;
                     }
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall things close by: " + string.Join(", ", names) + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall things close by: " + string.Join(", ", names) + ")");
                 }
                 return false;
             }
@@ -2292,7 +2309,7 @@ namespace Companions
             {
                 s.LadderPending = true; s.HasDetour = true; s.Detour = s.ClimbBase; s.DetourUntil = now + 15f; s.NextPlan = 0f;
                 s.StepUntil = 0f;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
                 return true;
             }
             s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now;
@@ -2300,7 +2317,7 @@ namespace Companions
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + Flat(pos, bestB.center).ToString("F1") + "m away)");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + Flat(pos, bestB.center).ToString("F1") + "m away)");
             return true;
         }
 
@@ -2338,7 +2355,7 @@ namespace Companions
                         // level and close: just step across, like a player walking off the top of a ladder - a full leap
                         // carried it over a small floor and off the far side
                         s.StepDir = dir; s.StepRun = false; s.StepUntil = now + 0.5f;
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
                         return;
                     }
                     // a jump carries on past where it lands: not onto something with a harmful drop just beyond (a wall top)
@@ -2346,7 +2363,7 @@ namespace Companions
                     if (LedgeAhead(hit.point, dir, 1.0f, out beyond)) continue;
                     MHR_Jump.Leap(ai, c, dir);
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
                     return;
                 }
             }
@@ -2410,7 +2427,7 @@ namespace Companions
                 s.LadderPending = true; s.HasDetour = true; s.Detour = bestTop; s.DetourUntil = now + 15f; s.NextPlan = 0f;
             }
             else s.DescendUntil = now + 10f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - going down the ladder " + best.name.Replace("(Clone)", "") + " (top at " + Fmt(bestTop) + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + below.ToString("F1") + "m above where it needs to be - going down the ladder " + best.name.Replace("(Clone)", "") + " (top at " + Fmt(bestTop) + ")");
             return true;
         }
 
@@ -2421,7 +2438,7 @@ namespace Companions
             {
                 s.DescendLadder = false; s.DescendUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] went down the ladder to " + Fmt(pos));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] went down the ladder to " + Fmt(pos));
                 return;
             }
             Vector3 dir = s.ClimbBase - pos; dir.y = 0f;
@@ -2458,7 +2475,7 @@ namespace Companions
             {
                 s.VeinOut = 1; s.VeinDown = false; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
                 s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
                 return true;
             }
             // Y5 (John: "They need to carve a way out to get to the enemies")
@@ -2484,7 +2501,7 @@ namespace Companions
             if (!HarvestController.PitWay(pos, s.Goal, c.GetHeight(), s.VeinOutTried, out bool down, out Vector3 first, out Vector3 second, out int id)) return false;
             s.VeinOut = 1; s.VeinDown = down; s.VeinOutAt = first; s.VeinOutTop = second; s.VeinOutId = id; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
             s.HasDetour = true; s.Detour = first; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (down ? "going into the pit" : "leaving the pit") + " by its way out: " + Fmt(first) + " then " + Fmt(second));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (down ? "going into the pit" : "leaving the pit") + " by its way out: " + Fmt(first) + " then " + Fmt(second));
             return true;
         }
 
@@ -2497,7 +2514,7 @@ namespace Companions
             if (hv != null && hv.OnVein)
             {
                 if (VeinUp(ai, s, pos, now, tag, "stuck (" + why + ")")) return s.VeinOut == 1;
-                if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
+                if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + Who() + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
                 return false;
             }
             // how high we need to get: the last spot a full route started from, else the goal itself
@@ -2510,7 +2527,7 @@ namespace Companions
             s.ClimbTries++; s.ClimbTried.Add(top);
             s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false; s.ForcedClimb = false;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
             return true;
         }
 
@@ -2586,7 +2603,7 @@ namespace Companions
             {
                 s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0; s.NextLadderClimbSearch = 0f;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
                 return;
             }
             if (s.ClimbLadder && !atTop)
@@ -2620,13 +2637,13 @@ namespace Companions
                         {
                             s.ClimbVia = via; s.ClimbViaUntil = now + 3f;
                             Vector3 toVia = via - pos; toVia.y = 0f; dir = toVia;
-                            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] going round by " + Fmt(via) + " to the foot of the ladder, keeping to the floor");
+                            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] going round by " + Fmt(via) + " to the foot of the ladder, keeping to the floor");
                         }
                         else
                         {
                             s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
                             Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] no floor all the way to the foot of the ladder at " + Fmt(s.ClimbBase) + " - trying another");
+                            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] no floor all the way to the foot of the ladder at " + Fmt(s.ClimbBase) + " - trying another");
                             return;
                         }
                     }
@@ -2639,7 +2656,7 @@ namespace Companions
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
                 bool wasLadder = s.ClimbLadder;
                 if (wasLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
                 // 1.5.3: a ladder that worked isn't "tried" - after a fall it's the way back up (user log: "no ladder found"
                 // beside the two ladders he had just climbed)
@@ -2670,7 +2687,7 @@ namespace Companions
             if (now - s.ClimbProgressAt > 5f)
             {
                 s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't " + (s.ClimbLadder ? "get up the ladder" : "climb out") + " at " + Fmt(s.ClimbTop) + " (got to " + Fmt(pos) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't " + (s.ClimbLadder ? "get up the ladder" : "climb out") + " at " + Fmt(s.ClimbTop) + " (got to " + Fmt(pos) + ")");
                 if (s.ClimbLadder) MarkBadLadder(s.ClimbLadderId, now, 300f);
                 s.ClimbLadder = false;
                 return;
@@ -2701,7 +2718,7 @@ namespace Companions
                     {
                         s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0; s.NextPlan = 0f;
                         MarkBadLadder(s.ClimbLadderId, now, 120f);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (onIt ? "further up" : "onto") + " the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get " + (onIt ? "further up" : "onto") + " the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
                         s.ClimbLadder = false;
                         return;
                     }
@@ -2710,7 +2727,7 @@ namespace Companions
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
                     s.NextClimbJump = now + 1.2f;
                     s.ClimbJumps++;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping " + (onIt ? "up the ladder" : "onto the ladder") + " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping " + (onIt ? "up the ladder" : "onto the ladder") + " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")");
                 }
                 return;
             }
@@ -2736,7 +2753,7 @@ namespace Companions
         {
             if (!s.HasGood || !s.MainPartial || c.IsSwimming() || ai.IsInCombat) return;
             if (pos.y > s.GoodPos.y - 2f || Vector3.Distance(pos, s.GoodPos) > 40f || now - s.GoodAt > 300f) return;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] trapped at " + Fmt(pos) + " (" + (s.GoodPos.y - pos.y).ToString("F1") + "m below the last good spot) - moving back to " + Fmt(s.GoodPos));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] trapped at " + Fmt(pos) + " (" + (s.GoodPos.y - pos.y).ToString("F1") + "m below the last good spot) - moving back to " + Fmt(s.GoodPos));
             ai.MHR_PlaceAt(s.GoodPos);
             s.HasGood = false;
             Reset(s, s.Goal, s.GoodPos, now, tag);
@@ -3317,7 +3334,7 @@ namespace Companions
             {
                 WaterJump(ai, c, dir);
                 s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
                 return;
             }
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
@@ -3333,7 +3350,7 @@ namespace Companions
                 float safe = Mathf.Min(ModConfig.StuckDrop != null ? ModConfig.StuckDrop.Value : 8f, CompanionFallDamagePatch.SafeDrop(c, 0.3f));
                 if (!float.IsNaN(low) && pos.y - low > safe)
                 {
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] no hop toward " + Fmt(land) + " - the pit map has ground " + (pos.y - low).ToString("F1") + " m down within 2 m of it");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] no hop toward " + Fmt(land) + " - the pit map has ground " + (pos.y - low).ToString("F1") + " m down within 2 m of it");
                     Sidestep(ai, c, s, pos, dir, now, tag, why, true); return;
                 }
             }
@@ -3348,7 +3365,7 @@ namespace Companions
                 if (!HeadOk(ai, c, s, pos, sd)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
                 Face(ai, sd);
                 s.StepDir = sd; s.StepRun = false; s.StepUntil = now + 0.7f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
                 return;
             }
             Face(ai, dir);
@@ -3356,7 +3373,7 @@ namespace Companions
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
             s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - jumping toward " + Fmt(pos + dir * 2f));
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - jumping toward " + Fmt(pos + dir * 2f));
         }
 
         static bool Clear(Vector3 pos, Vector3 dir) { return Clear(pos, dir, 1.5f); }
@@ -3420,7 +3437,7 @@ namespace Companions
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
             s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil; s.DropFromY = pos.y;
             s.DropLand = bestLand; s.HasDropLand = true;   // S1
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
             return true;
         }
 
@@ -3460,7 +3477,7 @@ namespace Companions
             s.HopUpTries++;
             MHR_Jump.Leap(ai, c, bestDir);
             s.StepDir = bestDir; s.StepRun = true; s.StepUntil = now + 0.6f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
             return true;
         }
         // 1.5.52: a short step in a fight (back, aside, out of a group) that's safe all the way: no wall, ground under every
@@ -3585,7 +3602,7 @@ namespace Companions
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                 s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
                 return true;
             }
             // 1.4.99: close enough is good enough (user: "if it can make it most of the way across the water with a jump
@@ -3604,7 +3621,7 @@ namespace Companions
                         Leap(ai, c, dir, 6.5f);
                         s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                         s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
                         return true;
                     }
                 }
@@ -3613,7 +3630,7 @@ namespace Companions
             if (s.TooTired && waterAt <= 1.5f)
             {
                 s.WaitStamina = true; s.WaitStart = now; Halt(ai, c, s);
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] too tired to swim across - waiting on the bank");
                 return true;
             }
             // 1.5.75: never for loot - drops it would have to swim for are left (MHR_Loot)
@@ -3624,7 +3641,7 @@ namespace Companions
                 // something just off the bank or round a fence end (1.4.108 test)
                 Leap(ai, c, dir, 5f);
                 s.NextJump = now + 1.5f; s.NextDive = now + 20f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] diving in at " + Fmt(pos + dir * waterAt));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] diving in at " + Fmt(pos + dir * waterAt));
                 return true;
             }
             return false;
@@ -3817,7 +3834,7 @@ namespace Companions
                 s.NextDoorwayCheck = now + 0.4f;
                 float side;
                 Door d = DoorwayOnRoute(s, pos, out side);
-                if (d != null) { s.PassDoor = d; s.PassSide = side; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] lining up with the " + d.m_name + " at " + Fmt(d.transform.position)); }
+                if (d != null) { s.PassDoor = d; s.PassSide = side; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] lining up with the " + d.m_name + " at " + Fmt(d.transform.position)); }
             }
             Door door = s.PassDoor;
             if (door == null) return target;
@@ -3939,7 +3956,7 @@ namespace Companions
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] " + (ok ? "closed" : "couldn't close") + " the " + d.m_name + " at " + Fmt(d.transform.position) + " - it was open towards us and in the way");
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] " + (ok ? "closed" : "couldn't close") + " the " + d.m_name + " at " + Fmt(d.transform.position) + " - it was open towards us and in the way");
         }
 
         // the closed door that opens the shortest way to the goal, and where to stand to open it
@@ -4119,7 +4136,7 @@ namespace Companions
             if (tag == CombatTag && !YouWentThrough(ai, d))
             {
                 S st = Get(ai);
-                if (!st.DoorBlocked) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");
+                if (!st.DoorBlocked) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");
                 st.DoorBlocked = true; st.GaveUp = true; st.GaveUpAt = Time.time;
                 return;
             }
@@ -4128,12 +4145,12 @@ namespace Companions
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
-            if (!ok) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't open " + d.m_name); return; }
+            if (!ok) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't open " + d.m_name); return; }
             int id = ai.gameObject.GetInstanceID();
             List<Opened> list;
             if (!s_opened.TryGetValue(id, out list)) { list = new List<Opened>(); s_opened[id] = list; }
             list.Add(new Opened { Door = d, At = Time.time });
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] opened " + d.m_name + " at " + Fmt(d.transform.position));
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] opened " + d.m_name + " at " + Fmt(d.transform.position));
         }
 
         // ---------- per-frame housekeeping (called from MHR_ToolKeeper.Tick for every companion we own) ----------
@@ -4198,7 +4215,7 @@ namespace Companions
                 if (now - f.AnchorTime < 15f) return;
                 f.Anchor = pos; f.AnchorTime = now;
                 if (!Physics.Linecast(pos + Vector3.up * 1.6f, tp + Vector3.up * 1.6f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain"))) return;   // you can see each other
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|Follow] stuck for 15s out of sight at " + Fmt(pos) + " - catching up");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|Follow" + Who() + "] stuck for 15s out of sight at " + Fmt(pos) + " - catching up");
                 ai.TeleportToFollowTarget();
             }
             catch { }
@@ -4217,7 +4234,7 @@ namespace Companions
             s.NextLog = now + 3f;
             float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
             string route = !s.PathOk ? "none" : (s.Partial ? "partial" : "full") + " (" + s.Path.Count + " corners)";
-            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Move|" + s.Tag + "] at " + Fmt(pos) + " -> " + Fmt(s.Goal) + " " + remain.ToString("F1") + "m left, route=" + route +
+            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Move|" + s.Tag + Who() + "] at " + Fmt(pos) + " -> " + Fmt(s.Goal) + " " + remain.ToString("F1") + "m left, route=" + route +
                 (s.RouteDoor != null ? ", via door" : "") + (s.HasDetour ? ", detour" : "") + (c.IsSwimming() ? ", swimming" : "") +
                 (noCloser > 3f ? ", no closer for " + noCloser.ToString("F0") + "s" : "") + (still > 2f ? ", standing still " + still.ToString("F0") + "s" : "") +
                 (s.Ladder > 0 ? ", unstuck step " + s.Ladder : ""));
