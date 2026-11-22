@@ -597,6 +597,9 @@ public partial class HarvestController
 	// F1: on the pit - the rock is there, or the rock is gone and its plan is kept for the cleanup (the pit is open)
 	internal bool OvOnPit => _vFor != null || (_vp != null && _ovPitOpen);
 
+	// T1: the vein it is on has popped (its pit is open, or the parts fell in the game's support drop)
+	internal bool OvPilesOpen => _vp != null && (_ovPitOpen || OvSawPop());
+
 	// ---------- the floor (C2.5) ----------
 	// the lowest the game lets the ground at p go: 8 m under its first height (TerrainComp keeps the change within 8 m)
 	private static float TFloorAt(Vector3 p)

@@ -90,7 +90,7 @@ namespace Companions
                     if (have <= 0) continue;
                     any = true;
                     int cost;
-                    if (h.OvOnPit && CanBuild(h, p, hum, item, out cost) && have >= cost) return true;   // L5: a pile only on its pit
+                    if (h.OvOnPit && h.OvPilesOpen && CanBuild(h, p, hum, item, out cost) && have >= cost) return true;   // L5: a pile only on its pit; T1: only after its vein popped
                 }
                 return any && h.IsOverweight();
             }
@@ -168,7 +168,8 @@ namespace Companions
                 if (item == "Stone" && h.OvNoPileNow() && h.OvStoneDumpAt(out Vector3 nd)) return TossAt(h, item, nd, "no stone pile now - its stone to the stone dump");
                 // L5 (log a6063c19: 138 pile starts off the vein, spots chosen next to the companion, 1 built): a pile only on
                 // its pit; off it, only the toss when too heavy (below)
-                if (h.OvOnPit && CanBuild(h, p, hum, item, out cost) && have >= cost)
+                // T1 (John 11-22 22:55Z / 23:05Z): before its vein popped no stone or wood pile - only the toss when too heavy
+                if (h.OvOnPit && h.OvPilesOpen && CanBuild(h, p, hum, item, out cost) && have >= cost)
                 {
                     string why;
                     p.PileItem = item;
@@ -767,6 +768,8 @@ namespace Companions
                 // D4: the ground there passes the game's placement rules for the pile piece (was: 5 terrain rays within 0.35 m)
                 Vector3 spot;
                 if (!GamePlaceOk(piece, c, out spot)) { notFlat++; continue; }
+                // T5 (John 11-22 22:55Z: "Stone piles cannot be built on top of each other"): not on a built piece
+                if (s_onPiece) { blocked++; continue; }
                 if (!inVoid)
                 {
                     Bounds hb = hole; hb.Expand(new Vector3(0f, 200f, 0f));
@@ -788,12 +791,14 @@ namespace Companions
         // what its placement ray hit: water, ground only, cultivated / vegetation ground, not on a tilting surface (normal.y
         // under 0.8), ceiling only, not on a floor). The point is where the pile goes.
         static int s_waterMask = -1;
+        static bool s_onPiece;   // T5: the last GamePlaceOk's ray met a built piece first
         static bool GamePlaceOk(Piece piece, Vector3 at, out Vector3 point)
         {
             point = at;
             RaycastHit hit;
             if (!Physics.Raycast(new Vector3(at.x, Ground(at) + 3f, at.z), Vector3.down, out hit, 8f, s_groundMask)) return false;
             point = hit.point;
+            s_onPiece = hit.collider != null && hit.collider.GetComponentInParent<Piece>() != null;   // T5
             Vector3 normal = hit.normal;
             Heightmap heightmap = hit.collider.GetComponent<Heightmap>();
             if (s_waterMask < 0) s_waterMask = LayerMask.GetMask("Water");

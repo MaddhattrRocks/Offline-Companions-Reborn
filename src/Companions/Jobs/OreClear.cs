@@ -154,6 +154,9 @@ public partial class HarvestController
 
 		public readonly Dictionary<int, OvPart> RockById = new Dictionary<int, OvPart>();
 
+		// T3: plain-rock pieces found in the way of a part's swing (their collider ids) - on the rock list until they are gone
+		public readonly HashSet<int> InWay = new HashSet<int>();
+
 		// F10 (silver): the vein's middle line - the middle of each 1 m slice along its long direction, joined slice to slice
 		public readonly List<Vector3> Mid = new List<Vector3>();
 
@@ -186,6 +189,9 @@ public partial class HarvestController
 		public float LooseAt = -100f;
 
 		public float LooseChangedAt = -1f;   // R1: the last time an item came onto the list or left it
+
+		public bool TopBack;     // T2: the dirt on top of the vein is back on the list (once, at the stop)
+		public int TopSkipped;   // T2: dirt points on top of the vein left off the last dirt scan
 
 		public HarvestController DumpCarryBy;   // S5: who carried the ore dump to storage last, and when it started
 		public float DumpCarryAt = -1f;
@@ -534,6 +540,26 @@ public partial class HarvestController
 	// within 2 m changes). True = a round started.
 	private bool OvRockFirst(OvClear c)
 	{
+		// T3: the pieces found in the way of a swing stay on the list until they are gone
+		if (c.InWay.Count > 0)
+		{
+			List<int> dead = new List<int>();
+			foreach (int id in c.InWay)
+			{
+				if (!c.RockById.TryGetValue(id, out OvPart wp) || wp.C == null || !wp.C.gameObject.activeInHierarchy)
+				{
+					dead.Add(id);
+				}
+				else if (!c.RockPieces.Contains(wp))
+				{
+					c.RockPieces.Add(wp);
+				}
+			}
+			foreach (int id in dead)
+			{
+				c.InWay.Remove(id);
+			}
+		}
 		if (c.RockPieces.Count == 0)
 		{
 			return false;
@@ -841,6 +867,7 @@ public partial class HarvestController
 		}
 		Dictionary<long, OvDirt> byKey = new Dictionary<long, OvDirt>();
 		c.Low.Clear();
+		c.TopSkipped = 0;   // T2
 		foreach (OvPart part in c.Parts)
 		{
 			if (part.Out || part.C == null || !part.C.gameObject.activeSelf)
@@ -902,6 +929,17 @@ public partial class HarvestController
 		if (floor >= bottom)
 		{
 			return true;   // P5 (John: "Any low parts that go into the ground need to be removed"): the part is mined in the dirt work
+		}
+		// T2 (John 11-22 22:55Z: "They do not need to clear dirt from the top. Clearing from the bottom will cause that dirt
+		// to fall"), silver: ground above the part's top here is dirt on top - not on the list, until the stop brings it back
+		if (OvIsSilver(_vp) && g > part.Centre.y + part.Half.y)
+		{
+			OvClear tc = OvC();
+			if (tc != null && !tc.TopBack)
+			{
+				tc.TopSkipped++;
+				return false;
+			}
 		}
 		float goal = Mathf.Max(bottom - OvDirtUnder, floor + OvDigGain);
 		long key = OvDirtKey(x, z);
@@ -1264,8 +1302,10 @@ public partial class HarvestController
 				return 1;
 			}
 		}
-		// a pickup never takes it over its weight limit
-		if (inv.GetTotalWeight() + l.D.m_itemData.GetWeight() > HeavyLimit || !inv.CanAddItem(l.D.m_itemData))
+		// a pickup never takes it over its weight limit - T4 (John 11-22 22:55Z): an ore stack is taken when one of it fits
+		// (the part over the limit is dropped right after the pickup, and stays on the list)
+		float takes = l.Ore ? l.D.m_itemData.GetWeight() / Mathf.Max(1, l.D.m_itemData.m_stack) : l.D.m_itemData.GetWeight();
+		if (inv.GetTotalWeight() + takes > HeavyLimit || !inv.CanAddItem(l.D.m_itemData))
 		{
 			return 2;
 		}
@@ -1312,6 +1352,14 @@ public partial class HarvestController
 					c.Loose.Remove(l.D.gameObject.GetInstanceID());
 					c.LooseChangedAt = now;   // R1
 					if (CompanionsPlugin.LogDetailed) Log($"Picked up {count}x {MHR_List.Local(what)} in the pit ({c.Loose.Count} on the pit's list)");
+					// T4: over its weight limit with it - the ore over the limit is dropped right here (it stays on the list)
+					Inventory pin = _humanoid.GetInventory();
+					if (l.Ore && pin != null && pin.GetTotalWeight() > HeavyLimit)
+					{
+						float w = pin.GetTotalWeight();
+						int dropped = MHR_GatherRules.DropOreTo(_humanoid, HeavyLimit, null);
+						if (dropped > 0 && CompanionsPlugin.LogNormal) LogInfo($"Picked up {count} {MHR_List.Local(what)} ({w:F0} of {HeavyLimit:F0}) - dropped {dropped} ore here to get under its limit; it comes back for it (T4)");
+					}
 					OvLooseOff();
 				}
 				else
@@ -3031,6 +3079,7 @@ public partial class HarvestController
 	{
 		stand = Vector3.zero;
 		why = null;
+		_swOther = null;   // T3
 		_standAim = part.Centre;
 		// K2 (John 11-22 19:35Z: rock pieces "should use the lower-part rule"): a plain-rock piece (J2) too - a swing whose
 		// first hit is the ground within 1 m of its box reaches it (that swing digs the dirt off it)
@@ -3184,6 +3233,7 @@ public partial class HarvestController
 		}
 		stand = cand[0];
 		why = $"no place on the pit ground beside it where the game's pickaxe swing meets its rock first ({tested} looked at{(noFit > 0 ? $", {noFit} with no room for its body" : "")})";
+		OvInWayNote(part);   // T3
 		return 1;
 	}
 
@@ -3206,6 +3256,39 @@ public partial class HarvestController
 	// where). A ray that doesn't meet the rock within range (Collider.Raycast, the rock alone) isn't cast at all.
 	// L4: lowDirt = a low part (touches the ground): a ray whose first hit is the ground within 0.5 m of the part's box also
 	// counts - that swing digs the dirt off it (K3: digging toward a part counts as work)
+	// T3: the first thing another swing at the part met instead of it (from a place its body fits), in OvStandForPart
+	private Collider _swOther;
+
+	// T3 (log 0e6bdc1c: "Rock1_cell.017" set aside for 7 minutes, rock piece 147 in front of it): the plain-rock piece a swing
+	// met before the part goes on the rock list (J2's round mines it: its own place search with every check), then the part
+	private void OvInWayNote(OvPart part)
+	{
+		Collider o = _swOther;
+		_swOther = null;
+		OvClear c = OvC();
+		if (o == null || c == null || o == part.C || !o.gameObject.activeInHierarchy)
+		{
+			return;
+		}
+		MineRock5 m = o.GetComponentInParent<MineRock5>();
+		if (m == null || OvSameOre(_vp, m) || o.GetComponentInParent<Piece>() != null)
+		{
+			return;
+		}
+		int id = o.GetInstanceID();
+		if (c.InWay.Contains(id))
+		{
+			return;
+		}
+		OvRockPieceNote(c, o, m);
+		if (c.RockById.TryGetValue(id, out OvPart rp))
+		{
+			rp.Why = "in the way of \"" + (part.C != null ? part.C.name : "a part") + "\"";
+		}
+		c.InWay.Add(id);
+		if (CompanionsPlugin.LogNormal) LogInfo($"The rock piece \"{o.name}\" is in the way of the swing at \"{(part.C != null ? part.C.name : "?")}\" - mining it first (T3)");
+	}
+
 	private bool OvSwingReaches(Attack a, Vector3 pt, OvPart part, out Vector3 hit, bool lowDirt = false)
 	{
 		hit = part.Centre;
@@ -3273,6 +3356,10 @@ public partial class HarvestController
 			{
 				hit = fp;
 				return true;
+			}
+			if (first != null && _swOther == null && first.gameObject.layer != LayerMask.NameToLayer("terrain"))
+			{
+				_swOther = first;   // T3
 			}
 			if (lowDirt && first != null && first.gameObject.layer == LayerMask.NameToLayer("terrain"))
 			{
@@ -3805,6 +3892,14 @@ public partial class HarvestController
 		}
 		// P1 (John 11-22 21:23-21:25Z, log 0acd24d1): on silver, before stopping, the ground near the dirt points it had no
 		// place to work from is lowered so it can reach them
+		// T2: every other point and part failed - the dirt on top of the vein comes back on the list once
+		if (OvIsSilver(_vp) && !c.TopBack && c.TopSkipped > 0)
+		{
+			c.TopBack = true;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Every other dirt point and part of \"{_vp.Name}\" failed - the {c.TopSkipped} dirt point(s) on top of the vein are back on the list, once (T2)");
+			OvDirtScan(c, true);
+			return;
+		}
 		if (OvIsSilver(_vp) && OvLowerTry(c))
 		{
 			return;
