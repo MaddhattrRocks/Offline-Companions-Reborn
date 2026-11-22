@@ -320,6 +320,8 @@ public partial class HarvestController
 
 	private bool _ovPickOk = true;
 
+	private bool _ovNoPickSaid;   // L6: "no working pickaxe" said once
+
 	private float _ovPickAt;
 
 	// DD8: on a vein with axe work left (MHR_ToolKeeper lets it stay instead of following)
@@ -2063,11 +2065,46 @@ public partial class HarvestController
 		if (CompanionsPlugin.LogDetailed) Log($"Trench spot {s.Idx + 1}/{_vp?.Spots.Count ?? 0} at {MHR_Mover.Fmt(s.P)}: done for lap {_vp?.Lap ?? 0} ({why}), ground {GroundAt(s.P):F2}");
 	}
 
+	// L1: the plan's nearest deposit that is still there (alive, active) becomes its rock. False = none left
+	private bool OvNextRock()
+	{
+		MineRock5 best = null;
+		float bd = float.MaxValue;
+		foreach (MineRock5 r in _vp.Rocks)
+		{
+			if (r == null || !r.gameObject.activeInHierarchy || r == _vRock)
+			{
+				continue;
+			}
+			float d = Vector3.Distance(base.transform.position, r.transform.position);
+			if (d < bd)
+			{
+				bd = d;
+				best = r;
+			}
+		}
+		if (best == null)
+		{
+			return false;
+		}
+		_vRock = best;
+		_vFor = best.gameObject;
+		_target = _vFor;
+		if (CompanionsPlugin.LogNormal) LogInfo($"A deposit of \"{_vp.Name}\" is gone - on to its next deposit at {MHR_Mover.Fmt(best.transform.position)} ({bd:F0} m away), the cleanup after the last one (L1)");
+		return true;
+	}
+
 	// ---------- C3: the chooser (HarvestState.Vein) ----------
 	private void OvTick()
 	{
 		if (_vp == null || _vRock == null || _vFor == null || !_vFor.activeInHierarchy)
 		{
+			// L1 (John 11-22 20:11Z, Q1 yes: the next deposit, then one cleanup at the end): its rock is gone but the plan
+			// still has a live deposit - the nearest one is its rock now and the plan's work goes on
+			if (_vp != null && OvNextRock())
+			{
+				return;
+			}
 			// F2: a vein that popped to the last part (the rock is gone): the loose ore, stone and wood in its pit first
 			// K1 (log 58064830: all 85 parts fell, the game removed the rock, so _vFor was gone too and this was skipped -
 			// 65 items left in the pit): only the saved plan is needed
@@ -2113,6 +2150,10 @@ public partial class HarvestController
 		{
 			_ovPickAt = now + 1f;
 			_ovPickOk = HasWorkingPick();
+			if (_ovPickOk)
+			{
+				_ovNoPickSaid = false;   // L6: said again only after it had a working one
+			}
 		}
 		if (!_ovPickOk)
 		{
@@ -5749,6 +5790,20 @@ public partial class HarvestController
 		OvDigOff();
 		OvPartRelease();
 		if (!_ovAxeDone && FindBestTool(1) != null && OvPitFirst())
+		{
+			return;
+		}
+		// L6 (John 11-22 20:17Z: "he says once that his pickaxe is broken, then helps with the pit's loose items and stone"):
+		// no other working pickaxe in its bag - it says so once, then the pit's loose items (OvLooseTick, no tool needed);
+		// nothing there it can take = out of the vein, as before. A working pickaxe in the bag (the 1 s check) sends it back
+		if (!_ovNoPickSaid)
+		{
+			_ovNoPickSaid = true;
+			if (CompanionsPlugin.LogNormal) LogInfo("No working pickaxe left in its bag - the pit's loose items and stone only (L6)");
+			_talk?.SayProblem("tool:none:3", string.Format(ModLocalization.Loc("hc_speech_no_working_tool"), ModLocalization.Loc("hc_tool_pickaxe")));
+		}
+		OvClear lc = OvC();
+		if (lc != null && OvLooseTick(lc, standBy: false))
 		{
 			return;
 		}

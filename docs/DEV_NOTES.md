@@ -2957,3 +2957,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - K2 (OvStandForPart): plain-rock pieces use the low-part rule: a swing whose first hit is the ground within 1 m of the piece's box reaches it.
 - K3 (MHR_Mover Unstick, OreRoute OvMapStuckOn / OvRtStandOn): stuck on a map route = the first thing ahead within 1.5 m (not the ground, a creature, a MineRock / MineRock5; at most 2 m across; on the map) is kept; the squares under its box plus the body radius aren't walked by map routes on that pit map; dropped when the thing is gone; at most 16 per map.
 - K4 (pit map read): a thing whose top is under the ground is buried and isn't a layer (it made the square read as "rock on it").
+
+## L1, L3, L5, L6 (log a6063c19, 2026-11-22)
+- L1 (OvTick / OvNextRock): its rock gone while the plan still has a live deposit = the nearest one is its rock and the plan's work goes on; the cleanup runs once, after the last deposit.
+- L3 (MHR_Mover): pit map routes while on its vein's pit (OvOnPit), the cleanup after the pop included.
+- L5 (StoneDue / StartPile): the Ore job builds a stone pile only on its pit; off it, only the existing toss when too heavy.
+- L6 (OvAxeTick): no working pickaxe left in its bag = it says so once, axe work in the pit first (DD8), then the pit's loose items and stone; nothing left it can take = out of the vein as before; a working pickaxe in the bag sends it back to the work.

@@ -910,7 +910,8 @@ namespace Companions
                     s.MapHeld = false;
                     if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the pit map changed along the map route it got stuck on - the map route again");
                 }
-                if (hv != null && hv.OnVein && !s.MapHeld)
+                // L3 (John 11-22 20:11Z, Q3a yes): on its vein's pit, the cleanup after the pop too (OvOnPit), not only while its rock is there
+                if (hv != null && hv.OvOnPit && !s.MapHeld)
                 {
                     int mr = hv.OvMapRoute(pos, goal, s_mapTmp, out string minfo);
                     if (mr == 1 && s_mapTmp.Count > 0)

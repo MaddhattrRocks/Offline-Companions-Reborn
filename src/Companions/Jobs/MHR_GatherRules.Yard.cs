@@ -90,7 +90,7 @@ namespace Companions
                     if (have <= 0) continue;
                     any = true;
                     int cost;
-                    if (CanBuild(h, p, hum, item, out cost) && have >= cost) return true;
+                    if (h.OvOnPit && CanBuild(h, p, hum, item, out cost) && have >= cost) return true;   // L5: a pile only on its pit
                 }
                 return any && h.IsOverweight();
             }
@@ -166,7 +166,9 @@ namespace Companions
                 int cost;
                 // F2: after the pop, no stone pile is tried until the pit changes once one couldn't be placed - to the dump
                 if (item == "Stone" && h.OvNoPileNow() && h.OvStoneDumpAt(out Vector3 nd)) return TossAt(h, item, nd, "no stone pile now - its stone to the stone dump");
-                if (CanBuild(h, p, hum, item, out cost) && have >= cost)
+                // L5 (log a6063c19: 138 pile starts off the vein, spots chosen next to the companion, 1 built): a pile only on
+                // its pit; off it, only the toss when too heavy (below)
+                if (h.OvOnPit && CanBuild(h, p, hum, item, out cost) && have >= cost)
                 {
                     string why;
                     p.PileItem = item;
