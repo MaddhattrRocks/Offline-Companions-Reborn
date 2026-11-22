@@ -159,6 +159,18 @@ public partial class HarvestController
 	// MP1: a square it may stand on (feet not NaN, not water it would swim in)
 	private float OvRtStandOn(OvMap m, int i, float hh, float water, float swim)
 	{
+		// K3: under a thing a companion got stuck on = not walked
+		if (m.StuckBox.Count > 0)
+		{
+			float sx = m.X0 + (i % m.W + 0.5f) * OvMapCell, sz = m.Z0 + (i / m.W + 0.5f) * OvMapCell;
+			foreach (Bounds sb in m.StuckBox)
+			{
+				if (sx >= sb.min.x && sx <= sb.max.x && sz >= sb.min.z && sz <= sb.max.z)
+				{
+					return float.NaN;
+				}
+			}
+		}
 		float f = OvRtFeet(m, i, hh, OvBodyRadius());
 		if (float.IsNaN(f))
 		{
@@ -302,10 +314,55 @@ public partial class HarvestController
 		return false;
 	}
 
+	private const float OvStuckMaxSize = 2f;   // K3: only a thing up to 2 m across (flat) is marked
+
+	private const int OvStuckMax = 16;         // K3: at most 16 things kept per map
+
+	// K3 (John 11-22 19:35Z, Q-K3 ok: routes only): the mover got stuck on a map route with `col` the first thing ahead:
+	// unless it is the ground, a creature or a rock / vein (MineRock, MineRock5 - the map sees those), or more than 2 m
+	// across, the squares under it (its box, + the body radius) are kept out of every map route on this map
+	internal void OvMapStuckOn(Collider col)
+	{
+		OvMap m = _vp?.Map;
+		if (m == null || !m.Built || col == null || m.StuckOn.Contains(col) || m.StuckOn.Count >= OvStuckMax)
+		{
+			return;
+		}
+		if (col.gameObject.layer == LayerMask.NameToLayer("terrain") || col.GetComponentInParent<Character>() != null || col.GetComponentInParent<MineRock5>() != null || col.GetComponentInParent<MineRock>() != null)
+		{
+			return;
+		}
+		Bounds b = col.bounds;
+		if (b.size.x > OvStuckMaxSize || b.size.z > OvStuckMaxSize || OvMapIndex(m, b.center) < 0)
+		{
+			return;
+		}
+		float r = OvBodyRadius();
+		b.Expand(new Vector3(r * 2f, 0f, r * 2f));
+		m.StuckOn.Add(col);
+		m.StuckBox.Add(b);
+		if (CompanionsPlugin.LogNormal) LogInfo($"Got stuck on \"{col.transform.root.name}\" at {MHR_Mover.Fmt(col.bounds.center)} on the map route - map routes on \"{_vp.Name}\" go round it now (K3)");
+	}
+
+	// K3: a marked thing that is gone (destroyed, cut down, turned off) is dropped
+	private static void OvStuckPrune(OvMap m)
+	{
+		for (int j = m.StuckOn.Count - 1; j >= 0; j--)
+		{
+			Collider col = m.StuckOn[j];
+			if (col == null || !col.enabled || !col.gameObject.activeInHierarchy)
+			{
+				m.StuckOn.RemoveAt(j);
+				m.StuckBox.RemoveAt(j);
+			}
+		}
+	}
+
 	private int OvRtSearch(OvPlan p, OvMap m, Vector3 from, Vector3 goal, List<Vector3> outPath, List<int> outSquares, out string info)
 	{
 		info = null;
 		bool hadBlock = false;
+		OvStuckPrune(m);   // K3
 		float hh = _character != null ? _character.GetHeight() : 1.8f;
 		float water = ZoneSystem.instance != null ? ZoneSystem.instance.m_waterLevel : -10000f;
 		float swim = MHR_Water.SwimLimit(_character);

@@ -99,20 +99,32 @@ namespace Companions
         static void Dbg(string msg) { if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug(msg); }
         // J4 (John 11-22: which companion, and what it is stuck on): the companion the mover is working for, for the log
         static string Who() { return s_ctxChar != null ? "|" + s_ctxChar.m_name : ""; }
+        // K4 extra (log 80c21298 line 2222: no name): the mover's companion, else the one it was given
+        static string Who(Character c) { return s_ctxChar != null ? "|" + s_ctxChar.m_name : c != null ? "|" + c.m_name : ""; }
 
         // J4: the first thing straight ahead at chest height within 1.5 m (its own colliders and triggers skipped) - log only
         static string AheadSaid(Character c, Vector3 pos, Vector3 dir)
         {
+            Collider col = AheadCol(c, pos, dir, out float best);
+            if (col == null && best < 0f) return "";
+            return col != null ? ", ahead of it " + best.ToString("F1") + " m: \"" + col.transform.root.name + "\"" : ", nothing ahead within 1.5 m";
+        }
+
+        // K3: that first thing ahead (null = none; dist -1 = no direction)
+        static Collider AheadCol(Character c, Vector3 pos, Vector3 dir, out float dist)
+        {
+            dist = -1f;
             dir.y = 0f;
-            if (dir.sqrMagnitude < 0.0001f) return "";
+            if (dir.sqrMagnitude < 0.0001f) return null;
             RaycastHit[] hits = Physics.RaycastAll(pos + Vector3.up * 1.0f, dir.normalized, 1.5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-            float best = float.MaxValue; string name = null;
+            float best = float.MaxValue; Collider col = null;
             foreach (RaycastHit h in hits)
             {
                 if (h.collider == null || (c != null && h.collider.transform.IsChildOf(c.transform)) || h.distance >= best) continue;
-                best = h.distance; name = h.collider.transform.root.name;
+                best = h.distance; col = h.collider;
             }
-            return name != null ? ", ahead of it " + best.ToString("F1") + " m: \"" + name + "\"" : ", nothing ahead within 1.5 m";
+            dist = col != null ? best : 0f;
+            return col;
         }
         public static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
         static float Flat(Vector3 a, Vector3 b) { return new Vector2(a.x - b.x, a.z - b.z).magnitude; }
@@ -1318,7 +1330,12 @@ namespace Companions
                 for (int i = s.Corner; i < s.Path.Count; i++) s.MapHeldPath.Add(s.Path[i]);
                 s.MapHeld = true; s.MapHeldAt = now;
                 s.MapRoute = false; s.Direct = false; s.MapFails++; s.NextPlan = 0f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
+                // K3 (John 11-22 19:35Z): the thing it got stuck on is kept out of the pit map's routes
+                Vector3 toward = s.Corner < s.Path.Count ? s.Path[s.Corner] - pos : target - pos;
+                Collider stuckCol = AheadCol(c, pos, toward, out _);
+                HarvestController shv = stuckCol != null ? ai.GetComponent<HarvestController>() : null;
+                if (shv != null) shv.OvMapStuckOn(stuckCol);
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
                 return;
             }
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
@@ -1432,7 +1449,7 @@ namespace Companions
             // F6: only a way with room over its body
             Vector3 pick = SafeClear(pos, a) && HeadOk(ai, c, s, pos, a) ? a : SafeClear(pos, b) && HeadOk(ai, c, s, pos, b) ? b : SafeClear(pos, back) && HeadOk(ai, c, s, pos, back) ? back : HeadOk(ai, c, s, pos, side) ? side : Vector3.zero;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - stepping back to the side");
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - stepping back to the side");
         }
 
         // ---------- climbing out ----------
@@ -3365,7 +3382,7 @@ namespace Companions
                 if (!HeadOk(ai, c, s, pos, sd)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
                 Face(ai, sd);
                 s.StepDir = sd; s.StepRun = false; s.StepUntil = now + 0.7f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
                 return;
             }
             Face(ai, dir);
@@ -3373,7 +3390,7 @@ namespace Companions
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
             s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - jumping toward " + Fmt(pos + dir * 2f));
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - jumping toward " + Fmt(pos + dir * 2f));
         }
 
         static bool Clear(Vector3 pos, Vector3 dir) { return Clear(pos, dir, 1.5f); }

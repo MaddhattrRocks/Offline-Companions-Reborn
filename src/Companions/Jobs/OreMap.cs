@@ -93,6 +93,11 @@ public partial class HarvestController
 		public readonly List<Vector3> GoalAt3 = new List<Vector3>();   // ... and walks to (yellow), drawn at that height
 
 		public readonly List<Bounds> Parts = new List<Bounds>();
+		// K3 (John 11-22 19:35Z: routes go round what a companion got stuck on): a thin thing the map's rays missed (a trunk)
+		// that stopped a map route, and the flat box under it (+ the body radius) that map routes don't walk; kept through
+		// re-reads, dropped when the thing is gone
+		public readonly List<Collider> StuckOn = new List<Collider>();
+		public readonly List<Bounds> StuckBox = new List<Bounds>();
 
 		// MP7: each companion's map route for the overlay (its position first, then the corners), and their sum to tell a change
 		public readonly List<List<Vector3>> Routes = new List<List<Vector3>>();
@@ -788,6 +793,12 @@ public partial class HarvestController
 				kind = kk;
 			}
 			if (kk == MkGround)
+			{
+				continue;
+			}
+			// K4 (log 80c21298: all 18 squares with a layer change held one): a thing whose top is under the ground is buried -
+			// not a layer (its bottom was set to the ground, so the square read as "rock on it" with open ground there)
+			if (rh.point.y < g)
 			{
 				continue;
 			}

@@ -2951,3 +2951,9 @@ Build tag `v46-melee-fallback-range-fix`, version 1.4.28 (`4.27`→`4.28`). `ila
 - J2: plain-rock pieces a vein part rests on (the game's rule: breakable, lower than the vein's centre) are listed at each parts look and mined with the part round, before the dirt; on silver the place and each swing must meet the piece, never the vein, first.
 - J3: a layers-only change of a pit map square logs the old and new layers.
 - J4: mover lines carry the companion's name; stuck lines name the first thing ahead within 1.5 m.
+
+## K1-K4 (log 80c21298, 2026-11-22)
+- K1 (OvStandFor, silver): no place to stand within its swing of a dirt point goes on to the D1.3 dig-in from the trench instead of stopping; a dig-in place may have its feet more than 2 m under the part (where the dig lands is still checked). The set-aside reason names what the pit map says on the nearest square with no place to stand.
+- K2 (OvStandForPart): plain-rock pieces use the low-part rule: a swing whose first hit is the ground within 1 m of the piece's box reaches it.
+- K3 (MHR_Mover Unstick, OreRoute OvMapStuckOn / OvRtStandOn): stuck on a map route = the first thing ahead within 1.5 m (not the ground, a creature, a MineRock / MineRock5; at most 2 m across; on the map) is kept; the squares under its box plus the body radius aren't walked by map routes on that pit map; dropped when the thing is gone; at most 16 per map.
+- K4 (pit map read): a thing whose top is under the ground is buried and isn't a layer (it made the square read as "rock on it").

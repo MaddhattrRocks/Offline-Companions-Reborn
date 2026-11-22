@@ -2692,6 +2692,8 @@ public partial class HarvestController
 		List<Vector3> cand = new List<Vector3>();
 		float low = float.MaxValue;
 		int noStand = 0;
+		string nearSaid = null;   // K1: what the map says on the nearest square with no place to stand (log only)
+		float nearD = float.MaxValue;
 		for (float x = Mathf.Floor((aim.x - reach) / OvDirtGrid) * OvDirtGrid; x <= aim.x + reach + 0.001f; x += OvDirtGrid)
 		{
 			for (float z = Mathf.Floor((aim.z - reach) / OvDirtGrid) * OvDirtGrid; z <= aim.z + reach + 0.001f; z += OvDirtGrid)
@@ -2705,10 +2707,15 @@ public partial class HarvestController
 				pt.y = GroundAt(pt);
 				// R2.2: the map says no place to stand there (stone, rock, a part or a thing on it, or too little room): dropped;
 				// a built floor: its feet go on the floor; don't know: as before
-				int ms = OvMapStand(pt, out float mf, out _);
+				int ms = OvMapStand(pt, out float mf, out string msWhy);
 				if (ms == 0)
 				{
 					noStand++;
+					if (Flat(pt, aim) < nearD)
+					{
+						nearD = Flat(pt, aim);
+						nearSaid = $"the nearest, {MHR_Mover.Fmt(pt)}: {msWhy}";
+					}
 					continue;
 				}
 				if (ms == 1)
@@ -2727,9 +2734,12 @@ public partial class HarvestController
 		{
 			quarter = cand.RemoveAll((Vector3 q) => !OvQuarterOk(q, aim, opp._drStand));
 		}
-		if (cand.Count == 0)
+		string noStandSaid = noStand > 0 ? $" ({noStand} with no place to stand by the pit map{(nearSaid != null ? "; " + nearSaid : "")})" : "";
+		// K1 (John 11-22 19:35Z: "They should be digging the surrounding area lower so they can reach those spots"): on
+		// silver, none within its swing goes on to the D1.3 dig-in from the trench (below) instead of stopping here
+		if (cand.Count == 0 && !OvIsSilver(_vp))
 		{
-			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{(noStand > 0 ? $" ({noStand} with no place to stand by the pit map)" : "")}{(quarter > 0 ? $" ({quarter} not a quarter turn round it from {opp.OvName()})" : "")}";
+			why = $"no pit ground within its swing ({reach:F1} m) of it that isn't within 1.2 m of another companion{noStandSaid}{(quarter > 0 ? $" ({quarter} not a quarter turn round it from {opp.OvName()})" : "")}";
 			return 2;
 		}
 		// MP3 (the map-path list, John 2026-11-21): nearest first among the lowest; one the map says there is no way to (not
@@ -2837,11 +2847,8 @@ public partial class HarvestController
 							triedN++;
 							continue;
 						}
-						if (q.y < tooLowY)
-						{
-							tooLow++;
-							continue;
-						}
+						// K1 (Q-K1, John 11-22 19:43Z: yes): a dig-in place may have its feet more than 2 m under the part (its
+						// swings cut the bank toward the point); where the dig lands stays checked below (digLow)
 						if (opp != null && !OvQuarterOk(q, aim, opp._drStand))
 						{
 							continue;   // F9
@@ -2920,7 +2927,7 @@ public partial class HarvestController
 		}
 		string sideNote = otherSide > 0 ? $" ({otherSide} place(s) on the other side of the middle line left out)" : "";
 		// G1 (c): every count on its own (one count no longer hides the others)
-		why = (silver && cand.Count == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from: {oreFirst} where the swing meets the vein first, {digsSelf} where the game's dig would lower the ground at its own feet, {tooLow} more than 2 m under the part, {digLow} where the dig lands more than 2 m under the part, {offFloor} up on the dirt (not the trench floor), {triedN} tried already" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
+		why = (silver && cand.Count == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from: {oreFirst} where the swing meets the vein first, {digsSelf} where the game's dig would lower the ground at its own feet, {tooLow} more than 2 m under the part, {digLow} where the dig lands more than 2 m under the part, {offFloor} up on the dirt (not the trench floor), {triedN} tried already{noStandSaid}" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
 		return 2;
 	}
 
@@ -2945,7 +2952,9 @@ public partial class HarvestController
 		stand = Vector3.zero;
 		why = null;
 		_standAim = part.Centre;
-		bool low = OvIsLow(part);   // L4
+		// K2 (John 11-22 19:35Z: rock pieces "should use the lower-part rule"): a plain-rock piece (J2) too - a swing whose
+		// first hit is the ground within 1 m of its box reaches it (that swing digs the dirt off it)
+		bool low = OvIsLow(part) || part.IsRock;   // L4
 		Vector3 me = base.transform.position;
 		Attack a = FindBestTool(2)?.m_shared?.m_attack;
 		float range = a != null ? a.m_attackRange : 1.8f;
