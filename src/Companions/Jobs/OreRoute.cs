@@ -15,6 +15,7 @@ public partial class HarvestController
 	private const float OvRtBigDrop = 1.2f;         // MP1: a drop this big costs more than walking
 	private const float OvRtCrowd = 1.2f;           // MP1: kept this far from where others stand or walk to
 	private const int OvRtMaxNodes = 6000;          // MP1: the most squares one search looks at
+	private const float OvRtVeinCost = 10f;         // G2 (new, John 11-22 OK): extra cost of a square over a vein part (0.5 m squares: 20 per metre)
 	private const float OvRtOffRoute = 1.5f;        // MP1: this far off its route = a new search
 	private const float OvRtGoalMove = 1f;          // MP1: the goal moved this far = a new search
 	private const int OvRtProbeMax = 5;            // MP3: the most places asked about per stand choice
@@ -443,6 +444,10 @@ public partial class HarvestController
 						continue;
 					}
 					float cost = step;
+					if ((m.Flags[b] & MfVein) != 0)
+					{
+						cost += OvRtVeinCost;   // G2: over the vein - round it through the trench unless that is far longer
+					}
 					if (rise > OvRtStepUp)
 					{
 						cost += 1f;
@@ -571,6 +576,10 @@ public partial class HarvestController
 			if (float.IsNaN(f) || Mathf.Abs(f - prev) > OvRtStepUp)
 			{
 				return false;
+			}
+			if ((m.Flags[qi] & MfVein) != 0 && !s_rtOnRoute.Contains(qi))
+			{
+				return false;   // G2: a short cut never crosses vein squares the route itself kept off
 			}
 			if (s_rtOthers.Count > 0 && !s_rtOnRoute.Contains(qi))
 			{

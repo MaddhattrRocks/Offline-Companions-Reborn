@@ -48,7 +48,7 @@ public partial class HarvestController
 	internal const byte MkNone = 0, MkGround = 1, MkOre = 2, MkRock = 3, MkThing = 4, MkBuilt = 5, MkFixed = 6, MkSkip = 255;
 
 	// square flags
-	private const byte MfWater = 1, MfCrew = 2, MfGoal = 4;
+	private const byte MfWater = 1, MfCrew = 2, MfGoal = 4, MfVein = 8;   // G2: MfVein = the square's middle is over a live vein part
 
 	private sealed class OvMap
 	{
@@ -398,7 +398,7 @@ public partial class HarvestController
 					nm.ChangedAt[b] = m.ChangedAt[a];
 					nm.Kind[b] = m.Kind[a];
 					nm.Over[b] = m.Over[a];
-					nm.Flags[b] = (byte)(m.Flags[a] & MfWater);
+					nm.Flags[b] = (byte)(m.Flags[a] & (MfWater | MfVein));   // G2: the vein flag is kept too
 					nm.LCount[b] = m.LCount[a];
 					for (int j = 0; j < OvMapLayers; j++)
 					{
@@ -835,6 +835,17 @@ public partial class HarvestController
 		if (ZoneSystem.instance != null && top < ZoneSystem.instance.m_waterLevel)
 		{
 			flags |= MfWater;
+		}
+		// G2 (John 11-22: round the vein, not over it): the square's middle inside a live part's box (flat) - the
+		// live boxes are OvMapPartsCheck's (every 1 s; a part that went re-reads its squares, so the flag clears)
+		float vx = m.X0 + (i % m.W + 0.5f) * OvMapCell, vz = m.Z0 + (i / m.W + 0.5f) * OvMapCell;
+		foreach (Bounds pb in m.Parts)
+		{
+			if (vx >= pb.min.x && vx <= pb.max.x && vz >= pb.min.z && vz <= pb.max.z)
+			{
+				flags |= MfVein;
+				break;
+			}
 		}
 		if (layersChanged || m.Kind[i] != kind || m.Over[i] != over || m.Flags[i] != flags || Mathf.Abs(m.Top[i] - top) > 0.05f || Mathf.Abs(m.Head[i] - head) > 0.05f || Mathf.Abs(m.Ground[i] - g) > 0.05f || m.ReadAt[i] < 0f)
 		{

@@ -2145,38 +2145,107 @@ public partial class HarvestController
 		return false;
 	}
 
-	// ---------- F7 (d): the pickaxe's own dig, read from the game (Attack.SpawnOnHitTerrain's prefab, its TerrainOp) ----------
-	private static readonly Dictionary<string, float> s_digR = new Dictionary<string, float>();
+	// ---------- G1: the pickaxe's own dig, read from the game (Attack.SpawnOnHitTerrain's prefab, its TerrainOp) ----------
+	private sealed class OvDigOp
+	{
+		public float R, Delta, Power;
+		public Vector3 Off;      // the TerrainOp's place in the prefab (the prefab is placed facing the swinger)
+	}
 
-	// the largest radius the dig changes the ground's height with (level, raise / lower, smooth - each only when switched
-	// on; paint only colours the ground, so it isn't counted). 0 = the game has no TerrainOp on it (F7 (d) is off)
-	private float OvDigRadius(ItemDrop.ItemData pick)
+	private static readonly Dictionary<string, OvDigOp> s_digOp = new Dictionary<string, OvDigOp>();
+
+	// G1: the pickaxe dig's raise / lower part (radius, delta, power) from the game's TerrainOp. null = no TerrainOp or
+	// its raise / lower is off (the own-feet check is off). Level and smooth: if a mod turns them on, only the raise /
+	// lower part is predicted (logged once)
+	private OvDigOp OvDigOpFor(ItemDrop.ItemData pick)
 	{
 		GameObject pf = pick?.m_shared?.m_spawnOnHitTerrain;
 		if (pf == null)
 		{
-			return 0f;
+			return null;
 		}
-		if (s_digR.TryGetValue(pf.name, out float r))
+		if (s_digOp.TryGetValue(pf.name, out OvDigOp d))
 		{
-			return r;
+			return d;
 		}
-		r = 0f;
+		d = null;
 		TerrainOp op = pf.GetComponentInChildren<TerrainOp>();
 		if (op != null && op.m_settings != null)
 		{
 			TerrainOp.Settings st = op.m_settings;
-			if (st.m_level) r = Mathf.Max(r, st.m_levelRadius);
-			if (st.m_raise) r = Mathf.Max(r, st.m_raiseRadius);
-			if (st.m_smooth) r = Mathf.Max(r, st.m_smoothRadius);
-			if (CompanionsPlugin.LogNormal) LogInfo($"The pickaxe's dig \"{pf.name}\" (the game's TerrainOp): level {(st.m_level ? st.m_levelRadius.ToString("F2") + " m" : "off")}, raise/lower {(st.m_raise ? st.m_raiseRadius.ToString("F2") + " m" : "off")}, smooth {(st.m_smooth ? st.m_smoothRadius.ToString("F2") + " m" : "off")}, paint {(st.m_paintCleared ? st.m_paintRadius.ToString("F2") + " m (not counted)" : "off")} - the dig radius used: {r:F2} m");
+			if (st.m_raise && st.m_raiseRadius > 0f)
+			{
+				d = new OvDigOp { R = st.m_raiseRadius, Delta = st.m_raiseDelta, Power = st.m_raisePower, Off = pf.transform.InverseTransformPoint(op.transform.position) };
+			}
+			if (CompanionsPlugin.LogNormal) LogInfo($"The pickaxe's dig \"{pf.name}\" (the game's TerrainOp): raise/lower {(st.m_raise ? $"radius {st.m_raiseRadius:F2} m, delta {st.m_raiseDelta:F2} m, power {st.m_raisePower:F2}" : "off")}, level {(st.m_level ? "ON (not predicted)" : "off")}, smooth {(st.m_smooth ? "ON (not predicted)" : "off")}, offset {(d != null ? MHR_Mover.Fmt(d.Off) : "-")} - the own-feet check is {(d != null ? "on" : "off")}");
 		}
 		else if (CompanionsPlugin.LogNormal)
 		{
-			LogInfo($"The pickaxe's dig \"{pf.name}\" has no TerrainOp - the dig radius check (F7 d) is off");
+			LogInfo($"The pickaxe's dig \"{pf.name}\" has no TerrainOp - the own-feet check (G1) is off");
 		}
-		s_digR[pf.name] = r;
-		return r;
+		s_digOp[pf.name] = d;
+		return d;
+	}
+
+	// G1 (John 11-22: "Yes"): standing at `stand` and swinging toward `aim`, the game's dig at `dig` (the first ray's
+	// ground hit) would lower the ground at its feet: TerrainComp.RaiseTerrain - every vertex within the radius of the
+	// dig's vertex goes to dig height + delta x (1 - distance / radius)^power, only when that is lower than it is now.
+	// The 5 feet points of F7 (a) (its feet, and its body radius forward / back / left / right), the 4 vertices round
+	// each: true when any of them would go down 0.05 m (OvDigGain) or more
+	private bool OvDigLowersFeet(OvDigOp d, Vector3 stand, Vector3 aim, Vector3 dig)
+	{
+		Vector3 flat = aim - stand;
+		flat.y = 0f;
+		Quaternion yaw = flat.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(flat.normalized, Vector3.up) : Quaternion.identity;
+		Vector3 at = dig + yaw * d.Off;
+		float r = OvBodyRadius();
+		Vector3[] pts = { stand, stand + Vector3.forward * r, stand + Vector3.back * r, stand + Vector3.left * r, stand + Vector3.right * r };
+		foreach (Vector3 pt in pts)
+		{
+			Heightmap hm = Heightmap.FindHeightmap(pt);
+			if (hm == null)
+			{
+				continue;
+			}
+			float sc = hm.m_scale;
+			int half = hm.m_width / 2;
+			Vector3 hp = hm.transform.position;
+			hm.WorldToVertex(at, out int cx, out int cy);   // the game's own centre vertex (rounded)
+			float rv = d.R / sc;
+			Vector3 lp = pt - hp;
+			int x0 = Mathf.FloorToInt(lp.x / sc) + half, y0 = Mathf.FloorToInt(lp.z / sc) + half;
+			for (int vy = y0; vy <= y0 + 1; vy++)
+			{
+				for (int vx = x0; vx <= x0 + 1; vx++)
+				{
+					if (vx < 0 || vy < 0 || vx > hm.m_width || vy > hm.m_width)
+					{
+						continue;
+					}
+					float dist = Vector2.Distance(new Vector2(cx, cy), new Vector2(vx, vy));
+					if (dist > rv)
+					{
+						continue;
+					}
+					float fall = 1f;
+					if (d.Power > 0f)
+					{
+						fall = 1f - dist / rv;
+						if (d.Power != 1f)
+						{
+							fall = Mathf.Pow(fall, d.Power);
+						}
+					}
+					float h = hp.y + hm.GetHeight(vx, vy);
+					float to = at.y + d.Delta * fall;
+					if (d.Delta < 0f && h - to >= OvDigGain)
+					{
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	private const float OvDeepStep = 0.5f;     // rule 6: a place is dug down 0.5 m at a time
@@ -2591,13 +2660,12 @@ public partial class HarvestController
 		bool digIn = false;
 		// F7 (a): every vein - a place it repositioned away from (it dug its own floor there) isn't taken again for this point
 		List<Vector3> tried = dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
-		// F7 (c) / (d), silver: a place already more than 2 m under the point's part isn't taken; with the pickaxe's dig
-		// radius from the game, nor one where the swing's dig there would reach its own feet or body, or the ground under
-		// 2 m below the part
+		// F7 (c) / G1, silver: a place already more than 2 m under the point's part isn't taken; nor one where the game's
+		// dig on that swing (its TerrainOp, OvDigLowersFeet) would lower the ground at its feet, or lands under 2 m below
+		// the part
 		float tooLowY = silver && dirt != null && dirt.Part != null ? OvPartBottom(dirt.Part) - OvDeepMax : float.MinValue;
-		float digR = silver ? OvDigRadius(FindBestTool(2)) : 0f;
-		float bodyR = OvBodyRadius();
-		int tooLow = 0, digsSelf = 0;
+		OvDigOp dop = silver ? OvDigOpFor(FindBestTool(2)) : null;   // G1
+		int tooLow = 0, digsSelf = 0, digLow = 0;
 		if (silver)
 		{
 			List<Vector3> ok = new List<Vector3>();
@@ -2627,9 +2695,14 @@ public partial class HarvestController
 					oreFirst++;
 					continue;
 				}
-				if (digR > 0f && (Flat(dg1, q) <= digR + bodyR || dg1.y < tooLowY))
+				if (dop != null && dg1.y < tooLowY)
 				{
-					digsSelf++;
+					digLow++;
+					continue;
+				}
+				if (dop != null && OvDigLowersFeet(dop, q, aim, dg1))
+				{
+					digsSelf++;   // G1: the game's dig would lower the ground at its feet
 					continue;
 				}
 				ok.Add(q);
@@ -2695,9 +2768,14 @@ public partial class HarvestController
 						oreFirst++;
 						continue;
 					}
-					if (digR > 0f && (Flat(dg2, q) <= digR + bodyR || dg2.y < tooLowY))
+					if (dop != null && dg2.y < tooLowY)
 					{
-						digsSelf++;
+						digLow++;
+						continue;
+					}
+					if (dop != null && OvDigLowersFeet(dop, q, aim, dg2))
+					{
+						digsSelf++;   // G1
 						continue;
 					}
 					fine.Add(q);
@@ -2742,7 +2820,8 @@ public partial class HarvestController
 			return 0;
 		}
 		string sideNote = otherSide > 0 ? $" ({otherSide} place(s) on the other side of the middle line left out)" : "";
-		why = (silver && cand.Count == 0 && (tooLow > 0 || digsSelf > 0) && oreFirst == 0 && triedN == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from ({tooLow} more than 2 m under the part, {digsSelf} where the swing's dig ({digR:F2} m) would reach its own feet or under 2 m below the part)" : silver && cand.Count == 0 && oreFirst == 0 && triedN == 0 && offFloor > 0 ? $"no place on the trench floor within {OvDigInFar:F0} m of it ({offFloor} beside it are up on the dirt)" : silver && cand.Count == 0 && (oreFirst > 0 || triedN > 0) ? $"no place left within {OvDigInFar:F0} m of it where the swing meets the dirt without meeting the vein ({oreFirst} checked, {triedN} tried already)" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
+		// G1 (c): every count on its own (one count no longer hides the others)
+		why = (silver && cand.Count == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from: {oreFirst} where the swing meets the vein first, {digsSelf} where the game's dig would lower the ground at its own feet, {tooLow} more than 2 m under the part, {digLow} where the dig lands more than 2 m under the part, {offFloor} up on the dirt (not the trench floor), {triedN} tried already" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
 		return 2;
 	}
 
@@ -3970,7 +4049,7 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (OvRamp r in _vp.Ramps)
 		{
-			if (r.Top.y < r.Need - OvStepUp || OvRampOut(r) || _rpTried.Contains(r))
+			if (r.Top.y < r.Need - OvStepUp || OvRampOut(r) || _rpTried.Contains(r) || !OvRampOuter(_vp, r))   // G3 (d): never an inward ramp
 			{
 				continue;
 			}

@@ -209,6 +209,7 @@ public partial class HarvestController
 	private const float OvRampNear = 10f;          // C5: a saved ramp's bottom within 10 m
 
 	private const float OvRampTopNear = 5f;        // C5: ... and its top within 5 m of where it's going
+	private const float OvRampSameY = 0.7f;        // G3 (John 11-22 OK): ends this close in height (and 5 m flat) join a saved ramp
 
 	private const float OvThingAbove = 2f;        // V4: a thing more than 2 m above its feet is on the wall top
 
@@ -2490,6 +2491,10 @@ public partial class HarvestController
 		{
 			return false;
 		}
+		if (!OvRampOuter(p, r))
+		{
+			return false;   // G3 (c): its top is no farther from the vein than its bottom - not a way out
+		}
 		OvSpot q = p != null ? OvNearestIn(p, r.Bottom) : null;
 		if (q == null)
 		{
@@ -2500,6 +2505,30 @@ public partial class HarvestController
 		// within one hop (OvRtHopUp, 1.1 m) of that floor - else T4 extends it down its own line
 		float limit = p.Map != null && p.Map.Built ? OvRtHopUp : OvRampRatio * h;
 		return r.Bottom.y - GroundAt(q.P) < limit;
+	}
+
+	// G3 (c) (John 11-22: "Q3 also sounds good"): a ramp is a way out only when its top is farther (flat) from the nearest
+	// live vein part than its bottom is - the pit map's live part boxes (OvMapPartsCheck). No map or no parts: as before
+	private static bool OvRampOuter(OvPlan p, OvRamp r)
+	{
+		List<Bounds> parts = p?.Map?.Parts;
+		if (parts == null || parts.Count == 0)
+		{
+			return true;
+		}
+		return OvBoxesFlat(parts, r.Top) > OvBoxesFlat(parts, r.Bottom);
+	}
+
+	private static float OvBoxesFlat(List<Bounds> boxes, Vector3 q)
+	{
+		float best = float.MaxValue;
+		foreach (Bounds b in boxes)
+		{
+			float dx = Mathf.Max(0f, Mathf.Max(b.min.x - q.x, q.x - b.max.x));
+			float dz = Mathf.Max(0f, Mathf.Max(b.min.z - q.z, q.z - b.max.z));
+			best = Mathf.Min(best, Mathf.Sqrt(dx * dx + dz * dz));
+		}
+		return best;
 	}
 
 	private static OvSpot OvNearestIn(OvPlan p, Vector3 at)
@@ -4202,12 +4231,20 @@ public partial class HarvestController
 		_ai?.StopMoving();
 		if (_vp != null && _rpSaved == null && rise >= OvRampSave)
 		{
+			// G3 (John 11-22, replaces W2's join of either end within 5 m): a saved ramp changes in only two ways -
+			// (a) made deeper: this ramp's top within 5 m (flat) and 0.7 m (height) of its bottom - only the bottom moves;
+			// (b) made higher: this ramp's bottom within 5 m and 0.7 m of its top - only the top moves. Else a new ramp
 			OvRamp same = null;
+			bool deeper = false;
 			foreach (OvRamp r in _vp.Ramps)
 			{
-				// W2 (test 26: a bottom within 10 m glued different ways out together - Comp's by the chests got a top 19 m
-				// away): the same ramp made longer only when its new top is within 5 m of the saved one's top or bottom
-				if (Flat(me, r.Top) <= OvRampTopNear || Flat(me, r.Bottom) <= OvRampTopNear)
+				if (Flat(me, r.Bottom) <= OvRampTopNear && Mathf.Abs(me.y - r.Bottom.y) <= OvRampSameY)
+				{
+					same = r;
+					deeper = true;
+					break;
+				}
+				if (Flat(_rpStart, r.Top) <= OvRampTopNear && Mathf.Abs(_rpStart.y - r.Top.y) <= OvRampSameY)
 				{
 					same = r;
 					break;
@@ -4215,15 +4252,15 @@ public partial class HarvestController
 			}
 			if (same != null)
 			{
-				if (_rpStart.y < same.Bottom.y)
+				if (deeper && _rpStart.y < same.Bottom.y)
 				{
 					same.Bottom = _rpStart;
 				}
-				if (me.y > same.Top.y)
+				if (!deeper && me.y > same.Top.y)
 				{
 					same.Top = me;
 				}
-				if (CompanionsPlugin.LogNormal) LogInfo($"The ramp at {MHR_Mover.Fmt(same.Bottom)} now goes to {MHR_Mover.Fmt(same.Top)}");
+				if (CompanionsPlugin.LogNormal) LogInfo($"The ramp at {MHR_Mover.Fmt(same.Bottom)} now goes to {MHR_Mover.Fmt(same.Top)} ({(deeper ? "made deeper" : "made higher")})");
 				OvSave(_vp);   // F3
 			}
 			else
