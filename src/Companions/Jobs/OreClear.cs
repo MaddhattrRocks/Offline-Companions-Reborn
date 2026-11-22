@@ -3205,9 +3205,9 @@ public partial class HarvestController
 				continue;
 			}
 			MineRock5 m5 = first.GetComponentInParent<MineRock5>();
-			if (m5 != null && _vp != null && _vp.Rocks.Contains(m5))
+			if (m5 != null && _vp != null && (_vp.Rocks.Contains(m5) || OvSameOre(_vp, m5)))
 			{
-				return false;   // this ray strikes the vein
+				return false;   // this ray strikes the vein (H2: or another vein of its ore)
 			}
 			if (!anyHit)
 			{
@@ -4049,7 +4049,10 @@ public partial class HarvestController
 		float bd = float.MaxValue;
 		foreach (OvRamp r in _vp.Ramps)
 		{
-			if (r.Top.y < r.Need - OvStepUp || OvRampOut(r) || _rpTried.Contains(r) || !OvRampOuter(_vp, r))   // G3 (d): never an inward ramp
+			OvSpot bs = OvNearestIn(_vp, r.Bottom);
+			// G3 (d) / H4: only one whose top is past the trench and whose bottom stops short of the floor (more than a hop,
+			// OvRtHopUp 1.1 m, above it - the MP6 measure) - a way out that fails the map check for another reason isn't extended
+			if (r.Top.y < r.Need - OvStepUp || OvRampOut(r) || _rpTried.Contains(r) || !OvRampPastTrench(_vp, r) || bs == null || r.Bottom.y - GroundAt(bs.P) < OvRtHopUp)
 			{
 				continue;
 			}

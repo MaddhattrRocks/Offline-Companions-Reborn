@@ -905,7 +905,14 @@ public partial class HarvestController
 			MineRock5 m5 = col.GetComponentInParent<MineRock5>();
 			if (m5 != null)
 			{
-				k = p.Rocks.Contains(m5) ? MkOre : MkRock;
+				// H2 (John 11-22): a deposit of this vein's ore that isn't in the plan is noted for the join test and is
+				// never swung at (another ore vein, not a plain rock to carve) - read as a thing that can't be damaged
+				bool other = !p.Rocks.Contains(m5) && OvSameOre(p, m5);
+				if (other)
+				{
+					p.Found.Add(m5);
+				}
+				k = p.Rocks.Contains(m5) ? MkOre : other ? MkFixed : MkRock;
 			}
 			else
 			{

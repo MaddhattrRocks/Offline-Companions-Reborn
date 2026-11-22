@@ -703,6 +703,13 @@ public partial class HarvestController
 
 	private Vector3 _rtBlockGoal;
 
+	// H3: the dig of a step on the way to a work place (silver)
+	private bool _sdOn;
+
+	private Vector3 _sdPt;
+
+	private float _sdStartG, _sdGoal;
+
 	// MP4: the step that blocked a search toward `goal` (within 1.5 m) in the last 2 s
 	private bool OvRtBlockFor(Vector3 goal, out Vector3 foot, out Vector3 top)
 	{
@@ -718,6 +725,25 @@ public partial class HarvestController
 	// handled the walk this frame.
 	private bool OvRtWayUpWalk(Vector3 goal, ref bool tried, ref bool latched, ref Vector3 foot, ref Vector3 top, float dt, string what)
 	{
+		if (_sdOn)
+		{
+			// H3: the step dig ended (the vein tick ran its swings): how far its point went down decides whether a next step
+			// may be dug - only after one that made progress (0.05 m, OvDigGain), so it always ends
+			if (_dgActive)
+			{
+				return true;
+			}
+			float gain = _sdStartG - GroundAt(_sdPt);
+			string end = _drRepos;
+			_sdOn = false;
+			_dgDirt = false;
+			_drRepos = null;
+			latched = false;
+			tried = gain < OvDigGain;
+			_moveTimer = 0f;
+			if (CompanionsPlugin.LogNormal) LogInfo($"The step at {MHR_Mover.Fmt(_sdPt)} on the way to {what}: dug down {Mathf.Max(0f, gain):F2} m to {GroundAt(_sdPt):F2} (the floor there {_sdGoal:F2}){(end != null ? " - " + end : "")} - {(tried ? "no progress, on to " + what + " as before" : "the way there looked at again")} (H3)");
+			return false;
+		}
 		if (tried)
 		{
 			return false;
@@ -735,9 +761,25 @@ public partial class HarvestController
 		Vector3 me = base.transform.position;
 		if (Flat(me, foot) <= 1f && Mathf.Abs(me.y - foot.y) <= 1f)
 		{
-			tried = true;
 			latched = false;
 			_ai?.StopMoving();
+			if (OvIsSilver(_vp))
+			{
+				// H3 (John 11-22: "yes" - they clear the high dirt with the pickaxe; F12 is for ways out only): on silver the step is
+				// dug DOWN to the floor at its foot, standing at the foot - a dirt dig (every silver swing check: OvSwingClean,
+				// no swing that meets the vein; G1, no swing that would lower its own feet; the floor / too-deep repositions;
+				// 2 swings without work end it). One point: the game's dig (1.5 m radius) opens about a body's width
+				_sdOn = true;
+				_sdPt = new Vector3(top.x, GroundAt(top), top.z);
+				_sdStartG = _sdPt.y;
+				_sdGoal = foot.y;
+				OvDigBegin(_sdPt, null, ramp: false);
+				_dgDirt = true;
+				_dgGoalY = foot.y;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The pit map's way to {what} has a step of {top.y - foot.y:F1} m at {MHR_Mover.Fmt(foot)} - digging it down to the floor ({foot.y:F2}) from its foot (H3)");
+				return true;
+			}
+			tried = true;
 			OvRampBegin(top, null, outOfTrench: false, $"the pit map's way to {what} has a step of {top.y - foot.y:F1} m here");
 			return true;
 		}

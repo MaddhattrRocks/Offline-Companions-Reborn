@@ -55,6 +55,16 @@ public partial class HarvestController
 		public Vector3 Top;
 
 		public float Need;        // R3: the ground outside the trench there when it began (the top must reach it)
+
+		// H4: the pit map's check that it is a way out (0 = not checked yet / to check again, 1 = a path, 2 = none), when
+		// it was checked, and the squares of that path (a change on any of them = checked again). Kept in the shared plan
+		public int PathState;
+
+		public float CheckedAt;
+
+		public readonly List<int> Squares = new List<int>();
+
+		public string PathWhy;
 	}
 
 	private sealed class OvPlan
@@ -95,6 +105,14 @@ public partial class HarvestController
 		public readonly HashSet<int> PitAxeNo = new HashSet<int>();    // GG1: a thing that drops nothing known whose axe hits did nothing - the pickaxe next
 
 		public readonly HashSet<int> PitIgnore = new HashSet<int>();   // GG1: neither the axe nor the pickaxe hurt it - ignored on this vein
+
+		// H2: deposits of this vein's ore the pit map met that aren't in the plan (tested for the join every 2 s), and the
+		// ones tested already (each once)
+		public readonly HashSet<MineRock5> Found = new HashSet<MineRock5>();
+
+		public readonly HashSet<int> FoundTried = new HashSet<int>();
+
+		public float FoundAt;
 
 		// P1 (John, 2026-11-19 19:47Z: "The pit should be measured as anything inside the trench including the trench. Its a
 		// literal giant hole in the ground. It should not be measured from the ore vein"): the pit's ground, 1 m cells -
@@ -654,6 +672,19 @@ public partial class HarvestController
 	private void OvLoad(OvPlan p)
 	{
 		System.Globalization.CultureInfo ic = System.Globalization.CultureInfo.InvariantCulture;
+		// H1 (John 11-22: "yes"): a deposit in the plan with nothing saved (a vein joined since the save) = the trench round
+		// it isn't dug: the saved ways out are loaded, the trench is not done and the laps start at 1 (the ring may grow)
+		bool unsaved = false;
+		foreach (MineRock5 rock in p.Rocks)
+		{
+			ZNetView nv0 = rock != null ? rock.GetComponent<ZNetView>() : null;
+			ZDO z0 = nv0 != null && nv0.IsValid() ? nv0.GetZDO() : null;
+			if (z0 != null && z0.GetInt(OvKeyLap, 0) <= 0)
+			{
+				unsaved = true;
+				break;
+			}
+		}
 		foreach (MineRock5 rock in p.Rocks)
 		{
 			ZNetView nv = rock != null ? rock.GetComponent<ZNetView>() : null;
@@ -688,6 +719,14 @@ public partial class HarvestController
 				{
 					p.Ramps.Add(new OvRamp { Bottom = new Vector3(v[0], v[1], v[2]), Top = new Vector3(v[3], v[4], v[5]), Need = v[6] });
 				}
+			}
+			if (unsaved)
+			{
+				p.Done = false;
+				p.Lap = 1;
+				p.RingFixed = false;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{p.Name}\" has a deposit with nothing saved (joined since the save) - the trench round it is dug: lap 1 again (spots already down count as done), {p.Ramps.Count} way(s) up / out kept (H1)");
+				return;
 			}
 			if (CompanionsPlugin.LogNormal) LogInfo($"The vein \"{p.Name}\" carries on from its saved progress: {(p.Done ? "the trench is done" : $"trench lap {p.Lap}")}, {p.Ramps.Count} way(s) up / out cut before");
 			return;
@@ -1512,6 +1551,150 @@ public partial class HarvestController
 		return inside;
 	}
 
+	// H2: a deposit of this vein's own ore (the game's MineRock5.m_name, DD1's test) that isn't in this plan
+	private static bool OvSameOre(OvPlan p, MineRock5 m)
+	{
+		if (p == null || m == null || p.Rocks.Contains(m))
+		{
+			return false;
+		}
+		string name = null;
+		foreach (MineRock5 r in p.Rocks)
+		{
+			if (r != null && !string.IsNullOrEmpty(r.m_name))
+			{
+				name = r.m_name;
+				break;
+			}
+		}
+		return name != null && m.m_name == name;
+	}
+
+	// H2 (John 11-22 Q-H2): an uncracked deposit of this vein's ore - the game's Destructible whose m_spawnWhenDestroyed is a
+	// MineRock5 with the vein's own name (the swing that destroys it is what cracks it)
+	private static bool OvUncracked(OvPlan p, GameObject go)
+	{
+		Destructible d = go != null ? go.GetComponent<Destructible>() : null;
+		MineRock5 m = d != null && d.m_spawnWhenDestroyed != null ? d.m_spawnWhenDestroyed.GetComponent<MineRock5>() : null;
+		if (m == null || p == null)
+		{
+			return false;
+		}
+		foreach (MineRock5 r in p.Rocks)
+		{
+			if (r != null && !string.IsNullOrEmpty(r.m_name))
+			{
+				return m.m_name == r.m_name;
+			}
+		}
+		return false;
+	}
+
+	// H2 (John 11-22: "they should cut a trench around that part as well and incorporate it into the existing plan"): every
+	// 2 s (OvGrowEvery), each deposit the pit map noted is tested once by plan creation's join rules (DD1 the same ore, a
+	// harvest candidate, not in a dungeon, a part within 4 m (OvJoin, part box to part box) of the vein's). Joined: the map
+	// reads its squares again (it is the vein now), the ring is made again keeping the work done, and the trench is dug
+	// round it (not done, lap 1). Not joined: another ore vein - left alone (the map keeps it as a thing it can't damage)
+	private void OvFoundJoin(OvPlan p)
+	{
+		if (p.Found.Count == 0 || Time.time < p.FoundAt)
+		{
+			return;
+		}
+		p.FoundAt = Time.time + OvGrowEvery;
+		List<Bounds> have = new List<Bounds>();
+		List<Bounds> theirs = new List<Bounds>();
+		foreach (MineRock5 r in p.Rocks)
+		{
+			OvPartBoxes(r, theirs);
+			have.AddRange(theirs);
+		}
+		List<MineRock5> joined = new List<MineRock5>();
+		foreach (MineRock5 m in new List<MineRock5>(p.Found))
+		{
+			if (m == null || !p.FoundTried.Add(m.GetInstanceID()))
+			{
+				continue;
+			}
+			bool otherPlan = false;
+			foreach (OvPlan q in s_ovPlans)
+			{
+				if (q != p && q.Rocks.Contains(m))
+				{
+					otherPlan = true;
+					break;
+				}
+			}
+			Collider any = m.GetComponentInChildren<Collider>();
+			string why = otherPlan ? "it is another vein's" : any == null || GetHarvestCandidateWithType(any, 3, out _) == null ? "it isn't an ore target" : InDungeonAt(m.transform.position) ? "it is in a dungeon" : null;
+			float gap = float.MaxValue;
+			if (why == null)
+			{
+				OvPartBoxes(m, theirs);
+				foreach (Bounds tb in theirs)
+				{
+					foreach (Bounds hb in have)
+					{
+						gap = Mathf.Min(gap, OvGap3D(tb, hb));
+					}
+				}
+				if (gap > OvJoin)
+				{
+					why = $"its nearest part is {(gap == float.MaxValue ? "?" : gap.ToString("F1"))} m from the vein's (more than {OvJoin:F0} m)";
+				}
+			}
+			if (why != null)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"A deposit of the vein's ore at {MHR_Mover.Fmt(m.transform.position)} doesn't join \"{p.Name}\": {why} - another ore vein, never swung at (H2)");
+				continue;
+			}
+			p.Rocks.Add(m);
+			have.AddRange(theirs);
+			joined.Add(m);
+			if (CompanionsPlugin.LogNormal) LogInfo($"A deposit of the vein's ore at {MHR_Mover.Fmt(m.transform.position)} joins \"{p.Name}\" (its nearest part {gap:F1} m from the vein's) - the trench goes round it too (H2)");
+		}
+		p.Found.Clear();
+		if (joined.Count == 0)
+		{
+			return;
+		}
+		if (p.Map != null)
+		{
+			p.Map.KindCache.Clear();   // its colliders are read as the vein now
+			foreach (MineRock5 m in joined)
+			{
+				OvPartBoxes(m, theirs);
+				foreach (Bounds b in theirs)
+				{
+					OvMapDirtyBox(p.Map, b.min.x - OvMapCell, b.min.z - OvMapCell, b.max.x + OvMapCell, b.max.z + OvMapCell, default(Vector3), 0f);
+				}
+			}
+		}
+		List<OvSpot> old = new List<OvSpot>(p.Spots);
+		int before = old.Count;
+		if (!OvRing(p, old))
+		{
+			p.Spots.Clear();
+			p.Spots.AddRange(old);
+		}
+		foreach (HarvestController h in p.Workers.Keys)
+		{
+			if (h != null)
+			{
+				h._ovSpot = null;
+				h._ovIdx = -1;
+				h.OvDrOff();
+				h.OvClOff();
+			}
+		}
+		p.Done = false;
+		p.DoneSaid = false;
+		p.Lap = 1;
+		p.RingFixed = false;
+		OvSave(p);
+		if (CompanionsPlugin.LogNormal) LogInfo($"The ring round \"{p.Name}\" is made again with {joined.Count} more deposit(s): {before} -> {p.Spots.Count} spots (work done kept); the trench is dug round it from lap 1 (H2)");
+	}
+
 	// C2.3: a part seen outside the ring makes the ring again (at most every 2 s, until lap 1 is complete)
 	private void OvGrow(OvPlan p)
 	{
@@ -1834,6 +2017,8 @@ public partial class HarvestController
 			return;
 		}
 		OvGrow(p);
+		OvFoundJoin(p);   // H2
+		OvRampChecks(p);  // H4
 		if (p.Done)
 		{
 			OvDoneTick();
@@ -2151,6 +2336,15 @@ public partial class HarvestController
 		if (go == null || !go.activeInHierarchy || IsBuilt(go))
 		{
 			return null;
+		}
+		if (OvUncracked(_vp, go))
+		{
+			// H2 (John 11-22: "it will still get the first swing to 'crack' it so it can be properly monitored"): an
+			// uncracked deposit of this vein's ore is handed to the Stone job's way - the game's hit cracks it (the
+			// Destructible gives way to its MineRock5), which the pit map then notes for the join test
+			mode = 2;
+			type = "Destructible";
+			return go;
 		}
 		int kind = MHR_Drops.KindOf(go);
 		bool rock = go.GetComponent<MineRock>() != null;
@@ -2480,43 +2674,153 @@ public partial class HarvestController
 	// 1.5 x its height above the trench floor now (the ground at the trench spot nearest its bottom)
 	private bool OvRampOut(OvRamp r)
 	{
+		OvRampCheck(r);   // H4: checked on the map first when it needs it
 		return OvRampUsable(_vp, r, _character != null ? _character.GetHeight() : 1.8f);
 	}
 
-	// U3: OvRampOut for any plan (the mover's walks in and out of a pit use it too): it reached the ground outside, and
-	// the trench floor beside its bottom is not 1.5 x the height below it (K5)
+	// U3 / H4: OvRampOut for any plan (the mover's walks in and out of a pit use it too). H4 (John 11-22: "We have a full
+	// map of the area so it should be easy to track that and keep it in the shared report"): (a) its top reached the
+	// ground outside (as before); (b) its top is at least 1 m farther from the vein than the trench spot nearest it - past
+	// the trench, not on the bank by the vein; (c) on a vein with a built pit map, the map's route search found a path
+	// from the trench floor at the spot nearest its bottom up to its top (OvRampCheck - kept on the ramp; a change on any
+	// of its squares, or the ramp made deeper / higher, = checked again; not checked yet = not a way out yet). No built
+	// map: (c) is the old K5 test (its bottom within 1.5 x its height of that floor). Replaces G3 (c) and MP6
 	private static bool OvRampUsable(OvPlan p, OvRamp r, float h)
 	{
 		if (r.Top.y < r.Need - OvStepUp)
 		{
 			return false;
 		}
-		if (!OvRampOuter(p, r))
+		if (!OvRampPastTrench(p, r))
 		{
-			return false;   // G3 (c): its top is no farther from the vein than its bottom - not a way out
+			return false;
 		}
 		OvSpot q = p != null ? OvNearestIn(p, r.Bottom) : null;
 		if (q == null)
 		{
 			return true;
 		}
-		// MP6 (the map-path list; silver test: a way out 1.9 m above the trench floor dug down beside it still counted, the
-		// mover won't climb on a vein and T4 never extended it): on a vein with a pit map, usable only while its bottom is
-		// within one hop (OvRtHopUp, 1.1 m) of that floor - else T4 extends it down its own line
-		float limit = p.Map != null && p.Map.Built ? OvRtHopUp : OvRampRatio * h;
-		return r.Bottom.y - GroundAt(q.P) < limit;
+		if (p.Map != null && p.Map.Built)
+		{
+			return r.PathState == 1 && !OvRampStale(p.Map, r);
+		}
+		return r.Bottom.y - GroundAt(q.P) < OvRampRatio * h;
 	}
 
-	// G3 (c) (John 11-22: "Q3 also sounds good"): a ramp is a way out only when its top is farther (flat) from the nearest
-	// live vein part than its bottom is - the pit map's live part boxes (OvMapPartsCheck). No map or no parts: as before
-	private static bool OvRampOuter(OvPlan p, OvRamp r)
+	private const float OvRampPast = 1f;     // H4 (new, John 11-22 OK): a way out's top this much farther from the vein than the trench there
+
+	// H4 (b): its top's flat distance to the nearest live vein part (the pit map's boxes) is at least 1 m more than the
+	// trench spot nearest the top's. No map or no parts: true (as before)
+	private static bool OvRampPastTrench(OvPlan p, OvRamp r)
 	{
 		List<Bounds> parts = p?.Map?.Parts;
-		if (parts == null || parts.Count == 0)
+		OvSpot s = p != null ? OvNearestIn(p, r.Top) : null;
+		if (parts == null || parts.Count == 0 || s == null)
 		{
 			return true;
 		}
-		return OvBoxesFlat(parts, r.Top) > OvBoxesFlat(parts, r.Bottom);
+		return OvBoxesFlat(parts, r.Top) >= OvBoxesFlat(parts, s.P) + OvRampPast;
+	}
+
+	// H4: a change on the map on one of its path's squares since the check
+	private static bool OvRampStale(OvMap m, OvRamp r)
+	{
+		foreach (int i in r.Squares)
+		{
+			if (i >= m.ChangedAt.Length || m.ChangedAt[i] > r.CheckedAt)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static readonly List<Vector3> s_rcPath = new List<Vector3>();
+
+	private static readonly List<int> s_rcSquares = new List<int>();
+
+	// H4 (c): the map's route search (OvRtSearch: the walk rules of every map route - steps, drops, head room, the G2
+	// vein cost) from the trench floor at the spot nearest its bottom to its top; a path that crosses a square over the
+	// vein doesn't count (a way out never goes through the vein). Run by a companion on the vein (the search needs its
+	// body): for this ramp only when it isn't checked or is stale
+	private void OvRampCheck(OvRamp r)
+	{
+		OvPlan p = _vp;
+		OvMap m = p?.Map;
+		if (m == null || !m.Built || (r.PathState != 0 && !OvRampStale(m, r)))
+		{
+			return;
+		}
+		OvSpot q = OvNearestIn(p, r.Bottom);
+		if (q == null)
+		{
+			return;
+		}
+		Vector3 from = new Vector3(q.P.x, GroundAt(q.P), q.P.z);
+		// the MP4 step remembered for this companion's own walks is kept as it was
+		Vector3 bf = _rtBlockFoot, bt = _rtBlockTop, bg = _rtBlockGoal;
+		float ba = _rtBlockAt;
+		bool lh = s_rtLastHadBlock;
+		s_rcPath.Clear();
+		s_rcSquares.Clear();
+		int res = OvRtSearch(p, m, from, r.Top, s_rcPath, s_rcSquares, out string info);
+		_rtBlockFoot = bf;
+		_rtBlockTop = bt;
+		_rtBlockGoal = bg;
+		_rtBlockAt = ba;
+		s_rtLastHadBlock = lh;
+		int was = r.PathState;
+		r.CheckedAt = Time.time;
+		r.Squares.Clear();
+		string why;
+		if (res == 1)
+		{
+			bool overVein = false;
+			foreach (int i in s_rcSquares)
+			{
+				if ((m.Flags[i] & MfVein) != 0)
+				{
+					overVein = true;
+					break;
+				}
+			}
+			r.Squares.AddRange(s_rcSquares);
+			r.PathState = overVein ? 2 : 1;
+			why = overVein ? "the only path crosses the vein" : $"a path of {s_rcSquares.Count} squares";
+		}
+		else
+		{
+			// no path (or the map can't tell yet): checked again when the map changes on the squares round its ends
+			r.PathState = 2;
+			r.Squares.Add(OvMapIndex(m, from));
+			r.Squares.Add(OvMapIndex(m, r.Bottom));
+			r.Squares.Add(OvMapIndex(m, r.Top));
+			r.Squares.RemoveAll((int i) => i < 0);
+			why = info ?? "no path";
+		}
+		if ((was != r.PathState || r.PathWhy != why) && CompanionsPlugin.LogNormal)
+		{
+			LogInfo($"The way out {MHR_Mover.Fmt(r.Bottom)} -> {MHR_Mover.Fmt(r.Top)} on the pit map: {(r.PathState == 1 ? "a way out" : "not a way out")} - {why}, from the trench floor at spot {q.Idx + 1} (H4)");
+		}
+		r.PathWhy = why;
+	}
+
+	// H4: every saved ramp of the vein that reached the outside height and is past the trench is checked when it needs it
+	// (one per call, so a burst of map changes spreads over the ticks)
+	private void OvRampChecks(OvPlan p)
+	{
+		if (p?.Map == null || !p.Map.Built)
+		{
+			return;
+		}
+		foreach (OvRamp r in p.Ramps)
+		{
+			if (r.Top.y >= r.Need - OvStepUp && OvRampPastTrench(p, r) && (r.PathState == 0 || OvRampStale(p.Map, r)))
+			{
+				OvRampCheck(r);
+				return;
+			}
+		}
 	}
 
 	private static float OvBoxesFlat(List<Bounds> boxes, Vector3 q)
@@ -3232,11 +3536,17 @@ public partial class HarvestController
 		}
 		// E2 (silver, a point of the dirt list or E3's place): right before each swing, the E1 check from where it actually
 		// stands - it fails: no swing, it repositions (OvDrTick reads _drRepos once the dig is off)
-		if (_dgDirt && !_drForThing && OvIsSilver(_vp) && !OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, base.transform.position, _dgPoint))
+		if (_dgDirt && !_drForThing && OvIsSilver(_vp))
 		{
-			_drRepos = "from where it stands the swing would meet the vein, or would not meet the dirt first";
-			OvDigOff();
-			return;
+			bool clean = OvSwingClean(FindBestTool(2)?.m_shared?.m_attack, base.transform.position, _dgPoint, out Vector3 sdg);
+			// H3: a step dig also never swings where the game's dig would lower its own feet (G1)
+			OvDigOp sop = _sdOn && clean ? OvDigOpFor(FindBestTool(2)) : null;
+			if (!clean || (sop != null && OvDigLowersFeet(sop, base.transform.position, _dgPoint, sdg)))
+			{
+				_drRepos = clean ? "from where it stands the game's dig would lower the ground at its own feet" : "from where it stands the swing would meet the vein, or would not meet the dirt first";
+				OvDigOff();
+				return;
+			}
 		}
 		int sw = SwingNow(out ItemDrop.ItemData swItem, out _);
 		if (sw == -1)
@@ -3405,7 +3715,7 @@ public partial class HarvestController
 			// (only one its pickaxe can hurt: the game's tier check and damage rules - else it would never end)
 			GameObject rk = rockHit ? _ovThingHitGo.GetComponentInParent<MineRock5>()?.gameObject : null;
 			ItemDrop.ItemData pk = rk != null ? FindBestTool(2) : null;
-			bool carve = rk != null && pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false);
+			bool carve = rk != null && pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false) && !OvSameOre(_vp, rk.GetComponent<MineRock5>());   // H2: another vein of this ore isn't carved
 			// HH1 (John: "it was ok to hit the ore"): a swing that hit the vein's rock is work too (the game damages the part)
 			// P4: a dirt point higher than its swing reaches is cut from below - the game dug into the bank between it and
 			// the point, 0.3 m or more above its feet (not the floor), is work too
@@ -4175,12 +4485,13 @@ public partial class HarvestController
 	private bool OvRampVeinStop(Collider c)
 	{
 		MineRock5 m = c != null ? c.GetComponentInParent<MineRock5>() : null;
-		if (m == null || _vp == null || !_vp.Rocks.Contains(m))
+		bool other = m != null && OvSameOre(_vp, m);   // H2: another vein of this ore - never swung at either
+		if (m == null || _vp == null || (!_vp.Rocks.Contains(m) && !other))
 		{
 			return false;
 		}
 		_rpBad.Add(_rpStart);
-		OvRampFail($"the step in front is the vein's own rock \"{c.name}\" (a way up never goes through the vein)");
+		OvRampFail(other ? $"the step in front is \"{c.name}\", another vein of this ore (never swung at)" : $"the step in front is the vein's own rock \"{c.name}\" (a way up never goes through the vein)");
 		return true;
 	}
 
@@ -4260,6 +4571,7 @@ public partial class HarvestController
 				{
 					same.Top = me;
 				}
+				same.PathState = 0;   // H4: checked on the map again
 				if (CompanionsPlugin.LogNormal) LogInfo($"The ramp at {MHR_Mover.Fmt(same.Bottom)} now goes to {MHR_Mover.Fmt(same.Top)} ({(deeper ? "made deeper" : "made higher")})");
 				OvSave(_vp);   // F3
 			}
