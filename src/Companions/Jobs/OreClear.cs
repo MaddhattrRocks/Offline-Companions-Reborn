@@ -164,6 +164,8 @@ public partial class HarvestController
 		// rock piece that can't be reached - mined first by the last step
 		public readonly HashSet<int> V4 = new HashSet<int>();
 
+		public bool RockBack;   // V5: the set-aside rock pieces came back once when the dirt list emptied (once per vein)
+
 		// F10 (silver): the vein's middle line - the middle of each 1 m slice along its long direction, joined slice to slice
 		public readonly List<Vector3> Mid = new List<Vector3>();
 
@@ -570,6 +572,22 @@ public partial class HarvestController
 		if (c.RockPieces.Count == 0)
 		{
 			return false;
+		}
+		// V5 (John 11-23 04:37Z): once the dirt list is empty, each set-aside rock piece comes back once (once per vein)
+		if (!c.RockBack && OvDirtDone(c))
+		{
+			c.RockBack = true;
+			foreach (OvPart rp in c.RockById.Values)
+			{
+				if (rp.CoolAt < 0f)
+				{
+					continue;
+				}
+				rp.CoolAt = -1f;
+				rp.CoolGround = null;
+				rp.CoolOnce = true;
+				if (CompanionsPlugin.LogNormal) LogInfo($"The rock piece \"{(rp.C != null ? rp.C.name : "?")}\" comes back once: the dirt is done (V5)");
+			}
 		}
 		Vector3 me = base.transform.position;
 		List<OvPart> pick = new List<OvPart>();
