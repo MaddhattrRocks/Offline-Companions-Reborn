@@ -43,6 +43,15 @@ public partial class HarvestController
 
 	private GameObject _lnLadder;
 
+	// V3 (John 11-23 03:10Z / 03:14Z: "a ladder, which can be stacked"; "They snap together using the game logic. I am not
+	// sure if you can build 3 without a support"): two ladders, the second on the first's top snap point, when no single
+	// ladder spot is high enough - at most 2
+	private bool _lnStack;
+
+	private bool _lnStackDone;                   // the first of the two is placed
+
+	private GameObject _lnFirst;
+
 	private float _lnStopY;
 
 	private Vector3 _lnTop;                      // S1: the ladder's top (the mover's walk goal)
@@ -99,6 +108,9 @@ public partial class HarvestController
 		_lnPushing = false;
 		_lnReclimbed = false;
 		_lnLadder = null;
+		_lnStack = false;
+		_lnStackDone = false;
+		_lnFirst = null;
 		_lnBench = false;
 		_lnWood = false;
 		_lnSkip.Clear();
@@ -200,7 +212,7 @@ public partial class HarvestController
 			OvLnGiveUp(part, "the ladder's size can't be read");
 			return;
 		}
-		if (!OvLnFindSpot(c, part, piece, lb, OvLnLocalFwd(prefab), reach, out Vector3 spot, out Quaternion rot, out string why))
+		if (!OvLnFindSpot(c, part, piece, lb, OvLnLocalFwd(prefab), reach, out Vector3 spot, out Quaternion rot, out string why, out bool stack))
 		{
 			OvLnGiveUp(part, "no spot for a ladder (" + why + ")");
 			return;
@@ -241,6 +253,10 @@ public partial class HarvestController
 		// the materials, from its own bag (Player.HaveRequirements); short of wood: trees nearby (John, 22:47Z)
 		Dictionary<string, int> need = new Dictionary<string, int>();
 		OvLnNeeds(piece, need);
+		if (stack)
+		{
+			OvLnNeeds(piece, need);   // V3: the materials for two
+		}
 		if (bench)
 		{
 			OvLnNeeds(benchPiece, need);
@@ -276,6 +292,9 @@ public partial class HarvestController
 		_lnWood = false;
 		_lnSpot = spot;
 		_lnRot = rot;
+		_lnStack = stack;
+		_lnStackDone = false;
+		_lnFirst = null;
 		_lnBench = bench;
 		_lnBenchSpot = bSpot;
 		_lnBenchRot = bRot;
@@ -283,7 +302,7 @@ public partial class HarvestController
 		_lnStageAt = Time.time;
 		_lnNextAct = 0f;
 		_moveTimer = 0f;
-		if (CompanionsPlugin.LogNormal) LogInfo($"Building a ladder for \"{part.C.name}\" at {MHR_Mover.Fmt(spot)}{(bench ? $" (a workbench first at {MHR_Mover.Fmt(bSpot)})" : "")}");
+		if (CompanionsPlugin.LogNormal) LogInfo($"Building {(stack ? "two stacked ladders (one is too low) (V3)" : "a ladder")} for \"{part.C.name}\" at {MHR_Mover.Fmt(spot)}{(bench ? $" (a workbench first at {MHR_Mover.Fmt(bSpot)})" : "")}");
 	}
 
 	private static void OvLnNeeds(Piece piece, Dictionary<string, int> need)
@@ -490,7 +509,9 @@ public partial class HarvestController
 	}
 
 	// (c): the game's placing checks (Player.UpdatePlacementGhost) that apply to a piece put on the ground
-	private bool OvLnPlaceOk(Piece piece, Bounds wb, Vector3 pos, out string why)
+	// V3: onTop = the first ladder the second one is stacked on (the game snaps it there: no ground under it, and the first
+	// ladder isn't in its way)
+	private bool OvLnPlaceOk(Piece piece, Bounds wb, Vector3 pos, out string why, GameObject onTop = null)
 	{
 		why = null;
 		if (s_lnSolid < 0)
@@ -513,25 +534,36 @@ public partial class HarvestController
 			why = "wrong biome";
 			return false;
 		}
-		if (!Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 3f, s_lnGround, QueryTriggerInteraction.Ignore))
+		if (onTop != null)
 		{
-			why = "no ground";
-			return false;
+			if (piece.m_groundOnly)
+			{
+				why = "not on the ground";
+				return false;
+			}
 		}
-		if (hit.collider.attachedRigidbody != null)
+		else
 		{
-			why = "on something loose";
-			return false;
-		}
-		if (piece.m_groundOnly && hit.collider.GetComponent<Heightmap>() == null)
-		{
-			why = "not on the ground";
-			return false;
-		}
-		if (piece.m_notOnTiltingSurface && hit.normal.y < 0.8f)
-		{
-			why = "too steep";
-			return false;
+			if (!Physics.Raycast(pos + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit, 3f, s_lnGround, QueryTriggerInteraction.Ignore))
+			{
+				why = "no ground";
+				return false;
+			}
+			if (hit.collider.attachedRigidbody != null)
+			{
+				why = "on something loose";
+				return false;
+			}
+			if (piece.m_groundOnly && hit.collider.GetComponent<Heightmap>() == null)
+			{
+				why = "not on the ground";
+				return false;
+			}
+			if (piece.m_notOnTiltingSurface && hit.normal.y < 0.8f)
+			{
+				why = "too steep";
+				return false;
+			}
 		}
 		foreach (Player p in Player.GetAllPlayers())
 		{
@@ -544,10 +576,17 @@ public partial class HarvestController
 		if (piece.m_noClipping)
 		{
 			Vector3 half = wb.extents - new Vector3(0.1f, 0.15f, 0.1f);
-			if (half.x > 0f && half.y > 0f && half.z > 0f && Physics.CheckBox(wb.center + Vector3.up * 0.15f, half, Quaternion.identity, s_lnSolid, QueryTriggerInteraction.Ignore))
+			if (half.x > 0f && half.y > 0f && half.z > 0f)
 			{
-				why = "something in the way";
-				return false;
+				int n = Physics.OverlapBoxNonAlloc(wb.center + Vector3.up * 0.15f, half, s_lnBuf, Quaternion.identity, s_lnSolid, QueryTriggerInteraction.Ignore);
+				for (int i = 0; i < n; i++)
+				{
+					if (onTop == null || !s_lnBuf[i].transform.IsChildOf(onTop.transform))
+					{
+						why = "something in the way";
+						return false;
+					}
+				}
 			}
 		}
 		return true;
@@ -560,11 +599,13 @@ public partial class HarvestController
 
 	// the ladder's spot: every 0.5 m under the part's box and up to 2 m out, nearest to it first, facing the part's centre;
 	// (b) its top + reach gets to the part's box bottom and the part is within the swing from its top, (a), (c)
-	private bool OvLnFindSpot(OvClear c, OvPart part, Piece piece, Bounds lb, Vector3 fwdL, float reach, out Vector3 spot, out Quaternion rot, out string why)
+	// V3: none high enough = the same look for two stacked (one more ladder's height on top), stack = true
+	private bool OvLnFindSpot(OvClear c, OvPart part, Piece piece, Bounds lb, Vector3 fwdL, float reach, out Vector3 spot, out Quaternion rot, out string why, out bool stack)
 	{
 		spot = Vector3.zero;
 		rot = Quaternion.identity;
 		why = null;
+		stack = false;
 		Vector3 me = base.transform.position;
 		Bounds pb = new Bounds(part.Centre, part.Half * 2f);
 		float bottom = OvPartBottom(part);
@@ -589,6 +630,9 @@ public partial class HarvestController
 		}
 		pts.Sort((Vector3 a, Vector3 b) => Flat(me, a).CompareTo(Flat(me, b)));
 		Quaternion fromL = Quaternion.Inverse(Quaternion.LookRotation(fwdL));
+		for (int pass = 0; pass < 2; pass++)
+		{
+		float extra = pass == 1 ? lb.size.y : 0f;   // V3: the second ladder's height
 		int low = 0, far = 0, inBox = 0, bad = 0;
 		string lastBad = null;
 		foreach (Vector3 p in pts)
@@ -608,18 +652,23 @@ public partial class HarvestController
 			}
 			Quaternion r = Quaternion.LookRotation(d.normalized) * fromL;
 			Bounds wb = OvLnWorldBox(lb, p, r);
-			if (wb.max.y + reach < bottom)
+			if (wb.max.y + extra + reach < bottom)
 			{
 				low++;
 				continue;
 			}
-			Vector3 top = new Vector3(wb.center.x, wb.max.y, wb.center.z);
+			Vector3 top = new Vector3(wb.center.x, wb.max.y + extra, wb.center.z);
 			if (Flat(top, pb.ClosestPoint(top)) > range * 0.8f)
 			{
 				far++;
 				continue;
 			}
-			if (!OvLnClearOfParts(c, part, wb))
+			Bounds tall = wb;
+			if (extra > 0f)
+			{
+				tall.Encapsulate(top);   // V3: the two together
+			}
+			if (!OvLnClearOfParts(c, part, tall))
 			{
 				inBox++;
 				continue;
@@ -632,10 +681,54 @@ public partial class HarvestController
 			}
 			spot = p;
 			rot = r;
+			stack = pass == 1;
 			return true;
 		}
-		why = $"{pts.Count} looked at: {low} too low, {far} too far from it, {inBox} inside a part's box, {bad} not placeable{(lastBad != null ? " (" + lastBad + ")" : "")}";
+		string w2 = $"{pts.Count} looked at: {low} too low, {far} too far from it, {inBox} inside a part's box, {bad} not placeable{(lastBad != null ? " (" + lastBad + ")" : "")}";
+		why = pass == 0 ? w2 : why + $"; two stacked: {w2} (V3)";
+		if (low == 0)
+		{
+			break;   // V3: two only help where one is too low
+		}
+		}
 		return false;
+	}
+
+	// V3: the second ladder's spot - the game's snap (Player.UpdatePlacementGhost / FindClosestSnapPoints: the ghost moves so
+	// its snap point sits on the placed piece's): its lowest snap point on the first ladder's highest, the same turn
+	private bool OvLnStackSpot(GameObject prefab, GameObject first, out Vector3 spot)
+	{
+		spot = Vector3.zero;
+		Piece fp = first != null ? first.GetComponent<Piece>() : null;
+		Piece pp = prefab != null ? prefab.GetComponent<Piece>() : null;
+		if (fp == null || pp == null)
+		{
+			return false;
+		}
+		List<Transform> a = new List<Transform>(), b = new List<Transform>();
+		fp.GetSnapPoints(a);
+		pp.GetSnapPoints(b);
+		if (a.Count == 0 || b.Count == 0)
+		{
+			return false;
+		}
+		Transform hi = a[0], lo = b[0];
+		foreach (Transform t in a)
+		{
+			if (t.position.y > hi.position.y)
+			{
+				hi = t;
+			}
+		}
+		foreach (Transform t in b)
+		{
+			if (t.localPosition.y < lo.localPosition.y)
+			{
+				lo = t;
+			}
+		}
+		spot = hi.position - _lnRot * Vector3.Scale(prefab.transform.localScale, lo.localPosition);
+		return true;
 	}
 
 	// the workbench: on the ground 2-4 m from the ladder spot (every 30 deg, every 0.5 m), within its build range of the ladder
@@ -827,8 +920,14 @@ public partial class HarvestController
 		Bounds wb = OvLnWorldBox(lb, at, rot);
 		bool stationOk = bench || station == null || (ZoneSystem.instance != null && ZoneSystem.instance.GetGlobalKey(GlobalKeys.NoWorkbench)) || CraftingStation.HaveBuildStationInRange(station.m_name, at) != null;
 		string why = null;
-		if (!OvLnClearOfParts(c, bench ? null : part, wb) || !OvLnPlaceOk(piece, wb, at, out why) || !stationOk)
+		GameObject onTop = !bench && _lnStackDone ? _lnFirst : null;   // V3: the second, on the first
+		if (!OvLnClearOfParts(c, bench ? null : part, wb) || !OvLnPlaceOk(piece, wb, at, out why, onTop) || !stationOk)
 		{
+			if (onTop != null)
+			{
+				OvClFail($"the second ladder can't be placed on the first at {MHR_Mover.Fmt(at)} ({why ?? (stationOk ? "a part's box" : "no workbench in range")}) (V3)", wait: true);
+				return;
+			}
 			_lnBad.Add(OvLnCell(at));
 			if (CompanionsPlugin.LogNormal) LogInfo($"Can't place the {(bench ? "workbench" : "ladder")} at {MHR_Mover.Fmt(at)} any more ({why ?? (stationOk ? "a part's box" : "no workbench in range")}) - looking again");
 			_lnStage = 0;
@@ -841,6 +940,11 @@ public partial class HarvestController
 		{
 			if (bag.CountItems(kv.Key) < kv.Value)
 			{
+				if (onTop != null)
+				{
+					OvClFail($"short of {MHR_List.Local(kv.Key)} for the second ladder (V3)", wait: true);
+					return;
+				}
 				_lnStage = 0;   // its bag changed: the plan again (wood, or give up)
 				return;
 			}
@@ -876,6 +980,20 @@ public partial class HarvestController
 			return;
 		}
 		part.LadderTried = true;
+		if (_lnStack && !_lnStackDone)
+		{
+			// V3: the first of two - the second goes on its top snap point (stage 2 again, the same checks)
+			_lnStackDone = true;
+			_lnFirst = go;
+			if (!OvLnStackSpot(prefab, go, out Vector3 s2))
+			{
+				OvClFail("the ladder has no snap points to stack a second one on (V3)", wait: true);
+				return;
+			}
+			_lnSpot = s2;
+			if (CompanionsPlugin.LogNormal) LogInfo($"Stacking the second ladder on the first at {MHR_Mover.Fmt(s2)} (the game's snap points) (V3)");
+			return;
+		}
 		_lnLadder = go;
 		OvLnClimbStart(part);
 	}

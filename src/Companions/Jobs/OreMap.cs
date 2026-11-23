@@ -509,6 +509,43 @@ public partial class HarvestController
 		return 0;
 	}
 
+	// V2: standing at pt, up on what is there: the ground as OvMapStand says, else the top of the lowest layer there that is
+	// the vein's rock, plain rock or stone or a built piece with its height of open space above it (OvRoomOverBody as for a
+	// built floor). 1 = yes (feet), 0 = no, -1 = don't know (no map, off the map, not read yet)
+	private int OvMapStandOn(Vector3 pt, out float feet)
+	{
+		int r = OvMapStand(pt, out feet, out _);
+		if (r != 0)
+		{
+			return r;
+		}
+		OvMap m = _vp?.Map;
+		int i = OvMapIndex(m, pt);
+		if (i < 0)
+		{
+			return -1;
+		}
+		float hh = _character != null ? _character.GetHeight() : 1.8f;
+		int li = i * OvMapLayers, lc = m.LCount[i];
+		float rad = OvBodyRadius();
+		for (int j = 0; j < lc; j++)
+		{
+			byte k = m.LKind[li + j];
+			if (k != MkOre && k != MkRock && k != MkBuilt)
+			{
+				continue;
+			}
+			float top = m.LTop[li + j];
+			float above = j + 1 < lc ? m.LBot[li + j + 1] - top : float.MaxValue;
+			if (above >= hh && OvRoomOverBody(m, i, top, hh, rad))
+			{
+				feet = top;
+				return 1;
+			}
+		}
+		return 0;
+	}
+
 	// ---------- S4: the lowest ground round a drop-down's landing, from the map ----------
 
 	// S4 (test of 05e19c2: Je's 1.7 m drop-down landed on a shelf by the trench wall and it went on down, 8.1 m in all): the

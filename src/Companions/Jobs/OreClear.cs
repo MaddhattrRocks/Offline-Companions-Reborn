@@ -77,6 +77,8 @@ public partial class HarvestController
 		public HarvestController Holder2;  // F9: a second companion, from more than a quarter turn round it
 
 		public bool IsRock;       // J2: a piece of a plain rock (not this vein) that a part of the vein rests on
+
+		public bool LadderGaveUp; // V3: a ladder round on this rock piece ended without it breaking
 	}
 
 	// GG2: one point of the dirt list
@@ -156,6 +158,11 @@ public partial class HarvestController
 
 		// T3: plain-rock pieces found in the way of a part's swing (their collider ids) - on the rock list until they are gone
 		public readonly HashSet<int> InWay = new HashSet<int>();
+
+		// V4 (John 11-23 03:10Z: "If that part is not reachable in any way, even from building a ladder ... they should just
+		// mine out the attached section of the ore to break it"): the vein parts (their collider ids) whose box touches a
+		// rock piece that can't be reached - mined first by the last step
+		public readonly HashSet<int> V4 = new HashSet<int>();
 
 		// F10 (silver): the vein's middle line - the middle of each 1 m slice along its long direction, joined slice to slice
 		public readonly List<Vector3> Mid = new List<Vector3>();
@@ -585,6 +592,19 @@ public partial class HarvestController
 			int r = OvStandForPart(rp, out Vector3 stand, out string why);
 			if (r != 0)
 			{
+				// V3 / V4: once the dirt and the low parts are done, and not because other companions have the places
+				bool late = OvDirtDone(c) && !OvLowLeft(c) && !_sfpBusy;
+				if (late && !OvIsLow(rp) && !rp.LadderTried && !rp.LadderGaveUp)
+				{
+					// V3: no place to hit it from (V2 included) - a ladder (two stacked when one is too low)
+					if (CompanionsPlugin.LogNormal) LogInfo($"No place to hit the rock piece \"{rp.C.name}\" from ({why}) - from a ladder (V3)");
+					OvClBegin(rp, stand, ladder: true);
+					return true;
+				}
+				if (late)
+				{
+					OvV4Mark(c, rp, why);   // V4: not from a ladder either
+				}
 				OvPartCool(rp, why, wait: false);
 				continue;
 			}
@@ -598,6 +618,28 @@ public partial class HarvestController
 			return true;
 		}
 		return false;
+	}
+
+	// V4: every vein part (not buried) whose box touches the rock piece goes on the vein's V4 list (said once each)
+	private void OvV4Mark(OvClear c, OvPart rp, string why)
+	{
+		Bounds rb = new Bounds(rp.Centre, rp.Half * 2f);
+		foreach (OvPart p in c.Parts)
+		{
+			if (p.IsRock || p.Out || p.C == null || !p.C.gameObject.activeSelf || !new Bounds(p.Centre, p.Half * 2f).Intersects(rb))
+			{
+				continue;
+			}
+			if (c.V4.Add(p.C.GetInstanceID()) && CompanionsPlugin.LogNormal)
+			{
+				LogInfo($"The part \"{p.C.name}\" is attached to the rock piece \"{rp.C.name}\" that can't be reached ({why}{(rp.LadderTried || rp.LadderGaveUp ? "; its ladder was tried" : "")}) - mined first (V4)");
+			}
+		}
+	}
+
+	private static bool OvV4Has(OvClear c, OvPart p)
+	{
+		return p.C != null && c.V4.Contains(p.C.GetInstanceID());
 	}
 
 	private string _clRockWhy;   // J2: why a rock piece's round stopped on silver (its swing would meet / met the vein)
@@ -2041,6 +2083,12 @@ public partial class HarvestController
 		return true;
 	}
 
+	// V1: the vein's dirt work is done - no dirt point left on its list
+	private static bool OvDirtDone(OvClear c)
+	{
+		return c != null && c.Dirt.Count == 0;
+	}
+
 	// U1 (log bcbf7cf5: 7 points had used their come-back before the last progress, so the stop waited for them forever):
 	// a point's one come-back is used only when it failed after the last progress - each progress gives it one more
 	private static bool OvOnceUsed(OvClear c, OvDirt d)
@@ -3154,11 +3202,40 @@ public partial class HarvestController
 	// there (OvSwingReaches) meets the part's own rock first. Lowest first: of those within 0.3 m of the lowest that
 	// work, the nearest to the companion. The aim goes in _standAim. 0 = found; 1 = pit ground but no swing from it
 	// reaches the rock (the last step's ladder, K1); 2 = no pit ground near it.
+	// V2 (John 11-23 03:05-03:10Z: "They can also stand on the rock. Anywhere they need to stand to reach and clear the
+	// last part"): the pit ground first; none works = the same search again with places on top of the vein's rock, plain
+	// rock or stone and built pieces, and the ground just outside the pit (every other check the same)
 	private int OvStandForPart(OvPart part, out Vector3 stand, out string why)
+	{
+		int r = OvStandForPartIn(part, false, out stand, out why);
+		if (r == 0)
+		{
+			return 0;
+		}
+		bool busy1 = _sfpBusy;
+		Vector3 st1 = stand, aim1 = _standAim;
+		int r2 = OvStandForPartIn(part, true, out Vector3 st2, out string why2);
+		_sfpBusy |= busy1;
+		if (r2 == 0)
+		{
+			stand = st2;
+			if (CompanionsPlugin.LogNormal) LogInfo($"No place on the pit ground to hit \"{(part.C != null ? part.C.name : "?")}\" from ({why}) - from {MHR_Mover.Fmt(st2)} instead, up on what is there or just outside the pit (V2)");
+			return 0;
+		}
+		stand = st1;
+		_standAim = aim1;
+		why += $"; nor up on the rock, the ore or a built piece or just outside the pit ({why2}) (V2)";
+		return r;
+	}
+
+	private bool _sfpBusy;   // V3: the last part stand search failed only because other companions have the places
+
+	private int OvStandForPartIn(OvPart part, bool any, out Vector3 stand, out string why)
 	{
 		stand = Vector3.zero;
 		why = null;
 		_swOther = null;   // T3
+		_sfpBusy = false;   // V3
 		_standAim = part.Centre;
 		// K2 (John 11-22 19:35Z: rock pieces "should use the lower-part rule"): a plain-rock piece (J2) too - a swing whose
 		// first hit is the ground within 1 m of its box reaches it (that swing digs the dirt off it)
@@ -3179,14 +3256,14 @@ public partial class HarvestController
 			for (float z = Mathf.Floor((box.min.z - reach) / OvDirtGrid) * OvDirtGrid; z <= box.max.z + reach + 0.001f; z += OvDirtGrid)
 			{
 				Vector3 pt = new Vector3(x, 0f, z);
-				if (Flat(pt, box.ClosestPoint(new Vector3(x, box.center.y, z))) > reach + 0.01f || !OvInPitPt(pt))
+				if (Flat(pt, box.ClosestPoint(new Vector3(x, box.center.y, z))) > reach + 0.01f || (!any && !OvInPitPt(pt)) || (any && OvInPitPt(pt) && OvMapStand(pt, out _, out _) != 0))
 				{
-					continue;
+					continue;   // V2: the second search takes only what the first couldn't (off the pit, or up on something)
 				}
 				pt.y = GroundAt(pt);
 				// R2.3: the map says no place to stand there: dropped before the body and swing tests; a built floor: its feet
-				// go on the floor; don't know: as before
-				int ms = OvMapStand(pt, out float mf, out _);
+				// go on the floor; don't know: as before. V2: up on the top of what stands there too
+				int ms = any ? OvMapStandOn(pt, out float mf) : OvMapStand(pt, out mf, out _);
 				if (ms == 0)
 				{
 					noStand++;
@@ -3225,12 +3302,14 @@ public partial class HarvestController
 			if (cand.Count == 0 && qn > 0)
 			{
 				why = $"no place beside it more than a quarter turn round it from {opp.OvName()} ({qn})";
+				_sfpBusy = true;
 				return 2;
 			}
 		}
 		if (cand.Count == 0 && taken > 0)
 		{
 			why = $"every place beside it is within 1.2 m of another companion ({taken})";
+			_sfpBusy = true;
 			return 2;
 		}
 		if (cand.Count == 0 && tooLow > 0)
@@ -3273,7 +3352,9 @@ public partial class HarvestController
 				continue;
 			}
 			// J2 (silver): a rock piece only from where no ray of the swing meets the vein first
-			if (part.IsRock && OvIsSilver(_vp) && !OvSwingClean(a, pt, part.Centre, out _, part.C))
+			// V1 (John 11-23 03:05Z, log f93a7cd2: his swings hit the rock piece and the silver together): once the dirt is
+			// done, J2 no longer applies - a ray whose first hit is the rock piece is enough (OvSwingReaches above)
+			if (part.IsRock && OvIsSilver(_vp) && !OvDirtDone(OvC()) && !OvSwingClean(a, pt, part.Centre, out _, part.C))
 			{
 				continue;
 			}
@@ -3312,7 +3393,10 @@ public partial class HarvestController
 		}
 		stand = cand[0];
 		why = $"no place on the pit ground beside it where the game's pickaxe swing meets its rock first ({tested} looked at{(noFit > 0 ? $", {noFit} with no room for its body" : "")})";
-		OvInWayNote(part);   // T3
+		if (!any)
+		{
+			OvInWayNote(part);   // T3
+		}
 		return 1;
 	}
 
@@ -3767,6 +3851,11 @@ public partial class HarvestController
 		}
 		cand.Sort((OvPart a, OvPart b) =>
 		{
+			bool va = OvV4Has(c, a), vb = OvV4Has(c, b);   // V4: the parts attached to a rock piece that can't be reached first
+			if (va != vb)
+			{
+				return va ? -1 : 1;
+			}
 			int bc = after[a].CompareTo(after[b]);
 			return bc != 0 ? bc : Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me)));
 		});
@@ -3805,7 +3894,7 @@ public partial class HarvestController
 				return true;
 			}
 			int left = after[pick];
-			_clPopWhy = left == 0 ? $"the part that pops it: by the game's support check nothing of the vein stays held once it breaks ({c.HeldCount} held now)" : $"the part whose break drops the most: by the game's support check {left} of the {c.HeldCount} held part(s) stay held once it breaks";
+			_clPopWhy = (OvV4Has(c, pick) ? "attached to a rock piece that can't be reached (V4); " : "") + (left == 0 ? $"the part that pops it: by the game's support check nothing of the vein stays held once it breaks ({c.HeldCount} held now)" : $"the part whose break drops the most: by the game's support check {left} of the {c.HeldCount} held part(s) stay held once it breaks");
 			OvClBegin(pick, stand, ladder: r == 1);
 			return true;
 		}
@@ -4510,10 +4599,20 @@ public partial class HarvestController
 	private void OvClFail(string why, bool wait = false)
 	{
 		OvPart root = _clFor;
+		bool ladder = _clLadder;
 		OvClOff();
 		if (root == null || _vp == null)
 		{
 			return;
+		}
+		if (root.IsRock && ladder)
+		{
+			root.LadderGaveUp = true;   // V3: its ladder round ended without it breaking
+			OvClear vc = OvC();
+			if (vc != null)
+			{
+				OvV4Mark(vc, root, why);   // V4: not from a ladder either - now, not at its next try (it is set aside below)
+			}
 		}
 		OvPartUnclaim(root);   // F9
 		OvPartCool(root, why, wait);
