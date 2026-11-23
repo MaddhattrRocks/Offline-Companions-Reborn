@@ -494,6 +494,22 @@ namespace Companions
                     h.ResetToIdle();
                     return true;
                 }
+                // X1 (f) (John 11-23 05:31Z: "if they run out of stamina getting to the build location they should then toss
+                // the 50 stone"): out of stamina on the way to the stone pile's spot - its stone tossed right here, and no
+                // pile tried (nor dump stone taken) until the pit changes
+                if (p.Trip == YardTrip.Build && p.PileItem == "Stone")
+                {
+                    CompanionStamina pst = h.GetComponent<CompanionStamina>();
+                    if (pst != null && pst.Stamina <= 0f)
+                    {
+                        pai.StopMoving();
+                        h.OvNoPile("Out of stamina on the way to build the stone pile - tossing its stone here (X1)");
+                        p.Trip = YardTrip.Toss; p.TossJunk = false; p.TossToCap = false;
+                        p.TossWalk = false; p.TossWalkGo = false; p.TossLeave = false;
+                        p.PilePoint = h.transform.position; p.PileUntil = Time.time + 30f; p.NextToss = Time.time + 0.2f;
+                        return true;
+                    }
+                }
                 if (d <= 1.5f || Time.time >= p.PileUntil)
                 {
                     pai.StopMoving();

@@ -236,7 +236,7 @@ public partial class HarvestController
 			return false;
 		}
 		float now = Time.time;
-		if (now < _ovChestNext)
+		if (now < _ovChestNext || OvStoneCollecting())   // X1 (b): collecting the dump's stone for a pile
 		{
 			return false;
 		}

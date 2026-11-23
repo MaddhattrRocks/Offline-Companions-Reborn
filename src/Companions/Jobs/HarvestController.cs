@@ -821,7 +821,7 @@ public partial class HarvestController : MonoBehaviour
 			return;
 		}
 		// 1.5.98 (C6): overweight or the bag full while on its vein - out of the trench first, then the normal rules
-		if (mode == 3 && OvOnPit && (IsOverweight() || MHR_GatherRules.PackFull(this)))
+		if (mode == 3 && OvOnPit && (IsOverweight() || MHR_GatherRules.PackFull(this)) && !OvStoneCollecting())   // X1 (b)
 		{
 			// G8: its stone and wood go off to one side right here and it keeps working; only ore (or nothing to toss)
 			// takes it away from the vein. A4: in the middle of a swing it waits for the swing to end first.
@@ -842,7 +842,7 @@ public partial class HarvestController : MonoBehaviour
 			OvLeaveOut(MHR_GatherRules.AfterVeinGoal(this, out Vector3 owGoal, out string owWhat) ? owGoal : base.transform.position, IsOverweight() ? "it's carrying too much" : "its bag is full");
 			return;
 		}
-		if (IsOverweight())
+		if (IsOverweight() && !(mode == 3 && OvStoneCollecting()))   // X1 (b): collecting the dump's stone for a pile
 		{
 			if (!(_ai != null) || !(_ai.PendingDepositContainer != null))
 			{

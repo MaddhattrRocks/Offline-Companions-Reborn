@@ -88,6 +88,7 @@ namespace Companions
                 {
                     int have = CountIn(inv, item);
                     if (have <= 0) continue;
+                    if (item == "Stone" && h.OvStoneCollecting()) continue;   // X1 (b): collecting the dump's stone for a pile
                     any = true;
                     int cost;
                     if (h.OvOnPit && h.OvPilesOpen && CanBuild(h, p, hum, item, out cost) && have >= cost) return true;   // L5: a pile only on its pit; T1: only after its vein popped
@@ -163,6 +164,7 @@ namespace Companions
             {
                 int have = CountIn(hum.GetInventory(), item);
                 if (have <= 0) continue;
+                if (item == "Stone" && h.OvStoneCollecting()) continue;   // X1 (b): collecting the dump's stone for a pile
                 int cost;
                 // F2: after the pop, no stone pile is tried until the pit changes once one couldn't be placed - to the dump
                 if (item == "Stone" && h.OvNoPileNow() && h.OvStoneDumpAt(out Vector3 nd)) return TossAt(h, item, nd, "no stone pile now - its stone to the stone dump");
@@ -216,6 +218,7 @@ namespace Companions
             foreach (string item in s_pileItems)
             {
                 if (item == p.VeinTossItem && Time.time - p.VeinTossAt < 5f) continue;
+                if (item == "Stone" && h.OvStoneCollecting()) continue;   // X1 (b)
                 if (CountIn(hum.GetInventory(), item) > 0) { p.VeinTossAt = Time.time; p.VeinTossItem = item; return StartToss(h, p, item); }
             }
             return false;

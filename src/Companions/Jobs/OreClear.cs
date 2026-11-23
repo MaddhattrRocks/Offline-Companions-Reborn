@@ -1327,6 +1327,14 @@ public partial class HarvestController
 				{
 					return 1;
 				}
+				// X1 (e) (John 11-23 05:29Z): the stone it still needs for the pile must fit in its bag (the game's room check)
+				int need = dcost - MHR_GatherRules.CountStone(inv);
+				if (need > 0 && !inv.CanAddItem(l.D.m_itemData, need))
+				{
+					return 1;
+				}
+				// X1 (a): over its weight line is fine - the pile gets it back under (only the bag's room counts)
+				return inv.CanAddItem(l.D.m_itemData) ? 0 : 2;
 			}
 		}
 		else if (l.Name == "Stone")
@@ -1648,15 +1656,44 @@ public partial class HarvestController
 		}
 	}
 
+	// X1 (John 11-23 05:29Z: "If it can pick up the stone and then has enough to build a pile it should build the pile"):
+	// collecting = it is the one taking stone off the dump, it has fewer than a pile, and the dump's stone and its own make
+	// one (a pile can be tried now). While collecting, the too-heavy steps leave its stone alone.
+	internal bool OvStoneCollecting()
+	{
+		if (_vp == null || !_ovPitOpen || _humanoid == null || !s_ovClear.TryGetValue(_vp, out OvClear c) || c.StoneTaker != this || OvNoPileNow(c))
+		{
+			return false;
+		}
+		if (!MHR_GatherRules.PileCost(this, "Stone", out int cost))
+		{
+			return false;
+		}
+		int have = MHR_GatherRules.CountStone(_humanoid.GetInventory());
+		if (have >= cost)
+		{
+			return false;
+		}
+		foreach (OvLoose o in c.Loose.Values)
+		{
+			if (o.Name == "Stone" && OvLooseHere(o) && !OvLooseAside(o) && OvAtStoneDump(c, o.D.transform.position))
+			{
+				have += o.D.m_itemData.m_stack;
+			}
+		}
+		return have >= cost;
+	}
+
 	// F2: called by StartPile - no place the game allows for a stone pile: none tried again until the pit map changes
-	internal void OvNoPile()
+	// X1 (f): also when it ran out of stamina on the way to the pile's spot (why)
+	internal void OvNoPile(string why = null)
 	{
 		if (_vp == null || !_ovPitOpen)
 		{
 			return;
 		}
 		OvClear c = OvC();
-		if (c.NoPileAt < 0f && CompanionsPlugin.LogNormal) LogInfo("No place the game allows for a stone pile - the stone goes to the stone dump; no pile tried until the pit changes");
+		if ((c.NoPileAt < 0f || why != null) && CompanionsPlugin.LogNormal) LogInfo((why ?? "No place the game allows for a stone pile") + " - the stone goes to the stone dump; no pile tried until the pit changes");
 		c.NoPileAt = Time.time;
 		if (c.StoneTaker == this)
 		{
