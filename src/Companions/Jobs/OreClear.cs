@@ -1867,7 +1867,7 @@ public partial class HarvestController
 			{
 				foreach (OvDirt d in c.Dirt)
 				{
-					if (c.DirtCool.ContainsKey(d.Key) && !c.DirtOnce.Contains(d.Key) && GroundAt(d.P) > d.Goal + OvDigGain)
+					if (c.DirtCool.ContainsKey(d.Key) && !OvOnceUsed(c, d) && GroundAt(d.P) > d.Goal + OvDigGain)
 					{
 						dirtLeft = true;
 						break;
@@ -1887,7 +1887,7 @@ public partial class HarvestController
 		{
 			foreach (OvDirt d in c.Dirt)
 			{
-				if (!c.DirtCool.ContainsKey(d.Key) || c.DirtOnce.Contains(d.Key) || GroundAt(d.P) <= d.Goal + OvDigGain)
+				if (!c.DirtCool.ContainsKey(d.Key) || OvOnceUsed(c, d) || GroundAt(d.P) <= d.Goal + OvDigGain)
 				{
 					continue;
 				}
@@ -1902,7 +1902,7 @@ public partial class HarvestController
 			// SV7: the set-aside low parts the same way (they had a 1 min wait)
 			foreach (OvPart part in c.Low)
 			{
-				if (!OvLowUp(part) || part.CoolAt < 0f || part.CoolOnce || part.Wait || lows.Contains(part) || OvPartHeldByOther(part))
+				if (!OvLowUp(part) || part.CoolAt < 0f || (part.CoolOnce && part.FailAt > c.ProgAt) || part.Wait || lows.Contains(part) || OvPartHeldByOther(part))
 				{
 					continue;
 				}
@@ -2039,6 +2039,13 @@ public partial class HarvestController
 			OvStandBy($"every dirt point and low part left is set aside or had no place to work it from ({c.Dirt.Count} point(s), {c.DirtCool.Count} set aside) - each comes back when something within 2 m of it changes");
 		}
 		return true;
+	}
+
+	// U1 (log bcbf7cf5: 7 points had used their come-back before the last progress, so the stop waited for them forever):
+	// a point's one come-back is used only when it failed after the last progress - each progress gives it one more
+	private static bool OvOnceUsed(OvClear c, OvDirt d)
+	{
+		return c.DirtOnce.Contains(d.Key) && (!c.DirtFail.TryGetValue(d.Key, out float f) || f > c.ProgAt);
 	}
 
 	// E4: set aside (no clock - OvDirtCooling says when it comes back)
@@ -2814,6 +2821,10 @@ public partial class HarvestController
 		}
 		stand = Vector3.zero;
 		why = null;
+		if (dirt != null)
+		{
+			_u2On = false;   // U2: set again only by the last-resort search below
+		}
 		Vector3 me = base.transform.position;
 		float range = FindBestTool(2)?.m_shared?.m_attack != null ? FindBestTool(2).m_shared.m_attack.m_attackRange : 2f;
 		float reach = Mathf.Max(0.8f, range - OvStandAt);
@@ -3053,10 +3064,78 @@ public partial class HarvestController
 			if (digIn && CompanionsPlugin.LogNormal) LogInfo($"No trench-floor place within its swing of the dirt at {MHR_Mover.Fmt(aim)} - digging in toward it from the trench at {MHR_Mover.Fmt(pt)} ({Flat(pt, aim):F1} m from it)");
 			return 0;
 		}
+		// U2 (John 11-23 00:19-00:55Z: to reach the last dirt the trench-floor, own-feet, 2 m-under and middle-line rules give
+		// way; strike the base of the dirt nearby to get closer, never a pit at its own feet, never deeper than needed)
+		if (silver && dirt != null && dirt.Part != null && cand.Count == 0 && OvU2Stand(c, aim, dirt, sa, reach, tried, opp, notNear, out Vector3 u2))
+		{
+			stand = u2;
+			_u2On = true;
+			if (CompanionsPlugin.LogNormal) LogInfo($"No place to work the dirt at {MHR_Mover.Fmt(aim)} from by the usual rules - the last-resort place {MHR_Mover.Fmt(u2)} ({Flat(u2, aim):F1} m from it): the trench floor, own-feet, 2 m-under and middle-line rules give way; it strikes the dirt nearby to get closer (U2)");
+			return 0;
+		}
 		string sideNote = otherSide > 0 ? $" ({otherSide} place(s) on the other side of the middle line left out)" : "";
 		// G1 (c): every count on its own (one count no longer hides the others)
 		why = (silver && cand.Count == 0 ? $"no place within {OvDigInFar:F0} m of it to work it from: {oreFirst} where the swing meets the vein first, {digsSelf} where the game's dig would lower the ground at its own feet, {tooLow} more than 2 m under the part, {digLow} where the dig lands more than 2 m under the part, {offFloor} up on the dirt (not the trench floor), {triedN} tried already{noStandSaid}" : $"no way there by the pit map to the {noWay} lowest place(s) within its swing of it") + sideNote;
 		return 2;
+	}
+
+	// U2: true while a dirt round works from a last-resort place (OvDrTick's swing result reads it)
+	private bool _u2On;
+
+	// U2: places within 3 m of the point where the body fits (pit map, head room), on the pit's ground, not another
+	// companion's place, a quarter turn from a second companion on the point, not tried already, either side of the middle
+	// line, whose swing toward the point meets no part of the vein first and meets the ground first - the nearest to the point
+	private bool OvU2Stand(OvClear c, Vector3 aim, OvDirt dirt, Attack sa, float reach, List<Vector3> tried, HarvestController opp, Vector3? notNear, out Vector3 stand)
+	{
+		stand = Vector3.zero;
+		List<Vector3> ok = new List<Vector3>();
+		for (float x = Mathf.Floor((aim.x - OvDigInFar) / OvDirtGrid) * OvDirtGrid; x <= aim.x + OvDigInFar + 0.001f; x += OvDirtGrid)
+		{
+			for (float z = Mathf.Floor((aim.z - OvDigInFar) / OvDirtGrid) * OvDirtGrid; z <= aim.z + OvDigInFar + 0.001f; z += OvDirtGrid)
+			{
+				Vector3 q = new Vector3(x, 0f, z);
+				if (Flat(q, aim) > OvDigInFar + 0.01f || !OvInPitPt(q) || OvBoardTaken(q) != null || (notNear.HasValue && Flat(q, notNear.Value) <= OvFeetDig))
+				{
+					continue;
+				}
+				q.y = GroundAt(q);
+				int ms = OvMapStand(q, out float mf, out _);
+				if (ms == 0)
+				{
+					continue;
+				}
+				if (ms == 1)
+				{
+					q.y = mf;
+				}
+				if (OvTriedHas(tried, q) || (opp != null && !OvQuarterOk(q, aim, opp._drStand)))
+				{
+					continue;
+				}
+				ok.Add(q);
+			}
+		}
+		ok.Sort((Vector3 p1, Vector3 p2) => Flat(p1, aim).CompareTo(Flat(p2, aim)));
+		int n = 0, noWay = 0;
+		foreach (Vector3 q in ok)
+		{
+			if (n++ >= OvSwTestMax)
+			{
+				break;
+			}
+			if (!OvSwingClean(sa, q, aim))
+			{
+				continue;
+			}
+			if (noWay < OvRtProbeMax && OvRtNoWay(q, out _))
+			{
+				noWay++;
+				continue;
+			}
+			stand = q;
+			return true;
+		}
+		return false;
 	}
 
 	// ---------- M1: where to stand to hit a part's rock, by the game's own swing ----------

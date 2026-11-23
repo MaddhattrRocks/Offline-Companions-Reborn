@@ -4013,10 +4013,21 @@ public partial class HarvestController
 					feetDig = false;
 					floorDug = false;
 				}
-				float lowest = Mathf.Max(_drSpot != null && _drSpot.Part != null ? OvPartBottom(_drSpot.Part) - OvDeepMax : float.MinValue, OvFloor(_dgDugPt));
+				// U2 (John 11-23 00:30Z: "We dont want them to dig a pit at their feet, but if they are striking the base of
+				// nearby dirt so they can get close to the remaining dirt that is fine"): from a last-resort place only a dig
+				// within 0.5 m (flat) of its feet is its own feet - its floor going down from a dig further off is fine
+				bool u2 = _u2On && _drSpot != null && !_drDeep && !_lwOn;
+				if (u2)
+				{
+					feetDig = dug && Flat(ft, _dgDugPt) <= OvFeetDig;
+					floorDug = false;
+				}
+				// U2: work only while the ground it dug is still above the point's goal (never deeper than needed; the game's
+				// 8 m floor as always)
+				float lowest = u2 ? Mathf.Max(_drSpot.Goal, OvFloor(_dgDugPt)) : Mathf.Max(_drSpot != null && _drSpot.Part != null ? OvPartBottom(_drSpot.Part) - OvDeepMax : float.MinValue, OvFloor(_dgDugPt));
 				bank = dug && !feetDig && _dgDugBefore > lowest + OvDigGain && GroundAt(_dgDugPt) <= _dgDugBefore - OvDigGain;
 				// F7 (b): the dug point is now under the lowest allowed (2 m under the part's bottom, or the game's 8 m limit)
-				tooDeep = dug && _drSpot != null && _drSpot.Part != null && GroundAt(_dgDugPt) < lowest;
+				tooDeep = !u2 && dug && _drSpot != null && _drSpot.Part != null && GroundAt(_dgDugPt) < lowest;
 			}
 			_dgNoProg = drop || bank || carve || oreWork ? 0 : _dgNoProg + 1;
 			// rule 5 (silver): reposition at once when a swing hit the vein (1 hit is the limit - no part breaks from dirt work)
