@@ -1885,12 +1885,36 @@ public partial class HarvestController
 		bool others = false;
 		bool othersDirt = false;   // F8: a dirt point another companion is working
 		string othersWhy = null;   // SV5
+		// W1: a lost point's note goes once the point is off the list
+		if (_drLost.Count > 0)
+		{
+			HashSet<long> on = new HashSet<long>();
+			foreach (OvDirt d in c.Dirt)
+			{
+				on.Add(d.Key);
+			}
+			_drLost.RemoveWhere((long k) => !on.Contains(k));
+		}
 		foreach (OvDirt d in c.Dirt)
 		{
 			// K4: a point already down to its goal (the dig's own test, OvDrTick) isn't picked - the list is made again soon
 			if (OvDirtCooling(c, d) || GroundAt(d.P) <= d.Goal + OvDigGain)
 			{
 				continue;
+			}
+			// W1 (log c993a0b8: Je, Comp and Gunter took one point from each other every frame, none got there): a point
+			// taken over from this one isn't taken back while another companion still has it; the note goes once none has
+			if (_drLost.Contains(d.Key))
+			{
+				HarvestController lh = OvDirtHasOther(d);
+				if (lh != null)
+				{
+					others = true;
+					othersDirt = true;
+					othersWhy ??= $"the dirt at {MHR_Mover.Fmt(d.P)} was taken over by {lh.OvName()} - left to it (W1)";
+					continue;
+				}
+				_drLost.Remove(d.Key);
 			}
 			// SV1: another companion's point is taken over when that companion isn't working it
 			// F9 (John 11-21 23:13Z / 23:30Z): at most two on a point - full only when both are other companions working it
@@ -2268,6 +2292,22 @@ public partial class HarvestController
 	}
 
 	private const float OvDirtHoldNear = 3f;   // I2
+
+	// W1: the points taken over from this companion (their keys)
+	private readonly HashSet<long> _drLost = new HashSet<long>();
+
+	// W1: another companion (alive, on this vein) that has the point as its point now - near it or not; null = none
+	private HarvestController OvDirtHasOther(OvDirt d)
+	{
+		foreach (HarvestController h in new HarvestController[] { d.Holder, d.Holder2 })
+		{
+			if (h != null && h != this && h.isActiveAndEnabled && h._vp == _vp && h._drSpot != null && h._drSpot.Key == d.Key && h._character != null && !h._character.IsDead())
+			{
+				return h;
+			}
+		}
+		return null;
+	}
 
 	// F9: the other companion working the point (null = none)
 	private HarvestController OvDirtOther(OvDirt d)
@@ -2717,6 +2757,7 @@ public partial class HarvestController
 			// SV1: another companion took the point over while this one wasn't working it (stuck on the way): let it go
 			// F9: it is in neither of the point's two places
 			if (CompanionsPlugin.LogNormal) LogInfo($"The dirt at {MHR_Mover.Fmt(d.P)} was taken over by {(d.Holder != null ? d.Holder.OvName() : d.Holder2 != null ? d.Holder2.OvName() : "another companion")} (this one was stuck on the way to it) - picking again");
+			_drLost.Add(d.Key);   // W1: not taken back while another companion has it
 			_ai?.StopMoving();
 			OvDrOff();
 			return;
@@ -3154,6 +3195,7 @@ public partial class HarvestController
 	private bool OvU2Stand(OvClear c, Vector3 aim, OvDirt dirt, Attack sa, float reach, List<Vector3> tried, HarvestController opp, Vector3? notNear, out Vector3 stand)
 	{
 		stand = Vector3.zero;
+		float partBottom = OvPartBottom(dirt.Part);   // W2
 		List<Vector3> ok = new List<Vector3>();
 		for (float x = Mathf.Floor((aim.x - OvDigInFar) / OvDirtGrid) * OvDirtGrid; x <= aim.x + OvDigInFar + 0.001f; x += OvDirtGrid)
 		{
@@ -3164,6 +3206,8 @@ public partial class HarvestController
 				{
 					continue;
 				}
+				// W2 (John 11-23 05:12Z: "Shouldnt it come from the trench?"): the feet on the ground at the place itself (a
+				// built floor only when the map says the square is one), no higher than the bottom of the part the dirt holds up
 				q.y = GroundAt(q);
 				int ms = OvMapStand(q, out float mf, out _);
 				if (ms == 0)
@@ -3172,7 +3216,16 @@ public partial class HarvestController
 				}
 				if (ms == 1)
 				{
-					q.y = mf;
+					OvMap um = _vp.Map;
+					int ui = OvMapIndex(um, q);
+					if (ui >= 0 && mf > um.Ground[ui] + 0.05f)
+					{
+						q.y = mf;   // a built floor
+					}
+				}
+				if (q.y > partBottom)
+				{
+					continue;
 				}
 				if (OvTriedHas(tried, q) || (opp != null && !OvQuarterOk(q, aim, opp._drStand)))
 				{
