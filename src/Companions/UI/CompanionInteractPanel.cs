@@ -108,19 +108,6 @@ public class CompanionInteractPanel : MonoBehaviour
 
 	private static readonly FieldInfo _gridSelectedField = AccessTools.Field(typeof(InventoryGrid), "m_selected");
 
-	private static readonly Type _elementType = AccessTools.Inner(typeof(InventoryGrid), "Element");
-
-	private static readonly FieldInfo _elemPosField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_pos") : null);
-
-	private static readonly FieldInfo _elemEquipedField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_equiped") : null);
-
-	private static readonly FieldInfo _elemQueuedField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_queued") : null);
-
-	private static readonly FieldInfo _elemIconField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_icon") : null);
-
-	private static readonly FieldInfo _elemAmountField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_amount") : null);
-
-	private static readonly FieldInfo _elemGoField = ((_elementType != null) ? AccessTools.Field(_elementType, "m_go") : null);
 
 	private const int FoodSlotCount = 3;
 
@@ -631,26 +618,26 @@ public class CompanionInteractPanel : MonoBehaviour
 			return;
 		}
 		Inventory storageInventory = GetStorageInventory();
-		if (storageInventory == null || _elemPosField == null || _elemEquipedField == null)
+		if (storageInventory == null)
 		{
 			return;
 		}
+		// EM1: the game's grid slots are InventoryElement (InventoryGrid.Element is gone): Position, m_equiped, m_queued
 		foreach (object item in list)
 		{
-			Vector2i vector2i = (Vector2i)_elemPosField.GetValue(item);
-			Image image = _elemEquipedField.GetValue(item) as Image;
-			ItemDrop.ItemData itemAt = storageInventory.GetItemAt(vector2i.x, vector2i.y);
-			if (image != null)
+			if (!(item is InventoryElement element) || element == null)
 			{
-				image.enabled = itemAt?.m_equipped ?? false;
+				continue;
 			}
-			if (_elemQueuedField != null)
+			Vector2i vector2i = element.Position;
+			ItemDrop.ItemData itemAt = storageInventory.GetItemAt(vector2i.x, vector2i.y);
+			if (element.m_equiped != null)
 			{
-				Image image2 = _elemQueuedField.GetValue(item) as Image;
-				if (image2 != null)
-				{
-					image2.enabled = false;
-				}
+				element.m_equiped.enabled = itemAt?.m_equipped ?? false;
+			}
+			if (element.m_queued != null)
+			{
+				element.m_queued.enabled = false;
 			}
 		}
 	}

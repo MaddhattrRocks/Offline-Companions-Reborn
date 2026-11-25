@@ -595,9 +595,16 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		List<OvPart> pick = new List<OvPart>();
+		bool copper = OvIsCopper(_vp);
 		foreach (OvPart rp in c.RockPieces)
 		{
 			if (rp.C == null || !rp.C.gameObject.activeInHierarchy || OvPartCooling(rp) || OvPartHeldByOther(rp))
+			{
+				continue;
+			}
+			// CU7 (John 11-25 15:38Z): on copper only a rock piece a swing at a part met first (T3) is mined, not one a part
+			// rests on
+			if (copper && !c.InWay.Contains(rp.C.GetInstanceID()))
 			{
 				continue;
 			}
@@ -4934,6 +4941,11 @@ public partial class HarvestController
 	// handed to the Wood / Stone flow like the things in the pit (OvTake). True = taken.
 	private bool OvHoldFirst(OvClear c)
 	{
+		// CU7 (John 11-25 15:38Z): copper never pops, so what a part rests on is never cleared
+		if (OvIsCopper(_vp))
+		{
+			return false;
+		}
 		Vector3 me = base.transform.position;
 		GameObject best = null;
 		OvPart bp = null;

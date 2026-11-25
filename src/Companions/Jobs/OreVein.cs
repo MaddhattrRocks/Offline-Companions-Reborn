@@ -5382,6 +5382,12 @@ public partial class HarvestController
 		{
 			return false;
 		}
+		// CU6 (John 11-25 15:38Z: "For copper, they do not need to clear the area either. They can just start mining"):
+		// a copper vein's pit list is never worked
+		if (OvIsCopper(p))
+		{
+			return false;
+		}
 		OvPitScan(p);
 		Vector3 me = base.transform.position;
 		GameObject best = null;
