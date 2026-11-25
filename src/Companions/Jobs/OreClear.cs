@@ -892,11 +892,68 @@ public partial class HarvestController
 			OvClearSay(c);
 			return false;
 		}
+		// CU3 (John 11-25, C5: "Mine what they can see, then clear dirt to reach whatever else they can"): copper first
+		// mines a part it can hit from the ground
+		if (OvIsCopper(_vp) && OvCuSeen(c))
+		{
+			return true;
+		}
 		if (c.Dirt.Count > 0 || OvLowLeft(c))
 		{
 			return OvDrChoose(c);
 		}
 		return OvOreChoose(c);
+	}
+
+	// CU3: the nearest parts (not buried, not set aside, not another companion's), up to 4 a pick: one it can hit from the
+	// ground is mined (its way-out check first, as OvOreChoose); one with no place to hit it from is set aside until
+	// something within 2 m of it changes (a dig nearby brings it back); one that needs a ladder is left to the ladder
+	// rules. False = none now (the dirt and low parts, then OvOreChoose, as before)
+	private bool OvCuSeen(OvClear c)
+	{
+		Vector3 me = base.transform.position;
+		List<OvPart> cand = new List<OvPart>();
+		foreach (OvPart part in c.Parts)
+		{
+			if (!part.Out && part.C != null && part.C.gameObject.activeSelf && !OvPartCooling(part) && !OvPartHeldByOther(part))
+			{
+				cand.Add(part);
+			}
+		}
+		if (cand.Count == 0)
+		{
+			return false;
+		}
+		cand.Sort((OvPart a, OvPart b) => Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me))));
+		int tries = 0;
+		foreach (OvPart pick in cand)
+		{
+			if (tries++ >= 4)
+			{
+				break;
+			}
+			int r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out Vector3 stand, out string why);
+			pick.OutOfReach = r == 1;
+			if (r == 2)
+			{
+				OvPartCool(pick, why, wait: false);
+				continue;
+			}
+			if (r == 1)
+			{
+				continue;
+			}
+			OvSpot ws = OvClSpotFor(pick);
+			if (ws != null && OvWayOutNeeded(ws))
+			{
+				OvWayOutHere(ws);
+				return true;
+			}
+			_clPopWhy = "copper: the nearest part it can hit (CU3)";
+			OvClBegin(pick, stand, ladder: false, low: OvIsLow(pick));
+			return true;
+		}
+		return false;
 	}
 
 	// ---------- GG2: the dirt list ----------
@@ -3035,6 +3092,12 @@ public partial class HarvestController
 				// R2.2: the map says no place to stand there (stone, rock, a part or a thing on it, or too little room): dropped;
 				// a built floor: its feet go on the floor; don't know: as before
 				int ms = OvMapStand(pt, out float mf, out string msWhy);
+				// CU4 (John 11-25, C1): copper - a place where it would stand in water deep enough to swim is no place to stand
+				if (ms != 0 && OvIsCopper(_vp) && _character != null && MHR_Water.WouldSwim(_character, new Vector3(pt.x, ms == 1 ? mf : pt.y, pt.z)))
+				{
+					ms = 0;
+					msWhy = "water it would swim in (CU4)";
+				}
 				if (ms == 0)
 				{
 					noStand++;
@@ -3416,6 +3479,11 @@ public partial class HarvestController
 				// R2.3: the map says no place to stand there: dropped before the body and swing tests; a built floor: its feet
 				// go on the floor; don't know: as before. V2: up on the top of what stands there too
 				int ms = any ? OvMapStandOn(pt, out float mf) : OvMapStand(pt, out mf, out _);
+				// CU4: copper - no place where it would swim
+				if (ms != 0 && OvIsCopper(_vp) && _character != null && MHR_Water.WouldSwim(_character, new Vector3(pt.x, ms == 1 ? mf : pt.y, pt.z)))
+				{
+					ms = 0;
+				}
 				if (ms == 0)
 				{
 					noStand++;

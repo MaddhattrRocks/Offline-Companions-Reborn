@@ -78,6 +78,8 @@ public partial class HarvestController
 		// D2: a silver vein (its deposit drops silver ore): 0 = not looked yet, 1 = silver, 2 = not
 		public int SilverState;
 
+		public int CopperState;   // CU1: 0 = not read yet, 1 = copper, 2 = not
+
 		public readonly List<OvSpot> Spots = new List<OvSpot>();
 
 		public readonly List<Vector2> Poly = new List<Vector2>();
@@ -814,7 +816,7 @@ public partial class HarvestController
 		_state = HarvestState.Vein;
 		p.Workers[this] = Time.time;
 		p.LastWork = Time.time;
-		if (CompanionsPlugin.LogNormal) LogInfo($"On the vein \"{p.Name}\" ({p.Rocks.Count} deposit(s), {p.Spots.Count} trench spots, lap {p.Lap}{(p.Done ? ", the trench is done" : "")}) - the trench round it first");
+		if (CompanionsPlugin.LogNormal) LogInfo(OvIsCopper(p) ? $"On the vein \"{p.Name}\" ({p.Rocks.Count} deposit(s), {p.Spots.Count} trench spots mapped) - copper: no trench (CU2)" : $"On the vein \"{p.Name}\" ({p.Rocks.Count} deposit(s), {p.Spots.Count} trench spots, lap {p.Lap}{(p.Done ? ", the trench is done" : "")}) - the trench round it first");
 	}
 
 	// C3.2: the thing handed to the Wood / Stone flow is over (gone, or that flow gave up on it): back to the vein
@@ -1275,6 +1277,26 @@ public partial class HarvestController
 			p.SilverState = MHR_Drops.DropsItem(r.gameObject, "SilverOre") ? 1 : 2;
 		}
 		return p.SilverState == 1;
+	}
+
+	// CU1 (John 11-25: "For Copper I want to remove the trench and popping of the ore vein. Just mine the ore directly"):
+	// a copper deposit - the plan's first rock drops copper ore (read once, as for silver)
+	private static bool OvIsCopper(OvPlan p)
+	{
+		if (p == null)
+		{
+			return false;
+		}
+		if (p.CopperState == 0)
+		{
+			MineRock5 r = p.Rocks.Count > 0 ? p.Rocks[0] : null;
+			if (r == null)
+			{
+				return false;
+			}
+			p.CopperState = MHR_Drops.DropsItem(r.gameObject, "CopperOre") ? 1 : 2;
+		}
+		return p.CopperState == 1;
 	}
 
 	// R3b.1 (John, 2026-11-21: "no more than a NPC height under the ore vein"): the vein's base beside a spot - the lowest
@@ -2287,12 +2309,15 @@ public partial class HarvestController
 		OvClosedRecheck(p);   // I1b
 		OvRampChecks(p);  // H4
 		// I1 (John 11-22 Q4): a "done" from the save is checked against the ground once
-		if (p.Done && !p.DoneChecked)
+		// CU2 (John 11-25, C6: the ring is mapped, never dug): a copper deposit goes straight to the clearing - no trench, and
+		// the saved "done" is never checked against the ground (that would reopen the trench)
+		bool copper = OvIsCopper(p);
+		if (p.Done && !p.DoneChecked && !copper)
 		{
 			p.DoneChecked = true;
 			OvReopenCheck(p, "the saved trench said done");
 		}
-		if (p.Done)
+		if (p.Done || copper)
 		{
 			OvDoneTick();
 			return;
@@ -3462,6 +3487,11 @@ public partial class HarvestController
 	{
 		_ai?.StopMoving();
 		_ovDoneSaid = true;
+		if (OvIsCopper(_vp))
+		{
+			if (CompanionsPlugin.LogNormal) LogInfo($"Copper deposit \"{_vp.Name}\": no trench - mining what it can reach, then the dirt to reach the rest (CU2)");
+			return;
+		}
 		int notDug = 0, closed = 0;
 		string where = "";
 		foreach (OvSpot s in _vp.Spots)
@@ -5152,7 +5182,7 @@ public partial class HarvestController
 		{
 			return;
 		}
-		p.PitScanAt = now + (p.Done ? OvPitScanAfter : OvPitScanTrench);
+		p.PitScanAt = now + (p.Done || OvIsCopper(p) ? OvPitScanAfter : OvPitScanTrench);   // CU2
 		p.PitThings.Clear();
 		p.PitModes.Clear();
 		p.PitTypes.Clear();
