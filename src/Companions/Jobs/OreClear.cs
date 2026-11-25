@@ -102,6 +102,8 @@ public partial class HarvestController
 	private const float OvCool = 60f;              // GG2 / GG3: a point or part that failed waits 1 min
 
 	private const float OvDirtGrid = 0.5f;         // GG2: the dirt grid under each part's box
+	private const float OvDirtFine = 0.25f;        // Z1: the whole-box read for a part the game says touches the dirt
+	private bool _dtHit;                           // Z1: OvDirtAt found ground above the part's bottom (this part's grid)
 
 	private const float OvDirtUnder = 0.3f;        // GG2: dug to 0.3 m under the part's bottom
 
@@ -200,6 +202,8 @@ public partial class HarvestController
 		public float LooseChangedAt = -1f;   // R1: the last time an item came onto the list or left it
 
 		public bool TopBack;     // T2: the dirt on top of the vein is back on the list (once, at the stop)
+
+		public readonly HashSet<int> Z1Said = new HashSet<int>();   // Z1: parts its whole-box read was logged for
 		public int TopSkipped;   // T2: dirt points on top of the vein left off the last dirt scan
 
 		public HarvestController DumpCarryBy;   // S5: who carried the ore dump to storage last, and when it started
@@ -938,6 +942,7 @@ public partial class HarvestController
 			float x0 = Mathf.Ceil((part.Centre.x - part.Half.x) / OvDirtGrid) * OvDirtGrid, x1 = part.Centre.x + part.Half.x;
 			float z0 = Mathf.Ceil((part.Centre.z - part.Half.z) / OvDirtGrid) * OvDirtGrid, z1 = part.Centre.z + part.Half.z;
 			bool any = false, low = false;
+			_dtHit = false;   // Z1
 			for (float x = x0; x <= x1 + 0.001f; x += OvDirtGrid)
 			{
 				for (float z = z0; z <= z1 + 0.001f; z += OvDirtGrid)
@@ -949,6 +954,44 @@ public partial class HarvestController
 			if (!any)
 			{
 				low |= OvDirtAt(part, bottom, part.Centre.x, part.Centre.z, byKey);   // a box narrower than the grid: its middle
+			}
+			// Z1 (John 11-25, log 20dd55fd: the game's box test had 7 parts touching the dirt while this list was empty - the
+			// 0.5 m grid never reads the box's edges, and on a slope the bank rises there): a part the game says touches the
+			// terrain (part.Ground) whose grid found no ground above its bottom - its whole box is read at 0.25 m, edges
+			// included; its highest ground point goes through the same rules (dirt list, low part, T2); no ground above its
+			// bottom even then = a low part, mined in the dirt work
+			if (!_dtHit && !low && part.Ground)
+			{
+				float bx = part.Centre.x, bz = part.Centre.z, bg = float.MinValue;
+				float mx = part.Centre.x - part.Half.x, mz = part.Centre.z - part.Half.z;
+				int nx = Mathf.CeilToInt(part.Half.x * 2f / OvDirtFine), nz = Mathf.CeilToInt(part.Half.z * 2f / OvDirtFine);
+				for (int ix = 0; ix <= nx; ix++)
+				{
+					float x = Mathf.Min(mx + ix * OvDirtFine, part.Centre.x + part.Half.x);
+					for (int iz = 0; iz <= nz; iz++)
+					{
+						float z = Mathf.Min(mz + iz * OvDirtFine, part.Centre.z + part.Half.z);
+						float g = GroundAt(new Vector3(x, 0f, z));
+						if (g > bg)
+						{
+							bg = g;
+							bx = x;
+							bz = z;
+						}
+					}
+				}
+				int pid = part.C.GetInstanceID();
+				bool say = c.Z1Said.Add(pid);
+				if (bg > bottom + OvDigGain)
+				{
+					low |= OvDirtAt(part, bottom, bx, bz, byKey);
+					if (say && CompanionsPlugin.LogNormal) LogInfo($"The game says \"{part.C.name}\" touches the dirt - read its whole box: the ground at ({bx:F1}, {bg:F2}, {bz:F1}) is {bg - bottom:F2} m above its bottom {bottom:F2} (Z1)");
+				}
+				else
+				{
+					low = true;
+					if (say && CompanionsPlugin.LogNormal) LogInfo($"The game says \"{part.C.name}\" touches the dirt - read its whole box: no ground above its bottom {bottom:F2} (highest {bg:F2}) - mined as a low part (Z1)");
+				}
 			}
 			if (low && part.Ground)
 			{
@@ -985,6 +1028,7 @@ public partial class HarvestController
 		{
 			return false;   // the ground is under the part's bottom here: it doesn't hold it
 		}
+		_dtHit = true;   // Z1: ground above the part's bottom here (listed, low or left on top)
 		float floor = OvFloor(pt);
 		if (floor >= bottom)
 		{

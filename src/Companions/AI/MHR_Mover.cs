@@ -274,6 +274,7 @@ namespace Companions
                 // W3: the mover gave up on this way out - the next one (it is not taken again in this walk)
                 s.VeinOutTried.Add(s.VeinOutId);
                 if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] no way to " + Fmt(s.VeinOutAt) + " on the way out of the trench - the next way");
+                if ((s.VeinOut == 1 && !s.VeinDown) || (s.VeinOut == 2 && s.VeinDown)) HarvestController.OvWayOutMissed(s.VeinOutAt, c != null ? c.m_name : "?");   // Z3 (a): its bottom wasn't reached
                 s.VeinOut = 0; s.HasDetour = false; s.GaveUp = false; VeinLeg(s);
                 Plan(ai, c, s, pos, now);
             }
@@ -458,6 +459,7 @@ namespace Companions
                 {
                     s.VeinOutTried.Add(s.VeinOutId);
                     if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " (stuck twice with its route no shorter) - the next way");
+                    if ((s.VeinOut == 1 && !s.VeinDown) || (s.VeinOut == 2 && s.VeinDown)) HarvestController.OvWayOutMissed(s.VeinOutAt, c != null ? c.m_name : "?");   // Z3 (a): its bottom wasn't reached
                     VeinLeg(s);
                     s.VeinOut = 0; s.HasDetour = false;
                     Plan(ai, c, s, pos, now);

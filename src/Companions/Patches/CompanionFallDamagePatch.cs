@@ -48,7 +48,7 @@ internal static class CompanionFallDamagePatch
 				s_fallSaid.Remove(instanceID);
 				if (s_lastGroundY.TryGetValue(instanceID, out float lastY) && lastY - position.y > 0.7f)
 				{
-					__instance.GetComponent<HarvestController>()?.OnFell(lastY - position.y);
+					__instance.GetComponent<HarvestController>()?.OnFell(lastY - position.y, position.y);
 				}
 				s_lastGroundY[instanceID] = position.y;
 			}

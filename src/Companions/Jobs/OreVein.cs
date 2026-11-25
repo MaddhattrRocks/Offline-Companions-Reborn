@@ -67,6 +67,8 @@ public partial class HarvestController
 		public readonly List<int> Squares = new List<int>();
 
 		public string PathWhy;
+
+		public int Misses;        // Z3 (a): walks that couldn't reach its bottom this session (2 = dropped)
 	}
 
 	private sealed class OvPlan
@@ -3398,6 +3400,7 @@ public partial class HarvestController
 		{
 			_woActive = false;
 			if (CompanionsPlugin.LogNormal) LogInfo($"Couldn't get to {MHR_Mover.Fmt(_woFloor)} along the trench (the walk gave up)");
+			OvWayOutMissed(_woFloor, OvName());   // Z3 (a): a saved way out's bottom (no ramp there = nothing)
 			if (!_woOut && _vp.ExitBy == this)
 			{
 				_vp.ExitBy = null;
@@ -4881,14 +4884,53 @@ public partial class HarvestController
 		return p.BlockerNames.Count > 0 ? p.BlockerNames[0] : "?";
 	}
 
-	// Y2: CompanionFallDamagePatch - it landed more than a step lower than the ground it last stood on
-	internal void OnFell(float drop)
+	// Y2: CompanionFallDamagePatch - it landed more than a step lower than the ground it last stood on. Z2 (John 11-25, log
+	// 20dd55fd: a 1.8 m walk down to a saved ramp's bottom and a 1 m step as a way up began each used a getting-out try):
+	// it counts only when it landed more than a step below the lowest point the way up had to go - where it began, or the
+	// bottom of the saved ramp it is using
+	internal void OnFell(float drop, float landY)
 	{
-		if (_rpActive && drop > OvStepUp)
+		if (!_rpActive || drop <= OvStepUp)
+		{
+			return;
+		}
+		float lowest = _rpSaved != null ? Mathf.Min(_rpStart.y, _rpSaved.Bottom.y) : _rpStart.y;
+		if (landY < lowest - OvStepUp)
 		{
 			_rpFell = Mathf.Max(_rpFell, drop);
 		}
 	}
+
+	// Z3 (a) (John 11-25, log 20dd55fd): a walk couldn't reach the bottom of a saved way out (matched by its bottom within
+	// 0.1 m) - the second miss drops it from the vein's ramp list (saved)
+	internal static void OvWayOutMissed(Vector3 bottom, string who)
+	{
+		foreach (OvPlan p in s_ovPlans)
+		{
+			if (p == null)
+			{
+				continue;
+			}
+			for (int i = 0; i < p.Ramps.Count; i++)
+			{
+				OvRamp r = p.Ramps[i];
+				if ((r.Bottom - bottom).sqrMagnitude > 0.01f)
+				{
+					continue;
+				}
+				r.Misses++;
+				if (r.Misses >= OvRampMissMax)
+				{
+					p.Ramps.RemoveAt(i);
+					OvSave(p);
+					if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Gather|{who}] The way out at {MHR_Mover.Fmt(r.Bottom)} -> {MHR_Mover.Fmt(r.Top)} is dropped: its bottom couldn't be reached twice (Z3)");
+				}
+				return;
+			}
+		}
+	}
+
+	private const int OvRampMissMax = 2;   // Z3 (a)
 
 	private void OvRampFinish(string how)
 	{
@@ -4934,9 +4976,21 @@ public partial class HarvestController
 			}
 			else
 			{
-				_vp.Ramps.Add(new OvRamp { Bottom = _rpStart, Top = me, Need = _rpNeed });
-				OvSave(_vp);   // F3
-				if (CompanionsPlugin.LogNormal) LogInfo($"A ramp for everyone on this vein: {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)} ({rise:F1} m; {_vp.Ramps.Count} on this vein)");
+				// Z3 (b) (John 11-25, log 20dd55fd: a way out whose bottom sat on a ledge 10 m above the floor): a new ramp is
+				// saved only if its bottom is no more than a step above the trench floor (the ground at the trench spot
+				// nearest its bottom)
+				OvSpot fs = OvNearestIn(_vp, _rpStart);
+				float overFloor = fs != null ? _rpStart.y - GroundAt(fs.P) : 0f;
+				if (overFloor > OvStepUp)
+				{
+					if (CompanionsPlugin.LogNormal) LogInfo($"Not saved as a way out: its bottom {MHR_Mover.Fmt(_rpStart)} is {overFloor:F1} m above the trench floor at spot {fs.Idx + 1} (Z3)");
+				}
+				else
+				{
+					_vp.Ramps.Add(new OvRamp { Bottom = _rpStart, Top = me, Need = _rpNeed });
+					OvSave(_vp);   // F3
+					if (CompanionsPlugin.LogNormal) LogInfo($"A ramp for everyone on this vein: {MHR_Mover.Fmt(_rpStart)} up to {MHR_Mover.Fmt(me)} ({rise:F1} m; {_vp.Ramps.Count} on this vein)");
+				}
 			}
 		}
 		if (CompanionsPlugin.LogNormal) LogInfo($"The way up is done ({how}): rose {rise:F1} m in {_rpSwings} swing(s), feet at {me.y:F1}");
