@@ -922,7 +922,8 @@ public partial class HarvestController
 		List<OvPart> cand = new List<OvPart>();
 		foreach (OvPart part in c.Parts)
 		{
-			if (!part.Out && part.C != null && part.C.gameObject.activeSelf && !OvPartCooling(part) && !OvPartHeldByOther(part))
+			// CU8: a part whose last look needed a ladder is left to the ladder step at the end (OvOreChoose)
+			if (!part.Out && !part.OutOfReach && part.C != null && part.C.gameObject.activeSelf && !OvPartCooling(part) && !OvPartHeldByOther(part))
 			{
 				cand.Add(part);
 			}
@@ -931,12 +932,14 @@ public partial class HarvestController
 		{
 			return false;
 		}
-		cand.Sort((OvPart a, OvPart b) => Flat(me, OvBoxNear(a, me)).CompareTo(Flat(me, OvBoxNear(b, me))));
+		cand = OvCuHighFirst(cand, me);   // CU8 (John 11-25 19:20Z / H1 / H2): the highest top first
 		int tries = 0;
+		bool more = false;
 		foreach (OvPart pick in cand)
 		{
 			if (tries++ >= 4)
 			{
+				more = true;
 				break;
 			}
 			int r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out Vector3 stand, out string why);
@@ -956,11 +959,59 @@ public partial class HarvestController
 				OvWayOutHere(ws);
 				return true;
 			}
-			_clPopWhy = "copper: the nearest part it can hit (CU3)";
+			_clPopWhy = "copper: the highest part it can hit (CU8)";
 			OvClBegin(pick, stand, ladder: false, low: OvIsLow(pick));
 			return true;
 		}
+		// CU8: parts not tried yet - the next 4 at the next look (once a second), not the buried parts yet
+		if (more)
+		{
+			_clNextPick = Time.time + 1f;
+			if (CompanionsPlugin.LogDetailed) Log($"Copper: 4 parts had no place to hit them from - the next ones in a second ({cand.Count - 4} left to try) (CU8)");
+			return true;
+		}
 		return false;
+	}
+
+	// CU8 (John 11-25 19:24Z, H1 "top", H2 "yes"): the highest part top left first; of the parts whose top is within 0.5 m
+	// of that, the nearest (flat, to the nearest point of its box); then again for the rest
+	private const float OvCuSameHeight = 0.5f;
+
+	private static float OvPartTop(OvPart p)
+	{
+		return p.Centre.y + p.Half.y;
+	}
+
+	private List<OvPart> OvCuHighFirst(List<OvPart> parts, Vector3 me)
+	{
+		List<OvPart> left = new List<OvPart>(parts);
+		List<OvPart> order = new List<OvPart>(parts.Count);
+		while (left.Count > 0)
+		{
+			float top = float.MinValue;
+			foreach (OvPart p in left)
+			{
+				top = Mathf.Max(top, OvPartTop(p));
+			}
+			OvPart best = null;
+			float bd = float.MaxValue;
+			foreach (OvPart p in left)
+			{
+				if (OvPartTop(p) < top - OvCuSameHeight)
+				{
+					continue;
+				}
+				float d = Flat(me, OvBoxNear(p, me));
+				if (d < bd)
+				{
+					bd = d;
+					best = p;
+				}
+			}
+			order.Add(best);
+			left.Remove(best);
+		}
+		return order;
 	}
 
 	// ---------- GG2: the dirt list ----------
@@ -1093,6 +1144,13 @@ public partial class HarvestController
 			return false;   // the ground is under the part's bottom here: it doesn't hold it
 		}
 		_dtHit = true;   // Z1: ground above the part's bottom here (listed, low or left on top)
+		// CU9 (John 11-25 19:20Z: "focus on the highest part of the ore rather than digging out whatever is around them"; H3:
+		// they still dig for parts): on copper any ground above a part's bottom makes it a low part - dug for by swinging at
+		// its rock (P5), never a dirt point dug down beside it
+		if (OvIsCopper(_vp))
+		{
+			return true;
+		}
 		float floor = OvFloor(pt);
 		if (floor >= bottom)
 		{
@@ -1194,6 +1252,65 @@ public partial class HarvestController
 			}
 		}
 		return false;
+	}
+
+	// SP1 (John 11-25 19:24Z, H4; log 95b98a17: Comp picked ~20 dirt points that all used one place it couldn't get to): a
+	// place to dig from it couldn't get to is kept on its own list (per vein) and skipped for every dirt point until a pit-map
+	// square within 2 m of it changes after that, the E4 come-back runs (OvDrChoose), or it is on another vein. No clock.
+	private readonly List<KeyValuePair<Vector3, float>> _drBad = new List<KeyValuePair<Vector3, float>>();
+	private OvPlan _drBadPlan;
+
+	private void OvBadStandAdd(Vector3 q)
+	{
+		if (_drBadPlan != _vp)
+		{
+			_drBad.Clear();
+			_drBadPlan = _vp;
+		}
+		_drBad.Add(new KeyValuePair<Vector3, float>(q, Time.time));
+		if (CompanionsPlugin.LogNormal) LogInfo($"The place {MHR_Mover.Fmt(q)} is out for every dirt point until something within 2 m of it changes (SP1)");
+	}
+
+	// SP1: drops the places whose area changed (or all, on another vein); true = some are left
+	private bool OvBadStandsNow(OvClear c)
+	{
+		if (_drBad.Count == 0)
+		{
+			return false;
+		}
+		if (_drBadPlan != _vp)
+		{
+			_drBad.Clear();
+			return false;
+		}
+		OvMap m = _vp?.Map;
+		if (m != null && m.Built && m.ChangedAt != null)
+		{
+			int r = Mathf.CeilToInt(OvAsideNear / OvMapCell);
+			_drBad.RemoveAll((KeyValuePair<Vector3, float> kv) =>
+			{
+				int cx = Mathf.FloorToInt((kv.Key.x - m.X0) / OvMapCell);
+				int cz = Mathf.FloorToInt((kv.Key.z - m.Z0) / OvMapCell);
+				for (int dz = -r; dz <= r; dz++)
+				{
+					for (int dx = -r; dx <= r; dx++)
+					{
+						int x = cx + dx, z = cz + dz;
+						if (x < 0 || z < 0 || x >= m.W || z >= m.H || (dx * dx + dz * dz) * OvMapCell * OvMapCell > OvAsideNear * OvAsideNear)
+						{
+							continue;
+						}
+						if (m.ChangedAt[z * m.W + x] > kv.Value)
+						{
+							if (CompanionsPlugin.LogNormal) LogInfo($"The place {MHR_Mover.Fmt(kv.Key)} is back: something within 2 m of it changed (SP1)");
+							return true;
+						}
+					}
+				}
+				return false;
+			});
+		}
+		return _drBad.Count > 0;
 	}
 
 	// E4: the ground within 2 m of p (a 5 x 5 grid, 1 m apart) - only used with no pit map
@@ -2114,6 +2231,12 @@ public partial class HarvestController
 		// yet comes back once, its tried list cleared; set aside again with nothing changed, it waits for a change (8a)
 		if (free.Count == 0 && lows.Count == 0 && !others)
 		{
+			// SP1: its "couldn't get there" places come back with the set-aside points
+			if (_drBad.Count > 0)
+			{
+				if (CompanionsPlugin.LogNormal) LogInfo($"Its {_drBad.Count} place(s) it couldn't get to come back too: no other dirt point is free (SP1)");
+				_drBad.Clear();
+			}
 			foreach (OvDirt d in c.Dirt)
 			{
 				if (!c.DirtCool.ContainsKey(d.Key) || OvOnceUsed(c, d) || GroundAt(d.P) <= d.Goal + OvDigGain)
@@ -2153,9 +2276,21 @@ public partial class HarvestController
 		{
 			all.Add(new KeyValuePair<float, object>(Flat(me, d.P), d));
 		}
-		foreach (OvPart part in lows)
+		if (OvIsCopper(_vp))
 		{
-			all.Add(new KeyValuePair<float, object>(Flat(me, OvBoxNear(part, me)), part));
+			// CU8: copper's low parts by the highest top first too (the order kept: the sort key is the place in that list)
+			List<OvPart> hi = OvCuHighFirst(lows, me);
+			for (int i = 0; i < hi.Count; i++)
+			{
+				all.Add(new KeyValuePair<float, object>(-1000000f + i, hi[i]));
+			}
+		}
+		else
+		{
+			foreach (OvPart part in lows)
+			{
+				all.Add(new KeyValuePair<float, object>(Flat(me, OvBoxNear(part, me)), part));
+			}
 		}
 		all.Sort((KeyValuePair<float, object> a, KeyValuePair<float, object> b) => a.Key.CompareTo(b.Key));
 		// F10 (John 11-20 20:59Z / 11-21 23:30Z / 11-22 04:24Z, silver only; replaces SV6): each companion works its own side of
@@ -2992,6 +3127,10 @@ public partial class HarvestController
 				if (tooHigh || OvWalkGaveUp(dt, _drStand))
 				{
 					string nw = $"couldn't get to {MHR_Mover.Fmt(_drStand)} to dig it ({flat:F1} m away, {up:F1} m up)";
+					if (!_drForThing)
+					{
+						OvBadStandAdd(_drStand);   // SP1
+					}
 					if (!_drForThing && OvIsSilver(_vp))
 					{
 						// SV4 (silver, log 07ee23fb: Gunter was set aside 0.5 m from his place): the place goes on the point's
@@ -3166,6 +3305,16 @@ public partial class HarvestController
 		bool dirtAbove = silver && dirt != null && dirt.Part != null && GroundAt(dirt.P) > dirt.Part.Centre.y + dirt.Part.Half.y;
 		// F7 (a): every vein - a place it repositioned away from (it dug its own floor there) isn't taken again for this point
 		List<Vector3> tried = dirt != null && c.DirtTried.TryGetValue(dirt.Key, out List<Vector3> tl) ? tl : null;
+		// SP1 (John 11-25 19:24Z, H4 "Fix it"): a place it couldn't get to is out for every dirt point too
+		if (dirt != null && OvBadStandsNow(c))
+		{
+			List<Vector3> both = tried != null ? new List<Vector3>(tried) : new List<Vector3>();
+			foreach (KeyValuePair<Vector3, float> kv in _drBad)
+			{
+				both.Add(kv.Key);
+			}
+			tried = both;
+		}
 		// F7 (c) / G1, silver: a place already more than 2 m under the point's part isn't taken; nor one where the game's
 		// dig on that swing (its TerrainOp, OvDigLowersFeet) would lower the ground at its feet, or lands under 2 m below
 		// the part
