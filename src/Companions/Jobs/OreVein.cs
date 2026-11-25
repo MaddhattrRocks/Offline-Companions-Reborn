@@ -442,6 +442,7 @@ public partial class HarvestController
 	private bool _dgPart;
 
 	private bool _dgDamage;      // M3: a swing of this dig lowered the ground or damaged a rock (reset by OvDigBegin)
+	private float _rpFell;       // Y2: a fall of more than a step noted while a way up is active (reset by OvRampBegin)
 
 	private int _dgPartMiss;   // K3: swings at a part that didn't hit it (digging toward it included), 20 at most
 
@@ -1103,6 +1104,12 @@ public partial class HarvestController
 			return false;
 		}
 		Vector3 me = base.transform.position;
+		// Y3 (John 11-25, log e891dcd2: the job change 26 m down the mountain read "in the trench"): off the pit area is not
+		// in the trench - the job change and leaving go ahead as normal
+		if (!OvInPitPt(me))
+		{
+			return false;
+		}
 		OvSpot near = null;
 		float nd = float.MaxValue;
 		foreach (OvSpot s in _vp.Spots)
@@ -2066,7 +2073,9 @@ public partial class HarvestController
 		}
 		// K5 (the SV1 take-over, log 58064830: Comp stuck below spot 28 kept it): a holder that is stuck on its way to the
 		// spot (the mover's stuck ladder, MHR_Mover.Stuck) doesn't hold it - another companion may take it
-		if (!h.OvHolderWorking(true))
+		// Y4 (John 11-25, log e891dcd2: Gunter, down the mountain, kept spot 17 and the lap could not end): nor one off the
+		// pit area
+		if (!h.OvHolderWorking(true) || !OvInPitPt(h.transform.position))
 		{
 			return false;
 		}
@@ -2083,7 +2092,7 @@ public partial class HarvestController
 		foreach (KeyValuePair<HarvestController, float> w in _vp.Workers)
 		{
 			HarvestController h = w.Key;
-			if (h == null || h == this || Time.time - w.Value > 5f || h._vp != _vp || h._ovSpot == null || h._ovSpot.Holder != h || !h.OvHolderWorking(true))
+			if (h == null || h == this || Time.time - w.Value > 5f || h._vp != _vp || h._ovSpot == null || h._ovSpot.Holder != h || !h.OvHolderWorking(true) || !OvInPitPt(h.transform.position))   // Y4
 			{
 				continue;
 			}
@@ -4161,7 +4170,18 @@ public partial class HarvestController
 		// somewhere" counts only for ramp steps
 		bool dugCounts = dug && (_dgRamp || _dgSpot == null);
 		_dgLastProg = prog || oreProg || dugCounts || rockHit;
-		_dgDamage |= prog || oreProg || dug || rockHit;   // M3: this dig lowered the ground or damaged a rock
+		if (_dgRamp)
+		{
+			// Y1 (John 11-25: "what about if they are mining something hard that takes a lot of strikes?" - log e891dcd2:
+			// 132 way-up swings at the slope never changed the ground, the game "dug" at the same point every time): a way-up
+			// swing is progress only when (a) the ground at the swing point went down, (b) the game dug and the ground where
+			// it dug went down (Q1's test), or (c) it hit a rock or the vein's ore its pickaxe can damage by the game's rules
+			// (DD3's test) - a hard rock counts on every strike until it breaks. M3 uses the same test.
+			bool dugDown = dug && GroundAt(_dgDugPt) <= _dgDugBefore - OvDigGain;
+			bool hurt = (hitOre && OvPickHurts(_vRock != null ? _vRock.gameObject : null)) || (rockHit && OvPickHurts(_ovThingHitGo.GetComponentInParent<MineRock5>()?.gameObject));
+			_dgLastProg = prog || dugDown || hurt;
+		}
+		_dgDamage |= _dgRamp ? _dgLastProg : prog || oreProg || dug || rockHit;   // M3: this dig lowered the ground or damaged a rock
 		_dgNoProg = _dgLastProg ? 0 : _dgNoProg + 1;
 		if (CompanionsPlugin.LogDetailed) Log($"Dirt swing at {MHR_Mover.Fmt(_dgPoint)}{(_dgRamp ? " (ramp step)" : _dgSpot != null ? $" (spot {_dgSpot.Idx + 1})" : "")}: ground {_dgBefore:F2} -> {after:F2}{dugAt}{(oreProg ? " - hit the vein's ore" : prog || dug ? "" : rockHit ? $" - carving through the rock \"{_ovThingHitGo.name}\"" : $" - no change ({_dgNoProg} in a row{(hitThing ? ", it hit \"" + _ovThingHitGo.name + "\"" : "")})")}, feet {base.transform.position.y:F2}");
 		if (_dgRamp)
@@ -4522,6 +4542,7 @@ public partial class HarvestController
 			_rpNeed = ns != null ? GroundAt(OvOutside(ns)) : goal.y;
 		}
 		_rpStart = me;
+		_rpFell = 0f;   // Y2
 		_rpBestY = me.y;
 		_rpBestAt = Time.time;
 		_rpNoProg = 0;
@@ -4554,6 +4575,24 @@ public partial class HarvestController
 		Vector3 me = base.transform.position;
 		float dt = Time.deltaTime;
 		float reach = GetAttackRange();
+		if (_rpFell > 0f)
+		{
+			// Y2 (John 11-25, log e891dcd2: Gunter fell 7.6 m then 15 m in a fight and kept the way up's old goal 26 m
+			// above): a fall of more than a step ends the way up, by each kind's own give-up; getting out and no longer in
+			// the trench = it is out, it leaves as normal (OvOutTick -> OvLeave)
+			float fell = _rpFell;
+			_rpFell = 0f;
+			if (_rpOut && !OvInTrench(me, out _))
+			{
+				_rpActive = false;
+				OvDigOff();
+				_ai?.StopMoving();
+				if (CompanionsPlugin.LogNormal) LogInfo($"The way up ended: it fell {fell:F1} m and is no longer in the trench (feet at {me.y:F1})");
+				return;
+			}
+			OvRampFail($"it fell {fell:F1} m (feet at {me.y:F1})");
+			return;
+		}
 		if (_dgActive)
 		{
 			OvDigTick();
@@ -4779,6 +4818,14 @@ public partial class HarvestController
 		WalkGo(walk, 0.3f, false, dt);
 	}
 
+	// Y1: its pickaxe can damage this rock by the game's rules - tier at least the rock's and the rock's damage modifiers
+	// let a pickaxe hurt it (DD3's test, OvDigTick)
+	private bool OvPickHurts(GameObject rk)
+	{
+		ItemDrop.ItemData pk = rk != null ? FindBestTool(2) : null;
+		return pk != null && pk.m_shared.m_toolTier >= GetMinToolTier(rk) && MHR_Drops.ToolHurts(rk, axe: false);
+	}
+
 	// Z1: the way up meets an object that can't be damaged - its box is kept (X1), no new way up from where this one began
 	// this lap, and this one gives up
 	// R3a.1 (John, 2026-11-18: a way out must never go through the vein): the first thing on the swing line is this vein's
@@ -4832,6 +4879,15 @@ public partial class HarvestController
 			}
 		}
 		return p.BlockerNames.Count > 0 ? p.BlockerNames[0] : "?";
+	}
+
+	// Y2: CompanionFallDamagePatch - it landed more than a step lower than the ground it last stood on
+	internal void OnFell(float drop)
+	{
+		if (_rpActive && drop > OvStepUp)
+		{
+			_rpFell = Mathf.Max(_rpFell, drop);
+		}
 	}
 
 	private void OvRampFinish(string how)
