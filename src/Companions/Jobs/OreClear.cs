@@ -48,6 +48,8 @@ public partial class HarvestController
 
 		public float CoolAt = -1f;   // SV7 (replaces GG3c's 1 min wait): when it was set aside; -1 = not set aside
 
+		public int CuBack = -1;      // T2: the vein's mined count when it was set aside or last came back (copper)
+
 		public bool CoolOnce;        // SV7: came back once because no other part was free
 
 		public float[] CoolGround;   // SV7: with no pit map, the ground round it when it was set aside
@@ -623,7 +625,7 @@ public partial class HarvestController
 			{
 				// V3 / V4: once the dirt and the low parts are done, and not because other companions have the places
 				bool late = OvDirtDone(c) && !OvLowLeft(c) && !_sfpBusy;
-				if (late && !OvIsLow(rp) && !rp.LadderTried && !rp.LadderGaveUp)
+				if (late && !copper && !OvIsLow(rp) && !rp.LadderTried && !rp.LadderGaveUp)   // CU11: no ladder on copper
 				{
 					// V3: no place to hit it from (V2 included) - a ladder (two stacked when one is too low)
 					if (CompanionsPlugin.LogNormal) LogInfo($"No place to hit the rock piece \"{rp.C.name}\" from ({why}) - from a ladder (V3)");
@@ -920,12 +922,37 @@ public partial class HarvestController
 	{
 		Vector3 me = base.transform.position;
 		List<OvPart> cand = new List<OvPart>();
+		List<OvPart> aside = new List<OvPart>();   // T2
 		foreach (OvPart part in c.Parts)
 		{
-			// CU8: a part whose last look needed a ladder is left to the ladder step at the end (OvOreChoose)
-			if (!part.Out && !part.OutOfReach && part.C != null && part.C.gameObject.activeSelf && !OvPartCooling(part) && !OvPartHeldByOther(part))
+			// CU11: a part that needs a ladder is set aside (never a ladder on copper), so no OutOfReach skip here
+			if (part.Out || part.C == null || !part.C.gameObject.activeSelf || OvPartHeldByOther(part))
 			{
+				continue;
+			}
+			if (OvPartCooling(part))
+			{
+				aside.Add(part);
+				continue;
+			}
+			cand.Add(part);
+		}
+		// T2 (John 11-25 22:13Z "sure"): after a part is mined, each set-aside part whose top is more than 0.5 m above the
+		// highest free part's top (any, with none free) comes back once - one more try per part mined
+		float topFree = float.MinValue;
+		foreach (OvPart part in cand)
+		{
+			topFree = Mathf.Max(topFree, OvPartTop(part));
+		}
+		foreach (OvPart part in aside)
+		{
+			if (c.Mined > part.CuBack && (cand.Count == 0 || OvPartTop(part) > topFree + OvCuSameHeight))
+			{
+				part.CoolAt = -1f;
+				part.CoolGround = null;
+				part.CuBack = c.Mined;
 				cand.Add(part);
+				if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{part.C.name}\" comes back: higher than what is left (top {OvPartTop(part):F1}{(cand.Count > 1 ? $", highest free {topFree:F1}" : ", none free")}) and a part was mined since it was set aside (T2)");
 			}
 		}
 		if (cand.Count == 0)
@@ -951,6 +978,7 @@ public partial class HarvestController
 			}
 			if (r == 1)
 			{
+				OvPartCool(pick, why + " - copper: never from a ladder (CU11)", wait: false);   // CU11 / T1
 				continue;
 			}
 			OvSpot ws = OvClSpotFor(pick);
@@ -3671,7 +3699,7 @@ public partial class HarvestController
 			}
 		}
 		// F9: with another companion on the part, only a place more than 90 degrees round its centre from that one's place
-		HarvestController opp = OvPartOther(part);
+		HarvestController opp = OvIsCopper(_vp) ? null : OvPartOther(part);   // CU12: no quarter-turn rule on copper
 		if (opp != null)
 		{
 			int qn = cand.RemoveAll((Vector3 q) => !OvQuarterOk(q, part.Centre, opp._clStand));
@@ -3891,7 +3919,8 @@ public partial class HarvestController
 				fd = h.distance;
 				fp = hp;
 			}
-			if (first == part.C)
+			// CU10 (John 11-25 22:13Z): copper - a first hit on any part of this vein counts (not for a rock piece's round)
+			if (first == part.C || (first != null && !part.IsRock && OvIsCopper(_vp) && first.GetComponentInParent<MineRock5>() is MineRock5 fm && _vp.Rocks.Contains(fm)))
 			{
 				hit = fp;
 				return true;
@@ -4250,6 +4279,11 @@ public partial class HarvestController
 				OvPartCool(pick, why, wait: false);
 				continue;
 			}
+			if (r == 1 && OvIsCopper(_vp))
+			{
+				OvPartCool(pick, why + " - copper: never from a ladder (CU11)", wait: false);   // CU11 (John 11-25 22:02Z)
+				continue;
+			}
 			if (r == 1 && OvIsLow(pick))
 			{
 				// L4: a low part is never mined from a ladder - it waits 60 s (not a failure) for a place on the ground
@@ -4347,6 +4381,10 @@ public partial class HarvestController
 		part.CoolWhy = why;
 		part.Wait = wait;
 		part.LadderWait = false;
+		if (OvIsCopper(_vp))
+		{
+			part.CuBack = OvC()?.Mined ?? 0;   // T2
+		}
 		if (!wait)
 		{
 			part.FailAt = now;
