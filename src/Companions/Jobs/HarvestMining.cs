@@ -58,9 +58,82 @@ public partial class HarvestController
 	}
 
 	// digging is for the Ore job on a split vein outdoors
+	// CP1 (John 11-26 02:15Z): a copper deposit stays in the plain rock flow while a part of it is above the ground and not
+	// in water deep enough to swim (CP3); then the vein job (OvStart) mines out the rest, no trench (CP4)
 	private bool DigMode()
 	{
-		return _target != null && _targetType == "MineRock5" && GetMode() == 3 && _character != null && !InDungeonAt(base.transform.position);
+		return _target != null && _targetType == "MineRock5" && GetMode() == 3 && _character != null && !InDungeonAt(base.transform.position) && !(CuTarget() && CuExposed() > 0);
+	}
+
+	// CP1: the target drops CopperOre (read once per target)
+	private int _cuTargetId;
+	private bool _cuIs;
+
+	private bool CuTarget()
+	{
+		if (_target == null)
+		{
+			return false;
+		}
+		int id = _target.GetInstanceID();
+		if (id != _cuTargetId)
+		{
+			_cuTargetId = id;
+			_cuIs = MHR_Drops.DropsItem(_target, "CopperOre");
+		}
+		return _cuIs;
+	}
+
+	// CP1 / CP3: a part the plain flow takes on copper - exposed (the plain test) and its walk-to point (its centre at the
+	// ground's height) not in water deep enough to swim
+	private bool CuPartOk(Collider c)
+	{
+		if (!IsSegmentExposed(c))
+		{
+			return false;
+		}
+		Vector3 ctr = c.bounds.center;
+		float y = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(ctr) : ctr.y;
+		return _character == null || !MHR_Water.WouldSwim(_character, new Vector3(ctr.x, y, ctr.z));
+	}
+
+	// CP1: how many such parts are left - worked out again only when the target or its number of live parts changes
+	private int _cuCountId;
+	private int _cuCountLive = -1;
+	private int _cuExposed;
+
+	private int CuExposed()
+	{
+		if (_target == null)
+		{
+			return 0;
+		}
+		int live = 0;
+		foreach (Transform t in _target.transform)
+		{
+			if (t.gameObject.activeSelf)
+			{
+				live++;
+			}
+		}
+		int id = _target.GetInstanceID();
+		if (id == _cuCountId && live == _cuCountLive)
+		{
+			return _cuExposed;
+		}
+		_cuCountId = id;
+		_cuCountLive = live;
+		_cuExposed = 0;
+		foreach (Transform t in _target.transform)
+		{
+			Collider c = t.gameObject.activeSelf ? t.GetComponent<Collider>() : null;
+			if (c != null && CuPartOk(c))
+			{
+				_cuExposed++;
+			}
+		}
+		if (CompanionsPlugin.LogNormal) Log($"Copper \"{_target.name}\": {_cuExposed} part(s) above the ground to mine the plain way ({live} left){(_cuExposed == 0 ? " - the rest is dug out by the vein work (CP4)" : "")} (CP1)");
+		return _cuExposed;
 	}
 
 	private Vector3 Eye()

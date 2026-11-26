@@ -3731,27 +3731,47 @@ public partial class HarvestController
 			why = "no pit ground near it (no higher than its top)";
 			return 2;
 		}
-		cand.Sort((Vector3 p1, Vector3 p2) =>
+		// CU13 (John 11-25 23:58Z, Q1 "nearest" / Q2 the dig toward a part stays): copper - the place nearest it (flat + height,
+		// no lowest-first band); first only places whose swing's first hit is the vein, then (a low part only) the places
+		// whose swing digs toward it
+		bool cuStand = OvIsCopper(_vp) && !part.IsRock;
+		if (cuStand)
 		{
-			int yc = p1.y.CompareTo(p2.y);
-			return yc != 0 ? yc : Flat(me, p1).CompareTo(Flat(me, p2));
-		});
+			cand.Sort((Vector3 p1, Vector3 p2) => (Flat(me, p1) + Mathf.Abs(me.y - p1.y)).CompareTo(Flat(me, p2) + Mathf.Abs(me.y - p2.y)));
+		}
+		else
+		{
+			cand.Sort((Vector3 p1, Vector3 p2) =>
+			{
+				int yc = p1.y.CompareTo(p2.y);
+				return yc != 0 ? yc : Flat(me, p1).CompareTo(Flat(me, p2));
+			});
+		}
 		float band = float.MaxValue, bd = float.MaxValue;
 		int tested = 0, noFit = 0, noWay = 0, probes = 0;
 		bool found = false;
+		for (int pass = 0; pass < 2 && !found; pass++)
+		{
+		bool passDirt = cuStand ? pass == 1 : low;
+		if (pass == 1 && (!cuStand || !low))
+		{
+			break;
+		}
+		int passTested = 0, passProbes = 0;
 		foreach (Vector3 pt in cand)
 		{
-			if (pt.y > band || tested >= OvSwTestMax)
+			if (pt.y > band || passTested >= OvSwTestMax)
 			{
 				break;
 			}
 			tested++;
+			passTested++;
 			if (!OvBodyFits(pt, rad, hh))
 			{
 				noFit++;
 				continue;
 			}
-			if (!OvSwingReaches(a, pt, part, out Vector3 hit, lowDirt: low))
+			if (!OvSwingReaches(a, pt, part, out Vector3 hit, lowDirt: passDirt))
 			{
 				continue;
 			}
@@ -3765,9 +3785,10 @@ public partial class HarvestController
 			float d = Flat(me, pt) + Mathf.Abs(me.y - pt.y);
 			// MP3 (the map-path list, John 2026-11-21): a place that would be chosen is dropped when the map says there is
 			// no way there from where it stands (not just one step too high - MP4 cuts that on the walk); at most 5 asked
-			if ((!found || d < bd) && probes < OvRtProbeMax)
+			if ((!found || d < bd) && passProbes < OvRtProbeMax)
 			{
 				probes++;
+				passProbes++;
 				if (OvRtNoWay(pt, out _))
 				{
 					noWay++;
@@ -3777,7 +3798,7 @@ public partial class HarvestController
 			if (!found)
 			{
 				found = true;
-				band = pt.y + 0.3f;
+				band = cuStand ? float.MaxValue : pt.y + 0.3f;   // CU13: no band on copper
 			}
 			if (d < bd)
 			{
@@ -3785,6 +3806,11 @@ public partial class HarvestController
 				stand = pt;
 				_standAim = hit;
 			}
+			if (cuStand)
+			{
+				break;   // CU13: sorted nearest first - the first that works is the one
+			}
+		}
 		}
 		if (found)
 		{

@@ -2579,6 +2579,21 @@ public partial class HarvestController : MonoBehaviour
 			float num = float.MaxValue;
 			// 1.5.95: digging (Ore job, outdoors) - the nearest part, buried or not; it digs to it like a player
 			bool dig = DigMode();
+			// CP2 (John 11-25 19:20Z / 19:24Z H1-H2): copper in the plain flow - the highest top first; of the parts within 0.5 m
+			// of that top, the nearest (CP3: none in water deep enough to swim)
+			bool cu = !dig && CuTarget();
+			float cuTop = float.MinValue;
+			if (cu)
+			{
+				foreach (Transform item in _target.transform)
+				{
+					Collider cc = item.gameObject.activeSelf ? item.GetComponent<Collider>() : null;
+					if (cc != null && CuPartOk(cc))
+					{
+						cuTop = Mathf.Max(cuTop, cc.bounds.max.y);
+					}
+				}
+			}
 			foreach (Transform item in _target.transform)
 			{
 				if (!item.gameObject.activeSelf)
@@ -2586,6 +2601,10 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
+				if (cu && (component == null || !CuPartOk(component) || component.bounds.max.y < cuTop - 0.5f))
+				{
+					continue;
+				}
 				if (!(component == null) && (dig || IsSegmentExposed(component)))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component.bounds.center);
