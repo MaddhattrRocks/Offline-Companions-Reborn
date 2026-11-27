@@ -937,29 +937,24 @@ public partial class HarvestController
 			}
 			cand.Add(part);
 		}
-		// T2 (John 11-25 22:13Z "sure"): after a part is mined, each set-aside part whose top is more than 0.5 m above the
-		// highest free part's top (any, with none free) comes back once - one more try per part mined
-		float topFree = float.MinValue;
-		foreach (OvPart part in cand)
-		{
-			topFree = Mathf.Max(topFree, OvPartTop(part));
-		}
+		// T2 (John 11-25 22:13Z "sure"; N2 John 11-27 23:24Z Q2 "yes": any height): after a part is mined, each set-aside
+		// part comes back once - one more try per part mined
 		foreach (OvPart part in aside)
 		{
-			if (c.Mined > part.CuBack && (cand.Count == 0 || OvPartTop(part) > topFree + OvCuSameHeight))
+			if (c.Mined > part.CuBack)
 			{
 				part.CoolAt = -1f;
 				part.CoolGround = null;
 				part.CuBack = c.Mined;
 				cand.Add(part);
-				if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{part.C.name}\" comes back: higher than what is left (top {OvPartTop(part):F1}{(cand.Count > 1 ? $", highest free {topFree:F1}" : ", none free")}) and a part was mined since it was set aside (T2)");
+				if (CompanionsPlugin.LogNormal) LogInfo($"The part \"{part.C.name}\" comes back: a part was mined since it was set aside (T2)");
 			}
 		}
 		if (cand.Count == 0)
 		{
 			return false;
 		}
-		cand = OvCuHighFirst(cand, me);   // CU8 (John 11-25 19:20Z / H1 / H2): the highest top first
+		cand = OvCuNearFirst(cand, me);   // N2 (John 11-27 23:19Z / 23:24Z Q1, replaces CU8's highest first): the nearest first
 		int tries = 0;
 		bool more = false;
 		foreach (OvPart pick in cand)
@@ -987,11 +982,11 @@ public partial class HarvestController
 				OvWayOutHere(ws);
 				return true;
 			}
-			_clPopWhy = "copper: the highest part it can hit (CU8)";
+			_clPopWhy = "copper: the nearest part it can hit (N2)";
 			OvClBegin(pick, stand, ladder: false, low: OvIsLow(pick));
 			return true;
 		}
-		// CU8: parts not tried yet - the next 4 at the next look (once a second), not the buried parts yet
+		// CU8 / N2: parts not tried yet - the next 4 at the next look (once a second), not the buried parts yet
 		if (more)
 		{
 			_clNextPick = Time.time + 1f;
@@ -1001,43 +996,20 @@ public partial class HarvestController
 		return false;
 	}
 
-	// CU8 (John 11-25 19:24Z, H1 "top", H2 "yes"): the highest part top left first; of the parts whose top is within 0.5 m
-	// of that, the nearest (flat, to the nearest point of its box); then again for the rest
-	private const float OvCuSameHeight = 0.5f;
-
-	private static float OvPartTop(OvPart p)
+	// N2 (John 11-27 23:19Z "whatever is closest", 23:24Z Q1 "yes"; replaces CU8's highest first): the nearest part first
+	// (flat, to the nearest point of its box - the measure silver's low parts use)
+	private List<OvPart> OvCuNearFirst(List<OvPart> parts, Vector3 me)
 	{
-		return p.Centre.y + p.Half.y;
-	}
-
-	private List<OvPart> OvCuHighFirst(List<OvPart> parts, Vector3 me)
-	{
-		List<OvPart> left = new List<OvPart>(parts);
-		List<OvPart> order = new List<OvPart>(parts.Count);
-		while (left.Count > 0)
+		List<KeyValuePair<float, OvPart>> keyed = new List<KeyValuePair<float, OvPart>>(parts.Count);
+		foreach (OvPart p in parts)
 		{
-			float top = float.MinValue;
-			foreach (OvPart p in left)
-			{
-				top = Mathf.Max(top, OvPartTop(p));
-			}
-			OvPart best = null;
-			float bd = float.MaxValue;
-			foreach (OvPart p in left)
-			{
-				if (OvPartTop(p) < top - OvCuSameHeight)
-				{
-					continue;
-				}
-				float d = Flat(me, OvBoxNear(p, me));
-				if (d < bd)
-				{
-					bd = d;
-					best = p;
-				}
-			}
-			order.Add(best);
-			left.Remove(best);
+			keyed.Add(new KeyValuePair<float, OvPart>(Flat(me, OvBoxNear(p, me)), p));
+		}
+		keyed.Sort((KeyValuePair<float, OvPart> x, KeyValuePair<float, OvPart> y) => x.Key.CompareTo(y.Key));
+		List<OvPart> order = new List<OvPart>(keyed.Count);
+		foreach (KeyValuePair<float, OvPart> kv in keyed)
+		{
+			order.Add(kv.Value);
 		}
 		return order;
 	}
@@ -2306,11 +2278,11 @@ public partial class HarvestController
 		}
 		if (OvIsCopper(_vp))
 		{
-			// CU8: copper's low parts by the highest top first too (the order kept: the sort key is the place in that list)
-			List<OvPart> hi = OvCuHighFirst(lows, me);
-			for (int i = 0; i < hi.Count; i++)
+			// N2 (replaces CU8): copper's low parts nearest first too (the order kept: the sort key is the place in that list)
+			List<OvPart> near = OvCuNearFirst(lows, me);
+			for (int i = 0; i < near.Count; i++)
 			{
-				all.Add(new KeyValuePair<float, object>(-1000000f + i, hi[i]));
+				all.Add(new KeyValuePair<float, object>(-1000000f + i, near[i]));
 			}
 		}
 		else

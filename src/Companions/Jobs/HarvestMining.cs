@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Companions;
@@ -102,6 +103,11 @@ public partial class HarvestController
 	private int _cuCountLive = -1;
 	private int _cuExposed;
 
+	// N3 (John 11-27 23:26Z): the parts of this copper target this companion skipped (its swings landed on nothing, or 20
+	// hits / 30 tries) - emptied when the target or its number of live parts changes (a part broke, by anyone)
+	private readonly HashSet<int> _cuSkip = new HashSet<int>();
+	private int _cuSkipCount = -1;
+
 	private int CuExposed()
 	{
 		if (_target == null)
@@ -117,23 +123,56 @@ public partial class HarvestController
 			}
 		}
 		int id = _target.GetInstanceID();
-		if (id == _cuCountId && live == _cuCountLive)
+		if (id != _cuCountId || live != _cuCountLive)
+		{
+			_cuSkip.Clear();
+		}
+		else if (_cuSkip.Count == _cuSkipCount)
 		{
 			return _cuExposed;
 		}
 		_cuCountId = id;
 		_cuCountLive = live;
+		_cuSkipCount = _cuSkip.Count;
 		_cuExposed = 0;
 		foreach (Transform t in _target.transform)
 		{
 			Collider c = t.gameObject.activeSelf ? t.GetComponent<Collider>() : null;
-			if (c != null && CuPartOk(c))
+			if (c != null && CuPartOk(c) && !_cuSkip.Contains(c.GetInstanceID()))
 			{
 				_cuExposed++;
 			}
 		}
-		if (CompanionsPlugin.LogNormal) Log($"Copper \"{_target.name}\": {_cuExposed} part(s) above the ground to mine the plain way ({live} left){(_cuExposed == 0 ? " - the rest is dug out by the vein work (CP4)" : "")} (CP1)");
+		if (CompanionsPlugin.LogNormal) Log($"Copper \"{_target.name}\": {_cuExposed} part(s) above the ground to mine the plain way ({live} left{(_cuSkip.Count > 0 ? $", {_cuSkip.Count} skipped" : "")}){(_cuExposed == 0 ? " - the rest is dug out by the vein work (CP4)" : "")} (CP1)");
 		return _cuExposed;
+	}
+
+	// N3: on copper in the plain flow, the part it was working is skipped instead of the whole deposit; its hit counters
+	// start again and it walks to the next nearest part (with none left, DigMode hands the deposit to the vein work).
+	// False = not copper in the plain flow (the caller skips the deposit as before)
+	private bool CuSkipPart(string why)
+	{
+		if (_targetType != "MineRock5" || DigMode() || !CuTarget() || _rock5CurrentSegment == null)
+		{
+			return false;
+		}
+		_cuSkip.Add(_rock5CurrentSegment.GetInstanceID());
+		if (CompanionsPlugin.LogNormal) LogInfo($"Copper: skipping the part \"{_rock5CurrentSegment.name}\" ({why}) - on to the next nearest (N3)");
+		_rock5CurrentSegment = null;
+		_swingCount = 0;
+		_totalAttempts = 0;
+		_consecutiveFailures = 0;
+		_noDamageSwings = 0;
+		_hitCheckFor = null;   // the no-hit test starts again with the next swing, as for a new target
+		_hasGoodSpot = false;
+		_reapproach = false;
+		_attackFaceLocked = false;
+		_moveTimer = 0f;
+		_moveLogTimer = 0f;
+		_moveTargetLocked = false;
+		_state = HarvestState.Moving;
+		CuExposed();
+		return true;
 	}
 
 	private Vector3 Eye()

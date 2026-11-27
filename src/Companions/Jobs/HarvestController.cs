@@ -1658,6 +1658,11 @@ public partial class HarvestController : MonoBehaviour
 				_state = HarvestState.Moving;
 				return;
 			}
+			// N3: copper skips only the part (the next nearest, then the vein work), not the whole deposit
+			if (CuSkipPart("2 swings in a row landed on nothing"))
+			{
+				return;
+			}
 			if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't doing anything to \"" + _target.name + "\" (something in the way) - leaving it for now");
 			if (RockGiveUp())
 			{
@@ -1675,6 +1680,10 @@ public partial class HarvestController : MonoBehaviour
 			_moveLogTimer = 0f;
 			_moveTargetLocked = false;
 			_state = HarvestState.Moving;
+		}
+		else if ((_swingCount >= 20 || _totalAttempts >= 30) && CuSkipPart($"{_swingCount} hits / {_totalAttempts} tries without breaking it"))
+		{
+			// N3: copper skips only the part
 		}
 		else if (_swingCount >= 20 || _totalAttempts >= 30)
 		{
@@ -2579,21 +2588,9 @@ public partial class HarvestController : MonoBehaviour
 			float num = float.MaxValue;
 			// 1.5.95: digging (Ore job, outdoors) - the nearest part, buried or not; it digs to it like a player
 			bool dig = DigMode();
-			// CP2 (John 11-25 19:20Z / 19:24Z H1-H2): copper in the plain flow - the highest top first; of the parts within 0.5 m
-			// of that top, the nearest (CP3: none in water deep enough to swim)
+			// N1 (John 11-27 23:19Z, replaces CP2's highest first): copper in the plain flow - the nearest part (CP3: none in
+			// water deep enough to swim; N3: none this companion skipped)
 			bool cu = !dig && CuTarget();
-			float cuTop = float.MinValue;
-			if (cu)
-			{
-				foreach (Transform item in _target.transform)
-				{
-					Collider cc = item.gameObject.activeSelf ? item.GetComponent<Collider>() : null;
-					if (cc != null && CuPartOk(cc))
-					{
-						cuTop = Mathf.Max(cuTop, cc.bounds.max.y);
-					}
-				}
-			}
 			foreach (Transform item in _target.transform)
 			{
 				if (!item.gameObject.activeSelf)
@@ -2601,7 +2598,7 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
-				if (cu && (component == null || !CuPartOk(component) || component.bounds.max.y < cuTop - 0.5f))
+				if (cu && (component == null || !CuPartOk(component) || _cuSkip.Contains(component.GetInstanceID())))
 				{
 					continue;
 				}
