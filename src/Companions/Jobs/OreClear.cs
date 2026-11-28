@@ -597,16 +597,11 @@ public partial class HarvestController
 		}
 		Vector3 me = base.transform.position;
 		List<OvPart> pick = new List<OvPart>();
-		bool copper = OvIsCopper(_vp);
+		bool copper = OvIsCopper(_vp);   // CU11 below
+		// K2 (John 11-28 01:59Z): copper too - every rock piece a part rests on (CU7's in-the-way-only filter removed)
 		foreach (OvPart rp in c.RockPieces)
 		{
 			if (rp.C == null || !rp.C.gameObject.activeInHierarchy || OvPartCooling(rp) || OvPartHeldByOther(rp))
-			{
-				continue;
-			}
-			// CU7 (John 11-25 15:38Z): on copper only a rock piece a swing at a part met first (T3) is mined, not one a part
-			// rests on
-			if (copper && !c.InWay.Contains(rp.C.GetInstanceID()))
 			{
 				continue;
 			}
@@ -1157,12 +1152,17 @@ public partial class HarvestController
 			return false;   // the ground is under the part's bottom here: it doesn't hold it
 		}
 		_dtHit = true;   // Z1: ground above the part's bottom here (listed, low or left on top)
-		// CU9 (John 11-25 19:20Z: "focus on the highest part of the ore rather than digging out whatever is around them"; H3:
-		// they still dig for parts): on copper any ground above a part's bottom makes it a low part - dug for by swinging at
-		// its rock (P5), never a dirt point dug down beside it
-		if (OvIsCopper(_vp))
+		// K3 (John 11-28 01:59Z: "mining out the 'pit' of where the ore vein is ... not carving out the dirt and area under the
+		// ore"; replaces CU9): copper - ground where the pit map shows the vein's rock above it is dirt UNDER the ore: never
+		// listed (no map / off the map: listed)
+		bool copper = OvIsCopper(_vp);
+		if (copper && _vp.Map != null)
 		{
-			return true;
+			int mi = OvMapIndex(_vp.Map, pt);
+			if (mi >= 0 && _vp.Map.Over[mi] == MkOre)
+			{
+				return false;
+			}
 		}
 		float floor = OvFloor(pt);
 		if (floor >= bottom)
@@ -1180,7 +1180,8 @@ public partial class HarvestController
 				return false;
 			}
 		}
-		float goal = Mathf.Max(bottom - OvDirtUnder, floor + OvDigGain);
+		// K3: copper digs to the part's bottom, not 0.3 m under it
+		float goal = Mathf.Max(copper ? bottom : bottom - OvDirtUnder, floor + OvDigGain);
 		long key = OvDirtKey(x, z);
 		if (byKey.TryGetValue(key, out OvDirt had))
 		{
@@ -5215,11 +5216,7 @@ public partial class HarvestController
 	// handed to the Wood / Stone flow like the things in the pit (OvTake). True = taken.
 	private bool OvHoldFirst(OvClear c)
 	{
-		// CU7 (John 11-25 15:38Z): copper never pops, so what a part rests on is never cleared
-		if (OvIsCopper(_vp))
-		{
-			return false;
-		}
+		// K2 (John 11-28 01:59Z): copper too - what a part rests on is cleared (CU7 removed)
 		Vector3 me = base.transform.position;
 		GameObject best = null;
 		OvPart bp = null;
