@@ -1658,11 +1658,6 @@ public partial class HarvestController : MonoBehaviour
 				_state = HarvestState.Moving;
 				return;
 			}
-			// N3: copper skips only the part (the next nearest, then the vein work), not the whole deposit
-			if (CuSkipPart("2 swings in a row landed on nothing"))
-			{
-				return;
-			}
 			if (CompanionsPlugin.LogNormal) LogInfo("Its swings aren't doing anything to \"" + _target.name + "\" (something in the way) - leaving it for now");
 			if (RockGiveUp())
 			{
@@ -1680,10 +1675,6 @@ public partial class HarvestController : MonoBehaviour
 			_moveLogTimer = 0f;
 			_moveTargetLocked = false;
 			_state = HarvestState.Moving;
-		}
-		else if ((_swingCount >= 20 || _totalAttempts >= 30) && CuSkipPart($"{_swingCount} hits / {_totalAttempts} tries without breaking it"))
-		{
-			// N3: copper skips only the part
 		}
 		else if (_swingCount >= 20 || _totalAttempts >= 30)
 		{
@@ -2588,9 +2579,6 @@ public partial class HarvestController : MonoBehaviour
 			float num = float.MaxValue;
 			// 1.5.95: digging (Ore job, outdoors) - the nearest part, buried or not; it digs to it like a player
 			bool dig = DigMode();
-			// N1 (John 11-27 23:19Z, replaces CP2's highest first): copper in the plain flow - the nearest part (CP3: none in
-			// water deep enough to swim; N3: none this companion skipped)
-			bool cu = !dig && CuTarget();
 			foreach (Transform item in _target.transform)
 			{
 				if (!item.gameObject.activeSelf)
@@ -2598,10 +2586,6 @@ public partial class HarvestController : MonoBehaviour
 					continue;
 				}
 				Collider component = item.GetComponent<Collider>();
-				if (cu && (component == null || !CuPartOk(component) || _cuSkip.Contains(component.GetInstanceID())))
-				{
-					continue;
-				}
 				if (!(component == null) && (dig || IsSegmentExposed(component)))
 				{
 					float num2 = Vector3.Distance(base.transform.position, component.bounds.center);

@@ -918,6 +918,8 @@ public partial class HarvestController
 	// ground is mined (its way-out check first, as OvOreChoose); one with no place to hit it from is set aside until
 	// something within 2 m of it changes (a dig nearby brings it back); one that needs a ladder is left to the ladder
 	// rules. False = none now (the dirt and low parts, then OvOreChoose, as before)
+	private bool _cuS1;   // D-CU: OvCuSeen's stand search is running (S1)
+
 	private bool OvCuSeen(OvClear c)
 	{
 		Vector3 me = base.transform.position;
@@ -964,7 +966,18 @@ public partial class HarvestController
 				more = true;
 				break;
 			}
-			int r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out Vector3 stand, out string why);
+			_cuS1 = true;   // D-CU S1: only places whose swing mines it (no dig-toward places here)
+			int r;
+			Vector3 stand;
+			string why;
+			try
+			{
+				r = OvStandFor(c, new Vector3(pick.Centre.x, OvPartBottom(pick), pick.Centre.z), pick, out stand, out why);
+			}
+			finally
+			{
+				_cuS1 = false;
+			}
 			pick.OutOfReach = r == 1;
 			if (r == 2)
 			{
@@ -3704,8 +3717,8 @@ public partial class HarvestController
 			return 2;
 		}
 		// CU13 (John 11-25 23:58Z, Q1 "nearest" / Q2 the dig toward a part stays): copper - the place nearest it (flat + height,
-		// no lowest-first band); first only places whose swing's first hit is the vein, then (a low part only) the places
-		// whose swing digs toward it
+		// no lowest-first band); first only places whose swing's first thing met is the vein (D-CU: OvSwingOreFirst), then (a
+		// low part only, and not while picking a part to mine - D-CU S1) the places whose swing digs toward it
 		bool cuStand = OvIsCopper(_vp) && !part.IsRock;
 		if (cuStand)
 		{
@@ -3725,9 +3738,9 @@ public partial class HarvestController
 		for (int pass = 0; pass < 2 && !found; pass++)
 		{
 		bool passDirt = cuStand ? pass == 1 : low;
-		if (pass == 1 && (!cuStand || !low))
+		if (pass == 1 && (!cuStand || !low || _cuS1))
 		{
-			break;
+			break;   // D-CU: no dig-toward places while picking a part to mine (S1); the dig stage (S3) has them
 		}
 		int passTested = 0, passProbes = 0;
 		foreach (Vector3 pt in cand)
@@ -3743,9 +3756,10 @@ public partial class HarvestController
 				noFit++;
 				continue;
 			}
-			if (!OvSwingReaches(a, pt, part, out Vector3 hit, lowDirt: passDirt))
+			Vector3 hit;
+			if (cuStand && pass == 0 ? !OvSwingOreFirst(a, pt, part, out hit) : !OvSwingReaches(a, pt, part, out hit, lowDirt: passDirt))
 			{
-				continue;
+				continue;   // D-CU S1: copper's first pass - the swing's first thing met is the vein
 			}
 			// J2 (silver): a rock piece only from where no ray of the swing meets the vein first
 			// V1 (John 11-23 03:05Z, log f93a7cd2: his swings hit the rock piece and the silver together): once the dirt is
@@ -3917,8 +3931,9 @@ public partial class HarvestController
 				fd = h.distance;
 				fp = hp;
 			}
-			// CU10 (John 11-25 22:13Z): copper - a first hit on any part of this vein counts (not for a rock piece's round)
-			if (first == part.C || (first != null && !part.IsRock && OvIsCopper(_vp) && first.GetComponentInParent<MineRock5>() is MineRock5 fm && _vp.Rocks.Contains(fm)))
+			// D-CU (John 11-28 00:32Z, replaces CU10): copper's places to mine from are tested by OvSwingOreFirst (the game's
+			// ray order); here only a ray whose first hit is the part itself (or, low, the dirt by it) counts
+			if (first == part.C)
 			{
 				hit = fp;
 				return true;
@@ -3976,6 +3991,80 @@ public partial class HarvestController
 			return h.collider is MeshCollider ? o + dir * range : h.collider.ClosestPoint(o);
 		}
 		return h.point;
+	}
+
+	// D-CU S1 (John 11-28 00:32Z; game: Attack.DoMeleeAttack keeps each ray's first hit and takes them top of the arc first;
+	// with the pickaxe the ground is dug only when it comes before anything else, and then the swing stops): copper - the
+	// game's pickaxe swing from feet at pt, facing the part's centre, MINES without digging only when the first thing it
+	// meets (the highest ray that meets anything) is a part of this vein. True = so (hit = where).
+	private bool OvSwingOreFirst(Attack a, Vector3 pt, OvPart part, out Vector3 hit)
+	{
+		hit = part.Centre;
+		if (s_swMask < 0)
+		{
+			s_swMask = LayerMask.GetMask("Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "terrain", "character", "character_net", "character_ghost", "hitbox", "character_noenv", "vehicle");
+		}
+		float range = a != null ? a.m_attackRange : 1.8f;
+		float height = a != null ? a.m_attackHeight : 1.0f;
+		float angle = a != null ? a.m_attackAngle : 120f;
+		float width = a != null ? a.m_attackRayWidth : 0.2f;
+		float offset = a != null ? a.m_attackOffset : 0f;
+		bool vertical = a == null || a.m_attackType == Attack.AttackType.Vertical;
+		Vector3 jointUp = Vector3.zero;
+		if (a != null && !string.IsNullOrEmpty(a.m_attackOriginJoint) && _character != null && _character.GetVisual() != null)
+		{
+			Transform j = Utils.FindChild(_character.GetVisual().transform, a.m_attackOriginJoint);
+			if (j != null)
+			{
+				jointUp = Vector3.up * (j.position.y - base.transform.position.y);
+			}
+		}
+		Vector3 flat = part.Centre - pt;
+		flat.y = 0f;
+		if (flat.sqrMagnitude < 0.0001f)
+		{
+			flat = base.transform.forward;
+		}
+		Quaternion yaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+		Vector3 fwd = yaw * Vector3.forward;
+		Vector3 o = pt + jointUp + Vector3.up * height + yaw * Vector3.right * offset;
+		float half = angle / 2f;
+		for (float ang = -half; ang <= half; ang += 4f)
+		{
+			Vector3 dir = yaw * ((vertical ? Quaternion.Euler(ang, 0f, 0f) : Quaternion.Euler(0f, -ang, 0f)) * Vector3.forward);
+			int n = width > 0f ? Physics.SphereCastNonAlloc(o, width, dir, s_swHits, Mathf.Max(0f, range - width), s_swMask, QueryTriggerInteraction.Ignore) : Physics.RaycastNonAlloc(o, dir, s_swHits, range, s_swMask, QueryTriggerInteraction.Ignore);
+			Collider first = null;
+			float fd = float.MaxValue;
+			Vector3 fp = Vector3.zero;
+			for (int i = 0; i < n; i++)
+			{
+				RaycastHit h = s_swHits[i];
+				if (h.collider == null || h.distance >= fd || h.collider.GetComponentInParent<Character>() != null)
+				{
+					continue;
+				}
+				Vector3 hp = OvSwingPoint(h, o, dir, range);
+				if (angle < 180f && Vector3.Dot(hp - o, fwd) <= 0f)
+				{
+					continue;
+				}
+				first = h.collider;
+				fd = h.distance;
+				fp = hp;
+			}
+			if (first == null)
+			{
+				continue;
+			}
+			MineRock5 m5 = first.GetComponentInParent<MineRock5>();
+			if (m5 != null && _vp != null && _vp.Rocks.Contains(m5))
+			{
+				hit = fp;
+				return true;
+			}
+			return false;   // the first thing it meets is the ground or something else: that swing digs, or hits that
+		}
+		return false;
 	}
 
 	// E1 (John 2026-11-21: "clear all the dirt from the silver ore vein WITHOUT hitting the vein"; "only that the strike will
