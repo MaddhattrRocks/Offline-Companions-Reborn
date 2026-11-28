@@ -88,7 +88,7 @@ public class DoorHandler : MonoBehaviour
 			return;
 		}
 		Vector3 me = base.transform.position;
-		Vector3 at = _door.transform.position;
+		Vector3 at = MHR_Mover.DoorCenter(_door);
 		if (MHR_Nav.DoorDist(me, at) > 2.0f)
 		{
 			MHR_Mover.Go(_ai, Time.deltaTime, at, 1.6f, true, "Door");
@@ -104,7 +104,7 @@ public class DoorHandler : MonoBehaviour
 		to.y = 0f;
 		if (to.sqrMagnitude > 0.01f)
 		{
-			base.transform.rotation = Quaternion.LookRotation(to.normalized);
+			MHR_Mover.Face(_ai, to);   // 1.5.94: turn like a player, not in one frame
 		}
 		bool ok = false;
 		try

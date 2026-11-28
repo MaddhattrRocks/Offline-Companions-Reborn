@@ -160,7 +160,7 @@ internal static class MHR_Hive
 		Inventory bag = h.GetInventory();
 		ItemDrop nearest = null;
 		float nd = float.MaxValue;
-		foreach (Collider c in Physics.OverlapSphere(s.At, 3f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.Hive163, s.At, 3f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
 			if (d == null || d.m_itemData == null || d.m_itemData.m_shared.m_name != s.Honey || s.Before.Contains(d.GetInstanceID()) || !bag.CanAddItem(d.m_itemData, 1))

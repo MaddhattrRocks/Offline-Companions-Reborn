@@ -73,6 +73,12 @@ Stops other mods from deleting a companion outright (for example mods that clear
 **ShowMinimapPanel** — Default: On  
 Show the companion status panel under the minimap.
 
+**MinimapPanelOffsetX** — Default: 0 · Range: -4000 – 4000  
+Moves the companion status panel sideways from its spot under the minimap (UI units: negative = left, positive = right). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.
+
+**MinimapPanelOffsetY** — Default: 0 · Range: -4000 – 4000  
+Moves the companion status panel up or down from its spot under the minimap (UI units: negative = down, positive = up; each companion row is about 64). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.
+
 **ShowOverheadBars** — Default: On  
 Show health and stamina bars above each companion's head.
 
@@ -112,6 +118,9 @@ Hold this while looking at a companion to open its command wheel.
 
 **ConfigPanelKey** — Default: `F8`  
 Opens the in-game settings panel, where all of these settings can be changed.
+
+**MoveUiKey** — Default: `F7`  
+Turns reposition mode on and off: drag the companion status panel (under the minimap) or an open companion panel with the mouse, then press it again to save where it is. Open your inventory first to get a mouse cursor for the status panel. None = no key.
 
 **FarmZoneKey** — Default: `Z`  
 Pressed together with FarmZoneModifier: opens the farm zone editor.
@@ -293,6 +302,9 @@ On: companions attack a creature as soon as it has noticed you or a companion. O
 
 **HealthRetreatPct** — Default: 0.3 · Range: 0.05 – 0.9  
 Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.
+
+**CompanionCameraShake** — Default: Off  
+Off: a companion's block, parry and weapon hits don't shake your screen (the game shakes the camera of anyone close to those effects, whoever caused them). The sound and sparks stay. Your own blocks, parries and hits you take shake as normal. On: the game's shake for companions too.
 
 **FleeHealthPct** — Default: 0.15 · Range: 0.05 – 0.6  
 Below this share of its health (0.15 = 15%) a companion runs away from the enemy.
@@ -868,8 +880,8 @@ How far (meters, from the eyes) the companion can reach a piece to repair it. A 
 **Restock** — Default: On  
 Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.
 
-**FuelBelow** — Default: 0.8 · Range: 0.1 – 1  
-Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.
+**FuelAtOrBelow** — Default: 3 · Range: 0 – 50  
+Top up a fire, torch, brazier or hot tub only once its fuel is down to this many pieces or less (as a player tops up a fire that's getting low). It's then filled all the way up. Replaces the old FuelBelow share.
 
 **RefuelFires** — Default: On  
 Restock: campfires, fire pits and bonfires.

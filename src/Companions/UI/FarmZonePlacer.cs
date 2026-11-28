@@ -43,7 +43,8 @@ public class FarmZonePlacer : MonoBehaviour
 
 	private const float SizeStep = 1f;
 
-	private const float RotationStep = 15f;
+	// 1.5.83: the game's own build step (Player.m_placeRotationDegrees) - was 15, so a base built at 22.5 or 67.5 couldn't be matched
+	private const float RotationStep = 22.5f;
 
 	private LineRenderer _previewBorder;
 
@@ -274,7 +275,7 @@ public class FarmZonePlacer : MonoBehaviour
 	{
 		if (!(_hintLabel == null))
 		{
-			_hintLabel.text = (ZInput.IsGamepadActive() ? ModLocalization.LocFmt("hc_farmzone_hint_gamepad", MHR_Pad.GlyphOf("JoyButtonA"), MHR_Pad.GlyphOf("JoyButtonX"), MHR_Pad.GlyphOf("JoyLTrigger"), MHR_Pad.GlyphOf("JoyRTrigger"), MHR_Pad.GlyphOf("JoyDPadUp") + "/" + MHR_Pad.GlyphOf("JoyDPadDown"), MHR_Pad.GlyphOf("JoyMenu")) : ModLocalization.Loc("hc_farmzone_hint"));
+			_hintLabel.text = (ZInput.IsGamepadActive() ? ModLocalization.LocFmt("hc_farmzone_hint_gamepad", MHR_Pad.GlyphOf("JoyButtonA"), MHR_Pad.GlyphOf("JoyButtonX"), MHR_Pad.GlyphOf("JoyLTrigger"), MHR_Pad.GlyphOf("JoyRTrigger"), MHR_Pad.GlyphOf("JoyDPadUp") + "/" + MHR_Pad.GlyphOf("JoyDPadDown"), MHR_Pad.GlyphOf("JoyMenu"), MHR_Pad.GlyphOf("JoyButtonY")) : ModLocalization.Loc("hc_farmzone_hint"));
 		}
 	}
 
@@ -405,14 +406,14 @@ public class FarmZonePlacer : MonoBehaviour
 		_previewBorder.endColor = previewColor;
 		_previewBorder.enabled = true;
 		_previewQuad.transform.position = new Vector3(_previewCenter.x, num + 0.01f, _previewCenter.z);
-		_previewQuad.transform.rotation = Quaternion.Euler(90f, _previewRotation, 0f);
+		_previewQuad.transform.rotation = Quaternion.Euler(90f, 0f - _previewRotation, 0f);   // 1.5.83: the same way as the border (FarmZone turns counter-clockwise; a yaw clockwise)
 		_previewQuad.transform.localScale = new Vector3(previewHalfSize * 2f, 1f, previewHalfSize * 2f);
 		Color previewQuadColor = PreviewQuadColor;
 		_previewQuadMat.color = previewQuadColor;
 		_previewQuad.SetActive(value: true);
 		if (_sizeLabel != null)
 		{
-			string arg = ((Mathf.Abs(_previewRotation) > 0.1f) ? $"  ({_previewRotation:F0}°)" : "");
+			string arg = ((Mathf.Abs(_previewRotation) > 0.1f) ? $"  ({_previewRotation:0.#}°)" : "");
 			_sizeLabel.text = $"{previewHalfSize * 2f:F0}m x {previewHalfSize * 2f:F0}m{arg}";
 		}
 	}
@@ -424,12 +425,12 @@ public class FarmZonePlacer : MonoBehaviour
 		{
 			if (axis > 0.01f)
 			{
-				_previewRotation = Mathf.Repeat(_previewRotation + 15f, 360f);
+				_previewRotation = Mathf.Repeat(_previewRotation + RotationStep, 360f);
 				_rmbScrolled = true;
 			}
 			else if (axis < -0.01f)
 			{
-				_previewRotation = Mathf.Repeat(_previewRotation - 15f, 360f);
+				_previewRotation = Mathf.Repeat(_previewRotation - RotationStep, 360f);
 				_rmbScrolled = true;
 			}
 		}
@@ -459,11 +460,11 @@ public class FarmZonePlacer : MonoBehaviour
 		}
 		if (ZInput.GetButtonDown("JoyDPadUp"))
 		{
-			_previewRotation = Mathf.Repeat(_previewRotation + 15f, 360f);
+			_previewRotation = Mathf.Repeat(_previewRotation + RotationStep, 360f);
 		}
 		if (ZInput.GetButtonDown("JoyDPadDown"))
 		{
-			_previewRotation = Mathf.Repeat(_previewRotation - 15f, 360f);
+			_previewRotation = Mathf.Repeat(_previewRotation - RotationStep, 360f);
 		}
 		if ((Input.GetMouseButtonDown(0) && !ZInput.IsGamepadActive()) || ZInput.GetButtonDown("JoyButtonA"))
 		{
@@ -473,6 +474,37 @@ public class FarmZonePlacer : MonoBehaviour
 		{
 			TryDelete();
 		}
+		if ((Input.GetMouseButtonDown(2) && !ZInput.IsGamepadActive()) || ZInput.GetButtonDown("JoyButtonY"))
+		{
+			MatchBuildingAngle();
+		}
+	}
+
+	// 1.5.83: user: "it would be nice to have it on the same angle as building pieces, I have a base where he's planting
+	// sideways because I can't align it with the building". Copies the turn of the building piece under the crosshair
+	// (snapped pieces can sit at any angle). A square looks the same every 90 degrees, so it's kept within 0-90.
+	private void MatchBuildingAngle()
+	{
+		GameCamera cam = GameCamera.instance;
+		Piece piece = null;
+		if (cam != null && Physics.Raycast(cam.transform.position, cam.transform.forward, out var hit, MaxRayDist, LayerMask.GetMask("piece", "piece_nonsolid")))
+		{
+			piece = hit.collider.GetComponentInParent<Piece>();
+		}
+		if (piece == null || piece.GetComponent<Plant>() != null)
+		{
+			MessageHud.instance?.ShowMessage(MessageHud.MessageType.Center, ModLocalization.Loc("hc_farmzone_match_none"));
+			return;
+		}
+		// FarmZone turns local x toward +z (counter-clockwise from above); a Unity yaw turns it the other way
+		float angle = Mathf.Repeat(0f - piece.transform.eulerAngles.y, 90f);
+		angle = Mathf.Round(angle * 10f) / 10f;
+		if (angle >= 90f)
+		{
+			angle = 0f;
+		}
+		_previewRotation = angle;
+		if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[FarmZone] Matched the angle of {piece.name}: {angle:F1}");
 	}
 
 	private void TryDelete()

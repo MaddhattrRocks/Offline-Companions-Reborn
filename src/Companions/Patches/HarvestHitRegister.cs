@@ -30,6 +30,34 @@ internal static class HarvestHitRegister
 	[HarmonyPostfix]
 	private static void MineRock5Hit(MineRock5 __instance, HitData hit) => Register(__instance, hit);
 
+	// part 1 L3: your own axe and pickaxe hits on trees, logs, stumps, bushes and loose rocks near a vein, read before
+	// the game applies them (the health after is read half a second later)
+	[HarmonyPatch(typeof(TreeLog), "Damage")]
+	[HarmonyPrefix]
+	private static void TreeLogHitBefore(TreeLog __instance, HitData hit) => Before(__instance, hit);
+
+	[HarmonyPatch(typeof(TreeBase), "Damage")]
+	[HarmonyPrefix]
+	private static void TreeBaseHitBefore(TreeBase __instance, HitData hit) => Before(__instance, hit);
+
+	[HarmonyPatch(typeof(Destructible), "Damage")]
+	[HarmonyPrefix]
+	private static void DestructibleHitBefore(Destructible __instance, HitData hit) => Before(__instance, hit);
+
+	private static void Before(Component target, HitData hit)
+	{
+		try
+		{
+			if (target != null && hit != null && hit.GetAttacker() is Player)
+			{
+				PlayerCombatLog.NotePlayerObjHit(target, hit);
+			}
+		}
+		catch
+		{
+		}
+	}
+
 	private static void Register(Component target, HitData hit)
 	{
 		try

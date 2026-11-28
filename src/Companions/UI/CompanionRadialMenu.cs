@@ -830,8 +830,95 @@ public class CompanionRadialMenu : MonoBehaviour
 		_built = true;
 	}
 
+	// 1.5.96: the segments are built once and only rebuilt when the set of actions changes (e.g. a Dverger vs a human
+	// companion); otherwise labels, icons, dots and highlights are refreshed in place. Destroying and rebuilding all 22
+	// cost 18-33 ms every time the wheel opened (John's log).
+	private string _builtSig;
+
+	private string LayoutSig()
+	{
+		System.Text.StringBuilder sb = new System.Text.StringBuilder(96);
+		for (int i = 0; i < _segments.Count; i++)
+		{
+			sb.Append(_segments[i].ActionId).Append((_segments[i].IsToggle || _segments[i].IsMode) ? 'd' : 'n').Append(',');
+		}
+		sb.Append('|');
+		for (int i = 0; i < _innerSegments.Count; i++)
+		{
+			sb.Append(_innerSegments[i].ActionId).Append(',');
+		}
+		return sb.ToString();
+	}
+
+	private bool SegmentsIntact()
+	{
+		if (_segmentGOs.Count != _segments.Count || _innerSegmentGOs.Count != _innerSegments.Count || _innerBgCircle == null)
+		{
+			return false;
+		}
+		for (int i = 0; i < _segmentGOs.Count; i++)
+		{
+			if (_segmentGOs[i] == null || _segLabels[i] == null || _segIcons[i] == null || _segHighlights[i] == null)
+			{
+				return false;
+			}
+		}
+		for (int i = 0; i < _innerSegmentGOs.Count; i++)
+		{
+			if (_innerSegmentGOs[i] == null || _innerSegLabels[i] == null || _innerSegIcons[i] == null || _innerSegHighlights[i] == null)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void RefreshSegmentsInPlace()
+	{
+		for (int j = 0; j < _segments.Count; j++)
+		{
+			Segment segment = _segments[j];
+			if (_segLabels[j].text != segment.Label)
+			{
+				_segLabels[j].text = segment.Label;
+			}
+			_segLabels[j].color = TextNormal;
+			_segIcons[j].sprite = GetActionIcon(segment.ActionId);
+			_segIcons[j].color = new Color(0.9f, 0.9f, 0.9f, 0.9f);
+			_segHighlights[j].color = Color.clear;
+			if (j < _segDots.Count && _segDots[j] != null)
+			{
+				_segDots[j].color = (segment.IsActive ? ActiveDot : InactiveDot);
+			}
+		}
+		for (int l = 0; l < _innerSegments.Count; l++)
+		{
+			Segment segment2 = _innerSegments[l];
+			if (_innerSegLabels[l].text != segment2.Label)
+			{
+				_innerSegLabels[l].text = segment2.Label;
+			}
+			_innerSegLabels[l].color = TextNormal;
+			_innerSegIcons[l].sprite = GetActionIcon(segment2.ActionId);
+			_innerSegIcons[l].color = new Color(0.9f, 0.9f, 0.9f, 0.9f);
+			_innerSegHighlights[l].color = Color.clear;
+			if (l < _innerSegDots.Count && _innerSegDots[l] != null)
+			{
+				_innerSegDots[l].color = (segment2.IsActive ? ActiveDot : InactiveDot);
+			}
+		}
+	}
+
 	private void PopulateUI()
 	{
+		string sig = LayoutSig();
+		if (sig == _builtSig && SegmentsIntact())
+		{
+			RefreshSegmentsInPlace();
+			UpdateCenterName();
+			return;
+		}
+		_builtSig = sig;
 		TMP_FontAsset font = GetFont();
 		for (int i = 0; i < _segmentGOs.Count; i++)
 		{
@@ -1032,6 +1119,11 @@ public class CompanionRadialMenu : MonoBehaviour
 				_innerSegRTs.Add(component11);
 			}
 		}
+		UpdateCenterName();
+	}
+
+	private void UpdateCenterName()
+	{
 		if (!(_centerName != null))
 		{
 			return;
@@ -1999,7 +2091,20 @@ public class CompanionRadialMenu : MonoBehaviour
 		return false;
 	}
 
+	private static TMP_FontAsset s_font;
+
+	// 1.5.96: found once and remembered (it searched every text object in the scene each time)
 	private static TMP_FontAsset GetFont()
+	{
+		if (s_font != null)
+		{
+			return s_font;
+		}
+		s_font = FindFont();
+		return s_font;
+	}
+
+	private static TMP_FontAsset FindFont()
 	{
 		TextMeshProUGUI[] array = UnityEngine.Object.FindObjectsByType<TextMeshProUGUI>(FindObjectsSortMode.None);
 		TextMeshProUGUI[] array2 = array;

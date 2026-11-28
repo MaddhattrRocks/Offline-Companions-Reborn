@@ -17,6 +17,14 @@ internal static class CompanionFallDamagePatch
 	// the player, a respawn), not a fall - the highest point is reset then so it isn't counted as one
 	private static readonly System.Collections.Generic.Dictionary<int, Vector3> s_lastPos = new System.Collections.Generic.Dictionary<int, Vector3>();
 
+	// Y2: the height of the ground it last stood on, per companion - a landing more than a step lower is told to its job
+	// (measured from the ground it left, not the top of a jump, so a hop back onto the same level isn't a fall)
+	private static readonly System.Collections.Generic.Dictionary<int, float> s_lastGroundY = new System.Collections.Generic.Dictionary<int, float>();
+
+	private static readonly System.Collections.Generic.HashSet<int> s_fallSaid = new System.Collections.Generic.HashSet<int>();
+
+	private const float FallSayAt = 2.5f;
+
 	private static void Prefix(Character __instance, out float __state)
 	{
 		__state = 0f;
@@ -31,11 +39,26 @@ internal static class CompanionFallDamagePatch
 			if (s_lastPos.TryGetValue(instanceID, out var value) && (position - value).sqrMagnitude > 36f)
 			{
 				s_maxAirAltitude(__instance) = position.y;
+				s_lastGroundY.Remove(instanceID);   // Y2: a warp isn't a fall
 			}
 			s_lastPos[instanceID] = position;
 			if (s_groundContact(__instance))
 			{
 				__state = Mathf.Max(0f, s_maxAirAltitude(__instance) - position.y);
+				s_fallSaid.Remove(instanceID);
+				if (s_lastGroundY.TryGetValue(instanceID, out float lastY) && lastY - position.y > 0.7f)
+				{
+					__instance.GetComponent<HarvestController>()?.OnFell(lastY - position.y, position.y);
+				}
+				s_lastGroundY[instanceID] = position.y;
+			}
+			else if (CompanionsPlugin.LogDetailed && s_maxAirAltitude(__instance) - position.y > FallSayAt && !__instance.InLiquid() && s_fallSaid.Add(instanceID))
+			{
+				// trench test F2 (log of 11-17: five falls into the trench with nothing in the log to say how): one line when a
+				// fall passes FallSayAt - where from, and what it was doing
+				CompanionAI ai = __instance.GetComponent<CompanionAI>();
+				HarvestController hc = __instance.GetComponent<HarvestController>();
+				CompanionsPlugin.Log.LogDebug($"[Move] \"{__instance.m_name}\" is falling: {s_maxAirAltitude(__instance) - position.y:F1} m down so far from the height {s_maxAirAltitude(__instance):F1}, now at {MHR_Mover.Fmt(position)}; mover: {(ai != null ? MHR_Mover.Describe(ai) : "none")}{(hc != null ? "; job: " + hc.FallNote() : "")}");
 			}
 		}
 		catch

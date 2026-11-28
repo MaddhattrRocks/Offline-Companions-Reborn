@@ -261,6 +261,7 @@ public class SmeltController : MonoBehaviour
 		_carryingItemPrefab = null;
 		_carryingAmount = 0;
 		_collectTriggered = false;
+		_dropCollect = false;
 		_wasMonitoring = false;
 		_allDoneNotified = false;
 		_phase = SmeltPhase.Idle;
@@ -290,13 +291,26 @@ public class SmeltController : MonoBehaviour
 
 	private void UpdateScanning()
 	{
+		s_scanWatch.Restart();
+		bool full = ScanStep();
+		s_scanWatch.Stop();
+		double ms = s_scanWatch.Elapsed.TotalMilliseconds;
+		if (ms > 2.0 && CompanionsPlugin.LogDetailed)
+		{
+			LogDebug($"[Perf] smelt scan took {ms:F1} ms ({(full ? "full" : "quick")}, {_nearbySmelters.Count} smelters, {_nearbyChests.Count} chests)");
+		}
+	}
+
+	// true when it did the full look through chests and piles
+	private bool ScanStep()
+	{
 		ScanNearbySmelters();
 		if (_nearbySmelters.Count == 0)
 		{
 			if (CompanionsPlugin.LogNormal) Log("Scan: no smelters found within " + ScanRadius + "m");
 			_phase = SmeltPhase.Idle;
 			_scanTimer = 10f;
-			return;
+			return false;
 		}
 		foreach (Smelter nearbySmelter in _nearbySmelters)
 		{
@@ -319,26 +333,65 @@ public class SmeltController : MonoBehaviour
 					ClaimSmelter();
 					ClearFollowForMovement();
 					ResetStuck();
+					_dropCollect = false;
 					_phase = SmeltPhase.CollectingOutput;
 					if (CompanionsPlugin.LogNormal) Log($"→ Collecting queued output from \"{nearbySmelter.m_name}\" ({num3} items)");
 					CompanionStatus.Doing(this, "hc_doing_smelt_collect", SName(nearbySmelter));
-					return;
+					return false;
 				}
-				if (num4 > 0)
+				if (num4 > 0 && !DropSkipped(nearbySmelter))
 				{
 					_targetSmelter = nearbySmelter;
 					ClaimSmelter();
 					ClearFollowForMovement();
 					ResetStuck();
+					_dropCollect = true;
+					_dropCollectStart = Time.time;
 					_collectTriggered = true;
 					_actionTimer = 0f;
 					_phase = SmeltPhase.CollectingOutput;
 					if (CompanionsPlugin.LogNormal) Log($"→ Collecting {num4} ground drops near \"{nearbySmelter.m_name}\"");
 					CompanionStatus.Doing(this, "hc_doing_smelt_collect", SName(nearbySmelter));
-					return;
+					return false;
 				}
 			}
 		}
+		// 1.5.83: the full look only every 10 s while everything is stocked or the last one found nothing to load
+		bool allStocked = true;
+		foreach (Smelter sm in _nearbySmelters)
+		{
+			if (sm != null && !WellStocked(sm))
+			{
+				allStocked = false;
+				break;
+			}
+		}
+		if (Time.time < _nextFullScan && (allStocked || _lastFullFoundNothing))
+		{
+			bool working = false;
+			foreach (Smelter sm in _nearbySmelters)
+			{
+				if (sm != null && sm.IsActive())
+				{
+					working = true;
+					break;
+				}
+			}
+			if (working)
+			{
+				_phase = SmeltPhase.Monitoring;
+				_monitorTimer = 3f;
+			}
+			else
+			{
+				_phase = SmeltPhase.Idle;
+				_scanTimer = 3f;
+			}
+			return false;
+		}
+		_scanCount++;
+		_lastFullFoundNothing = false;
+		_nextFullScan = 0f;
 		_whyItems.Clear();
 		ScanNearbyChests();
 		if (_nearbyChests.Count == 0)
@@ -347,7 +400,7 @@ public class SmeltController : MonoBehaviour
 			CompanionStatus.Why(this, "hc_why_smelt_no_chests", speak: true);
 			_phase = SmeltPhase.Idle;
 			_scanTimer = 10f;
-			return;
+			return true;
 		}
 		_tempKilns.Clear();
 		foreach (Smelter nearbySmelter2 in _nearbySmelters)
@@ -379,7 +432,7 @@ public class SmeltController : MonoBehaviour
 			}
 			if (TryPlanRefill(tempKiln))
 			{
-				return;
+				return true;
 			}
 		}
 		_tempFurnaces.Clear();
@@ -415,26 +468,26 @@ public class SmeltController : MonoBehaviour
 			{
 				if (TryPlanRefill(tempFurnace) || (!flag3 && TryPlanFuelRefill(tempFurnace)))
 				{
-					return;
+					return true;
 				}
 			}
 			else if (flag2 && !flag3)
 			{
 				if (TryPlanFuelRefill(tempFurnace))
 				{
-					return;
+					return true;
 				}
 			}
 			else if (!flag5)
 			{
 				if (TryPlanRefill(tempFurnace))
 				{
-					return;
+					return true;
 				}
 			}
 			else if (!flag3 && num6 < (float)(tempFurnace.m_maxFuel / 2) && TryPlanFuelRefill(tempFurnace))
 			{
-				return;
+				return true;
 			}
 		}
 		bool flag6 = false;
@@ -452,6 +505,8 @@ public class SmeltController : MonoBehaviour
 			_whyItems.Add(new CompanionStatus.Item(null, flag6 ? "hc_speech_smelt_monitoring" : "hc_why_smelt_nothing"));
 		}
 		CompanionStatus.WhyRotate(this, _whyItems);
+		_lastFullFoundNothing = true;
+		_nextFullScan = Time.time + RelaxedScanInterval;
 		if (flag6)
 		{
 			_phase = SmeltPhase.Monitoring;
@@ -465,7 +520,7 @@ public class SmeltController : MonoBehaviour
 					_talk.Say(ModLocalization.Loc("hc_speech_smelt_monitoring"));
 				}
 			}
-			return;
+			return true;
 		}
 		if (!_allDoneNotified)
 		{
@@ -479,6 +534,7 @@ public class SmeltController : MonoBehaviour
 		}
 		_phase = SmeltPhase.Idle;
 		_scanTimer = 30f;
+		return true;
 	}
 
 	private void UpdateMovingToChest(float dt)
@@ -744,6 +800,13 @@ public class SmeltController : MonoBehaviour
 		Vector3 goal = SlotGoal(_targetSmelter, OutputSlotPosition(_targetSmelter), smelterOutputPoint, "out");
 		if (num > UseDistance && !AtSpot(num))
 		{
+			if (_dropCollect && Time.time - _dropCollectStart > DropReachTime)
+			{
+				SkipDrops(_targetSmelter, "couldn't get to them in " + DropReachTime.ToString("F0") + " s (" + num.ToString("F1") + " m away)");
+				_dropCollect = false;
+				Abort("ground drops out of reach");
+				return;
+			}
 			_shouldRun = num > 8f;
 			bool flag = MHR_Nav.MoveSmelt(_ai, Time.deltaTime, goal, MoveDist, _shouldRun);
 			if (!flag || !(num < UseDistance + 1f))
@@ -782,6 +845,11 @@ public class SmeltController : MonoBehaviour
 		if (!(_actionTimer > 0f))
 		{
 			PickUpNearbyDrops();
+			if (_dropCollect && CountGroundDropsNearSmelter(_targetSmelter) > 0)
+			{
+				SkipDrops(_targetSmelter, "some are still lying there after picking up (out of reach)");
+			}
+			_dropCollect = false;
 			_collectTriggered = false;
 			ScanNearbyChests();
 			_outputChest = FindChestWithSpace();
@@ -923,7 +991,13 @@ public class SmeltController : MonoBehaviour
 			{
 				continue;
 			}
-			Smelter component = tempPiece.GetComponent<Smelter>();
+			Smelter component = Cached(s_pieceSmelter, tempPiece, inChildren: false);
+			// 1.5.95: the hot tub isn't a smelter (user: a companion kept trying to "empty" it) - it's fuelled by Repair and
+			// Restock
+			if (component != null && IsHotTub(component))
+			{
+				continue;
+			}
 			if (!(component == null))
 			{
 				ZNetView component2 = component.GetComponent<ZNetView>();
@@ -934,6 +1008,49 @@ public class SmeltController : MonoBehaviour
 			}
 		}
 		if (CompanionsPlugin.LogDetailed) LogDebug($"Scan: found {_nearbySmelters.Count} smelters");
+	}
+
+	internal static bool IsHotTub(Component c)
+	{
+		if (c == null)
+		{
+			return false;
+		}
+		string n = Utils.GetPrefabName(c.gameObject).ToLowerInvariant();
+		if (n.Contains("bathtub") || n.Contains("hottub"))
+		{
+			return true;
+		}
+		Piece p = c.GetComponentInParent<Piece>();
+		return p != null && p.m_name == "$piece_bathtub";
+	}
+
+	// 1.5.95: ground drops by a smelter it couldn't get to are left alone for a while (it stalled 9-10 m away and kept
+	// coming back for one item)
+	private readonly Dictionary<int, float> _dropSkip = new Dictionary<int, float>();
+
+	private bool _dropCollect;
+
+	private float _dropCollectStart;
+
+	private const float DropReachTime = 8f;
+
+	private const float DropSkipTime = 120f;
+
+	private bool DropSkipped(Smelter s)
+	{
+		float until;
+		return s != null && _dropSkip.TryGetValue(s.GetInstanceID(), out until) && Time.time < until;
+	}
+
+	private void SkipDrops(Smelter s, string why)
+	{
+		if (s == null)
+		{
+			return;
+		}
+		_dropSkip[s.GetInstanceID()] = Time.time + DropSkipTime;
+		if (CompanionsPlugin.LogNormal) Log("Leaving the ground drops by \"" + s.m_name + "\" for " + DropSkipTime.ToString("F0") + " s - " + why);
 	}
 
 	private void Log(string msg)
@@ -1095,7 +1212,7 @@ public class SmeltController : MonoBehaviour
 		{
 			if (!(tempPiece == null))
 			{
-				Container componentInChildren = tempPiece.GetComponentInChildren<Container>();
+				Container componentInChildren = Cached(s_pieceChest, tempPiece, inChildren: true);
 				// 1.4.152: MHR_Chests.Usable - no carts or ships, ward access, private chests only its own player's, not in use
 				if (!(componentInChildren == null) && !(componentInChildren.gameObject == base.gameObject) && MHR_Chests.Usable(componentInChildren, this))
 				{
@@ -1391,6 +1508,59 @@ public class SmeltController : MonoBehaviour
 
 	private readonly Dictionary<int, float> _pileSkip = new Dictionary<int, float>();
 
+	private Dictionary<string, Piece> _pileIndex;
+
+	private int _pileIndexScan = -1;
+
+	private int _scanCount;
+
+	// 1.5.83: the full look through the chests and piles every 10 s instead of every 3 s while the smelters are stocked
+	// (each furnace at least half full of ore and of fuel, each kiln 10 wood or more - user: "That way its not ramping back
+	// up where there is just 1 more item to load") or the last full look found nothing it could load. Output and drops are
+	// still checked every 3 s.
+	private const float RelaxedScanInterval = 10f;
+
+	private float _nextFullScan;
+
+	private bool _lastFullFoundNothing;
+
+	private static readonly Dictionary<int, Container> s_pieceChest = new Dictionary<int, Container>();
+
+	private static readonly Dictionary<int, Smelter> s_pieceSmelter = new Dictionary<int, Smelter>();
+
+	private static readonly System.Diagnostics.Stopwatch s_scanWatch = new System.Diagnostics.Stopwatch();
+
+	private static T Cached<T>(Dictionary<int, T> cache, Piece p, bool inChildren) where T : Component
+	{
+		int id = p.GetInstanceID();
+		if (cache.TryGetValue(id, out T known))
+		{
+			return known;
+		}
+		if (cache.Count > 50000)
+		{
+			cache.Clear();
+		}
+		T c = inChildren ? p.GetComponentInChildren<T>() : p.GetComponent<T>();
+		cache[id] = c;
+		return c;
+	}
+
+	private static bool WellStocked(Smelter s)
+	{
+		ZDO zdo = s.GetComponent<ZNetView>()?.GetZDO();
+		if (zdo == null)
+		{
+			return true;
+		}
+		int queued = zdo.GetInt(ZDOVars.s_queued);
+		if (s.m_maxFuel <= 0)
+		{
+			return queued >= Mathf.Min(10, s.m_maxOre);
+		}
+		return queued * 2 >= s.m_maxOre && zdo.GetFloat(ZDOVars.s_fuel) * 2f >= s.m_maxFuel;
+	}
+
 	private float _nextNoHammerLog;
 
 	private bool TryStartPile(string itemPrefab, Smelter smelter)
@@ -1399,7 +1569,13 @@ public class SmeltController : MonoBehaviour
 		{
 			return false;
 		}
-		Piece pile = MHR_PileTaker.Find(base.transform.position, ScanRadius, itemPrefab, base.transform.position, _pileSkip);
+		// 1.5.83: the piles found once per scan (it was a pass over the whole base per ore type per furnace)
+		if (_pileIndex == null || _pileIndexScan != _scanCount)
+		{
+			_pileIndex = MHR_PileTaker.FindAll(base.transform.position, ScanRadius, base.transform.position, _pileSkip);
+			_pileIndexScan = _scanCount;
+		}
+		_pileIndex.TryGetValue(itemPrefab, out Piece pile);
 		if (pile == null)
 		{
 			return false;

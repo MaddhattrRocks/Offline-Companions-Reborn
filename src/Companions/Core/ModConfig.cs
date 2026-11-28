@@ -16,6 +16,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> RecoverUnsummoned;
 
+	internal static ConfigEntry<bool> PitMapOverlay;   // R0.6
+
 	internal static ConfigEntry<string> PortalItems;
 
 	internal static ConfigEntry<bool> SpawnStarterCompanion;
@@ -47,6 +49,11 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> ShowMinimapHudPanel;
 
+	// 1.5.85: where the status panel sits, as an offset from its default spot under the minimap
+	internal static ConfigEntry<int> MinimapPanelOffsetX;
+
+	internal static ConfigEntry<int> MinimapPanelOffsetY;
+
 	internal static ConfigEntry<float> HealthRetreatPct;
 
 	internal static ConfigEntry<float> FleeHealthPct;
@@ -70,6 +77,8 @@ internal static class ModConfig
 	internal static ConfigEntry<float> TorchOpenerMinTargetHealth;
 
 	internal static ConfigEntry<float> WaterStaminaFleeThreshold;
+
+	internal static ConfigEntry<bool> DrowningTeleport;
 
 	internal static ConfigEntry<bool> ShowOverheadBars;
 
@@ -108,6 +117,8 @@ internal static class ModConfig
 	internal static ConfigEntry<int> CombatFinishHits;
 
 	internal static ConfigEntry<bool> CombatSpacing;
+
+	internal static ConfigEntry<bool> CompanionCameraShake;
 
 	internal static ConfigEntry<bool> CombatFlank;
 
@@ -503,7 +514,7 @@ internal static class ModConfig
 
 	internal static ConfigEntry<bool> RefuelOther;
 
-	internal static ConfigEntry<float> UpkeepFuelBelow;
+	internal static ConfigEntry<int> UpkeepFuelAtOrBelow;
 
 	internal static ConfigEntry<bool> UpkeepSort;
 
@@ -589,6 +600,8 @@ internal static class ModConfig
 
 	internal static ConfigEntry<KeyCode> ConfigPanelKey;
 
+	internal static ConfigEntry<KeyCode> MoveUiKey;
+
 	internal static ConfigEntry<KeyCode> FarmZoneKey;
 
 	internal static ConfigEntry<KeyCode> FarmZoneModifier;
@@ -613,6 +626,8 @@ internal static class ModConfig
 		RecoverLostCompanion = Bind(cfg, "General", "RecoverLostCompanion", defaultValue: false, "Set to true to bring back a Lost companion next to you, with its gear and settings from the last roster save. An Unknown companion needs it set a second time within 60 s to confirm (it may still be alive somewhere). If the old companion turns up later, it's removed. It turns itself back to false.");
 		ProtectCompanions = Bind(cfg, "General", "ProtectCompanions", defaultValue: true, "Stops other mods from deleting a companion outright (for example mods that clear creatures out of warded areas). Companions can still die, leave a tombstone and respawn as normal, and the Despawn button still works. When something is blocked, the log says what tried. Turn off only if another mod needs to remove companions.");
 		ShowMinimapHudPanel = Bind(cfg, "General", "ShowMinimapPanel", defaultValue: true, "Show the companion status panel under the minimap.");
+		MinimapPanelOffsetX = Bind(cfg, "General", "MinimapPanelOffsetX", 0, "Moves the companion status panel sideways from its spot under the minimap (UI units: negative = left, positive = right). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.", new AcceptableValueRange<int>(-4000, 4000));
+		MinimapPanelOffsetY = Bind(cfg, "General", "MinimapPanelOffsetY", 0, "Moves the companion status panel up or down from its spot under the minimap (UI units: negative = down, positive = up; each companion row is about 64). Dragging the panel in reposition mode (Controls > MoveUiKey) sets this too.", new AcceptableValueRange<int>(-4000, 4000));
 		ShowOverheadBars = Bind(cfg, "General", "ShowOverheadBars", defaultValue: true, "Show health and stamina bars above each companion's head.");
 		ShowStatus = Bind(cfg, "General", "ShowStatus", defaultValue: true, "When you look at a companion, show what it is doing under its name - and why not, when its job is stuck (e.g. \"Hunt - No game around.\").");
 		MaxCarryWeight = Bind(cfg, "General", "MaxCarryWeight", 300f, "How much weight a companion can carry (a player carries 300). Gathering and hunting companions head home to unload before this.", new AcceptableValueRange<float>(50f, 2000f));
@@ -626,6 +641,7 @@ internal static class ModConfig
 		DirectTargetKey = Bind(cfg, "Controls", "DirectTargetKey", KeyCode.Z, "The command key. Tap it while looking at something to send your companions to it (move there, attack it, open the door, sit by the fire, repair at the station...). Hold it to call them to you.");
 		RadialMenuKey = Bind(cfg, "Controls", "RadialMenuKey", KeyCode.E, "Hold this while looking at a companion to open its command wheel.");
 		ConfigPanelKey = Bind(cfg, "Controls", "ConfigPanelKey", KeyCode.F8, "Opens the in-game settings panel, where all of these settings can be changed.");
+		MoveUiKey = Bind(cfg, "Controls", "MoveUiKey", KeyCode.F7, "Turns reposition mode on and off: drag the companion status panel (under the minimap) or an open companion panel with the mouse, then press it again to save where it is. Open your inventory first to get a mouse cursor for the status panel. None = no key.");
 		FarmZoneKey = Bind(cfg, "Controls", "FarmZoneKey", KeyCode.Z, "Pressed together with FarmZoneModifier: opens the farm zone editor.");
 		FarmZoneModifier = Bind(cfg, "Controls", "FarmZoneModifier", KeyCode.LeftAlt, "Hold this and press FarmZoneKey to open the farm zone editor.");
 		RecallRange = Bind(cfg, "Controls", "RecallRange", 40f, "How close (meters) a companion has to be to you to answer a recall (holding the command key) or a point-and-command order. Companions with Command switched off on the wheel ignore both. 0 = no limit.", new AcceptableValueRange<float>(0f, 500f));
@@ -683,10 +699,13 @@ internal static class ModConfig
 		JumpGap = Bind(cfg, "Movement", "JumpGap", 1.5f, "The widest gap (meters) a companion leaps across on such a shortcut. 0.5 = no gaps.", new AcceptableValueRange<float>(0.5f, 3f));
 		JumpWaterDepth = Bind(cfg, "Movement", "JumpWaterDepth", 0.3f, "Water at least this deep (meters) in a companion's way is jumped over when it's narrow enough (JumpWaterWidth), like a player jumps a small stream instead of running through it. Wider shallow water is waded through.", new AcceptableValueRange<float>(0.05f, 2f));
 		JumpWaterWidth = Bind(cfg, "Movement", "JumpWaterWidth", 3f, "The widest stretch of water (meters) a companion jumps over.", new AcceptableValueRange<float>(1f, 4f));
-		WaterStaminaFleeThreshold = Bind(cfg, "Movement", "SwimStaminaShore", 0.25f, "When a swimming companion's stamina drops below this share (0.25 = 25%), it heads for the nearest shore, whatever it was doing.", new AcceptableValueRange<float>(0f, 1f));
+		WaterStaminaFleeThreshold = Bind(cfg, "Movement", "SwimStaminaShore", 0.25f, "When a swimming companion's stamina drops below this share (0.25 = 25%), it heads for the nearest way out of the water (anywhere it can stand or climb out), whatever it was doing.", new AcceptableValueRange<float>(0f, 1f));
+		// 1.5.98 (swim item 4): drowning while following -> next to you at 10% health
+		DrowningTeleport = Bind(cfg, "Movement", "DrowningTeleport", true, "On: a following companion drowning (swimming with no stamina) is brought next to you once its health is down to 10%, so it has time to find a way out first. Off: it drowns like a player would.");
 		// [Combat]
 		EngageOnNotice = Bind(cfg, "Combat", "EngageOnNotice", true, "On: companions attack a creature as soon as it has noticed you or a companion. Off: they wait until it is actually coming for you (alerted). Anything that attacks is always fought back, and Hunt goes after its prey either way.");
 		HealthRetreatPct = Bind(cfg, "Combat", "HealthRetreatPct", 0.3f, "Below this share of its health (0.3 = 30%) a companion fights defensively: it takes out its best blocking shield and doesn't open with a torch.", new AcceptableValueRange<float>(0.05f, 0.9f));
+		CompanionCameraShake = Bind(cfg, "Combat", "CompanionCameraShake", defaultValue: false, "Off: a companion's block, parry and weapon hits don't shake your screen (the game shakes the camera of anyone close to those effects, whoever caused them). The sound and sparks stay. Your own blocks, parries and hits you take shake as normal. On: the game's shake for companions too.");
 		FleeHealthPct = Bind(cfg, "Combat", "FleeHealthPct", 0.15f, "Below this share of its health (0.15 = 15%) a companion runs away from the enemy.", new AcceptableValueRange<float>(0.05f, 0.6f));
 		WeaponSwitchMargin = Bind(cfg, "Combat", "WeaponSwitchMargin", 0.1f, "A different weapon has to be this much better against the current enemy (0.1 = 10%) before a companion switches to it, so it doesn't swap back and forth.", new AcceptableValueRange<float>(0f, 0.5f));
 		ShieldMultiAttackerCount = Bind(cfg, "Combat", "ShieldMultiAttackerCount", 3, "When this many enemies attack a companion at once, it switches to its shield with the best block.", new AcceptableValueRange<int>(1, 10));
@@ -774,7 +793,7 @@ internal static class ModConfig
 		RepairScanRadius = Bind(cfg, "GearRepair", "StationRange", 20f, "How far (meters) a companion looks for a crafting station to repair at. Near home, any station near home counts.", new AcceptableValueRange<float>(5f, 60f));
 		// [Gathering]
 		HarvestRange = Bind(cfg, "Gathering", "Range", 40f, "Wood, Stone, Ore and Forage with Follow off: how far (meters) from where it's working it goes for trees, rocks and plants - around home when the job is started near home, otherwise around where it was started. It keeps working there when you leave.", new AcceptableValueRange<float>(10f, 150f));
-		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 10f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
+		HarvestFollowRange = Bind(cfg, "Gathering", "FollowRange", 20f, "Wood, Stone and Ore with Follow on: a tree or rock has to be within this many meters of you. With nothing that close the companion just follows you. (With Follow off see Range; Forage has ForageFollowRange.)", new AcceptableValueRange<float>(5f, 60f));
 		HarvestFollowLogRange = Bind(cfg, "Gathering", "FollowLogRange", 20f, "Wood with Follow on: fallen logs and stumps count up to this many meters from you (further than FollowRange), so it finishes the trees it fells before starting a new one - a log can roll well away from where you stand.", new AcceptableValueRange<float>(5f, 60f));
 		GatherRestStamina = Bind(cfg, "Gathering", "RestStamina", 0.15f, "Chopping and mining: swing after swing (the weapon's combo) until stamina would drop below this share of the maximum, then stop and get its breath back.", new AcceptableValueRange<float>(0f, 0.9f));
 		GatherResumeStamina = Bind(cfg, "Gathering", "ResumeStamina", 0.6f, "Chopping and mining: after stopping for breath, start swinging again once stamina is back to this share of the maximum.", new AcceptableValueRange<float>(0.1f, 1f));
@@ -861,7 +880,7 @@ internal static class ModConfig
 		UpkeepRepairBelow = Bind(cfg, "RepairAndRestock", "RepairBelow", 0.75f, "Repair pieces below this much health (0.75 = 75% or less; 1 = any damage at all). Each repair is one swing that fixes the piece fully, like a player's.", new AcceptableValueRange<float>(0.1f, 1f));
 		UpkeepReach = Bind(cfg, "RepairAndRestock", "Reach", 4.5f, "How far (meters, from the eyes) the companion can reach a piece to repair it. A player reaches about 5 m.", new AcceptableValueRange<float>(2f, 6f));
 		UpkeepRestock = Bind(cfg, "RepairAndRestock", "Restock", true, "Repair and Restock: keep fires, torches and braziers near home fuelled, one piece of fuel at a time like a player. Fuel comes from the pack or is fetched from a chest; what's left over goes back in a chest. The Refuel... settings below pick which kinds.");
-		UpkeepFuelBelow = Bind(cfg, "RepairAndRestock", "FuelBelow", 0.8f, "Top up a fire when its fuel is below this share of full (0.8 = 80%). It's filled all the way up.", new AcceptableValueRange<float>(0.1f, 1f));
+		UpkeepFuelAtOrBelow = Bind(cfg, "RepairAndRestock", "FuelAtOrBelow", 3, "Top up a fire, torch, brazier or hot tub only once its fuel is down to this many pieces or less (as a player tops up a fire that's getting low). It's then filled all the way up. Replaces the old FuelBelow share.", new AcceptableValueRange<int>(0, 50));
 		RefuelFires = Bind(cfg, "RepairAndRestock", "RefuelFires", true, "Restock: campfires, fire pits and bonfires.");
 		RefuelHearths = Bind(cfg, "RepairAndRestock", "RefuelHearths", true, "Restock: hearths.");
 		RefuelBraziers = Bind(cfg, "RepairAndRestock", "RefuelBraziers", true, "Restock: braziers (standing and hanging).");
@@ -923,12 +942,31 @@ internal static class ModConfig
 		ConsumeCheckInterval = Bind(cfg, "Advanced", "FoodCheckInterval", 1f, "Food: seconds between checks whether a companion should eat or drink.", new AcceptableValueRange<float>(0.5f, 10f));
 		TombstoneScanInterval = Bind(cfg, "Advanced", "TombstoneScanInterval", 5f, "Death: seconds between looks for its own leftover tombstone nearby.", new AcceptableValueRange<float>(1f, 30f));
 		LogLevel = Bind(cfg, "Advanced", "LogLevel", "Normal", "How much the mod writes to the BepInEx log. Off: warnings and errors only. Normal: the main events (orders, deaths, portals, jobs starting and stopping, problems). Detailed: everything the companions think and do, plus the diagnostics - turn this on when sending a log with a bug report. Lower levels cost nothing: the lines aren't even put together.", new AcceptableValueList<string>("Off", "Normal", "Detailed"));
+		PitMapOverlay = Bind(cfg, "Advanced", "PitMapOverlay", false, "Testing: draw the Ore job's map of a vein's pit (squares of 0.5 m) while companions work it. Each solid layer is drawn with its top, its underside and its sides: orange = a part of the vein (red-orange where it reaches down into the ground), grey = rock or stone, brown = a tree or other thing, blue = built by a player, red = can't be damaged, a blue tint = under water; brown walls = a step in the ground over 0.5 m (the trench walls). Ground: green, purple where something hangs over it. White = where a companion stands, yellow = where one is walking to. Can be switched on and off while playing.");
 		TombstoneNavTimeout = Bind(cfg, "Advanced", "TombstoneNavTimeout", 120f, "Death: seconds a companion keeps trying to get to its tombstone before giving up.", new AcceptableValueRange<float>(10f, 600f));
 
 		// 1.4.149: settings moved/renamed in the config clean-up keep the values players set; leftovers are removed.
 		// 1.4.150: the fix-ups below only run on such an upgrade (a file from before the clean-up), not on every start -
 		// "*" for ForageItems or 40/90 for the view are fine choices once someone makes them on purpose.
 		bool upgraded = MigrateAndClean(cfg);
+		// 1.5.97 (John 2026-11-15): FollowRange's default went from 10 to 20 m. A file still holding exactly the old default
+		// is moved to 20 once (a mark in PlayerPrefs, so someone who sets 10 on purpose afterwards keeps it).
+		try
+		{
+			if (PlayerPrefs.GetInt("HC_FollowRange20", 0) == 0)
+			{
+				if (Mathf.Approximately(HarvestFollowRange.Value, 10f))
+				{
+					HarvestFollowRange.Value = 20f;
+					CompanionsPlugin.Log?.LogInfo("[Config] Gathering / FollowRange was the old default of 10 m - moved to the new default, 20 m (once)");
+				}
+				PlayerPrefs.SetInt("HC_FollowRange20", 1);
+				PlayerPrefs.Save();
+			}
+		}
+		catch
+		{
+		}
 		// 1.4.149: ViewRange/ViewAngle were never applied (20 m / 120 were hard-coded); a file still holding the old
 		// unused defaults (40 / 90) gets the values companions have always really used, so nothing changes in game
 		if (upgraded && Mathf.Approximately(ViewRange.Value, 40f) && Mathf.Approximately(ViewAngle.Value, 90f))

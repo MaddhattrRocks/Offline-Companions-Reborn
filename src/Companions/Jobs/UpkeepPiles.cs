@@ -162,9 +162,34 @@ public partial class UpkeepController
 		return new List<PileKind>(kinds.Values);
 	}
 
+	// 1.5.83: the answer is kept per piece - it was worked out again (name text, a search through the piece's parts) for
+	// every wall and floor in range on every smelting scan, several times a scan (user report: smelting stutters every few
+	// seconds). Whether a piece is a pile never changes.
+	private static readonly Dictionary<int, bool> s_isPile = new Dictionary<int, bool>();
+
 	internal static bool IsPile(Piece p)
 	{
-		if (p == null || !p.IsPlacedByPlayer() || p.m_resources == null || p.m_resources.Length != 1 || p.m_resources[0].m_resItem == null)
+		if (p == null)
+		{
+			return false;
+		}
+		int id = p.GetInstanceID();
+		if (s_isPile.TryGetValue(id, out bool known))
+		{
+			return known;
+		}
+		if (s_isPile.Count > 50000)
+		{
+			s_isPile.Clear();
+		}
+		bool pile = IsPileUncached(p);
+		s_isPile[id] = pile;
+		return pile;
+	}
+
+	private static bool IsPileUncached(Piece p)
+	{
+		if (!p.IsPlacedByPlayer() || p.m_resources == null || p.m_resources.Length != 1 || p.m_resources[0].m_resItem == null)
 		{
 			return false;
 		}
@@ -298,29 +323,8 @@ public partial class UpkeepController
 	private void PlacePile(PileKind k, ItemDrop.ItemData hammer, float stamina)
 	{
 		Inventory bag = _humanoid.GetInventory();
-		TerrainModifier.SetTriggerOnPlaced(trigger: true);
-		GameObject go = UnityEngine.Object.Instantiate(k.Prefab, _pileSpot, _pileRot);
-		TerrainModifier.SetTriggerOnPlaced(trigger: false);
+		GameObject go = MHR_Build.Place(this, k.Prefab, _pileSpot, _pileRot, hammer);   // 1.5.98 Z4: shared with the Ore job
 		Piece piece = go.GetComponent<Piece>();
-		if (piece != null)
-		{
-			PlatformUserID user = default(PlatformUserID);
-			try
-			{
-				user = PlatformManager.DistributionPlatform.LocalUser.PlatformUserID;
-			}
-			catch
-			{
-			}
-			piece.SetCreator(MHR_Owner.CreatorId(this), user);   // 1.4.152: built for its own player
-		}
-		go.GetComponent<WearNTear>()?.OnPlaced();
-		string anim = hammer.m_shared.m_attack?.m_attackAnimation;
-		GetComponent<ZSyncAnimation>()?.SetTrigger(!string.IsNullOrEmpty(anim) ? anim : "swing_hammer");
-		if (piece != null)
-		{
-			piece.m_placeEffect.Create(_pileSpot, _pileRot, go.transform, 1f, -1, _character.GetZDOID());
-		}
 		bag.RemoveItem(k.Shared, k.Cost);
 		Took(k.Shared, -k.Cost);
 		_stamina?.UseStamina(stamina);
@@ -471,7 +475,7 @@ public partial class UpkeepController
 	private static bool NearUsedThing(Vector3 mid, Vector3 half)
 	{
 		float r = Mathf.Max(half.x, half.z) + 1.6f;
-		foreach (Collider c in Physics.OverlapSphere(mid, r + 1f, LayerMask.GetMask("Default", "piece", "piece_nonsolid", "static_solid", "vehicle")))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.UpkeepPiles499, mid, r + 1f, LayerMask.GetMask("Default", "piece", "piece_nonsolid", "static_solid", "vehicle")))
 		{
 			if (c == null)
 			{
@@ -617,7 +621,7 @@ public partial class UpkeepController
 		}
 		// a little smaller than the pile and lifted off its base, so the floor or ground it stands on doesn't count
 		Vector3 box = new Vector3(half.x * 0.9f, half.y * 0.8f, half.z * 0.9f);
-		Collider[] hits = Physics.OverlapBox(pos + rot * (center + Vector3.up * half.y * 0.15f), box, rot, BuildMask());
+		var hits = MHR_Phys.Box(ref MHR_Phys.UpkeepPiles645, pos + rot * (center + Vector3.up * half.y * 0.15f), box, rot, BuildMask());
 		foreach (Collider h in hits)
 		{
 			if (h != null && !h.isTrigger)
@@ -865,7 +869,7 @@ public partial class UpkeepController
 		Vector3 me = base.transform.position;
 		ItemDrop nearest = null;
 		float nd = float.MaxValue;
-		foreach (Collider c in Physics.OverlapSphere(_spot, 4f))
+		foreach (Collider c in MHR_Phys.Sphere(ref MHR_Phys.UpkeepPiles893, _spot, 4f))
 		{
 			ItemDrop d = c != null ? c.GetComponentInParent<ItemDrop>() : null;
 			if (d != null && d.m_itemData != null && d.m_itemData.m_shared.m_name == k.Shared && !_pileDropsBefore.Contains(d.GetInstanceID()) && bag.CanAddItem(d.m_itemData, 1))

@@ -147,6 +147,41 @@ public class CompanionSetup : MonoBehaviour
 
 	private Humanoid _humanoid;
 
+	private static readonly HarmonyLib.AccessTools.FieldRef<Character, HitData> s_lastHit = HarmonyLib.AccessTools.FieldRefAccess<Character, HitData>("m_lastHit");
+
+	// 1.5.98 (W4): the last hit it took (the game keeps it in Character.m_lastHit): its kind, who made it and how much
+	private static string MHR_DeathCause(Character c)
+	{
+		try
+		{
+			HitData hit = (c != null) ? s_lastHit(c) : null;
+			if (hit == null)
+			{
+				return "cause unknown (no hit recorded)";
+			}
+			Character attacker = hit.GetAttacker();
+			string by = (attacker != null) ? (" by " + attacker.m_name) : "";
+			string where = "";
+			if (c != null)
+			{
+				Vector3 p = c.transform.position;
+				if (MHR_Heat.Gradient(p) > 0f && c.InWater())
+				{
+					where = ", in Ashlands water (heat " + MHR_Heat.Level(c).ToString("F2") + ", gear heat resistance " + (MHR_Heat.Resist(c) * 100f).ToString("F0") + "%)";
+				}
+				else if (c.InLava())
+				{
+					where = ", on lava";
+				}
+			}
+			return "last hit: " + hit.m_hitType + by + ", " + hit.GetTotalDamage().ToString("F1") + " damage" + where;
+		}
+		catch (Exception e)
+		{
+			return "cause unknown (" + e.Message + ")";
+		}
+	}
+
 	private ZSyncAnimation _zanim;
 
 	private HarvestController _harvestCached;
@@ -593,6 +628,8 @@ public class CompanionSetup : MonoBehaviour
 				prefabName = gameObject.name;
 			}
 			if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} — prefab={prefabName}");
+			// 1.5.98 (W4): what killed it, on the normal log (Ashlands report: was it the water, lava or an enemy?)
+			if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Setup] Companion \"{text}\" died at {vector:F1} - {MHR_DeathCause(_humanoid)}");
 			// 1.5.42: tell its player, wherever they are (user: "an announcement, if an NPC dies or is lost or something far away")
 			try
 			{
@@ -621,7 +658,9 @@ public class CompanionSetup : MonoBehaviour
 			}
 			long num2 = zDO.GetLong(TombstoneIdHash, 0L);
 			bool flag = _humanoid != null && _humanoid.GetInventory() != null && _humanoid.GetInventory().NrOfItems() > 0;
-			long tombstoneId = (flag ? DateTime.UtcNow.Ticks : num2);
+			// T1 (test of ea18287: two empty deaths in a row after an empty respawn got tombstone id 0, and TryStartResurrect
+			// refuses id 0 - John couldn't bring them back): never 0 - no items and no earlier id gets a new one
+			long tombstoneId = (flag || num2 == 0L) ? DateTime.UtcNow.Ticks : num2;
 			if (!flag && num2 != 0L)
 			{
 				if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogInfo($"[Setup] No items — preserving existing tombstoneId={num2} " + "so respawned companion can find previous tombstone");
@@ -629,6 +668,15 @@ public class CompanionSetup : MonoBehaviour
 			bool flag2 = HasHomePosition();
 			Vector3 homePos = (flag2 ? GetHomePosition() : Vector3.zero);
 			int combatStance = zDO.GetInt(CombatStanceHash);
+			// C1 (John 2026-11-21: "Once they get their gear back it should reset their stance to what it was before their
+			// death"): it died while still getting its gear back (Passive, auto-pickup off) - the tombstone keeps the stance and
+			// auto-pickup from before its first death, not the recovery's (that save left Comp, Je and Gunter Passive for good)
+			if (zDO.GetBool(MHR_Recover.RecoveringHash))
+			{
+				combatStance = zDO.GetInt(MHR_Recover.RecoverStanceHash);
+				autoPickup = zDO.GetBool(MHR_Recover.RecoverPickupHash, defaultValue: true);
+				if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo($"[Recover] Died before its gear was back - its tombstone keeps the stance {combatStance} and auto-pickup {(autoPickup ? "on" : "off")} from before its first death");
+			}
 			bool hasHomeBed = zDO.GetBool(HasHomeBedHash);
 			Vector3 vec = zDO.GetVec3(HomeBedPosHash, Vector3.zero);
 			CreateCompanionTombstone(text, vector, tombstoneId, prefabName, appearance, ownerId, actionMode, actionModeSchema, follow, stayHome, autoPickup, wander, num != 0, formationSlot, skillsSerialized, flag2, homePos, combatStance, hasHomeBed, vec);
@@ -670,6 +718,19 @@ public class CompanionSetup : MonoBehaviour
 		{
 			TryInit();
 			return;
+		}
+		if (_missingCheckPending && _humanoid != null && InventoryLoadGuard.Loading == null)
+		{
+			bool was = _equipping;
+			_equipping = true;
+			try
+			{
+				UnequipMissingEquippedItems();
+			}
+			finally
+			{
+				_equipping = was;
+			}
 		}
 		MHR_StampOwnerDeathRule();
 		MHR_MarkNoDestroy();
@@ -1802,9 +1863,19 @@ public class CompanionSetup : MonoBehaviour
 		_equipTimer = 0f;
 	}
 
+	private bool _missingCheckPending;
+
 	private void UnequipMissingEquippedItems()
 	{
 		Inventory inventory = _humanoid.GetInventory();
+		// 1.5.97: not while the game is still putting the bag back together (Inventory.Load) - the equipped item's
+		// reloaded copy may not be back yet; it runs on the next frame instead, with the whole bag there
+		if (inventory != null && InventoryLoadGuard.Loading == inventory)
+		{
+			_missingCheckPending = true;
+			return;
+		}
+		_missingCheckPending = false;
 		if (inventory != null)
 		{
 			List<ItemDrop.ItemData> allItems = inventory.GetAllItems();

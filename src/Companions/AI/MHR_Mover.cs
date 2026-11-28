@@ -13,15 +13,23 @@ namespace Companions
     {
         class S
         {
+            public bool HotOk; public float HotCheckAt = -10f;   // W1: this route's hot-water stretch is short enough
             public Vector3 Goal, Dest; public float Dist; public string Tag = "";
+            public int Gait = -1; public float GaitAt;   // 1.5.94: walk 0 / jog 1 / run 2 as last set, and when
             public bool Quiet;   // 1.5.4: sneaking - no jumps it can do without
             public bool FireReplan;   // 1.5.70: stepped out of a fire - plan again from outside it
+            public Vagon GoalCart; public float NextGoalCart; public float CartLog;   // 1.5.97 (C9/C10): the cart this walk is heading for, and the walk-round log
             public readonly List<Vector3> Path = new List<Vector3>();
             public int Corner; public float NextPlan; public bool PathOk, Partial;
             public float Best, ProgressTime, AnchorTime; public Vector3 Anchor;
-            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun;
+            public int Ladder; public float StepUntil; public Vector3 StepDir; public bool StepRun; public float DropStepUntil, DropFromY;   // T1 / U1: the step TryDropDown started (its end time) and the height it stepped off from
+            public Vector3 DropLand; public bool HasDropLand;   // S1: where the last drop-down of this walk landed
             public bool HasDetour; public Vector3 Detour; public float DetourUntil;
+            // 1.5.98 R5: on a vein, the way out of its trench in use (1 = to its bottom, 2 = up to its top), and the ways out
+            // tried on this trip (like the ladders it tried)
+            public int VeinOut; public bool VeinDown; public float NextPitWay; public Vector3 VeinOutTop, VeinOutAt; public float VeinOutUntil; public int VeinOutId; public int VeinOutStuckN; public float VeinOutStuckRem; public bool VeinOutGiveUp; public readonly HashSet<int> VeinOutTried = new HashSet<int>();
             public bool GaveUp; public float GaveUpAt;
+            public HarvestController Hv; public bool HvLooked;   // SV9: its job controller, looked up once
             public bool DoorBlocked;   // 1.5.65: a fight chase came to a closed door it won't open
             public float LastGo, NextLog, NextDoorSearch, NextDoorPeek, NextJump, NextDive, NextWaterPeek, NextLineLog, NextFireLog;
             public Door RouteDoor; public Vector3 RouteDoorSpot;
@@ -45,7 +53,13 @@ namespace Companions
             public Vector3 GoodPos; public float GoodAt; public bool HasGood;
             public float ClimbUntil, ClimbBestY, ClimbProgressAt, NextClimbJump, ClimbRestUntil; public Vector3 ClimbTop;
             public int ClimbTries; public readonly List<Vector3> ClimbTried = new List<Vector3>();
+            public bool ForcedClimb; public float NextClimbWhyLog;   // 1.5.97: a climb out of a hole asked for straight away (MHR_Follow), and the Detailed "no way up" log's throttle
             public bool Direct; public float NextHop, NoDirectUntil;
+            // MP2: walking a route planned on a vein's pit map; given up on it (20 s) and how often for this goal
+            public bool MapRoute; public float NextMapLog; public int MapFails;
+            // F13 (log cdfe000a: "the game's route for 20 s" - a clock): stuck on the map route, the game's route is used until
+            // the pit map changes along the rest of that route (MapHeldAt = when it got stuck, MapHeldPath = the rest of it)
+            public bool MapHeld; public float MapHeldAt; public readonly List<Vector3> MapHeldPath = new List<Vector3>();
             public Door PassDoor; public float PassSide, NextDoorwayCheck;
         }
         class Opened { public Door Door; public float At; }
@@ -54,6 +68,7 @@ namespace Companions
         static readonly Dictionary<int, List<Opened>> s_opened = new Dictionary<int, List<Opened>>();
         static readonly List<Vector3> s_tmp = new List<Vector3>();
         static readonly List<Vector3> s_tmp2 = new List<Vector3>();
+        static readonly List<Vector3> s_mapTmp = new List<Vector3>();   // MP2
         static readonly List<Piece> s_pieces = new List<Piece>();
         static readonly Collider[] s_cols = new Collider[16];
         // 1.4.138: door searches need far more room - inside a house dozens of walls, floors and beams are within 2.5 m and
@@ -82,6 +97,35 @@ namespace Companions
             return c != null && s_s.TryGetValue(c.gameObject.GetInstanceID(), out s) ? s : null;
         }
         static void Dbg(string msg) { if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug(msg); }
+        // J4 (John 11-22: which companion, and what it is stuck on): the companion the mover is working for, for the log
+        static string Who() { return s_ctxChar != null ? "|" + s_ctxChar.m_name : ""; }
+        // K4 extra (log 80c21298 line 2222: no name): the mover's companion, else the one it was given
+        static string Who(Character c) { return s_ctxChar != null ? "|" + s_ctxChar.m_name : c != null ? "|" + c.m_name : ""; }
+
+        // J4: the first thing straight ahead at chest height within 1.5 m (its own colliders and triggers skipped) - log only
+        static string AheadSaid(Character c, Vector3 pos, Vector3 dir)
+        {
+            Collider col = AheadCol(c, pos, dir, out float best);
+            if (col == null && best < 0f) return "";
+            return col != null ? ", ahead of it " + best.ToString("F1") + " m: \"" + col.transform.root.name + "\"" : ", nothing ahead within 1.5 m";
+        }
+
+        // K3: that first thing ahead (null = none; dist -1 = no direction)
+        static Collider AheadCol(Character c, Vector3 pos, Vector3 dir, out float dist)
+        {
+            dist = -1f;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f) return null;
+            RaycastHit[] hits = Physics.RaycastAll(pos + Vector3.up * 1.0f, dir.normalized, 1.5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            float best = float.MaxValue; Collider col = null;
+            foreach (RaycastHit h in hits)
+            {
+                if (h.collider == null || (c != null && h.collider.transform.IsChildOf(c.transform)) || h.distance >= best) continue;
+                best = h.distance; col = h.collider;
+            }
+            dist = col != null ? best : 0f;
+            return col;
+        }
         public static string Fmt(Vector3 v) { return "(" + v.x.ToString("F1") + ", " + v.y.ToString("F1") + ", " + v.z.ToString("F1") + ")"; }
         static float Flat(Vector3 a, Vector3 b) { return new Vector2(a.x - b.x, a.z - b.z).magnitude; }
 
@@ -115,6 +159,12 @@ namespace Companions
         }
         // 1.5.3: climbing a planned chain of ladders (Follow leaves it to finish rather than switching to the player's path)
         public static bool OnLadderChain(CompanionAI ai) { S s = Peek(ai); return s != null && s.OnChain && Time.time - s.LastGo < 1f; }
+        // 1.5.98 (Ore job rebuild): seconds since the current walk last got 0.75 m closer (0 when it is not walking)
+        public static float NoHeadway(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f ? Time.time - s.ProgressTime : 0f; }
+        // SV1 (John 11-21: held only while the other is actually working it): the current walk is stuck by the mover's own
+        // rule - it gave up, or it is on an unstuck step (standing still 2.5 s or no 0.75 m closer for 8 s, reset only when
+        // the route gets 1.5 m shorter)
+        public static bool Stuck(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time - s.LastGo < 0.5f && (s.GaveUp || s.Ladder > 0); }
         public static bool Progressing(CompanionAI ai) { S s = Peek(ai); return s != null && !s.GaveUp && Time.time - s.ProgressTime < 10f; }
         public static float StuckSeconds(CompanionAI ai) { return GaveUp(ai) ? 11f : 0f; }
         // CompanionRest keeps its bed trip alive while we're still getting somewhere
@@ -145,12 +195,21 @@ namespace Companions
         public static bool Go(CompanionAI ai, float dt, Vector3 goal, float dist, bool allowRun, string tag, int speed)
         {
             if (ai == null) return false;
-            try { return GoInner(ai, goal, dist, allowRun, tag ?? "", speed); }
+            Character oldCtx = s_ctxChar; bool oldOk = s_ctxHotOk;
+            try
+            {
+                // W1: while it moves, "lava" also means water that burns - unless its gear makes it heat-proof, or the
+                // route's hot-water stretch is short enough (S.HotOk, worked out in AvoidLava)
+                s_ctxChar = ai.GetComponent<Character>();
+                s_ctxHotOk = MHR_Heat.HeatProof(s_ctxChar) || Get(ai).HotOk;
+                return GoInner(ai, goal, dist, allowRun, tag ?? "", speed);
+            }
             catch (Exception e)
             {
                 if (CompanionsPlugin.Log != null && Time.time >= s_nextErr) { s_nextErr = Time.time + 30f; CompanionsPlugin.Log.LogWarning("[Move] " + e.Message); }
                 return false;
             }
+            finally { MHR_Cart.HopExempt = null; s_ctxChar = oldCtx; s_ctxHotOk = oldOk; }
         }
 
         static bool GoInner(CompanionAI ai, Vector3 goal, float dist, bool allowRun, string tag, int speed)
@@ -161,8 +220,27 @@ namespace Companions
             Vector3 pos = ai.transform.position;
             float shift = Vector3.Distance(goal, s.Goal);
             bool fresh = shift > 4f || now - s.LastGo > 2f || s.Tag != tag;
-            if (s.GaveUp && now - s.GaveUpAt > 15f) fresh = true;   // try again after a while
-            if (fresh) Reset(s, goal, pos, now, tag);
+            bool retry = s.GaveUp && now - s.GaveUpAt > 15f;
+            if (retry) fresh = true;   // try again after a while
+            // K4 (log 58064830: Comp under a 1.5 m bank - every swing try or rest restarted the stuck clocks, so it was never
+            // called stuck and never cut a way up): a pause on the same goal (shift within the existing 1.5 m new-goal line,
+            // same task) where it hasn't moved 0.6 m flat from its stuck anchor doesn't restart the stuck clocks or the
+            // unstuck step - the pause itself isn't counted, the clocks go on from where they stopped. A real move, a new goal
+            // or a new task restarts them as before.
+            float pause = now - s.LastGo;
+            bool held = !retry && pause > 0.5f && shift <= 1.5f && s.Tag == tag && Flat(pos, s.Anchor) < 0.6f;
+            if (fresh && held)
+            {
+                float aT = s.AnchorTime + pause, pT = s.ProgressTime + pause, best = s.Best, mBest = s.MainBest; Vector3 anc = s.Anchor;
+                int ladderStep = s.Ladder, passes = s.Passes;
+                Reset(s, goal, pos, now, tag);
+                s.AnchorTime = aT; s.ProgressTime = pT; s.Anchor = anc; s.Best = best; s.MainBest = mBest; s.Ladder = ladderStep; s.Passes = passes;
+            }
+            else if (fresh) Reset(s, goal, pos, now, tag);
+            else if (held)
+            {
+                s.AnchorTime += pause; s.ProgressTime += pause;
+            }
             // 1.4.78: a new nearby target (the farmer's next crop 2 m on) or carrying on after a pause (harvesting,
             // swinging) starts the stuck clocks over. They used to keep running while he stood working, so the next
             // short step counted as "standing still 4s" and he started sidestepping and hopping around the field.
@@ -172,12 +250,18 @@ namespace Companions
             else if (now - s.LastGo > 0.5f || (shift > 1.5f && tag != FollowTag))
             {
                 s.AnchorTime = now; s.Anchor = pos; s.ProgressTime = now; s.Best = float.MaxValue; s.StepUntil = 0f;
-                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; }
+                if (shift > 1.5f) { s.MainBest = float.MaxValue; s.Ladder = 0; s.Passes = 0; s.GaveUp = false; s.HasDropLand = false; s.MapFails = 0; s.MapHeld = false; }
             }
             else if (shift > 1.5f && !s.HasDetour && s.RouteDoor == null) s.NextPlan = 0f;
             // 1.4.76: a goal that keeps moving (Follow): re-plan once it has drifted from the planned destination
             else if (!s.HasDetour && s.RouteDoor == null && Vector3.Distance(goal, s.Dest) > 1.5f && s.NextPlan > now + 0.7f) s.NextPlan = Mathf.Min(s.NextPlan, now + 0.3f);
             s.LastGo = now; s.Goal = goal; s.Dist = dist;
+            s_ctxHotOk = MHR_Heat.HeatProof(c) || s.HotOk;   // W1: a fresh route is judged again (Reset cleared HotOk)
+            // 1.5.97 (C10, user: "ensure that an NPC can still load items into a cart"): a cart the goal is on or right by
+            // (the cart order, the deposit order, a job's drop-off) is never avoided on this walk; looked up when the goal
+            // moves and once a second
+            if (fresh || shift > 0.5f || now >= s.NextGoalCart) { s.NextGoalCart = now + 1f; s.GoalCart = MHR_Cart.GoalCart(ai, goal); }
+            MHR_Cart.HopExempt = s.GoalCart;
             // 1.5.4: crouched (sneaking up on prey): wade shallow water and walk round instead of jumping - a jump is loud,
             // stands it up and costs stamina (user log: jumped the water while sneaking up on a deer, which then bolted)
             CompanionStamina cst = ai.GetComponent<CompanionStamina>();
@@ -185,6 +269,15 @@ namespace Companions
 
             // arrived: within reach on the same level (not standing under it on the floor below)
             if (Flat(pos, goal) <= dist && Mathf.Abs(pos.y - goal.y) <= 1.5f) { Halt(ai, c, s); return true; }
+            if (s.GaveUp && s.VeinOut != 0 && s.UseLadder == null)
+            {
+                // W3: the mover gave up on this way out - the next one (it is not taken again in this walk)
+                s.VeinOutTried.Add(s.VeinOutId);
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] no way to " + Fmt(s.VeinOutAt) + " on the way out of the trench - the next way");
+                if ((s.VeinOut == 1 && !s.VeinDown) || (s.VeinOut == 2 && s.VeinDown)) HarvestController.OvWayOutMissed(s.VeinOutAt, c != null ? c.m_name : "?");   // Z3 (a): its bottom wasn't reached
+                s.VeinOut = 0; s.HasDetour = false; s.GaveUp = false; VeinLeg(s);
+                Plan(ai, c, s, pos, now);
+            }
             if (s.GaveUp) { Halt(ai, c, s); return false; }
             if (c == null || c.InAttack()) return false;
 
@@ -192,6 +285,27 @@ namespace Companions
             if (now >= s.NextPlan || s.Path.Count == 0) Plan(ai, c, s, pos, now);
             s_swimming = c.IsSwimming();
             AdvanceCorner(s, pos);
+            // SV9: on the game's route (not the map's) inside a pit map, the square 0.5 m ahead toward the next corner may
+            // not be one where something hangs over its body (SV8's rule) unless the square it is on is one too (getting
+            // out from under): the walk gives up there, and the job picks another place by its own rules
+            // F6 (John 11-21 23:40Z: head room on every move): detours too
+            if (!s.MapRoute && s.Path.Count > 0)
+            {
+                if (!s.HvLooked) { s.Hv = ai.GetComponent<HarvestController>(); s.HvLooked = true; }
+                HarvestController hvh = s.Hv;
+                Vector3 nc = NextCorner(s, pos) - pos; nc.y = 0f;
+                if (hvh != null && nc.sqrMagnitude > 0.01f)
+                {
+                    Vector3 ahead = pos + nc.normalized * 0.5f;
+                    if (hvh.OvMapLowHead(ahead) && !hvh.OvMapLowHead(pos))
+                    {
+                        s.GaveUp = true; s.GaveUpAt = now;
+                        Halt(ai, c, s);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] the game's route goes under something low at " + Fmt(ahead) + " (the pit map: no room over its body there) - not walking it");
+                        return false;
+                    }
+                }
+            }
             float remain = Remaining(s, pos);
             if (s.NewLeg) { s.NewLeg = false; s.Best = remain; }
             if (remain < s.Best - 0.75f) { s.Best = remain; s.ProgressTime = now; }
@@ -209,7 +323,7 @@ namespace Companions
             {
                 if (now < s.DescendUntil) { Descend(ai, c, s, pos, now, tag); return false; }
                 MarkBadLadder(s.ClimbLadderId, now, 300f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get down the ladder (got to " + Fmt(pos) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get down the ladder (got to " + Fmt(pos) + ")");
                 s.DescendLadder = false;
             }
 
@@ -218,10 +332,25 @@ namespace Companions
             {
                 // 1.5.72: a walking step (a sidestep out of being stuck) stops at a drop, fire or spikes on the way - it was only
                 // checked when it started (jumps are left alone - they're in the air)
-                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && (DropAhead(pos, s.StepDir, 0.8f, 1.2f) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
+                // 1.5.98 T1 (test 24: Comp on the trench rim, the drop-down's own 1.2-1.4 m drop cancelled by this check every
+                // 20-25 s for minutes): the drop-down's step is the drop it chose - only fire and spikes stop it
+                // U1 (test 25: Je stepped off a 1.2 m ledge and walked on over a 9 m face): only until it has stepped off -
+                // feet 0.5 m below where it started - then the check is back on
+                // U2 (test 25: Comp's unstuck side step on the rim walked down the face): the walking check (LedgeAhead: a
+                // drop over MaxDrop or a steep run going on down), not a 1.2 m look 0.8 m ahead
+                bool dropStep = s.DropStepUntil == s.StepUntil && pos.y > s.DropFromY - 0.5f;
+                if (!s.StepRun && c.IsOnGround() && !c.IsSwimming() && ((!dropStep && LedgeAhead(pos, s.StepDir, 0.8f, out _)) || FireArea(pos + s.StepDir * 0.8f, 0.3f) != null || SpikeNear(pos + s.StepDir * 0.8f, 0.6f) != null))
                 {
                     s.StepUntil = 0f; Halt(ai, c, s);
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopped a step - a drop, fire or spikes ahead");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopped a step - a drop, fire or spikes ahead");
+                    return false;
+                }
+                // F6 (log cdfe000a: Je's unstuck side step and the step that replaced a jump took it under the vein): every
+                // step on the ground stops where there is no room over its body ahead (a jump in the air was checked before it)
+                if (c.IsOnGround() && !c.IsSwimming() && !HeadOk(ai, c, s, pos, s.StepDir))
+                {
+                    s.StepUntil = 0f; Halt(ai, c, s);
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopped a step at " + Fmt(pos) + " - no head room ahead");
                     return false;
                 }
                 Steer(ai, c, s, s.StepDir, s.StepRun, false); return false;
@@ -231,21 +360,37 @@ namespace Companions
             // 1.5.70: plan again once out - the old route led into it (log 188ac60a: out, then straight back in, 7 times)
             if (EscapeFire(ai)) { s.FireReplan = true; return false; }
             if (EscapeLava(ai)) { s.FireReplan = true; return false; }
+            if (EscapeHotWater(ai)) { s.FireReplan = true; s.HotOk = false; return false; }
             if (s.FireReplan) { s.FireReplan = false; s.HasDetour = false; s.NextPlan = 0f; }
 
             // waiting on the bank until there's stamina for the swim
             if (s.WaitStamina)
             {
-                if (Stamina(ai) >= s.NeedStamina) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 30f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] rested enough to swim across"); }
-                else if (now - s.WaitStart > 40f) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 60f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] waited long enough - swimming across"); }
+                if (Stamina(ai) >= s.NeedStamina) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 30f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] rested enough to swim across"); }
+                else if (now - s.WaitStart > 40f) { s.WaitStamina = false; s.TooTired = false; s.NoWaitUntil = now + 60f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] waited long enough - swimming across"); }
                 else { Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; return false; }
             }
 
+            // U3 (John 2026-11-20: "anytime they leave or go into the trench or pit they should use the cut out path"): every
+            // walk out of a vein's pit, or into it, takes a saved way out (looked at once a second) - the R5 way-out walk below
+            if (s.VeinOut == 0 && s.UseLadder == null && !s.LadderPending && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && c.IsOnGround() && now >= s.NextPitWay)
+            {
+                s.NextPitWay = now + 1f;
+                if (PitWayStart(ai, c, s, pos, now, tag)) return false;
+            }
             // 1.5.2: ladders - use one we've reached; look for one when the goal is up out of reach
             if (s.UseLadder != null || (object)s.UseLadder != null)
             {
                 if (UseLadderNow(ai, c, s, pos, now, tag)) return false;
                 if (s.UseLadder == null) { s.HasDetour = false; Plan(ai, c, s, pos, now); }
+            }
+            // 1.5.98 K6 (test 18: in fights on a vein they walked 40-57 m partial routes round the pit and headed for a
+            // stepladder): in a fight on a vein with the enemy 1.5 m or more up and only a partial route - a way out of the
+            // trench at once, else one cut at once (the R5 / Y5 code TryStartClimb uses after 3 s standing still)
+            else if (tag == CombatTag && OnVeinOf(ai) && s.MainPartial && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && c.IsOnGround() && s.VeinOut == 0 && now >= s.NextLadderSearch && s.Goal.y > pos.y + 1.5f)
+            {
+                s.NextLadderSearch = now + 2f;
+                if (VeinUp(ai, s, pos, now, tag, "no full route in a fight")) return false;
             }
             else if (s.MainPartial && !s.HasDetour && s.RouteDoor == null && !c.IsSwimming() && now >= s.NextLadderSearch && s.Goal.y > pos.y + 2f)
             {
@@ -261,7 +406,7 @@ namespace Companions
                 {
                     s.LadderPending = false; s.HasDetour = false; s.DescendUntil = now + 10f;
                     if (s.PendingChain != null && s.PendingDown && s.PendingChain.Count >= 2) { StartChain(s, s.PendingChain, 0, pos, now, tag, true); s.PendingChain = null; return false; }
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the top of the ladder - going down");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the top of the ladder - going down");
                     return false;
                 }
                 if (!s.DescendLadder && Flat(pos, s.ClimbBase) < 1.0f && Mathf.Abs(pos.y - s.ClimbBase.y) < 1.5f)
@@ -270,20 +415,53 @@ namespace Companions
                     if (s.PendingChain != null && !s.PendingDown && s.PendingChain.Count >= 2) { StartChain(s, s.PendingChain, 0, pos, now, tag); s.PendingChain = null; return false; }
                     s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now; s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
                     NoteLadderClimb(s, now, tag);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] at the foot of the ladder - climbing");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the foot of the ladder - climbing");
                     return false;
                 }
                 if (!s.DescendLadder && pos.y < s.ClimbBase.y - 1.5f && c.IsOnGround())
                 {
                     s.LadderPending = false; s.HasDetour = false; s.NextLadderClimbSearch = 0f; s.NextPlan = 0f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
                     Plan(ai, c, s, pos, now);
                 }
                 else if (now > s.DetourUntil || !s.HasDetour)
                 {
                     s.LadderPending = false; s.HasDetour = false; MarkBadLadder(s.ClimbLadderId, now, 120f);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to the " + (s.DescendLadder ? "top of the ladder at " + Fmt(s.DescendTop) : "foot of the ladder at " + Fmt(s.ClimbBase)));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get to the " + (s.DescendLadder ? "top of the ladder at " + Fmt(s.DescendTop) : "foot of the ladder at " + Fmt(s.ClimbBase)));
                     s.DescendLadder = false;
+                    Plan(ai, c, s, pos, now);
+                }
+            }
+            else if (s.VeinOut != 0 && s.UseLadder == null)
+            {
+                // R5: the way out of a vein's trench - its bottom by the normal route, then up to its top (10 s each). A side
+                // step of the stuck handling may take the detour for a moment; then it goes on to the way out again.
+                bool there = Flat(pos, s.VeinOutAt) < 1.0f && Mathf.Abs(pos.y - s.VeinOutAt.y) < 1.5f;
+                if (!there && !s.VeinOutGiveUp && (!s.HasDetour || (s.Detour != s.VeinOutAt && Flat(pos, s.Detour) < 1.0f)))
+                {
+                    s.HasDetour = true; s.Detour = s.VeinOutAt; s.DetourUntil = s.VeinOutUntil; Plan(ai, c, s, pos, now);
+                }
+                else if (there && s.VeinOut == 1)
+                {
+                    s.VeinOut = 2; s.VeinOutAt = s.VeinOutTop; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
+                    s.HasDetour = true; s.Detour = s.VeinOutTop; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] at the " + (s.VeinDown ? "top" : "bottom") + " of the way out of the trench - going " + (s.VeinDown ? "down" : "up") + " to " + Fmt(s.VeinOutTop));
+                    Plan(ai, c, s, pos, now);
+                }
+                else if (there)
+                {
+                    s.VeinOut = 0; s.HasDetour = false;
+                    s.VeinOutTried.Add(s.VeinOutId);   // U3: used - not taken again in this walk (a top on the pit's edge can't send it back down)
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (s.VeinDown ? "down" : "up") + " the way out of the trench at " + Fmt(pos));
+                    Plan(ai, c, s, pos, now);
+                }
+                else if (s.VeinOutGiveUp)
+                {
+                    s.VeinOutTried.Add(s.VeinOutId);
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get " + (s.VeinOut == 1 ? "to the " + (s.VeinDown ? "top" : "bottom") + " of the way out at " + Fmt(s.VeinOutAt) : (s.VeinDown ? "down" : "up") + " the way out to " + Fmt(s.VeinOutTop)) + " (stuck twice with its route no shorter) - the next way");
+                    if ((s.VeinOut == 1 && !s.VeinDown) || (s.VeinOut == 2 && s.VeinDown)) HarvestController.OvWayOutMissed(s.VeinOutAt, c != null ? c.m_name : "?");   // Z3 (a): its bottom wasn't reached
+                    VeinLeg(s);
+                    s.VeinOut = 0; s.HasDetour = false;
                     Plan(ai, c, s, pos, now);
                 }
             }
@@ -291,10 +469,10 @@ namespace Companions
             if (s.RouteDoor != null)
             {
                 if (!DoorClosed(s.RouteDoor)) { s.RouteDoor = null; Plan(ai, c, s, pos, now); }
-                else if (MHR_Nav.DoorDist(pos, s.RouteDoor.transform.position) <= 2.2f)
+                else if (MHR_Nav.DoorDist(pos, DoorCenter(s.RouteDoor)) <= 2.2f)
                 {
                     // open it, then walk through to the far side before asking for a new route
-                    Vector3 dp = s.RouteDoor.transform.position, across = dp - s.RouteDoorSpot; across.y = 0f;
+                    Vector3 dp = DoorCenter(s.RouteDoor), across = dp - s.RouteDoorSpot; across.y = 0f;
                     OpenDoor(ai, c, s.RouteDoor, tag);
                     s.LastRouteDoor = s.RouteDoor; s.LastRouteDoorAt = now;
                     if (across.sqrMagnitude > 0.01f) { s.HasDetour = true; s.Detour = dp + across.normalized * 1.8f; s.DetourUntil = now + 5f; }
@@ -312,7 +490,21 @@ namespace Companions
             }
 
             // 1.4.140: line up with a doorway on the way and walk straight through it, like a player
-            if (!c.IsSwimming()) target = DoorwayLine(s, pos, target, now, tag);
+            // 1.5.91: not with a cart in tow - stepping across to the doorway's line swings the cart and can pull the shafts loose
+            if (!c.IsSwimming() && !MHR_Cart.Pulling(c)) target = DoorwayLine(s, pos, target, now, tag);
+
+            // 1.5.97 (C9, user: "Not running into a cart should go into the shared movement code"): the straight way to the
+            // next point crosses a cart (pulled or parked, not its own, not the one it's walking to): head for the nearer
+            // corner of it first, like a player walking round it. Moved here from Follow so every mode and job does it.
+            if (!c.IsSwimming())
+            {
+                Vector3 via;
+                if (MHR_Cart.AroundCart(c, pos, target, 0.6f, out via, s.GoalCart))
+                {
+                    target = via;
+                    if (CompanionsPlugin.LogDetailed && now - s.CartLog > 3f) { s.CartLog = now; Dbg("[Move|" + tag + Who() + "] walking round a cart, via " + Fmt(via)); }
+                }
+            }
 
             // a closed door right ahead: open it before walking into it
             if (now >= s.NextDoorPeek)
@@ -356,7 +548,7 @@ namespace Companions
             {
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 1.2f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping the gap at " + Fmt(pos + dir * 0.8f));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping the gap at " + Fmt(pos + dir * 0.8f));
                 return false;
             }
 
@@ -372,12 +564,12 @@ namespace Companions
                 if (small && c.IsOnGround() && now >= s.NextHop && !NearFire(pos + dir * 2.5f, 0.3f) && !DropAhead(pos, dir, 2.5f, 1.2f))
                 {
                     s.NextHop = now + 1.0f;
-                    ai.transform.rotation = Quaternion.LookRotation(dir);
+                    Face(ai, dir);
                     c.Jump(false);
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 6f; v.z = dir.z * 6f; rb.linearVelocity = v; }
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping over a fire at " + Fmt(pos + dir * 1.2f));
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping over a fire at " + Fmt(pos + dir * 1.2f));
                     return false;
                 }
                 Vector3 round;
@@ -385,14 +577,14 @@ namespace Companions
             }
 
             // 1.5.74: lava on the next step (and the goal isn't on it): turn along clear ground, or stop at its edge
-            if (!c.IsSwimming() && WorldGenerator.IsAshlands(pos.x, pos.z) && (Lava(pos + dir * 0.9f) || Lava(pos + dir * 1.6f)) && !Lava(goal))
+            if (!c.IsSwimming() && WorldGenerator.IsAshlands(pos.x, pos.z) && (Lava(pos + dir * 0.9f) || Lava(pos + dir * 1.6f)) && !LavaPaint(goal))
             {
                 Vector3 round; float rd;
                 if (LavaExit(pos + dir * 0.0f, dir, out round, out rd) && Vector3.Dot(round, dir) > -0.2f && LegClearOfLava(pos, pos + round * 1.5f, 0.3f)) dir = round;
                 else
                 {
                     Halt(ai, c, s);
-                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stopping at the edge of the lava at " + Fmt(pos + dir * 0.9f)); }
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stopping at the edge of the lava at " + Fmt(pos + dir * 0.9f)); }
                     if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
                     return false;
                 }
@@ -415,7 +607,7 @@ namespace Companions
                     Vector3 along = Vector3.Cross(Vector3.up, off);
                     if (Vector3.Dot(along, dir) < 0f) along = -along;
                     dir = (along + off * (spikeClose ? 1.5f : 0.6f)).normalized;
-                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] keeping off the spikes at " + Fmt(cp)); }
+                    if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] keeping off the spikes at " + Fmt(cp)); }
                 }
             }
 
@@ -428,7 +620,7 @@ namespace Companions
                 if (LedgeAhead(pos, dir, 0.7f, out drop))
                 {
                     Halt(ai, c, s);
-                    if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stopping at the edge at " + Fmt(pos + dir * 0.7f) + " (" + drop.ToString("F1") + "m down)"); }
+                    if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stopping at the edge at " + Fmt(pos + dir * 0.7f) + " (" + drop.ToString("F1") + "m down)"); }
                     if (now - s.AnchorTime >= StillTime) Unstick(ai, c, s, pos, s.Goal, now, tag, now - s.AnchorTime, now - s.ProgressTime);
                     return false;
                 }
@@ -440,14 +632,24 @@ namespace Companions
             if (speed == SpeedWalk) { run = false; walk = true; }
             else if (speed == SpeedJog) { run = false; walk = false; }
             else if (speed == SpeedRun) { run = allowRun; walk = false; }
+            // 1.5.94: (user: "They should move like a player") ease off before arriving, as a player lets go of run near
+            // where they're going: a jog for the last 3 m, a walk for the last metre (not in a fight)
+            if (tag != CombatTag && s.Dist < 1.5f)
+            {
+                if (remain < 3f) run = false;
+                if (remain < 1.2f) walk = true;
+            }
             Steer(ai, c, s, dir, run, walk);
             // 1.4.83: going straight: hop the step in front, like a player
             // 1.4.84: and on a normal route, when something low has stopped us for a moment
             // 1.4.86: walk up stairs like a player; only hop when a step actually holds him up (1.4.85 hopped every step)
-            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f))
+            if (now >= s.NextHop && c.IsOnGround() && !c.InAttack() && !c.IsSwimming() && (s.Quiet ? now - s.AnchorTime > 1.5f : (s.Direct || now - s.AnchorTime > 0.5f)) && StepAhead(pos, dir) && !NearFire(pos + dir * 0.8f, 0.4f) && !NearFire(pos + dir * 1.5f, 0.4f)
+                // K3 (log 58064830: hops at 8-10 stamina fell short of a 1.5 m bank): the walking hop only with the stamina for a
+                // full jump (the game's tired check); otherwise it doesn't hop (the vein job stands it still to get its breath, K2)
+                && MHR_Jump.CanAfford(c))
             {
                 s.NextHop = now + 0.6f;
-                ai.transform.rotation = Quaternion.LookRotation(dir);
+                Face(ai, dir);
                 c.Jump(false);
                 Rigidbody rb = ai.GetComponent<Rigidbody>();
                 if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
@@ -463,13 +665,27 @@ namespace Companions
 
         static void Reset(S s, Vector3 goal, Vector3 pos, float now, string tag)
         {
+            s.HotOk = false; s.HotCheckAt = -10f;   // W1: a new route is judged again
+            s.MapRoute = false; s.MapFails = 0; s.MapHeld = false;   // MP2: a new goal tries the map route again
             // 1.5.2: a target that moves about (a skeleton pacing on the tower) mustn't make us forget the ladder on the way to it
             bool keepLadder = s.UseLadder != null && s.Tag == tag && now <= s.LadderUntil && goal.y > pos.y + 1.5f;
             // 1.5.2: same for a ladder climb in progress (the player walking about on the platform above moves the goal)
             bool keepClimb = s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            // 1.5.97: and a climb out of a hole that Follow asked for (the player moving about up top moves the goal)
+            // 1.5.97 (W7): any climb out of a pit (FindClimb + Climb), not only one Follow asked for - it used to be dropped
+            // halfway by every reset (log: 9 "climbing out ... try 1", none finished)
+            bool keepForced = !s.ClimbLadder && s.Tag == tag && now < s.ClimbUntil && goal.y > pos.y + 1.5f;
+            if (!s.ClimbLadder && now < s.ClimbUntil && !keepForced && CompanionsPlugin.LogDetailed)
+                Dbg("[Move|" + s.Tag + Who() + "] climb out at " + Fmt(s.ClimbTop) + " dropped: " + (s.Tag != tag ? "a new task (" + tag + ")" : "the new goal " + Fmt(goal) + " isn't above it"));
+            bool wasForced = s.ForcedClimb;
+            int cTries = s.ClimbTries; List<Vector3> cTried = keepForced ? new List<Vector3>(s.ClimbTried) : null;
             bool keepPending = s.LadderPending && s.Tag == tag && now <= s.DetourUntil && (s.DescendLadder ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);
             bool keepDescend = s.DescendLadder && s.Tag == tag && (keepPending || now < s.DescendUntil) && goal.y < pos.y - 1.0f;
             bool keepChain = s.OnChain && s.Tag == tag && (s.ChainDown ? goal.y < pos.y - 1.0f : goal.y > pos.y + 1.0f);
+            // R5: a way out of a vein's trench in use (and the ways out tried) is kept while the goal is still up out of it
+            bool keepVein = s.Tag == tag && (s.VeinDown ? goal.y < pos.y - 1.5f : goal.y > pos.y + 1.5f);   // U3: going in, while the goal is still down
+            int vOut = keepVein ? s.VeinOut : 0;
+            if (!keepVein) s.VeinOutTried.Clear();
             float dsUntil = s.DescendUntil; Vector3 dsTop = s.DescendTop;
             float cUntil = s.ClimbUntil, cBest = s.ClimbBestY, cProg = s.ClimbProgressAt, cStart = s.ClimbStartY, cStartAt = s.ClimbStartAt, cBottom = s.ClimbBottomY, dUntil = s.DetourUntil; Vector3 cTop = s.ClimbTop, cDir = s.ClimbDir, cBase = s.ClimbBase;
             bool cAuto = s.ClimbAuto; int cId = s.ClimbLadderId;
@@ -477,7 +693,7 @@ namespace Companions
             s.Goal = goal; s.Dest = goal; s.Tag = tag; s.Path.Clear(); s.Corner = 0; s.NextPlan = 0f; s.PathOk = false; s.Partial = false;
             s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
             s.Ladder = 0; s.StepUntil = 0f; s.HasDetour = false; s.GaveUp = false; s.DoorBlocked = false; s.RouteDoor = null; s.WaitStamina = false; s.PassDoor = null;
-            s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f;
+            s.TooTired = false; s.MainBest = float.MaxValue; s.Passes = 0; s.HasShore = false; s.NextShore = 0f; s.HasDropLand = false;
             s.NextDoorSearch = 0f; s.NextLog = now + 1f; s.NextStartSearch = 0f;
             s.ClimbUntil = 0f; s.ClimbTries = 0; s.ClimbTried.Clear(); s.ClimbRestUntil = 0f; s.Direct = false;
             s.UseLadder = null; s.LadderUntil = 0f; s.NextLadderSearch = 0f;
@@ -487,10 +703,14 @@ namespace Companions
             if (!keepPending) s.PendingChain = null;
             if (keepClimb || keepPending) { s.ClimbTop = cTop; s.ClimbDir = cDir; s.ClimbBase = cBase; s.ClimbAuto = cAuto; s.ClimbLadderId = cId; s.ClimbStartY = cStart; s.ClimbStartAt = cStartAt; s.ClimbBottomY = cBottom; }
             if (keepClimb) { s.ClimbLadder = true; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; }
+            s.ForcedClimb = false;
+            if (keepForced) { s.ForcedClimb = wasForced; s.ClimbTop = cTop; s.ClimbUntil = cUntil; s.ClimbBestY = cBest; s.ClimbProgressAt = cProg; s.ClimbTries = cTries; s.ClimbTried.AddRange(cTried); }
             s.DescendLadder = false; s.DescendUntil = 0f;
             if (keepDescend) { s.DescendLadder = true; s.DescendUntil = dsUntil; s.DescendTop = dsTop; s.ClimbBase = cBase; s.ClimbDir = cDir; s.ClimbLadderId = cId; }
             if (keepPending) { s.LadderPending = true; s.HasDetour = true; s.Detour = s.DescendLadder ? dsTop : cBase; s.DetourUntil = dUntil; }
             if (keepLadder) { s.UseLadder = ladder; s.LadderUntil = ladderUntil; s.HasDetour = true; s.Detour = ladder.transform.position; s.DetourUntil = ladderUntil; }
+            s.VeinOut = vOut;
+            if (vOut != 0) { s.HasDetour = true; s.Detour = s.VeinOutAt; s.DetourUntil = s.VeinOutUntil; }
             else s.LaddersUsed.Clear();
         }
 
@@ -501,10 +721,11 @@ namespace Companions
         static bool TryLadder(CompanionAI ai, S s, Vector3 pos, float now, string tag)
         {
             s.NextLadderSearch = now + 2f;
+            if (tag == CombatTag && OnVeinOf(ai)) return false;   // K6: in a fight on a vein, no ladders (not ways out of the pit)
             if (s.UseLadder != null || s.Goal.y < pos.y + 1.5f) return false;
             Ladder best = null; float bestScore = float.MaxValue;
             float here = Vector3.Distance(pos, s.Goal);
-            foreach (Ladder l in UnityEngine.Object.FindObjectsByType<Ladder>(FindObjectsSortMode.None))
+            foreach (Ladder l in MHR_World.Ladders())   // 1.5.94: shared, kept 5 s
             {
                 if (l == null || l.m_targetPos == null || s.LaddersUsed.Contains(l)) continue;
                 Vector3 bottom = l.transform.position, top = l.m_targetPos.position;
@@ -519,7 +740,7 @@ namespace Companions
             s.UseLadder = best; s.LadderUntil = now + 20f;
             s.HasDetour = true; s.Detour = best.transform.position; s.DetourUntil = s.LadderUntil; s.NextPlan = 0f;
             s.StepUntil = 0f; s.ClimbUntil = 0f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be - going up the ladder at " + Fmt(best.transform.position));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be - going up the ladder at " + Fmt(best.transform.position));
             return true;
         }
 
@@ -527,7 +748,7 @@ namespace Companions
         static bool UseLadderNow(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
         {
             Ladder l = s.UseLadder;
-            if (l == null || now > s.LadderUntil) { if (s.UseLadder != null || (object)s.UseLadder != null) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get to the ladder"); } s.UseLadder = null; return false; }
+            if (l == null || now > s.LadderUntil) { if (s.UseLadder != null || (object)s.UseLadder != null) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get to the ladder"); } s.UseLadder = null; return false; }
             if (Vector3.Distance(pos, l.transform.position) >= l.m_useDistance - 0.1f) return false;
             Humanoid h = c as Humanoid;
             if (h == null) { s.UseLadder = null; return false; }
@@ -535,7 +756,7 @@ namespace Companions
             s.LaddersUsed.Add(l);
             s.UseLadder = null; s.HasDetour = false; s.NextPlan = 0f; s.Path.Clear();
             s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue; s.Best = float.MaxValue; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = ai.transform.position;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] went up the ladder to " + Fmt(ai.transform.position));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] went up the ladder to " + Fmt(ai.transform.position));
             return true;
         }
 
@@ -543,12 +764,33 @@ namespace Companions
         {
             ai.StopMoving();
             if (c != null && s.Walking) { c.SetWalk(false); s.Walking = false; }
+            s.Gait = -1;   // 1.5.94: from standing it starts off walking and picks up speed
         }
 
+        // 1.5.94: (user: "They should move like a player") one step of pace at a time - walk, jog, run - at most every
+        // 0.4 s, instead of flipping between run and walk from one tick to the next (it jerked a cart off its shafts).
+        // Not in a fight, and never holding back a slow-down for a drop, fire or ledge (those call Halt).
+        const float GaitStep = 0.4f;
         static void Steer(CompanionAI ai, Character c, S s, Vector3 dir, bool run, bool walk)
         {
-            if (walk != s.Walking) { c.SetWalk(walk); s.Walking = walk; }
-            ai.MoveTowards(dir, run && !walk);
+            int want = walk ? 0 : (run ? 2 : 1);
+            float now = Time.time;
+            if (s.Tag == CombatTag || c.IsSwimming()) { s.Gait = want; s.GaitAt = now; }
+            else if (s.Gait < 0) { s.Gait = Mathf.Min(want, 1); s.GaitAt = now; }
+            else if (want != s.Gait && now - s.GaitAt >= GaitStep) { s.Gait += want > s.Gait ? 1 : -1; s.GaitAt = now; }
+            bool w = s.Gait == 0, r = s.Gait == 2;
+            if (w != s.Walking) { c.SetWalk(w); s.Walking = w; }
+            ai.MoveTowards(dir, r && !w);
+        }
+
+        // 1.5.94: turn to face a way like a player does - the game's own turning (Character.SetLookDir, at its turn speed),
+        // not an instant snap of the body
+        internal static void Face(CompanionAI ai, Vector3 dir)
+        {
+            dir.y = 0f;
+            if (ai == null || dir.sqrMagnitude < 0.0001f) return;
+            Character c = ai.GetComponent<Character>();
+            if (c != null) c.SetLookDir(dir.normalized);
         }
 
         // ---------- path ----------
@@ -575,7 +817,7 @@ namespace Companions
                     {
                         s.HasDetour = true; s.Detour = start; s.DetourUntil = now + 3f;
                         s.Path.Clear(); s.Path.Add(start);
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no route from " + Fmt(pos) + " - stepping to " + Fmt(start) + " to find one");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no route from " + Fmt(pos) + " - stepping to " + Fmt(start) + " to find one");
                     }
                 }
             }
@@ -610,9 +852,9 @@ namespace Companions
                             if (dryLen <= wetLen * 1.5f + extra)
                             {
                                 s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false; swim = 0f; s.RouteSwim = 0f;
-                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the water (" + dryLen.ToString("F0") + "m) instead of swimming (" + wetLen.ToString("F0") + "m)");
+                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the water (" + dryLen.ToString("F0") + "m) instead of swimming (" + wetLen.ToString("F0") + "m)");
                             }
-                            else if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] swimming: the dry way is " + dryLen.ToString("F0") + "m against " + wetLen.ToString("F0") + "m");
+                            else if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] swimming: the dry way is " + dryLen.ToString("F0") + "m against " + wetLen.ToString("F0") + "m");
                         }
                     }
                     if (swim > 0.5f)
@@ -626,7 +868,7 @@ namespace Companions
                             if (GetPath(pos, goal, s_tmp, Pathfinding.AgentType.HumanoidAvoidWater, true))
                             {
                                 s.Path.Clear(); s.Path.AddRange(s_tmp); s.Partial = false;
-                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] too tired to swim " + swim.ToString("F0") + "m - going around the water");
+                                if (now >= s.NextLog) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] too tired to swim " + swim.ToString("F0") + "m - going around the water");
                             }
                             else { s.TooTired = true; s.NeedStamina = need; }   // stops at the water's edge (see TryWaterJump)
                         }
@@ -649,12 +891,48 @@ namespace Companions
                 if (!line && straight < 25f && longWay && s_hopWhy != null && now >= s.NextLineLog)
                 {
                     s.NextLineLog = now + 15f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] taking the " + len.ToString("F0") + "m way round, not straight (" + straight.ToString("F0") + "m): " + s_hopWhy);
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] taking the " + len.ToString("F0") + "m way round, not straight (" + straight.ToString("F0") + "m): " + s_hopWhy);
                 }
                 if (line && (longWay || hops > 0))
                 {
-                    if (!wasDirect) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
+                    if (!wasDirect) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going straight to " + Fmt(goal) + " (" + hops + " step(s) to hop) instead of " + (s.Partial ? "no route" : "a " + len.ToString("F0") + "m way round"));
                     s.Path.Clear(); s.Path.Add(goal); s.Corner = 0; s.PathOk = true; s.Partial = false; s.MainPartial = false; s.Direct = true; s.RouteSwim = 0f;
+                }
+            }
+            // 1.5.98 MP2 (John, 2026-11-21, the map-path list): on a vein, with it and the goal on that vein's pit map, the route
+            // planned on the map's squares (MP1) replaces the game's route - walked with the straight-line steering (the hop at
+            // a step, the jump over a gap). Stuck on it: the game's route until the pit map changes along it (F13, Unstick); twice for this goal: not again.
+            s.MapRoute = false;
+            if (!c.IsSwimming() && s.RouteDoor == null && s.MapFails < 2)
+            {
+                HarvestController hv = ai.GetComponent<HarvestController>();
+                // F13: after getting stuck on it, the map route again only once the pit map changed along the rest of it
+                if (s.MapHeld && hv != null && hv.OvMapChangedAlong(s.MapHeldPath, s.MapHeldAt))
+                {
+                    s.MapHeld = false;
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the pit map changed along the map route it got stuck on - the map route again");
+                }
+                // L3 (John 11-22 20:11Z, Q3a yes): on its vein's pit, the cleanup after the pop too (OvOnPit), not only while its rock is there
+                if (hv != null && hv.OvOnPit && !s.MapHeld)
+                {
+                    int mr = hv.OvMapRoute(pos, goal, s_mapTmp, out string minfo);
+                    if (mr == 1 && s_mapTmp.Count > 0)
+                    {
+                        if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
+                        {
+                            s.NextMapLog = now + 3f;
+                            Dbg("[Move|" + s.Tag + Who() + "] map route to " + Fmt(goal) + ": " + minfo + ", " + PathLength(pos, s_mapTmp).ToString("F1") + " m (the game's route: " + (s.Partial ? "partial" : PathLength(pos, s.Path).ToString("F1") + " m") + ")");
+                        }
+                        s.Path.Clear(); s.Path.AddRange(s_mapTmp); s.Corner = 0; s.PathOk = true; s.Partial = false; s.RouteSwim = 0f;
+                        if (!s.HasDetour) s.MainPartial = false;
+                        s.MapRoute = true; s.Direct = true;
+                        hv._rtUsedAt = now;
+                    }
+                    else if (minfo != null && CompanionsPlugin.LogDetailed && now >= s.NextMapLog)
+                    {
+                        s.NextMapLog = now + 3f;
+                        Dbg("[Move|" + s.Tag + Who() + "] no map route to " + Fmt(goal) + " (" + (mr == 0 ? "the map says no way: " : "the map can't tell: ") + minfo + ") - the game's route");
+                    }
                 }
             }
             // no full route: maybe a closed door is in the way (closed doors block the route); go open it like a player would
@@ -667,7 +945,7 @@ namespace Companions
                 // side, that door isn't the answer (1.4.77 log: back and forth through the same gate six times)
                 Door skip = now - s.LastRouteDoorAt < 30f ? s.LastRouteDoor : null;
                 Vector3 spot; Door d = RouteDoor(pos, goal, out spot, skip);
-                if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
+                if (d != null) { s.RouteDoor = d; s.RouteDoorSpot = spot; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no way through - heading for the closed " + d.m_name + " at " + Fmt(d.transform.position)); }
                 // 1.4.84: no door either: a spot the route does reach, from which the rest can be hopped (stairs)
                 else if (!c.IsSwimming())
                 {
@@ -675,7 +953,7 @@ namespace Companions
                     if (FindHopBridge(pos, goal, out b) && Flat(pos, b) > 1.0f)
                     {
                         s.HasDetour = true; s.Detour = b; s.DetourUntil = now + 10f + Flat(pos, b) * 0.5f; s.NextPlan = 0f;
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] no route to " + Fmt(goal) + " - going to " + Fmt(b) + " to hop the rest");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] no route to " + Fmt(goal) + " - going to " + Fmt(b) + " to hop the rest");
                     }
                 }
             }
@@ -687,7 +965,19 @@ namespace Companions
         // leaves the errand, following you it keeps to the edge step by step
         static void AvoidLava(S s, Vector3 pos, Vector3 goal, float now)
         {
-            if (s.Path.Count == 0 || !WorldGenerator.IsAshlands(pos.x, pos.z) || Lava(goal)) return;
+            if (s.Path.Count == 0) return;
+            // W1: a route through water that burns is fine if its stretch is short enough (or the gear is heat-proof):
+            // judged on the fresh route, at most once a second
+            if (s_ctxChar != null && now - s.HotCheckAt >= 1f && (MHR_Heat.Gradient(pos) > 0f || MHR_Heat.Gradient(goal) > 0f))
+            {
+                s.HotCheckAt = now;
+                bool was = s.HotOk;
+                s.HotOk = MHR_Heat.HeatProof(s_ctxChar) || (!MHR_Heat.NoGo(s_ctxChar) && MHR_Heat.RouteHeatPeak(s_ctxChar, pos, s.Path, 80f) < MHR_Heat.Threshold(s_ctxChar) * MHR_Heat.RouteMargin);
+                s_ctxHotOk = s.HotOk;
+                if (s.HotOk != was && CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] water that burns on the way: " + (s.HotOk ? "short enough to cross" : "keeping out of it"));
+            }
+            if (MHR_Heat.Gradient(pos) <= 0f && !WorldGenerator.IsAshlands(pos.x, pos.z)) return;
+            if (LavaPaint(goal)) return;
             try
             {
                 Vector3 prev = pos;
@@ -707,16 +997,16 @@ namespace Companions
                             if (LavaRing(p, prev, next, i == 0, out way))
                             {
                                 s.Path.InsertRange(i, way);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] going round the lava at " + Fmt(p) + " by " + way.Count + " spots"); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] going round the lava at " + Fmt(p) + " by " + way.Count + " spots"); }
                                 return;
                             }
                             if (s.Tag != FollowTag)
                             {
                                 s.GaveUp = true; s.GaveUpAt = now;
-                                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is over lava at " + Fmt(p) + " - not going");
+                                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] the only way to " + Fmt(goal) + " is over lava at " + Fmt(p) + " - not going");
                                 return;
                             }
-                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + "] the route crosses lava at " + Fmt(p) + " and there's no clear way round - keeping to its edge"); }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + s.Tag + Who() + "] the route crosses lava at " + Fmt(p) + " and there's no clear way round - keeping to its edge"); }
                             return;
                         }
                     }
@@ -807,7 +1097,7 @@ namespace Companions
                             if (FireBypass(fire, prev, dir, next, out a, out b))
                             {
                                 s.Path.Insert(i, b); s.Path.Insert(i, a);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the fire at " + Fmt(fire.transform.position) + " via " + Fmt(a) + " and " + Fmt(b)); }
                                 return;
                             }
                             // 1.5.70: a ring of spots round the fire, the shortest chain of clear stretches through them (log
@@ -815,7 +1105,7 @@ namespace Companions
                             if (FireRing(fire, prev, next, i == 0, out way))
                             {
                                 s.Path.InsertRange(i, way);
-                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] going round the fire at " + Fmt(fire.transform.position) + " by " + way.Count + " spots round it"); }
+                                if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] going round the fire at " + Fmt(fire.transform.position) + " by " + way.Count + " spots round it"); }
                                 return;
                             }
                             // no way round: a job leaves this errand (it skips that chest/target - Repair and Restock sorting
@@ -823,10 +1113,10 @@ namespace Companions
                             if (s.Tag != FollowTag)
                             {
                                 s.GaveUp = true; s.GaveUpAt = now;
-                                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the only way to " + Fmt(goal) + " is through the fire at " + Fmt(fire.transform.position) + " - not going");
+                                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the only way to " + Fmt(goal) + " is through the fire at " + Fmt(fire.transform.position) + " - not going");
                                 return;
                             }
-                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
+                            if (now >= s.NextFireLog) { s.NextFireLog = now + 10f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + s.Tag + Who() + "] the route passes the fire at " + Fmt(fire.transform.position) + " and there's no clear way round it - steering round step by step"); }
                             return;
                         }
                     }
@@ -1025,10 +1315,55 @@ namespace Companions
         static void Unstick(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 target, float now, string tag, float still, float noCloser)
         {
             string why = still >= StillTime ? "standing still " + still.ToString("F0") + "s" : "no closer for " + noCloser.ToString("F0") + "s";
+            if (s.VeinOut != 0)
+            {
+                // W3: twice in a row with the route no 0.75 m shorter = the leg is given up (the walk's VeinOut state)
+                float rem = Remaining(s, pos);
+                if (s.VeinOutStuckN > 0 && rem > s.VeinOutStuckRem - 0.75f) s.VeinOutGiveUp = true;
+                else { s.VeinOutStuckN = 1; s.VeinOutStuckRem = rem; }
+            }
             s.AnchorTime = now; s.Anchor = pos;
             s.ProgressTime = now - (NoProgressTime - 4f);   // next check in ~4s unless we start getting somewhere
+            // 1.5.98 MP2: stuck on the map route: the game's route; the second time for this goal, not again. F13: until the pit
+            // map changes along the rest of the route it got stuck on (no 20 s clock)
+            if (s.MapRoute)
+            {
+                s.MapHeldPath.Clear();
+                s.MapHeldPath.Add(pos);
+                for (int i = s.Corner; i < s.Path.Count; i++) s.MapHeldPath.Add(s.Path[i]);
+                s.MapHeld = true; s.MapHeldAt = now;
+                s.MapRoute = false; s.Direct = false; s.MapFails++; s.NextPlan = 0f;
+                // K3 (John 11-22 19:35Z): the thing it got stuck on is kept out of the pit map's routes
+                Vector3 toward = s.Corner < s.Path.Count ? s.Path[s.Corner] - pos : target - pos;
+                Collider stuckCol = AheadCol(c, pos, toward, out _);
+                HarvestController shv = stuckCol != null ? ai.GetComponent<HarvestController>() : null;
+                if (shv != null) shv.OvMapStuckOn(stuckCol);
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] couldn't get through on the map route at " + Fmt(pos) + " - the game's route " + (s.MapFails >= 2 ? "from now on for this goal" : "until the pit map changes along that route"));
+                return;
+            }
             // 1.4.83: stuck going straight: that way doesn't work after all, take the route for a while
-            if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
+            if (s.Direct) { s.Direct = false; s.NoDirectUntil = now + 20f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't get through going straight at " + Fmt(pos) + " - taking the route"); return; }
+            // 1.5.91: pulling a cart: no side-steps, hops, climbs or ladders (each one yanked it off the shafts). Open a door
+            // that's in the way, then try new routes, then wait (CartFollow stands still until the player moves on).
+            if (MHR_Cart.Pulling(c))
+            {
+                int cstep = s.Ladder++;
+                if (cstep == 0)
+                {
+                    Door cd = DoorNear(pos, 2.6f);
+                    if (cd != null) { OpenDoor(ai, c, cd, tag); s.NextPlan = now + 0.6f; return; }
+                }
+                if (cstep < 3)
+                {
+                    s.NextPlan = 0f;
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck with a cart (" + why + ") at " + Fmt(pos) + " - a new route, no side-steps while pulling");
+                    return;
+                }
+                s.GaveUp = true; s.GaveUpAt = now;
+                Halt(ai, c, s);
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck with a cart at " + Fmt(pos) + " - waiting");
+                return;
+            }
             int step = s.Ladder++;
             Vector3 dir = target - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
@@ -1038,7 +1373,23 @@ namespace Companions
             if (step == 0 && TryStartLadderClimb(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
             if (step == 0 && TryHopUp(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
             if (step == 0 && TryLadderDown(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
-            if (step == 0 && TryDropDown(ai, c, s, pos, now, tag)) { s.Ladder = 0; return; }
+            if (step == 0)
+            {
+                // S1 (test of 05e19c2: Comp dropped the same 1.3 m onto the same ledge 20+ times in 2.5 minutes, walked back up
+                // by its route each time - every drop started the stuck steps over, so the mover never gave up): a drop-down
+                // that lands within 1 m of where the last one of this walk landed doesn't start them over - the side step,
+                // hop, detour and give-up come next
+                Vector3 lastLand = s.DropLand; bool hadLand = s.HasDropLand;
+                if (TryDropDown(ai, c, s, pos, now, tag))
+                {
+                    if (hadLand && Vector3.Distance(s.DropLand, lastLand) <= 1f)
+                    {
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] the same drop-down as before (lands at " + Fmt(s.DropLand) + ") - the stuck steps go on");
+                    }
+                    else s.Ladder = 0;
+                    return;
+                }
+            }
             // 1.4.82: down in a pit with no route out: climb out like a player before anything else
             if (step == 0 && TryStartClimb(ai, c, s, pos, now, tag, why)) { s.Ladder = 0; return; }
             switch (step)
@@ -1062,7 +1413,7 @@ namespace Companions
                         // after two full rounds of this without getting any closer, stop
                         if (++s.Passes > 2) { s.Ladder = 99; Unstick(ai, c, s, pos, target, now, tag, still, noCloser); return; }
                         Vector3 det;
-                        if (FindDetour(pos, s.Goal, dir, out det)) { s.HasDetour = true; s.Detour = det; s.DetourUntil = now + 6f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - trying another way via " + Fmt(det)); return; }
+                        if (FindDetour(pos, s.Goal, dir, out det)) { s.HasDetour = true; s.Detour = det; s.DetourUntil = now + 6f; s.NextPlan = 0f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck (" + why + ") at " + Fmt(pos) + " - trying another way via " + Fmt(det)); return; }
                         Hop(ai, c, s, pos, dir, now, tag, why);
                         return;
                     }
@@ -1070,7 +1421,7 @@ namespace Companions
                 default:
                     s.GaveUp = true; s.GaveUpAt = now;
                     Halt(ai, c, s);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get to " + Fmt(s.Goal) + " from " + Fmt(pos) + " - giving up");
                     // 1.5.42: say so when it's about you or your order (following, a move order, a fight, a hunt); for a job
                     // it's only the reason in its status (user, speech review: "I can't get up there")
                     {
@@ -1093,14 +1444,15 @@ namespace Companions
             {
                 Vector3 wpick = Clear(pos, a) ? a : Clear(pos, b) ? b : Clear(pos, side) ? side : -side;
                 s.StepDir = wpick; s.StepRun = false; s.StepUntil = now + 1.2f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - swimming to the side");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - swimming to the side");
                 return;
             }
             if (DropAhead(pos, side, 1.5f, 1.2f)) side = DropAhead(pos, -side, 1.5f, 1.2f) ? Vector3.zero : -side;   // 1.4.82: never off a ledge
             // 1.5.2: never step back off a ledge either (user log: stuck at the top of a ladder, it stepped back down the shaft)
-            Vector3 pick = SafeClear(pos, a) ? a : SafeClear(pos, b) ? b : SafeClear(pos, back) ? back : side;
+            // F6: only a way with room over its body
+            Vector3 pick = SafeClear(pos, a) && HeadOk(ai, c, s, pos, a) ? a : SafeClear(pos, b) && HeadOk(ai, c, s, pos, b) ? b : SafeClear(pos, back) && HeadOk(ai, c, s, pos, back) ? back : HeadOk(ai, c, s, pos, side) ? side : Vector3.zero;
             s.StepDir = pick; s.StepRun = false; s.StepUntil = now + 1.2f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - stepping back to the side");
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - stepping back to the side");
         }
 
         // ---------- climbing out ----------
@@ -1112,6 +1464,69 @@ namespace Companions
         static readonly int s_terrainLayer = LayerMask.NameToLayer("terrain");
 
         public static bool Climbing(CompanionAI ai) { S s = Peek(ai); return s != null && Time.time < s.ClimbUntil && Time.time - s.LastGo < 0.5f; }
+
+        // 1.5.97: in a hole - the ground 3 m out is at least 1.5 m above its feet all round (8 directions; the Ore job's
+        // own pit test)
+        public static bool InHole(Vector3 p)
+        {
+            for (int k = 0; k < 8; k++)
+            {
+                Vector3 d = Quaternion.Euler(0f, k * 45f, 0f) * Vector3.forward;
+                Vector3 q = p + d * 3f;
+                float g = ZoneSystem.instance != null ? ZoneSystem.instance.GetGroundHeight(q) : q.y;
+                if (g < p.y + 1.5f) return false;
+            }
+            return true;
+        }
+
+        // trench test F2: what the mover was doing, for the fall line
+        public static string Describe(CompanionAI ai)
+        {
+            S s = Peek(ai);
+            if (s == null) return "not moving";
+            float now = Time.time;
+            return (now - s.LastGo < 1f ? "moving (" + s.Tag + ") to " + Fmt(s.Goal) : "not moving (last " + s.Tag + ")") + (now < s.ClimbUntil ? (s.ClimbLadder ? ", on a ladder" : ", climbing to " + Fmt(s.ClimbTop)) : "") + (s.GaveUp ? ", gave up" : "") + (s.HasDetour ? ", on a detour" : "");
+        }
+
+
+        // 1.5.97: climbing out of a hole that MHR_Follow asked for (it fell off the player's path twice in a hole)
+        public static bool ForcedClimbing(CompanionAI ai) { S s = Peek(ai); return s != null && s.ForcedClimb && Time.time < s.ClimbUntil; }
+
+        // 1.5.97 (plan T8): straight to the cliff climb (FindClimb + Climb, the same as a stuck route's) up toward goal,
+        // without waiting for the route to give up. True = a way up was found and the climb is on.
+        public static bool ClimbOutNow(CompanionAI ai, Vector3 goal, string tag)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null || c.IsSwimming() || !c.IsOnGround()) return false;
+            float now = Time.time;
+            Vector3 pos = ai.transform.position;
+            if (s.Tag != tag || Vector3.Distance(goal, s.Goal) > 4f || now - s.LastGo > 2f) Reset(s, goal, pos, now, tag);
+            if (s.ClimbTries >= ClimbMaxTries) return false;
+            float needY = Mathf.Min(goal.y, pos.y + ClimbMaxRise);
+            if (needY < pos.y + 1.5f) return false;
+            Vector3 top; float steep;
+            System.Text.StringBuilder why = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
+            if (!FindClimb(s, pos, needY, out top, out steep, why))
+            {
+                LogNoClimb(s, tag, pos, needY, why, now);
+                return false;
+            }
+            s.ClimbTries++; s.ClimbTried.Add(top);
+            s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
+            s.StepUntil = 0f; s.HasDetour = false; s.ClimbLadder = false; s.ForcedClimb = true; s.LastGo = now;
+            s.GaveUp = false; s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] in a hole " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            return true;
+        }
+
+        // 1.5.97: Detailed: why FindClimb found no way up, each direction's steepest step and where it stopped (every 10 s at most)
+        static void LogNoClimb(S s, string tag, Vector3 pos, float needY, System.Text.StringBuilder why, float now)
+        {
+            if (why == null || !CompanionsPlugin.LogDetailed || now < s.NextClimbWhyLog) return;
+            s.NextClimbWhyLog = now + 10f;
+            Dbg("[Move|" + tag + Who() + "] no way to climb out at " + Fmt(pos) + " up to " + needY.ToString("F1") + ":" + why.ToString());
+        }
 
         // 1.5.2: a built ladder (Valheim's wooden ladders are steep stairs a player hops up - user: "The player kind of hops
         // up them"). The route planner can't use them and climb-out won't try a built rise over 1 m, so a companion stood at
@@ -1132,7 +1547,7 @@ namespace Companions
             if (u.x >= 4f)
             {
                 MarkBadLadder(s.ClimbLadderId, now, 180f); s.LadderUses.Remove(s.ClimbLadderId);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] this ladder keeps ending up back where it started - leaving it for a few minutes");
             }
         }
         static readonly Dictionary<int, float> s_badLadders = new Dictionary<int, float>();
@@ -1193,7 +1608,7 @@ namespace Companions
                 {
                     float y = dirUp == 0 ? end.max.y : end.min.y;
                     GameObject next = null; Bounds nb = default(Bounds);
-                    foreach (Collider o in Physics.OverlapSphere(new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
+                    foreach (Collider o in MHR_Phys.Sphere(ref MHR_Phys.Mover1247, new Vector3(end.center.x, y, end.center.z), 1.0f, Mask(), QueryTriggerInteraction.Collide))
                     {
                         if (o == null) continue;
                         Piece p;
@@ -1237,7 +1652,7 @@ namespace Companions
             }
             // head room where it stands and on the way in (a jump needs about 2 m clear)
             for (float d = 0f; d <= 0.31f && room; d += 0.3f)
-                foreach (RaycastHit h in Physics.RaycastAll(spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
+                foreach (RaycastHit h in MHR_Phys.Ray(ref MHR_Phys.Mover1291, spot + f * d + Vector3.up * 0.3f, Vector3.up, 2.0f, Mask(), QueryTriggerInteraction.Ignore))
                 {
                     Piece hp;
                     GameObject hr = LadderRoot(h.collider, out hp);
@@ -1320,7 +1735,7 @@ namespace Companions
                 Vector3 top = new Vector3(cur.center.x, cur.max.y, cur.center.z) + curDir * depth;
                 LadderStep next = null; Bounds nextB = default(Bounds); float bd = float.MaxValue;
                 var seen = new HashSet<int>();
-                foreach (Collider col in Physics.OverlapSphere(top, 5f, Mask()))
+                foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1374, top, 5f, Mask()))
                 {
                     if (col == null || col.isTrigger) continue;
                     Piece piece;
@@ -1350,10 +1765,61 @@ namespace Companions
         // CompanionLadderBumpPatch makes his walking input read right when he walks the ladder's way. (An own bump from the AI
         // was tried and dropped: the game's walking code capped it at 3 m/s while he was still on the floor, and it took the
         // 0.5 s slot so the ladder's real bump was refused.)
+        // 1.5.97 (plan v3): the ladder head room check for the Ore job's own jumps and the way it cuts steps out
+        internal static bool HeadRoomAt(Vector3 spot, float height) { return HeadRoom(spot, height); }
+
+        // 1.5.98 (E1): how high a jump gets it - the same number TryHopUp uses (with its margin)
+        internal static float JumpUp(Character c) { return c == null ? 1f : c.m_jumpForce * c.m_jumpForce / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f; }
+
+        // 1.5.97 (plan v3): the walking code's own side step, for the Ore job when you or another companion stands in its way.
+        // The next Go call (same tag and goal) carries it out.
+        internal static void SidestepNow(CompanionAI ai, Vector3 toward, string tag)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null) return;
+            Vector3 pos = ai.transform.position;
+            Vector3 dir = toward - pos; dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f) dir = ai.transform.forward;
+            float now = Time.time;
+            s.LastGo = now;
+            Sidestep(ai, c, s, pos, dir.normalized, now, tag, "someone in the way", true);
+        }
+
+        // 1.5.98 AA6: the Ore job's board - go round a companion working on the straight line to its goal: the walking
+        // code's own detour (a waypoint walked to first, dropped when reached or after secs). Not while it has a detour,
+        // a ladder or a vein way out of its own. True = set.
+        internal static bool DetourNow(CompanionAI ai, Vector3 via, float secs)
+        {
+            S s = Get(ai);
+            Character c = ai != null ? ai.GetComponent<Character>() : null;
+            if (s == null || c == null || s.HasDetour || s.UseLadder != null || s.LadderPending || s.VeinOut != 0 || s.RouteDoor != null) return false;
+            float now = Time.time;
+            s.HasDetour = true; s.Detour = via; s.DetourUntil = now + secs;
+            Plan(ai, c, s, ai.transform.position, now);
+            return true;
+        }
+
+        // F6 (John 11-21 23:40Z: "Everything should have a headroom check"): a step toward dir has room over its body - on
+        // its pit map the square 0.5 m on (SV8's rule: full height x body radius), off it the game's physics 0.8 m on (the
+        // step look-ahead) for its height - or the place it is on has none either (getting out from under, SV9's rule)
+        static bool HeadOk(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.01f || c == null) return true;
+            dir.Normalize();
+            if (!s.HvLooked) { s.Hv = ai.GetComponent<HarvestController>(); s.HvLooked = true; }
+            HarvestController hv = s.Hv;
+            Vector3 q = pos + dir * 0.5f;
+            if (hv != null && hv.OvMapCovers(q)) return !hv.OvMapLowHead(q) || hv.OvMapLowHead(pos);
+            float hh = c.GetHeight();
+            return HeadRoom(pos + dir * 0.8f, hh) || !HeadRoom(pos, hh);
+        }
+
         // nothing but ladder within `height` above a spot
         static bool HeadRoom(Vector3 spot, float height)
         {
-            foreach (RaycastHit h in Physics.RaycastAll(spot + Vector3.up * 0.3f, Vector3.up, height - 0.3f, Mask(), QueryTriggerInteraction.Ignore))
+            foreach (RaycastHit h in MHR_Phys.Ray(ref MHR_Phys.Mover1407, spot + Vector3.up * 0.3f, Vector3.up, height - 0.3f, Mask(), QueryTriggerInteraction.Ignore))
             {
                 Piece hp; GameObject hr = LadderRoot(h.collider, out hp);
                 if (hr != null && IsLadder(hr, hp, h.collider)) continue;
@@ -1403,10 +1869,10 @@ namespace Companions
             ChainStepReset(s, pos, now);
             if (down)
             {
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] going down a chain of " + (chain.Count - idx) + " ladders to " + chain[chain.Count - 1].Bottom.ToString("F1") + " (first top " + Fmt(chain[idx].TopSpot) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] going down a chain of " + (chain.Count - idx) + " ladders to " + chain[chain.Count - 1].Bottom.ToString("F1") + " (first top " + Fmt(chain[idx].TopSpot) + ")");
                 return;
             }
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] climbing a chain of " + (chain.Count - idx) + " ladders up to " + chain[chain.Count - 1].Top.ToString("F1") + " (first foot " + Fmt(chain[idx].Foot) + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] climbing a chain of " + (chain.Count - idx) + " ladders up to " + chain[chain.Count - 1].Top.ToString("F1") + " (first foot " + Fmt(chain[idx].Foot) + ")");
         }
 
         static void ChainStepReset(S s, Vector3 pos, float now)
@@ -1468,7 +1934,7 @@ namespace Companions
                 if (s.ChainIdx >= s.Chain.Count)
                 {
                     RememberChain(s.Chain, now);
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] up the ladders at " + Fmt(pos));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] up the ladders at " + Fmt(pos));
                     EndChain(s, now);
                     // walk on off the last one the way it faces - not over a harmful drop
                     float edge;
@@ -1476,7 +1942,7 @@ namespace Companions
                     return;
                 }
                 st = s.Chain[s.ChainIdx];
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] next ladder (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), foot at " + Fmt(st.Foot));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] next ladder (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), foot at " + Fmt(st.Foot));
             }
             // fell off: back onto the chain at the ladder whose foot is on this level, else give it up
             if (c.IsOnGround() && pos.y < st.Foot.y - 1.0f)
@@ -1485,10 +1951,10 @@ namespace Companions
                     if (Mathf.Abs(s.Chain[i].Foot.y - pos.y) < 1.0f && Flat(pos, s.Chain[i].Foot) < 6f)
                     {
                         s.ChainIdx = i; ChainStepReset(s, pos, now);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders - back on at ladder " + (i + 1) + "/" + s.Chain.Count);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off the ladders - back on at ladder " + (i + 1) + "/" + s.Chain.Count);
                         return;
                     }
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off the ladders (now at " + Fmt(pos) + ") - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off the ladders (now at " + Fmt(pos) + ") - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -1508,7 +1974,7 @@ namespace Companions
             if (!lifted && maxSt > 0f && c.IsOnGround())
             {
                 float st0 = Stamina(ai);
-                if (now >= s.ChainRestUntil && st0 < maxSt * 0.15f) { s.ChainRestUntil = now + 8f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] getting my breath back on the landing (" + (st0 / maxSt * 100f).ToString("F0") + "% stamina)"); }
+                if (now >= s.ChainRestUntil && st0 < maxSt * 0.15f) { s.ChainRestUntil = now + 8f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] getting my breath back on the landing (" + (st0 / maxSt * 100f).ToString("F0") + "% stamina)"); }
                 if (now < s.ChainRestUntil)
                 {
                     if (st0 >= maxSt * 0.4f) s.ChainRestUntil = 0f;
@@ -1553,7 +2019,7 @@ namespace Companions
             if (now - s.ChainProgressAt > 6f)
             {
                 MarkBadLadder(st.Id, now, 120f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck on ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck on ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -1563,7 +2029,7 @@ namespace Companions
             if (!lifted && c.IsOnGround() && LedgeAhead(pos, dir, 0.5f, out drop))
             {
                 Halt(ai, c, s);
-                if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] edge ahead on the ladders at " + Fmt(pos + dir * 0.5f) + " (" + drop.ToString("F1") + "m down) - not stepping off"); }
+                if (now >= s.NextEdgeLog) { s.NextEdgeLog = now + 5f; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] edge ahead on the ladders at " + Fmt(pos + dir * 0.5f) + " (" + drop.ToString("F1") + "m down) - not stepping off"); }
                 return;
             }
             ai.transform.rotation = Quaternion.RotateTowards(ai.transform.rotation, Quaternion.LookRotation(dir), 540f * Time.deltaTime);
@@ -1589,7 +2055,7 @@ namespace Companions
                     if (++s.ChainJumps > 6)
                     {
                         MarkBadLadder(st.Id, now, 120f);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get up ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - looking again");
                         EndChain(s, now);
                         return;
                     }
@@ -1597,7 +2063,7 @@ namespace Companions
                     Rigidbody rb = ai.GetComponent<Rigidbody>();
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 2.5f; bv.z = dir.z * 2.5f; rb.linearVelocity = bv; }
                     s.ChainJumpAt = now + 1.0f;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck at ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " - hopping (" + s.ChainJumps + ")");
                 }
             }
         }
@@ -1626,7 +2092,7 @@ namespace Companions
                 Vector3 foot = chain[chain.Count - 1].Foot;
                 LadderStep next = null; Bounds nextB = default(Bounds); float bd = float.MaxValue;
                 var seen = new HashSet<int>();
-                foreach (Collider col in Physics.OverlapSphere(foot, 5f, Mask()))
+                foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1680, foot, 5f, Mask()))
                 {
                     if (col == null || col.isTrigger) continue;
                     Piece piece;
@@ -1660,12 +2126,12 @@ namespace Companions
                 ChainStepReset(s, pos, now);
                 if (s.ChainIdx >= s.Chain.Count)
                 {
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] down the ladders at " + Fmt(pos));
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] down the ladders at " + Fmt(pos));
                     EndChain(s, now);
                     return;
                 }
                 st = s.Chain[s.ChainIdx];
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] next ladder down (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), top at " + Fmt(st.TopSpot));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] next ladder down (" + (s.ChainIdx + 1) + "/" + s.Chain.Count + "), top at " + Fmt(st.TopSpot));
             }
             // fell past it: carry on from the ladder whose top is on this level, else look again
             if (c.IsOnGround() && pos.y < st.Bottom - 1.0f)
@@ -1674,7 +2140,7 @@ namespace Companions
                     if (Mathf.Abs(s.Chain[i].Top - pos.y) < 1.2f)
                     {
                         s.ChainIdx = i; ChainStepReset(s, pos, now);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] slipped down the ladders - carrying on from ladder " + (i + 1) + "/" + s.Chain.Count);
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] slipped down the ladders - carrying on from ladder " + (i + 1) + "/" + s.Chain.Count);
                         return;
                     }
                 EndChain(s, now);
@@ -1705,7 +2171,7 @@ namespace Companions
             if (now - s.ChainProgressAt > 6f)
             {
                 MarkBadLadder(st.Id, now, 120f);
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck going down ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck going down ladder " + (s.ChainIdx + 1) + "/" + s.Chain.Count + " at " + Fmt(pos) + " - looking again");
                 EndChain(s, now);
                 return;
             }
@@ -1718,7 +2184,7 @@ namespace Companions
         {
             Vector3 best = s.Goal - pos; best.y = 0f; float bd = float.MaxValue;
             var seen = new HashSet<int>();
-            foreach (Collider col in Physics.OverlapSphere(pos, 3.5f, Mask()))
+            foreach (Collider col in MHR_Phys.Sphere(ref MHR_Phys.Mover1772, pos, 3.5f, Mask()))
             {
                 if (col == null || col.isTrigger) continue;
                 Piece piece;
@@ -1742,13 +2208,14 @@ namespace Companions
         {
             s.NextLadderClimbSearch = now + 2f;
             if (c.IsSwimming() || !c.IsOnGround() || now < s.ClimbUntil) return false;
+            if (tag == CombatTag && OnVeinOf(ai)) return false;   // K6: in a fight on a vein, no ladders (a stepladder in the pit is no way out)
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             // 1.5.3: 1.5 m, not 2 - a skeleton exactly 2.0 m up on the next floor got no ladder search (user log: stepped off
             // the ladder's top instead and fell)
             if (needY < pos.y + 1.5f) return false;
             // 1.5.3: a chain of ladders that has worked before, starting by our feet: straight onto it
             if (UseKnownChain(s, pos, needY, now, tag)) return true;
-            Collider[] cols = Physics.OverlapSphere(pos + Vector3.up * 2f, 14f, Mask());
+            var cols = MHR_Phys.Sphere(ref MHR_Phys.Mover1802, pos + Vector3.up * 2f, 14f, Mask());
             GameObject best = null; Bounds bestB = default(Bounds); float bestD = float.MaxValue; int bestId = 0;
             var seen = new HashSet<int>();
             foreach (Collider col in cols)
@@ -1814,7 +2281,7 @@ namespace Companions
                         names.Add(nm.Replace("(Clone)", ""));
                         if (names.Count >= 8) break;
                     }
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall things close by: " + string.Join(", ", names) + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be and no ladder found (tall things close by: " + string.Join(", ", names) + ")");
                 }
                 return false;
             }
@@ -1862,7 +2329,7 @@ namespace Companions
             {
                 s.LadderPending = true; s.HasDetour = true; s.Detour = s.ClimbBase; s.DetourUntil = now + 15f; s.NextPlan = 0f;
                 s.StepUntil = 0f;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - heading for the ladder " + best.name.Replace("(Clone)", "") + ", foot at " + Fmt(s.ClimbBase) + ", top at " + bestB.max.y.ToString("F1"));
                 return true;
             }
             s.ClimbLadder = true; s.ClimbStartY = pos.y; s.ClimbStartAt = now; s.ClimbJumps = 0; s.ClimbViaUntil = 0f; s.ClimbFootBest = float.MaxValue; s.ClimbFootAt = now;
@@ -1870,7 +2337,7 @@ namespace Companions
             s.ClimbTop = new Vector3(bestB.center.x, Mathf.Min(bestB.max.y, needY + 0.5f), bestB.center.z);
             s.ClimbUntil = now + 20f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
             s.StepUntil = 0f; s.HasDetour = false;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + Flat(pos, bestB.center).ToString("F1") + "m away)");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (needY - pos.y).ToString("F1") + "m below where it needs to be - climbing the ladder " + best.name.Replace("(Clone)", "") + " at " + Fmt(bestB.center) + " (" + Flat(pos, bestB.center).ToString("F1") + "m away)");
             return true;
         }
 
@@ -1908,7 +2375,7 @@ namespace Companions
                         // level and close: just step across, like a player walking off the top of a ladder - a full leap
                         // carried it over a small floor and off the far side
                         s.StepDir = dir; s.StepRun = false; s.StepUntil = now + 0.5f;
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stepping off the top of the ladder onto " + Fmt(hit.point) + " (" + d.ToString("F1") + "m on)");
                         return;
                     }
                     // a jump carries on past where it lands: not onto something with a harmful drop just beyond (a wall top)
@@ -1916,7 +2383,7 @@ namespace Companions
                     if (LedgeAhead(hit.point, dir, 1.0f, out beyond)) continue;
                     MHR_Jump.Leap(ai, c, dir);
                     s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
+                    if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] jumping from the top of the ladder onto " + Fmt(hit.point) + " (" + dy.ToString("F1") + "m up, " + d.ToString("F1") + "m on)");
                     return;
                 }
             }
@@ -1936,7 +2403,7 @@ namespace Companions
             if (c.IsSwimming() || !c.IsOnGround() || s.DescendLadder || s.LadderPending) return false;
             float below = pos.y - s.Goal.y;
             if (below < 1.5f) return false;
-            Collider[] cols = Physics.OverlapSphere(pos, 14f, Mask());
+            var cols = MHR_Phys.Sphere(ref MHR_Phys.Mover1990, pos, 14f, Mask());
             var seen = new HashSet<int>();
             float bestScore = float.MaxValue; GameObject best = null; int bestId = 0; Vector3 bestTop = Vector3.zero, bestBase = Vector3.zero, bestF = Vector3.zero;
             Bounds bestB = default(Bounds); bool bestLedge = false;
@@ -1980,7 +2447,7 @@ namespace Companions
                 s.LadderPending = true; s.HasDetour = true; s.Detour = bestTop; s.DetourUntil = now + 15f; s.NextPlan = 0f;
             }
             else s.DescendUntil = now + 10f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - going down the ladder " + best.name.Replace("(Clone)", "") + " (top at " + Fmt(bestTop) + ")");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + below.ToString("F1") + "m above where it needs to be - going down the ladder " + best.name.Replace("(Clone)", "") + " (top at " + Fmt(bestTop) + ")");
             return true;
         }
 
@@ -1991,35 +2458,102 @@ namespace Companions
             {
                 s.DescendLadder = false; s.DescendUntil = 0f; s.NextPlan = 0f; s.Ladder = 0; s.Passes = 0; s.MainBest = float.MaxValue;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] went down the ladder to " + Fmt(pos));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] went down the ladder to " + Fmt(pos));
                 return;
             }
             Vector3 dir = s.ClimbBase - pos; dir.y = 0f;
             if (dir.sqrMagnitude < 0.09f) dir = -s.ClimbDir;
             dir.Normalize();
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Face(ai, dir);
             Steer(ai, c, s, dir, false, false);
+        }
+
+        // W3 (test 26, John: "Timers break things"; replaces R5's 10 s per leg): a leg of the way-out walk has no clock - it is
+        // given up only when the mover gives up on it, or its stuck handling fires twice in a row with the route (its length,
+        // not a straight line - a way out often leads away first) no 0.75 m shorter in between
+        const float VeinOutTime = float.MaxValue;
+
+        static void VeinLeg(S s)
+        {
+            s.VeinOutStuckN = 0; s.VeinOutGiveUp = false;
+        }
+
+        static bool OnVeinOf(CompanionAI ai)
+        {
+            HarvestController hv = ai != null ? ai.GetComponent<HarvestController>() : null;
+            return hv != null && hv.OnVein;
+        }
+
+        // 1.5.98 R5 / Y5 (moved here from TryStartClimb for K6): the nearest way out of the trench (a ramp cut up to the
+        // ground outside, K5: one that still reaches the floor) the way a ladder is used - its bottom, then its top; in a
+        // fight with none to use, the enemy is let go and a way out is cut at once. True = one of them started.
+        static bool VeinUp(CompanionAI ai, S s, Vector3 pos, float now, string tag, string why)
+        {
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv == null || !hv.OnVein) return false;
+            if (s.VeinOut == 0 && s.Goal.y > pos.y + 1.5f && hv.VeinWayOut(pos, s.Goal, s.VeinOutTried, out Vector3 vb, out Vector3 vt, out int vid))
+            {
+                s.VeinOut = 1; s.VeinDown = false; s.VeinOutTop = vt; s.VeinOutId = vid; s.VeinOutAt = vb; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
+                s.HasDetour = true; s.Detour = vb; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + why + " " + (s.Goal.y - pos.y).ToString("F1") + "m below where it needs to be on a vein - taking the way out of the trench from " + Fmt(vb) + " up to " + Fmt(vt));
+                return true;
+            }
+            // Y5 (John: "They need to carve a way out to get to the enemies")
+            if (tag == CombatTag && s.Goal.y > pos.y + 1.5f && hv.CombatWayOut(s.Goal))
+            {
+                ai.GetComponent<CompanionCombatAI>()?.LetGoForWayOut();
+                return true;
+            }
+            // Z2 (John, 2026-11-20: "If they cannot reach a location and are in a trench they should carve a way out"): the
+            // same for the vein's own work (the trench, a part, the dirt, a thing it clears) - the job cuts one now
+            if ((tag == "Gather" || tag == "Harvest") && s.Goal.y > pos.y + 1.5f && hv.WorkWayOut(s.Goal))
+            {
+                return true;
+            }
+            return false;
+        }
+        // U3: a saved way out of a vein's pit for this walk (HarvestController.PitWay) - not while the vein job walks, cuts or
+        // climbs its own way out. Ids are kept apart from VeinUp's (plan * 1000 + way out)
+        static bool PitWayStart(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag)
+        {
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null && hv.CutsWayOut) return false;
+            if (!HarvestController.PitWay(pos, s.Goal, c.GetHeight(), s.VeinOutTried, out bool down, out Vector3 first, out Vector3 second, out int id)) return false;
+            s.VeinOut = 1; s.VeinDown = down; s.VeinOutAt = first; s.VeinOutTop = second; s.VeinOutId = id; s.VeinOutUntil = VeinOutTime; VeinLeg(s);
+            s.HasDetour = true; s.Detour = first; s.DetourUntil = s.VeinOutUntil; s.NextPlan = 0f;
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (down ? "going into the pit" : "leaving the pit") + " by its way out: " + Fmt(first) + " then " + Fmt(second));
+            return true;
         }
 
         static bool TryStartClimb(CompanionAI ai, Character c, S s, Vector3 pos, float now, string tag, string why)
         {
             if (!s.MainPartial || c.IsSwimming() || !c.IsOnGround() || s.ClimbTries >= ClimbMaxTries) return false;
+            // 1.5.98 (G4, John: "Just use the damn pickaxe, dont try to scale tall walls"): no cliff climb while it works a
+            // vein (a tree or rock it clears for the trench included) - the pickaxe way up (OreVein) is its way up there
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null && hv.OnVein)
+            {
+                if (VeinUp(ai, s, pos, now, tag, "stuck (" + why + ")")) return s.VeinOut == 1;
+                if (CompanionsPlugin.LogDetailed && now >= s.NextClimbWhyLog) { s.NextClimbWhyLog = now + 10f; Dbg("[Move|" + tag + Who() + "] no cliff climb on a vein (the pickaxe way up instead) at " + Fmt(pos)); }
+                return false;
+            }
             // how high we need to get: the last spot a full route started from, else the goal itself
             float needY = s.HasGood && s.GoodPos.y > pos.y + 1.5f && Vector3.Distance(pos, s.GoodPos) < 40f ? s.GoodPos.y : s.Goal.y;
             if (needY < pos.y + 1.5f) return false;
             needY = Mathf.Min(needY, pos.y + ClimbMaxRise);
             Vector3 top; float steep;
-            if (!FindClimb(s, pos, needY, out top, out steep)) return false;
+            System.Text.StringBuilder whyNot = CompanionsPlugin.LogDetailed ? new System.Text.StringBuilder() : null;
+            if (!FindClimb(s, pos, needY, out top, out steep, whyNot)) { LogNoClimb(s, tag, pos, needY, whyNot, now); return false; }
             s.ClimbTries++; s.ClimbTried.Add(top);
             s.ClimbTop = top; s.ClimbUntil = now + 15f; s.ClimbBestY = pos.y; s.ClimbProgressAt = now; s.NextClimbJump = 0f;
-            s.StepUntil = 0f; s.HasDetour = false;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
+            s.StepUntil = 0f; s.HasDetour = false; s.ForcedClimb = false;
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] stuck (" + why + ") " + (needY - pos.y).ToString("F1") + "m below where it needs to be at " + Fmt(pos) + " - climbing out at " + Fmt(top) + " (steepest step " + steep.ToString("F1") + "m, try " + s.ClimbTries + ")");
             return true;
         }
 
         // Ground heights along 16 directions, a meter at a time out to 16 m: the way up whose steepest one-meter step is
         // smallest (shorter ways win ties), skipping ways already tried and anything through deep water.
-        static bool FindClimb(S s, Vector3 pos, float needY, out Vector3 top, out float steep)
+        static bool FindClimb(S s, Vector3 pos, float needY, out Vector3 top, out float steep, System.Text.StringBuilder why = null)
         {
             top = Vector3.zero; steep = 0f;
             float bestScore = float.MaxValue;
@@ -2028,16 +2562,19 @@ namespace Companions
             {
                 Vector3 dir = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
                 float prevY = pos.y, maxStep = 0f;
+                string stop = "nothing up to " + needY.ToString("F1") + " within 16 m";   // 1.5.97: for the Detailed log
+                int at = 16;
                 for (int i = 1; i <= 16; i++)
                 {
                     Vector3 p = pos + dir * i;
                     RaycastHit hit;
-                    if (!Physics.Raycast(new Vector3(p.x, needY + 4f, p.z), Vector3.down, out hit, needY + 4f - (pos.y - 3f), mask)) break;
-                    if (MHR_Water.DepthAt(hit.point) >= 1.0f) break;
+                    at = i;
+                    if (!Physics.Raycast(new Vector3(p.x, needY + 4f, p.z), Vector3.down, out hit, needY + 4f - (pos.y - 3f), mask)) { stop = "no ground"; break; }
+                    if (MHR_Water.DepthAt(hit.point) >= 1.0f) { stop = "deep water"; break; }
                     float rise = hit.point.y - prevY;
-                    if (rise < -1.5f) break;   // dips back down: not a way up
-                    if (rise > 1.0f && hit.collider.gameObject.layer != s_terrainLayer) break;   // a built wall or a roof, not a slope
-                    if (rise > 6f) break;
+                    if (rise < -1.5f) { stop = "dips " + (-rise).ToString("F1") + "m"; break; }   // dips back down: not a way up
+                    if (rise > 1.0f && hit.collider.gameObject.layer != s_terrainLayer) { stop = "a built wall " + rise.ToString("F1") + "m"; break; }   // a built wall or a roof, not a slope
+                    if (rise > 6f) { stop = "a " + rise.ToString("F1") + "m step"; break; }
                     if (rise > maxStep) maxStep = rise;
                     prevY = hit.point.y;
                     if (hit.point.y >= needY - 0.5f)
@@ -2047,9 +2584,11 @@ namespace Companions
                         foreach (Vector3 old in s.ClimbTried) if (Flat(old, t) < 3f) { tried = true; break; }
                         float score = maxStep * 3f + i * 0.1f;
                         if (!tried && score < bestScore) { bestScore = score; top = t; steep = maxStep; }
+                        stop = tried ? "tried already" : "a way up";
                         break;
                     }
                 }
+                if (why != null) why.Append("\n    " + (k * 22.5f).ToString("F0") + " deg: " + stop + " at " + at + " m, steepest step " + maxStep.ToString("F1") + "m");
             }
             return bestScore < float.MaxValue;
         }
@@ -2084,7 +2623,7 @@ namespace Companions
             {
                 s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0; s.NextLadderClimbSearch = 0f;
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] fell off on the way to the ladder (now at " + Fmt(pos) + ") - looking again");
                 return;
             }
             if (s.ClimbLadder && !atTop)
@@ -2118,13 +2657,13 @@ namespace Companions
                         {
                             s.ClimbVia = via; s.ClimbViaUntil = now + 3f;
                             Vector3 toVia = via - pos; toVia.y = 0f; dir = toVia;
-                            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] going round by " + Fmt(via) + " to the foot of the ladder, keeping to the floor");
+                            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] going round by " + Fmt(via) + " to the foot of the ladder, keeping to the floor");
                         }
                         else
                         {
                             s.ClimbUntil = 0f; s.ClimbLadder = false; s.NextPlan = 0f; s.Ladder = 0;
                             Halt(ai, c, s); s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
-                            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] no floor all the way to the foot of the ladder at " + Fmt(s.ClimbBase) + " - trying another");
+                            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] no floor all the way to the foot of the ladder at " + Fmt(s.ClimbBase) + " - trying another");
                             return;
                         }
                     }
@@ -2137,7 +2676,7 @@ namespace Companions
                 s.ProgressTime = now; s.AnchorTime = now; s.Anchor = pos;
                 bool wasLadder = s.ClimbLadder;
                 if (wasLadder && atTop && pos.y - s.ClimbStartY < 1.0f) MarkBadLadder(s.ClimbLadderId, now, 300f);   // barely got us anywhere
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + (atTop ? (wasLadder ? "climbed the ladder" : "climbed out") : "reached the climb spot") + " at " + Fmt(pos));
                 s.ClimbLadder = false;
                 // 1.5.3: a ladder that worked isn't "tried" - after a fall it's the way back up (user log: "no ladder found"
                 // beside the two ladders he had just climbed)
@@ -2168,12 +2707,12 @@ namespace Companions
             if (now - s.ClimbProgressAt > 5f)
             {
                 s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0;
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't " + (s.ClimbLadder ? "get up the ladder" : "climb out") + " at " + Fmt(s.ClimbTop) + " (got to " + Fmt(pos) + ")");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't " + (s.ClimbLadder ? "get up the ladder" : "climb out") + " at " + Fmt(s.ClimbTop) + " (got to " + Fmt(pos) + ")");
                 if (s.ClimbLadder) MarkBadLadder(s.ClimbLadderId, now, 300f);
                 s.ClimbLadder = false;
                 return;
             }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            Face(ai, dir);
             Steer(ai, c, s, dir, !s.ClimbLadder, false);   // 1.5.3: walk up ladders, save the stamina
             // jump whenever there's ground under us and the face ahead rises, or we've stopped moving forward.
             // 1.5.2: not on a ladder with its own auto-jump - walking into it is all a player does there; only help out
@@ -2199,7 +2738,7 @@ namespace Companions
                     {
                         s.ClimbUntil = 0f; s.AnchorTime = now - StillTime; s.Ladder = 0; s.NextPlan = 0f;
                         MarkBadLadder(s.ClimbLadderId, now, 120f);
-                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] couldn't get " + (onIt ? "further up" : "onto") + " the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
+                        if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] couldn't get " + (onIt ? "further up" : "onto") + " the ladder at " + Fmt(s.ClimbBase) + " after " + s.ClimbJumps + " jumps (its bottom is " + (s.ClimbBottomY - s.ClimbStartY).ToString("F1") + "m up, best " + (s.ClimbBestY - s.ClimbStartY).ToString("F1") + "m) - trying another way");
                         s.ClimbLadder = false;
                         return;
                     }
@@ -2208,7 +2747,7 @@ namespace Companions
                     if (rb != null) { Vector3 bv = rb.linearVelocity; bv.x = dir.x * 3f; bv.z = dir.z * 3f; rb.linearVelocity = bv; }
                     s.NextClimbJump = now + 1.2f;
                     s.ClimbJumps++;
-                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping " + (onIt ? "up the ladder" : "onto the ladder") + " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")");
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping " + (onIt ? "up the ladder" : "onto the ladder") + " (try " + s.ClimbJumps + "/" + LadderJumpTries + (bottomUp ? ", its bottom is " + (s.ClimbBottomY - pos.y).ToString("F1") + "m up" : "") + ")");
                 }
                 return;
             }
@@ -2234,7 +2773,7 @@ namespace Companions
         {
             if (!s.HasGood || !s.MainPartial || c.IsSwimming() || ai.IsInCombat) return;
             if (pos.y > s.GoodPos.y - 2f || Vector3.Distance(pos, s.GoodPos) > 40f || now - s.GoodAt > 300f) return;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] trapped at " + Fmt(pos) + " (" + (s.GoodPos.y - pos.y).ToString("F1") + "m below the last good spot) - moving back to " + Fmt(s.GoodPos));
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] trapped at " + Fmt(pos) + " (" + (s.GoodPos.y - pos.y).ToString("F1") + "m below the last good spot) - moving back to " + Fmt(s.GoodPos));
             ai.MHR_PlaceAt(s.GoodPos);
             s.HasGood = false;
             Reset(s, s.Goal, s.GoodPos, now, tag);
@@ -2257,12 +2796,15 @@ namespace Companions
             d /= len;
             Vector3 prev = from;
             float gap = 0f;
+            float steep = 0f;   // DD4: the drop of the steep run it is on (see SteepStep)
             for (float x = 0.5f; x <= len + 0.01f; x += 0.5f)
             {
                 Vector3 p = from + d * Mathf.Min(x, len);
                 RaycastHit hit;
                 // 1.4.84: from just above where the feet are, like walking: a roof or an upper floor overhead isn't the ground
                 bool ground = Physics.Raycast(new Vector3(p.x, prev.y + 1.5f, p.z), Vector3.down, out hit, 2f + maxDrop, Mask());
+                // 1.5.97 (C7): a cart isn't a step to hop onto (its bed read as ground) - something in the way; go round
+                if (ground && MHR_Cart.IsCartInWay(hit.collider)) { s_hopWhy = "a cart in the way at " + Fmt(p); return false; }
                 float rise = ground ? hit.point.y - prev.y : -100f;
                 if (!ground || rise < -maxDrop)
                 {
@@ -2279,6 +2821,10 @@ namespace Companions
                     hops++; gap = 0f;
                 }
                 if (rise > 1.1f) { s_hopWhy = "a step too high at " + Fmt(p); return false; }
+                // 1.5.98 DD4 (test 13: Je walked a straight line down an 8 m face - each 0.5 m was under MaxDrop - and died):
+                // the half-meter steps going down steeper than a player can stand on add up into one fall
+                steep = SteepRun(steep, rise, hit.collider);
+                if (steep > maxDrop) { s_hopWhy = "a steep drop of " + steep.ToString("F1") + " m at " + Fmt(p); return false; }
                 // 1.5.44: not straight through a fire (the hearth)
                 if (NearFire(hit.point, 0.4f) && !InFire(to)) { s_hopWhy = "a fire at " + Fmt(hit.point); return false; }
                 // 1.4.99: with the companion known, only water it would have to swim in rules the line out (it wades or jumps the rest)
@@ -2390,7 +2936,29 @@ namespace Companions
         // (ZoneSystem.IsLava - the heightmap's lava mask), not an object; standing on lava builds heat that burns 10, then 100
         // a tick (Character.UpdateLava/UpdateHeatDamage). Like the game, standing on something built or a rock above it is safe
         // (a ray down that hits a collider that isn't the heightmap). The game's route planner doesn't know about it.
+        // W1 (1.5.98): water that burns (Ashlands water, MHR_Heat) counts as lava too, for whoever is moving (s_ctxChar):
+        // not when its gear makes it heat-proof or its route's hot-water stretch is short enough (s_ctxHotOk). Outside a
+        // move it always counts. Lava(p, c) asks for one companion.
+        static Character s_ctxChar;
+        static bool s_ctxHotOk;
         public static bool Lava(Vector3 p)
+        {
+            return LavaPaint(p) || (!s_ctxHotOk && MHR_Heat.HotWaterAt(p));
+        }
+        public static bool Lava(Vector3 p, Character c)
+        {
+            Character oc = s_ctxChar; bool ok = s_ctxHotOk;
+            s_ctxChar = c; s_ctxHotOk = MHR_Heat.HeatProof(c);
+            try { return Lava(p); }
+            finally { s_ctxChar = oc; s_ctxHotOk = ok; }
+        }
+        // lava or water that burns, for anyone (a spawn spot)
+        public static bool Burns(Vector3 p)
+        {
+            return LavaPaint(p) || MHR_Heat.HotWaterAt(p);
+        }
+        // the ground's lava paint only (1.5.74)
+        public static bool LavaPaint(Vector3 p)
         {
             try
             {
@@ -2444,7 +3012,7 @@ namespace Companions
             if (c == null || c.IsAttached() || c.IsDead() || c.IsSwimming()) return false;
             int id = ai.gameObject.GetInstanceID();
             Vector3 pos = ai.transform.position;
-            if (!WorldGenerator.IsAshlands(pos.x, pos.z) || (!c.InLava() && !Lava(pos))) { s_lavaSince.Remove(id); return false; }
+            if (!WorldGenerator.IsAshlands(pos.x, pos.z) || (!c.InLava() && !LavaPaint(pos))) { s_lavaSince.Remove(id); return false; }
             if (!c.IsOnGround()) return true;   // mid-jump out
             float now = Time.time, since;
             if (!s_lavaSince.TryGetValue(id, out since)) { since = now; s_lavaSince[id] = now; }
@@ -2458,6 +3026,68 @@ namespace Companions
             }
             if (!exit) return false;
             if (now - since > 1.0f && MHR_Jump.CanAfford(c)) { s_lavaSince[id] = now; MHR_Jump.Leap(ai, c, dir); return true; }
+            ai.MoveTowards(dir, true);
+            return true;
+        }
+
+        // W1b (1.5.98): in water that burns (Ashlands water, MHR_Heat) and the game's first hit is under a second away (or
+        // already hitting): get out to the nearest ground that doesn't burn - within 8 m (LavaExit), else the shore
+        // (WaterSafety's search). In the water the heat never goes down, so once this starts it holds until it is out.
+        // Limit: 15 s of trying, then 10 s left to the rest (the mover's own unstick) before it tries again. Once out, no
+        // route through hot water for 60 s (MHR_Heat.NoGo), so a short-swim route can't take it straight back in.
+        static readonly Dictionary<int, float> s_hotSince = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_hotRestUntil = new Dictionary<int, float>();
+        static readonly Dictionary<int, float> s_hotLog = new Dictionary<int, float>();
+        public static bool EscapeHotWater(CompanionAI ai)
+        {
+            if (ai == null) return false;
+            Character c = ai.GetComponent<Character>();
+            if (c == null || c.IsAttached() || c.IsDead()) return false;
+            int id = ai.gameObject.GetInstanceID();
+            Vector3 pos = ai.transform.position;
+            if (!c.InWater() || MHR_Heat.Gradient(pos) <= 0f || MHR_Heat.HeatProof(c) || ai.IsOnShip || MHR_Board.ShipUnder(c) != null)
+            {
+                s_hotSince.Remove(id);
+                return false;
+            }
+            bool swim = c.IsSwimming();
+            float rate = MHR_Heat.Rate(c, pos, swim);
+            float left = rate > 0f ? (MHR_Heat.Threshold(c) - MHR_Heat.Level(c)) / rate : 999f;
+            if (left > 1f) { s_hotSince.Remove(id); return false; }
+            float now = Time.time, since, rest;
+            if (s_hotRestUntil.TryGetValue(id, out rest) && now < rest) return false;
+            if (!s_hotSince.TryGetValue(id, out since)) { since = now; s_hotSince[id] = now; }
+            if (now - since > 15f)
+            {
+                s_hotSince.Remove(id); s_hotRestUntil[id] = now + 10f;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move] \"" + c.m_name + "\" couldn't get out of the burning water in 15 s at " + Fmt(pos));
+                return false;
+            }
+            MHR_Heat.SetNoGo(c, 60f);
+            Vector3 dir; float dist;
+            bool exit;
+            Character oc = s_ctxChar; bool ok = s_ctxHotOk;
+            s_ctxChar = c; s_ctxHotOk = false;
+            try { exit = LavaExit(pos, ai.transform.forward, out dir, out dist); }
+            finally { s_ctxChar = oc; s_ctxHotOk = ok; }
+            string to = null;
+            if (exit) to = Fmt(pos + dir * dist);
+            else
+            {
+                Vector3 shore;
+                if (WaterSafety.TryFindShore(pos, c.GetLiquidLevel(), out shore))
+                {
+                    dir = shore - pos; dir.y = 0f;
+                    if (dir.sqrMagnitude > 0.01f) { dir.Normalize(); exit = true; to = Fmt(shore); }
+                }
+            }
+            float last;
+            if (!s_hotLog.TryGetValue(id, out last) || now - last > 5f)
+            {
+                s_hotLog[id] = now;
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move] \"" + c.m_name + "\" in water that burns at " + Fmt(pos) + " (heat " + MHR_Heat.Level(c).ToString("F2") + ") - " + (exit ? "getting out toward " + to : "no ground close by that doesn't burn"));
+            }
+            if (!exit) return false;
             ai.MoveTowards(dir, true);
             return true;
         }
@@ -2488,6 +3118,7 @@ namespace Companions
         // fireplaces with a damaging Aoe, refreshed every 2 s.
         class FireZone { public Fireplace Fp; public EffectArea Area; public Aoe Aoe; public Collider[] Triggers; }
         static readonly List<FireZone> s_zones = new List<FireZone>();
+        static readonly Dictionary<int, FireZone[]> s_fireZones = new Dictionary<int, FireZone[]>();
         static float s_zonesAt = -10f;
 
         static EffectArea FireZoneAt(Vector3 p, float margin)
@@ -2497,17 +3128,29 @@ namespace Companions
             {
                 s_zonesAt = now;
                 s_zones.Clear();
-                foreach (Fireplace fp in UnityEngine.Object.FindObjectsByType<Fireplace>(FindObjectsSortMode.None))
+                // 1.5.94: the shared fire list, and each fire's damage zones looked up once (they were searched for again
+                // on every burning fire - every torch - every 2 s)
+                if (s_fireZones.Count > 4000) s_fireZones.Clear();
+                foreach (Fireplace fp in MHR_World.Fires())
                 {
                     if (fp == null || !fp.IsBurning()) continue;
-                    EffectArea area = fp.GetComponentInChildren<EffectArea>();
-                    foreach (Aoe aoe in fp.GetComponentsInChildren<Aoe>(false))
+                    int fid = fp.GetInstanceID();
+                    FireZone[] zs;
+                    if (!s_fireZones.TryGetValue(fid, out zs))
                     {
-                        if (aoe == null || (aoe.m_damage.m_fire <= 0f && aoe.m_damageSelf <= 0f && aoe.m_damage.GetTotalDamage() <= 0f)) continue;
-                        List<Collider> trig = new List<Collider>();
-                        foreach (Collider tc in aoe.GetComponents<Collider>()) if (tc != null && tc.isTrigger) trig.Add(tc);
-                        s_zones.Add(new FireZone { Fp = fp, Area = area, Aoe = aoe, Triggers = trig.ToArray() });
+                        List<FireZone> found = new List<FireZone>();
+                        EffectArea area = fp.GetComponentInChildren<EffectArea>();
+                        foreach (Aoe aoe in fp.GetComponentsInChildren<Aoe>(true))
+                        {
+                            if (aoe == null || (aoe.m_damage.m_fire <= 0f && aoe.m_damageSelf <= 0f && aoe.m_damage.GetTotalDamage() <= 0f)) continue;
+                            List<Collider> trig = new List<Collider>();
+                            foreach (Collider tc in aoe.GetComponents<Collider>()) if (tc != null && tc.isTrigger) trig.Add(tc);
+                            found.Add(new FireZone { Fp = fp, Area = area, Aoe = aoe, Triggers = trig.ToArray() });
+                        }
+                        zs = found.ToArray();
+                        s_fireZones[fid] = zs;
                     }
+                    s_zones.AddRange(zs);
                 }
             }
             for (int i = 0; i < s_zones.Count; i++)
@@ -2623,6 +3266,35 @@ namespace Companions
             return true;
         }
 
+        // 1.5.98 DD4 / DD5: a half-meter step down steeper than the game's slide angle for a player (Character.GetSlideAngle,
+        // 38 deg: 0.5 x tan 38 = 0.39 m) is part of one fall; the drops of such steps in a row add up, anything else ends the
+        // run. Built pieces (stairs, ladders) are walked, never a fall.
+        const float SteepStep = 0.39f;
+        static float SteepRun(float run, float rise, Collider on)
+        {
+            if (rise >= -SteepStep || (on != null && on.GetComponentInParent<Piece>() != null)) return 0f;
+            return run - rise;
+        }
+
+        // DD5: the steep run ahead, from a step ahead out to MaxDrop + 1 m: its whole drop (0 = none, or it ends first)
+        static float SteepAhead(Vector3 pos, Vector3 dir, float dist, float maxDrop)
+        {
+            float run = 0f;
+            Vector3 prev = pos;
+            RaycastHit hit;
+            for (float x = dist; x <= dist + maxDrop + 1.01f; x += 0.5f)
+            {
+                Vector3 q = pos + dir * x;
+                if (!Physics.Raycast(new Vector3(q.x, prev.y + 1.5f, q.z), Vector3.down, out hit, 2f + maxDrop, Mask())) break;
+                if (MHR_Water.DepthAt(hit.point) >= 1.0f) break;
+                run = SteepRun(run, hit.point.y - prev.y, hit.collider);
+                if (run <= 0f) break;
+                if (run > maxDrop) return run;
+                prev = hit.point;
+            }
+            return 0f;
+        }
+
         // 1.4.82: true when the ground a step ahead is missing or more than maxDrop below (a ledge, a pit)
         // a dry drop of more than a harmless fall (MaxDrop, 3 m) just ahead; deep water below is fine to land in
         static bool LedgeAhead(Vector3 pos, Vector3 dir, float dist, out float drop)
@@ -2633,8 +3305,21 @@ namespace Companions
             RaycastHit hit;
             // 1.5.3: a foot-sized probe, not a line - a stair-like ladder is separate rungs with gaps between (a line slipped
             // between two rungs and read as an edge: "stopping at the edge" in the middle of the user's ruin ladders)
-            if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask())) return false;
-            if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask())) { drop = 60f; return true; }
+            if (Physics.SphereCast(p + Vector3.up * 1.0f, 0.25f, Vector3.down, out hit, 1.0f + maxDrop, Mask()))
+            {
+                // DD5 (test 13: falls of 5-5.6 m on the walk at the old pit's edge): ground within MaxDrop a step ahead, but
+                // a steep run going on down - the whole run counts
+                drop = SteepAhead(pos, dir.normalized, 0.5f, maxDrop);
+                return drop > maxDrop;
+            }
+            if (!Physics.Raycast(p + Vector3.up * 1.0f, Vector3.down, out hit, 60f, Mask()))
+            {
+                // 1.5.97 (W6): the ray started inside the ground - a wall ahead (the bottom of a pit), not a drop. A ray that
+                // starts inside the terrain can't hit it, which read as "60 m down" and stopped it at every wall
+                float gy;
+                if (ZoneSystem.instance != null && ZoneSystem.instance.GetGroundHeight(p, out gy) && gy > pos.y + 1.0f) return false;
+                drop = 60f; return true;
+            }
             if (MHR_Water.DepthAt(hit.point) >= 1.0f) return false;
             drop = pos.y - hit.point.y;
             return drop > maxDrop;
@@ -2650,6 +3335,16 @@ namespace Companions
             return MHR_Water.DepthAt(hit.point) >= 1.0f;
         }
 
+        // 1.5.98 (swim item 2): the water jump on its own, also used by swim safety at a way out - the game's own jump
+        // (Character.Jump: a swimmer touching the world can jump, 0.7 force with no stamina)
+        internal static void WaterJump(CompanionAI ai, Character c, Vector3 dir)
+        {
+            Face(ai, dir);
+            c.Jump(false);
+            Rigidbody wrb = ai.GetComponent<Rigidbody>();
+            if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
+        }
+
         static void Hop(CompanionAI ai, Character c, S s, Vector3 pos, Vector3 dir, float now, string tag, string why)
         {
             // 1.5.69: swimming against a bank - jump out like a player (the game lets a swimmer that touches the world jump,
@@ -2657,23 +3352,48 @@ namespace Companions
             // the stake wall, every unstuck step cancelled by the deep water
             if (c.IsSwimming())
             {
-                ai.transform.rotation = Quaternion.LookRotation(dir);
-                c.Jump(false);
-                Rigidbody wrb = ai.GetComponent<Rigidbody>();
-                if (wrb != null) { Vector3 v = wrb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; wrb.linearVelocity = v; }
+                WaterJump(ai, c, dir);
                 s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] stuck in the water (" + why + ") at " + Fmt(pos) + " - jumping out toward " + Fmt(pos + dir * 2f));
                 return;
             }
             if (!c.IsOnGround()) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
             // 1.5.70: never hop toward a fire (the hearth stone is a step it would hop up onto)
             if (DropAhead(pos, dir, 1.5f, 1.2f) || NearFire(pos + dir * 1.0f, 0.4f) || NearFire(pos + dir * 2.0f, 0.4f) || Lava(pos + dir * 1.5f) || Lava(pos + dir * 3f)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
-            ai.transform.rotation = Quaternion.LookRotation(dir);
+            // S6 (test of ea18287: 4 falls of 5.6-8.3 m from the stuck hop at a trench edge): inside its pit map, the lowest
+            // ground within 2 m of where the hop lands (4 m/s for 0.7 s, about 2.8 m on) must be within the safe drop - S4's rule
+            HarvestController hv = ai.GetComponent<HarvestController>();
+            if (hv != null)
+            {
+                Vector3 land = pos + dir * 2.8f;
+                float low = hv.OvMapLowNear(land, land, 2f);
+                float safe = Mathf.Min(ModConfig.StuckDrop != null ? ModConfig.StuckDrop.Value : 8f, CompanionFallDamagePatch.SafeDrop(c, 0.3f));
+                if (!float.IsNaN(low) && pos.y - low > safe)
+                {
+                    if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] no hop toward " + Fmt(land) + " - the pit map has ground " + (pos.y - low).ToString("F1") + " m down within 2 m of it");
+                    Sidestep(ai, c, s, pos, dir, now, tag, why, true); return;
+                }
+            }
+            // SV9 (John 11-21: they hit their heads and get stuck under the vein): inside its pit map, the jump only when the
+            // map shows room above it for its height plus the jump's rise along the hop; otherwise a walking step toward the
+            // route's next corner instead (no jump)
+            if (hv != null && hv.OvMapJumpBlocked(pos, dir, out string jw))
+            {
+                Vector3 nc = NextCorner(s, pos) - pos; nc.y = 0f;
+                Vector3 sd = nc.sqrMagnitude > 0.01f ? nc.normalized : dir;
+                // F6: that step too only with room over its body; else the side step (which picks a way with room)
+                if (!HeadOk(ai, c, s, pos, sd)) { Sidestep(ai, c, s, pos, dir, now, tag, why, true); return; }
+                Face(ai, sd);
+                s.StepDir = sd; s.StepRun = false; s.StepUntil = now + 0.7f;
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - no jump: " + jw + " - a step toward " + Fmt(pos + sd * 1f) + " instead");
+                return;
+            }
+            Face(ai, dir);
             c.Jump(false);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = dir.x * 4f; v.z = dir.z * 4f; rb.linearVelocity = v; }
             s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.7f;
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] stuck (" + why + ") at " + Fmt(pos) + " - jumping toward " + Fmt(pos + dir * 2f));
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who(c) + "] stuck (" + why + ") at " + Fmt(pos) + AheadSaid(c, pos, dir) + " - jumping toward " + Fmt(pos + dir * 2f));
         }
 
         static bool Clear(Vector3 pos, Vector3 dir) { return Clear(pos, dir, 1.5f); }
@@ -2694,6 +3414,7 @@ namespace Companions
             float maxDrop = Mathf.Min(ModConfig.StuckDrop != null ? ModConfig.StuckDrop.Value : 8f, CompanionFallDamagePatch.SafeDrop(c, 0.3f));
             float here = Flat(pos, goal);
             float bestScore = float.MaxValue; Vector3 bestDir = Vector3.zero, bestLand = Vector3.zero; float bestEdge = 0f;
+            HarvestController hv = null; bool hvLooked = false;   // S4: its pit map (looked up once, at the first landing)
             for (int k = 0; k < 16; k++)
             {
                 Vector3 dir = Quaternion.Euler(0f, k * 22.5f, 0f) * Vector3.forward;
@@ -2707,19 +3428,36 @@ namespace Companions
                     if (drop < 1.2f) continue;                                             // still our floor
                     if (drop > maxDrop) break;                                             // too far down this way
                     if (MHR_Water.DepthAt(hit.point) > 1.0f) break;
+                    // R3a.3 (test of 9dfc40e: Comp's 3.2 m drop ran on down to 8.1 m and killed it): the DD5 steep run from the
+                    // landing on in the same way - a slope that keeps going down past the safe drop is no landing
+                    if (SteepAhead(hit.point, dir, 0.5f, maxDrop - drop) > 0f) break;
+                    // R3a.4 (test of a9add55: Gunter landed on a narrow trench-wall shelf, then walked on toward the goal 8-12 m
+                    // below and fell 8.9 m): the same steep run from the landing toward the goal
+                    Vector3 onward = goal - hit.point; onward.y = 0f;
+                    if (onward.sqrMagnitude > 0.25f && SteepAhead(hit.point, onward.normalized, 0.5f, maxDrop - drop) > 0f) break;
+                    // S4 (the radar; test of 05e19c2: Je's 1.7 m drop landed on a shelf, then 8.1 m in all): inside a vein's
+                    // pit map, the lowest ground within 2 m of the landing on the goal's side must be within the safe drop
+                    // from here (outside a map: as before)
+                    if (!hvLooked) { hv = ai.GetComponent<HarvestController>(); hvLooked = true; }
+                    if (hv != null)
+                    {
+                        float low = hv.OvMapLowNear(hit.point, goal, 2f);
+                        if (!float.IsNaN(low) && pos.y - low > maxDrop) break;
+                    }
                     float flatAfter = Flat(hit.point, goal);
-                    if (flatAfter > here + 4f) break;                                      // takes us well away from it
+                    if (flatAfter >= here) break;                                          // 1.5.98 CC5 (test 12: a 1.7 m drop that landed 2.2 m farther, 4 times): only a drop that lands nearer it (flat)
                     float score = Mathf.Abs(hit.point.y - goal.y) * 2f + flatAfter * 0.3f + drop * 0.2f;
                     if (score < bestScore) { bestScore = score; bestDir = dir; bestLand = hit.point; bestEdge = d; }
                     break;
                 }
             }
             if (bestDir == Vector3.zero || Mathf.Abs(bestLand.y - goal.y) > below - 1f) return false;   // must get us closer to its level
-            ai.transform.rotation = Quaternion.LookRotation(bestDir);
+            Face(ai, bestDir);
             Rigidbody rb = ai.GetComponent<Rigidbody>();
             if (rb != null) { Vector3 v = rb.linearVelocity; v.x = bestDir.x * 3f; v.z = bestDir.z * 3f; rb.linearVelocity = v; }
-            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
+            s.StepDir = bestDir; s.StepRun = false; s.StepUntil = now + 0.5f + bestEdge * 0.3f; s.DropStepUntil = s.StepUntil; s.DropFromY = pos.y;
+            s.DropLand = bestLand; s.HasDropLand = true;   // S1
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + below.ToString("F1") + "m above where it needs to be - dropping down to " + Fmt(bestLand) + " (" + (pos.y - bestLand.y).ToString("F1") + "m)");
             return true;
         }
 
@@ -2759,7 +3497,7 @@ namespace Companions
             s.HopUpTries++;
             MHR_Jump.Leap(ai, c, bestDir);
             s.StepDir = bestDir; s.StepRun = true; s.StepUntil = now + 0.6f;
-            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
+            if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|" + tag + Who() + "] " + need.ToString("F1") + "m below where it needs to be - jumping up onto " + Fmt(bestPt) + " (" + (bestPt.y - pos.y).ToString("F1") + "m up, " + bestD.ToString("F1") + "m on)");
             return true;
         }
         // 1.5.52: a short step in a fight (back, aside, out of a group) that's safe all the way: no wall, ground under every
@@ -2884,7 +3622,7 @@ namespace Companions
                 Leap(ai, c, dir, 6.5f);
                 s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                 s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping the " + (swim ? "stream" : "shallow water") + " at " + Fmt(pos + dir * waterAt));
                 return true;
             }
             // 1.4.99: close enough is good enough (user: "if it can make it most of the way across the water with a jump
@@ -2903,7 +3641,7 @@ namespace Companions
                         Leap(ai, c, dir, 6.5f);
                         s.NextJump = now + 0.8f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
                         s.LastWaterJumpDir = dir; s.LastWaterJumpAt = now;
-                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
+                        if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] jumping as far across the water as it can (lands at " + Fmt(l) + ")");
                         return true;
                     }
                 }
@@ -2912,7 +3650,7 @@ namespace Companions
             if (s.TooTired && waterAt <= 1.5f)
             {
                 s.WaitStamina = true; s.WaitStart = now; Halt(ai, c, s);
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] too tired to swim across - waiting on the bank");
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] too tired to swim across - waiting on the bank");
                 return true;
             }
             // 1.5.75: never for loot - drops it would have to swim for are left (MHR_Loot)
@@ -2923,7 +3661,7 @@ namespace Companions
                 // something just off the bank or round a fence end (1.4.108 test)
                 Leap(ai, c, dir, 5f);
                 s.NextJump = now + 1.5f; s.NextDive = now + 20f; s.StepDir = dir; s.StepRun = true; s.StepUntil = now + 0.6f;
-                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] diving in at " + Fmt(pos + dir * waterAt));
+                if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] diving in at " + Fmt(pos + dir * waterAt));
                 return true;
             }
             return false;
@@ -2985,7 +3723,7 @@ namespace Companions
             {
                 Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (!Usable(d)) continue;
-                float dd = MHR_Nav.DoorDist(pos, d.transform.position);
+                float dd = MHR_Nav.DoorDist(pos, DoorCenter(d));
                 if (dd < bd) { bd = dd; best = d; }
             }
             return bd <= range + 0.5f ? best : null;
@@ -3005,6 +3743,106 @@ namespace Companions
         }
 
         // ---------- doorways ----------
+        // 1.5.84: a gate with its own frame (the Hexagonal gate, user: "the companion has trouble to go through hexagonal
+        // gates") has the frame's colliders under the Door as well as the leaves. A door set into a wall only has its leaves.
+        // An open door's leaf has swung out of the doorway, so its middle sits well off the doorway's plane; the frame stays
+        // in the plane. Without this the frame of an open gate counted as "an open leaf in the way" and the companion shut
+        // the gate it was walking through, opened it again, and so on.
+        static bool IsLeaf(Door d, Collider col)
+        {
+            if (d == null || col == null) return false;
+            Doorway w = DoorwayOf(d);
+            Vector3 off = col.bounds.center - w.Center;
+            return Mathf.Abs(off.x * w.Fwd.x + off.z * w.Fwd.z) > 0.3f;
+        }
+
+        // 1.5.84: the doorway's floor and half its width, from the door's colliders. A wide gate can be crossed well off its
+        // middle (the line-up only looked within 1.3 m of it), and a gate's pivot need not be on the floor (the line-up gave
+        // up more than 2.5 m above or below it).
+        // 1.5.88: also the doorway's middle and the way through it, from the shape of the shut door (user: "struggles to pass
+        // through ashwood doors in grausten pillar frames. It seems to walk toward the pillar the door is attached to instead of
+        // the door"). Everything used door.transform as the middle of the doorway and its forward axis as the way through; a
+        // door whose pivot is at its hinge, or whose model is turned, sent the line-up (and the spots to stand at either side)
+        // to the post. The shut leaf (and frame, if any) is wide across the doorway and thin through it: its extents in the
+        // door's own axes give both. Measured only while the door is shut (an open leaf has swung) and kept once measured;
+        // until then the pivot and forward axis stand in, as before.
+        class Doorway { public Vector3 Center, Fwd; public float Floor, Half; }
+        static readonly Dictionary<int, Doorway> s_doorways = new Dictionary<int, Doorway>();
+        static readonly Vector3[] s_corners = new Vector3[8];
+        static Doorway DoorwayOf(Door d)
+        {
+            int id = d.GetInstanceID();
+            Doorway w;
+            if (s_doorways.TryGetValue(id, out w)) return w;
+            Transform t = d.transform;
+            Vector3 fw = t.forward; fw.y = 0f;
+            w = new Doorway { Center = t.position, Fwd = fw.sqrMagnitude > 0.01f ? fw.normalized : Vector3.forward, Floor = t.position.y, Half = 1.3f };
+            if (!DoorClosed(d)) return w;   // not kept: measure it once it's shut
+            Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
+            int used = 0;
+            Collider[] cols = d.GetComponentsInChildren<Collider>();
+            for (int i = 0; i < cols.Length; i++)
+            {
+                Collider col = cols[i];
+                if (col == null || col.isTrigger || !col.enabled) continue;
+                if (!LocalCorners(col)) continue;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 p = t.InverseTransformPoint(col.transform.TransformPoint(s_corners[k]));
+                    min = Vector3.Min(min, p); max = Vector3.Max(max, p);
+                }
+                used++;
+            }
+            if (used > 0)
+            {
+                Vector3 size = max - min;
+                // thin along local z: forward is the way through (the usual); thin along x: the model is turned, right is
+                Vector3 axis = t.forward, acrossAxis = t.right;
+                float across = size.x, through = size.z;
+                if (size.x * 2f < size.z) { axis = t.right; acrossAxis = t.forward; across = size.z; through = size.x; }
+                axis.y = 0f;
+                if (axis.sqrMagnitude > 0.01f && across > 0.5f)
+                {
+                    Vector3 mid = t.TransformPoint((min + max) * 0.5f);
+                    w.Fwd = axis.normalized;
+                    w.Center = new Vector3(mid.x, t.position.y, mid.z);
+                    float lowest = float.MaxValue;
+                    for (int i = 0; i < cols.Length; i++) if (cols[i] != null && !cols[i].isTrigger && cols[i].enabled) lowest = Mathf.Min(lowest, cols[i].bounds.min.y);
+                    if (lowest < float.MaxValue && Mathf.Abs(lowest - t.position.y) < 4f) w.Floor = lowest;
+                    // the frame is part of the width when the gate has one; keep a little off the posts
+                    w.Half = Mathf.Clamp(across * 0.5f - 0.3f, 1.3f, 3f);
+                    if (CompanionsPlugin.LogDetailed && (Vector3.Distance(new Vector3(mid.x, 0f, mid.z), new Vector3(t.position.x, 0f, t.position.z)) > 0.3f || axis != t.forward))
+                        Dbg("[Move] doorway of the " + d.m_name + " at " + Fmt(t.position) + ": middle " + Fmt(w.Center) + (axis != t.forward ? ", turned model" : "") + ", " + across.ToString("F1") + " m wide");
+                }
+            }
+            if (s_doorways.Count > 500) s_doorways.Clear();
+            s_doorways[id] = w;
+            return w;
+        }
+        // a collider's box in its own space
+        static bool LocalCorners(Collider col)
+        {
+            Bounds b;
+            if (col is BoxCollider) { BoxCollider bc = (BoxCollider)col; b = new Bounds(bc.center, bc.size); }
+            else if (col is MeshCollider) { MeshCollider mc = (MeshCollider)col; if (mc.sharedMesh == null) return false; b = mc.sharedMesh.bounds; }
+            else if (col is CapsuleCollider)
+            {
+                CapsuleCollider cc = (CapsuleCollider)col;
+                Vector3 sz = Vector3.one * (cc.radius * 2f);
+                sz[Mathf.Clamp(cc.direction, 0, 2)] = Mathf.Max(cc.height, cc.radius * 2f);
+                b = new Bounds(cc.center, sz);
+            }
+            else if (col is SphereCollider) { SphereCollider sc = (SphereCollider)col; b = new Bounds(sc.center, Vector3.one * (sc.radius * 2f)); }
+            else return false;
+            Vector3 c = b.center, e = b.extents;
+            int n = 0;
+            for (int x = -1; x <= 1; x += 2) for (int y = -1; y <= 1; y += 2) for (int z = -1; z <= 1; z += 2)
+                s_corners[n++] = c + new Vector3(e.x * x, e.y * y, e.z * z);
+            return true;
+        }
+        internal static Vector3 DoorCenter(Door d) { return DoorwayOf(d).Center; }
+        static Vector3 DoorFwd(Door d) { return DoorwayOf(d).Fwd; }
+
         // 1.4.140: the route map ignores doors, so a route can cut across a doorway at an angle and clip the leaf of an open
         // door (user: "path around the open door properly"). When the route ahead goes through a doorway, first get onto the
         // line straight out from the middle of the doorway, then walk through along it - the open leaf hangs off to one side
@@ -3016,19 +3854,17 @@ namespace Companions
                 s.NextDoorwayCheck = now + 0.4f;
                 float side;
                 Door d = DoorwayOnRoute(s, pos, out side);
-                if (d != null) { s.PassDoor = d; s.PassSide = side; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] lining up with the " + d.m_name + " at " + Fmt(d.transform.position)); }
+                if (d != null) { s.PassDoor = d; s.PassSide = side; if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] lining up with the " + d.m_name + " at " + Fmt(d.transform.position)); }
             }
             Door door = s.PassDoor;
             if (door == null) return target;
             if (!door || door.GetComponent<ZNetView>() == null || !door.GetComponent<ZNetView>().IsValid()) { s.PassDoor = null; return target; }
-            Vector3 ctr = door.transform.position;
-            Vector3 f = door.transform.forward; f.y = 0f;
-            if (f.sqrMagnitude < 0.01f) { s.PassDoor = null; return target; }
-            f.Normalize();
+            Vector3 ctr = DoorCenter(door);
+            Vector3 f = DoorFwd(door);
             Vector3 rel = pos - ctr; rel.y = 0f;
             float along = Vector3.Dot(rel, f) * s.PassSide;           // > 0: still on our side
             float across = Vector3.Dot(rel, new Vector3(f.z, 0f, -f.x));
-            if (along < -0.9f || rel.magnitude > 5f || Mathf.Abs(pos.y - ctr.y) > 2.5f)
+            if (along < -0.9f || rel.magnitude > 5f + DoorwayOf(door).Half - 1.3f || Mathf.Abs(pos.y - DoorwayOf(door).Floor) > 2.5f)
             {
                 // through (or gone elsewhere): a fresh route from here, so it doesn't turn back for a corner it skipped
                 s.PassDoor = null; s.NextDoorwayCheck = now + 1.0f; s.NextPlan = 0f;
@@ -3058,11 +3894,10 @@ namespace Companions
             {
                 Door d = s_doorCols[i] != null ? s_doorCols[i].GetComponentInParent<Door>() : null;
                 if (d == null || !seen.Add(d.GetInstanceID())) continue;
-                Vector3 ctr = d.transform.position;
-                if (Mathf.Abs(ctr.y - pos.y) > 2.5f) continue;
-                Vector3 f = d.transform.forward; f.y = 0f;
-                if (f.sqrMagnitude < 0.01f) continue;
-                f.Normalize();
+                Doorway way = DoorwayOf(d);
+                Vector3 ctr = way.Center;
+                if (Mathf.Abs(way.Floor - pos.y) > 2.5f) continue;
+                Vector3 f = way.Fwd;
                 // walk the route from here through the next few corners (up to ~6 m) and look for the crossing
                 Vector3 a = pos; float walked = 0f;
                 for (int k = Mathf.Clamp(s.Corner, 0, s.Path.Count - 1); k < s.Path.Count && walked < 6f; k++)
@@ -3075,7 +3910,7 @@ namespace Companions
                         float t = Mathf.Abs(da) / Mathf.Max(0.001f, Mathf.Abs(da) + Mathf.Abs(db));
                         Vector3 x = Vector3.Lerp(a, b, t);
                         Vector3 lat = x - ctr; lat.y = 0f;
-                        if (lat.magnitude <= 1.3f && Mathf.Abs(da) > 0.5f)
+                        if (lat.magnitude <= way.Half && Mathf.Abs(da) > 0.5f)
                         {
                             float at = walked + Vector3.Distance(a, x);
                             if (at < bestT) { bestT = at; best = d; side = Mathf.Sign(da); }
@@ -3103,7 +3938,7 @@ namespace Companions
                 RaycastHit hit;
                 if (!Physics.Raycast(pos + Vector3.up * heights[i], dir, out hit, len, LayerMask.GetMask("piece", "Default", "piece_nonsolid"))) continue;
                 Door d = hit.collider != null ? hit.collider.GetComponentInParent<Door>() : null;
-                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null || !IsLeaf(d, hit.collider)) continue;
                 if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
                 float until;
                 if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;   // just did this one
@@ -3121,7 +3956,7 @@ namespace Companions
             {
                 Collider col = s_doorCols[i];
                 Door d = col != null ? col.GetComponentInParent<Door>() : null;
-                if (d == null || DoorClosed(d) || d.m_keyItem != null) continue;
+                if (d == null || DoorClosed(d) || d.m_keyItem != null || !IsLeaf(d, col)) continue;
                 if (d.m_checkGuardStone && !PrivateArea.CheckAccess(d.transform.position, 0f, false)) continue;
                 float until;
                 if (s_leafClosed.TryGetValue(d.GetInstanceID(), out until) && Time.time < until) continue;
@@ -3136,12 +3971,12 @@ namespace Companions
             if (d == null || DoorClosed(d)) return;
             s_leafClosed[d.GetInstanceID()] = Time.time + 8f;
             if (s_leafClosed.Count > 200) s_leafClosed.Clear();
-            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
-            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
+            if (to.sqrMagnitude > 0.01f) Face(ai, to);
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] " + (ok ? "closed" : "couldn't close") + " the " + d.m_name + " at " + Fmt(d.transform.position) + " - it was open towards us and in the way");
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] " + (ok ? "closed" : "couldn't close") + " the " + d.m_name + " at " + Fmt(d.transform.position) + " - it was open towards us and in the way");
         }
 
         // the closed door that opens the shortest way to the goal, and where to stand to open it
@@ -3195,7 +4030,7 @@ namespace Companions
                 DoorNode n = queue.Dequeue();
                 if (n.Depth > bestDepth) break;
                 Door d = s_doors[n.Door];
-                Vector3 other = d.transform.position - d.transform.forward * (1.4f * n.Side);
+                Vector3 other = DoorCenter(d) - DoorFwd(d) * (1.4f * n.Side);
                 s_tmp2.Clear(); budget--;
                 if (GetPath(other, goal, s_tmp2, Pathfinding.AgentType.Humanoid, false))
                 {
@@ -3229,8 +4064,8 @@ namespace Companions
         static bool ToDoor(Vector3 from, Door d, int side, out Vector3 end, out float len)
         {
             end = Vector3.zero; len = 0f;
-            Vector3 dp = d.transform.position;
-            Vector3 sp = dp + d.transform.forward * (1.4f * side);
+            Vector3 dp = DoorCenter(d);
+            Vector3 sp = dp + DoorFwd(d) * (1.4f * side);
             s_tmp.Clear();
             if (!GetPath(from, sp, s_tmp, Pathfinding.AgentType.Humanoid, true)) return false;
             end = s_tmp[s_tmp.Count - 1];
@@ -3308,10 +4143,9 @@ namespace Companions
         {
             Player p = Player.m_localPlayer;
             if (p == null || d == null || Vector3.Distance(p.transform.position, d.transform.position) > 25f) return false;
-            Vector3 n = d.transform.forward; n.y = 0f;
-            if (n.sqrMagnitude < 0.01f) return false;
-            float me = Vector3.Dot(ai.transform.position - d.transform.position, n);
-            float you = Vector3.Dot(p.transform.position - d.transform.position, n);
+            Vector3 n = DoorFwd(d), dc = DoorCenter(d);
+            float me = Vector3.Dot(ai.transform.position - dc, n);
+            float you = Vector3.Dot(p.transform.position - dc, n);
             return Mathf.Abs(you) > 0.5f && Mathf.Sign(me) != Mathf.Sign(you);
         }
 
@@ -3322,21 +4156,21 @@ namespace Companions
             if (tag == CombatTag && !YouWentThrough(ai, d))
             {
                 S st = Get(ai);
-                if (!st.DoorBlocked) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");
+                if (!st.DoorBlocked) if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] closed " + d.m_name + " in the way at " + Fmt(d.transform.position) + " - not opening it in a fight");
                 st.DoorBlocked = true; st.GaveUp = true; st.GaveUpAt = Time.time;
                 return;
             }
-            Vector3 to = d.transform.position - ai.transform.position; to.y = 0f;
-            if (to.sqrMagnitude > 0.01f) ai.transform.rotation = Quaternion.LookRotation(to.normalized);
+            Vector3 to = DoorCenter(d) - ai.transform.position; to.y = 0f;
+            if (to.sqrMagnitude > 0.01f) Face(ai, to);
             Humanoid h = c as Humanoid;
             bool ok = false;
             try { ok = h != null && d.Interact(h, false, false); } catch { ok = false; }
-            if (!ok) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] couldn't open " + d.m_name); return; }
+            if (!ok) { if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] couldn't open " + d.m_name); return; }
             int id = ai.gameObject.GetInstanceID();
             List<Opened> list;
             if (!s_opened.TryGetValue(id, out list)) { list = new List<Opened>(); s_opened[id] = list; }
             list.Add(new Opened { Door = d, At = Time.time });
-            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + "] opened " + d.m_name + " at " + Fmt(d.transform.position));
+            if (CompanionsPlugin.LogDetailed) Dbg("[Move|" + tag + Who() + "] opened " + d.m_name + " at " + Fmt(d.transform.position));
         }
 
         // ---------- per-frame housekeeping (called from MHR_ToolKeeper.Tick for every companion we own) ----------
@@ -3360,7 +4194,7 @@ namespace Companions
                     Opened o = list[i];
                     if (o.Door == null || DoorClosed(o.Door) || Time.time - o.At > 60f) { list.RemoveAt(i); continue; }
                     if (Time.time - o.At < 1.5f) continue;
-                    Vector3 dp = o.Door.transform.position;
+                    Vector3 dp = DoorCenter(o.Door);
                     if (Flat(pos, dp) < 3.5f && Mathf.Abs(pos.y - dp.y) < 3f) continue;
                     // 1.4.75: still stuck near it (working through the stuck ladder or a detour) - leave it open
                     if (s != null && Time.time - s.LastGo < 0.5f && (s.Ladder > 0 || s.HasDetour) && Flat(pos, dp) < 8f) continue;
@@ -3401,7 +4235,7 @@ namespace Companions
                 if (now - f.AnchorTime < 15f) return;
                 f.Anchor = pos; f.AnchorTime = now;
                 if (!Physics.Linecast(pos + Vector3.up * 1.6f, tp + Vector3.up * 1.6f, LayerMask.GetMask("Default", "static_solid", "piece", "terrain"))) return;   // you can see each other
-                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|Follow] stuck for 15s out of sight at " + Fmt(pos) + " - catching up");
+                if (CompanionsPlugin.LogNormal) CompanionsPlugin.Log.LogInfo("[Move|Follow" + Who() + "] stuck for 15s out of sight at " + Fmt(pos) + " - catching up");
                 ai.TeleportToFollowTarget();
             }
             catch { }
@@ -3420,7 +4254,7 @@ namespace Companions
             s.NextLog = now + 3f;
             float still = now - s.AnchorTime, noCloser = now - s.ProgressTime;
             string route = !s.PathOk ? "none" : (s.Partial ? "partial" : "full") + " (" + s.Path.Count + " corners)";
-            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Move|" + s.Tag + "] at " + Fmt(pos) + " -> " + Fmt(s.Goal) + " " + remain.ToString("F1") + "m left, route=" + route +
+            if (CompanionsPlugin.LogDetailed) CompanionsPlugin.Log.LogDebug("[Move|" + s.Tag + Who() + "] at " + Fmt(pos) + " -> " + Fmt(s.Goal) + " " + remain.ToString("F1") + "m left, route=" + route +
                 (s.RouteDoor != null ? ", via door" : "") + (s.HasDetour ? ", detour" : "") + (c.IsSwimming() ? ", swimming" : "") +
                 (noCloser > 3f ? ", no closer for " + noCloser.ToString("F0") + "s" : "") + (still > 2f ? ", standing still " + still.ToString("F0") + "s" : "") +
                 (s.Ladder > 0 ? ", unstuck step " + s.Ladder : ""));
@@ -3441,6 +4275,60 @@ namespace Companions
         {
             try { return Floating.GetWaterLevel(p, ref s_wv); } catch { return -10000f; }
         }
+        // 1.5.98 (swim item 2): a way out of the water = anywhere the swim ends: something under the water shallow enough to
+        // stand on (the game's own test, Character.InLiquidSwimDepth: depth > swim depth - 0.4 means swimming) - ground, a rock,
+        // a stair, a sunken ladder, any object - or a top above the water within one jump from where its feet are (the game's
+        // jump: force x (1 + 0.4 x Jump skill), 70% with no stamina). The first thing in the way at the water surface on the line
+        // to a spot is the spot itself (what you'd swim into is what you'd climb onto); so nothing behind a wall counts.
+        // Rings 3, 5, 8, 12, 20, 30, 40, 50 m, 16 bearings; the nearest spot wins.
+        static readonly float[] s_wayRings = { 3f, 5f, 8f, 12f, 20f, 30f, 40f, 50f };
+        public static float JumpRise(Character c)
+        {
+            float skill = 0f;
+            try { skill = c.GetSkillFactor(Skills.SkillType.Jump); } catch { }
+            float v = c.m_jumpForce * (1f + skill * 0.4f) * (MHR_Jump.CanAfford(c) ? 1f : c.m_jumpForceTiredFactor);
+            return v * v / (2f * Mathf.Max(1f, -Physics.gravity.y)) * 0.85f;   // with the margin the mover's hop uses
+        }
+        // SV9: the game's own Jump() rise with no margin taken off: speed = jump force x (1 + jump skill x 0.4), x the tired
+        // factor out of stamina; rise = speed^2 / (2 x gravity)
+        public static float JumpRiseFull(Character c) { return JumpRise(c) / 0.85f; }
+        public static bool FindWayOut(Character c, Vector3 pos, float water, System.Func<Vector3, bool> skip, out Vector3 best, out string why)
+        {
+            best = Vector3.zero; why = null;
+            float rise = JumpRise(c);
+            float standDepth = Mathf.Max(0f, c.m_swimDepth - 0.4f);
+            float surf = water + 0.3f;
+            int walls = 0, deep = 0, high = 0, cooled = 0;
+            foreach (float rad in s_wayRings)
+            {
+                float bestD = float.MaxValue; bool found = false;
+                for (int k = 0; k < 16; k++)
+                {
+                    float ang = k * 22.5f * Mathf.Deg2Rad;
+                    Vector3 dir = new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang));
+                    Vector3 from = new Vector3(pos.x, surf, pos.z);
+                    Vector3 q = pos + dir * rad;
+                    RaycastHit hit;
+                    if (Physics.Raycast(from, dir, out hit, rad, Mask(), QueryTriggerInteraction.Ignore)) q = hit.point + dir * 0.3f;
+                    // the top there, looked for from one jump above the water; starting inside something = a wall taller than a jump
+                    Vector3 top0 = new Vector3(q.x, water + rise + 0.5f, q.z);
+                    if (Physics.CheckSphere(top0, 0.1f, Mask(), QueryTriggerInteraction.Ignore)) { walls++; continue; }
+                    RaycastHit down;
+                    if (!Physics.Raycast(top0, Vector3.down, out down, rise + 0.5f + standDepth + 0.01f, Mask(), QueryTriggerInteraction.Ignore)) { deep++; continue; }
+                    float top = down.point.y;
+                    if (water - top > standDepth) { deep++; continue; }
+                    if (top - pos.y > rise) { high++; continue; }
+                    Vector3 spot = new Vector3(q.x, top, q.z);
+                    if (skip != null && skip(spot)) { cooled++; continue; }
+                    float d = Vector3.Distance(new Vector3(pos.x, 0f, pos.z), new Vector3(q.x, 0f, q.z));
+                    if (d < bestD) { bestD = d; best = spot; found = true; }
+                }
+                if (found) return true;
+            }
+            why = "walls taller than a jump " + walls + ", too deep " + deep + ", too high " + high + ", cooling down " + cooled + " (jump " + rise.ToString("F1") + " m)";
+            return false;
+        }
+
         public static float GroundAt(Vector3 p)
         {
             RaycastHit hit;

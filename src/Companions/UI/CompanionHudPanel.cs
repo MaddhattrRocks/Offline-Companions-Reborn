@@ -381,13 +381,32 @@ public class CompanionHudPanel : MonoBehaviour
 	private void Awake()
 	{
 		Instance = this;
+		// 1.5.85: the offset is a setting now - a change in the settings panel or the .cfg moves the panel at once
+		if (ModConfig.MinimapPanelOffsetX != null)
+		{
+			ModConfig.MinimapPanelOffsetX.SettingChanged += OnOffsetSettingChanged;
+			ModConfig.MinimapPanelOffsetY.SettingChanged += OnOffsetSettingChanged;
+		}
 	}
 
 	private void OnDestroy()
 	{
+		if (ModConfig.MinimapPanelOffsetX != null)
+		{
+			ModConfig.MinimapPanelOffsetX.SettingChanged -= OnOffsetSettingChanged;
+			ModConfig.MinimapPanelOffsetY.SettingChanged -= OnOffsetSettingChanged;
+		}
 		if (Instance == this)
 		{
 			Instance = null;
+		}
+	}
+
+	private void OnOffsetSettingChanged(object sender, System.EventArgs e)
+	{
+		if (!_dragging)
+		{
+			ApplyHudOffset();
 		}
 	}
 
@@ -423,13 +442,14 @@ public class CompanionHudPanel : MonoBehaviour
 			}
 			return;
 		}
-		if (Input.GetKeyDown(KeyCode.F7) && (CompanionInteractPanel.Instance == null || !CompanionInteractPanel.Instance.IsVisible))
+		KeyCode moveKey = ModConfig.MoveUiKey.Value;
+		if (moveKey != KeyCode.None && Input.GetKeyDown(moveKey) && (CompanionInteractPanel.Instance == null || !CompanionInteractPanel.Instance.IsVisible))
 		{
 			_dragMode = !_dragMode;
 			_dragging = false;
 			if (_dragMode)
 			{
-				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.Loc("hc_msg_reposition_on"));
+				Player.m_localPlayer?.Message(MessageHud.MessageType.Center, ModLocalization.LocFmt("hc_msg_reposition_on", ModConfig.MoveUiKey.Value));
 			}
 			else
 			{
@@ -480,9 +500,9 @@ public class CompanionHudPanel : MonoBehaviour
 		if (!(_panelRoot == null))
 		{
 			_userOffset = _panelRoot.anchoredPosition - _defaultPosition;
-			PlayerPrefs.SetFloat("HC_HudPanelOffsetX", _userOffset.x);
-			PlayerPrefs.SetFloat("HC_HudPanelOffsetY", _userOffset.y);
-			PlayerPrefs.Save();
+			// 1.5.85: saved to General > MinimapPanelOffsetX/Y (was PlayerPrefs); setting them moves the panel to the rounded spot
+			ModConfig.MinimapPanelOffsetX.Value = Mathf.RoundToInt(_userOffset.x);
+			ModConfig.MinimapPanelOffsetY.Value = Mathf.RoundToInt(_userOffset.y);
 		}
 	}
 
@@ -542,10 +562,30 @@ public class CompanionHudPanel : MonoBehaviour
 
 	private void ApplyHudOffset()
 	{
-		_userOffset = new Vector2(PlayerPrefs.GetFloat("HC_HudPanelOffsetX", 0f), PlayerPrefs.GetFloat("HC_HudPanelOffsetY", 0f));
+		MigrateHudOffsetPrefs();
+		_userOffset = new Vector2(ModConfig.MinimapPanelOffsetX.Value, ModConfig.MinimapPanelOffsetY.Value);
 		if (_panelRoot != null)
 		{
 			_panelRoot.anchoredPosition = _defaultPosition + _userOffset;
+		}
+	}
+
+	// 1.5.85: a position dragged with an older version (kept in PlayerPrefs) moves into the settings once
+	private static void MigrateHudOffsetPrefs()
+	{
+		if (!PlayerPrefs.HasKey(PrefKeyHudX) && !PlayerPrefs.HasKey(PrefKeyHudY))
+		{
+			return;
+		}
+		int x = Mathf.RoundToInt(PlayerPrefs.GetFloat(PrefKeyHudX, 0f));
+		int y = Mathf.RoundToInt(PlayerPrefs.GetFloat(PrefKeyHudY, 0f));
+		PlayerPrefs.DeleteKey(PrefKeyHudX);
+		PlayerPrefs.DeleteKey(PrefKeyHudY);
+		PlayerPrefs.Save();
+		if (ModConfig.MinimapPanelOffsetX.Value == 0 && ModConfig.MinimapPanelOffsetY.Value == 0)
+		{
+			ModConfig.MinimapPanelOffsetX.Value = x;
+			ModConfig.MinimapPanelOffsetY.Value = y;
 		}
 	}
 

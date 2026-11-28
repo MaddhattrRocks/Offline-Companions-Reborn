@@ -136,7 +136,10 @@ public partial class UpkeepController : MonoBehaviour
 
 	private int _whyNoStation;
 
-	private Fireplace _fire;
+	// 1.5.97 (H1): a fire, torch or brazier (Fireplace) or a hot tub (the game builds it as a Smelter that takes fuel only)
+	private Component _fire;
+
+	private float _nextTubLog;
 
 	private Container _chest;
 
@@ -816,29 +819,63 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			return false;
 		}
-		float below = ModConfig.UpkeepFuelBelow?.Value ?? 0.8f;
+		// 1.5.95: only once it's down to [RepairAndRestock] FuelAtOrBelow pieces (user: "only when at 3 fuel or less, then filled")
+		int atOrBelow = ModConfig.UpkeepFuelAtOrBelow?.Value ?? 3;
 		Inventory bag = _humanoid.GetInventory();
 		Vector3 me = base.transform.position;
 		s_pieces.Clear();
 		Piece.GetAllPiecesInRadius(Center(), Range(), s_pieces);
-		Fireplace best = null;
+		Component best = null;
 		float bestD = float.MaxValue;
 		bool bestInBag = false;
 		Container bestChest = null;
 		HashSet<string> missing = new HashSet<string>();
+		// 1.5.97 (H4): Detailed log, at most once a minute: every hot tub in range, its fuel and fuel item
+		bool logTubs = CompanionsPlugin.LogDetailed && Time.time >= _nextTubLog;
+		if (logTubs)
+		{
+			_nextTubLog = Time.time + 60f;
+		}
 		for (int i = 0; i < s_pieces.Count; i++)
 		{
-			Fireplace f = s_pieces[i] != null ? s_pieces[i].GetComponent<Fireplace>() : null;
-			if (f == null || !f.m_canRefill || f.m_infiniteFuel || f.m_fuelItem == null || f.m_maxFuel <= 0f || Skipped(f) || !RefuelOn(f))
+			if (s_pieces[i] == null)
 			{
 				continue;
+			}
+			Component f = s_pieces[i].GetComponent<Fireplace>();
+			if (f != null)
+			{
+				Fireplace fp = (Fireplace)f;
+				if (!fp.m_canRefill || fp.m_infiniteFuel || fp.m_fuelItem == null || fp.m_maxFuel <= 0f || Skipped(f) || !RefuelOn(fp))
+				{
+					continue;
+				}
+			}
+			else
+			{
+				// 1.5.97 (H1, user: "The hottub did not get re-stocked at all"): the hot tub is a Smelter-type piece, not a
+				// fire - the same RefuelHotTubs switch and the same "at FuelAtOrBelow or less, then fill" rule
+				Smelter sm = s_pieces[i].GetComponent<Smelter>();
+				if (sm == null || !SmeltController.IsHotTub(sm) || sm.m_fuelItem == null || sm.m_maxFuel <= 0)
+				{
+					continue;
+				}
+				if (logTubs)
+				{
+					LogDebug("Hot tub: " + PieceName(sm) + " fuel " + Fuel(sm).ToString("F1") + "/" + sm.m_maxFuel + " (" + MHR_List.Local(sm.m_fuelItem.m_itemData.m_shared.m_name) + ")" + (ModConfig.RefuelHotTubs != null && !ModConfig.RefuelHotTubs.Value ? " - RefuelHotTubs is off" : "") + (Skipped(sm) ? " - left alone for now" : ""));
+				}
+				if (Skipped(sm) || (ModConfig.RefuelHotTubs != null && !ModConfig.RefuelHotTubs.Value))
+				{
+					continue;
+				}
+				f = sm;
 			}
 			ZNetView nv = f.GetComponent<ZNetView>();
-			if (nv == null || !nv.IsValid() || Fuel(f) / f.m_maxFuel >= below)
+			if (nv == null || !nv.IsValid() || Fuel(f) > atOrBelow + 0.001f)
 			{
 				continue;
 			}
-			string fuel = f.m_fuelItem.m_itemData.m_shared.m_name;
+			string fuel = FuelName(f);
 			bool inBag = bag.CountItems(fuel) > 0;
 			Container chest = null;
 			if (!inBag)
@@ -877,7 +914,7 @@ public partial class UpkeepController : MonoBehaviour
 			return false;
 		}
 		_fire = best;
-		string name = best.m_fuelItem.m_itemData.m_shared.m_name;
+		string name = FuelName(best);
 		int need = Need(best);
 		if (Time.time - _lastSpeech > 120f)
 		{
@@ -885,14 +922,14 @@ public partial class UpkeepController : MonoBehaviour
 		}
 		if (bestInBag)
 		{
-			if (CompanionsPlugin.LogNormal) Log("Topping up " + PieceName(best) + " (" + Fuel(best).ToString("F1") + "/" + best.m_maxFuel.ToString("F0") + ") with " + MHR_List.Local(name) + " from the pack");
+			if (CompanionsPlugin.LogNormal) Log("Topping up " + PieceName(best) + " (" + Fuel(best).ToString("F1") + "/" + MaxFuel(best).ToString("F0") + ") with " + MHR_List.Local(name) + " from the pack");
 			Enter(Step.Fuel);
 			return true;
 		}
 		_chest = bestChest;
 		_key = name;
 		_amount = need;
-		if (CompanionsPlugin.LogNormal) Log("Fetching " + need + " " + MHR_List.Local(name) + " from a chest for " + PieceName(best) + " (" + Fuel(best).ToString("F1") + "/" + best.m_maxFuel.ToString("F0") + ")");
+		if (CompanionsPlugin.LogNormal) Log("Fetching " + need + " " + MHR_List.Local(name) + " from a chest for " + PieceName(best) + " (" + Fuel(best).ToString("F1") + "/" + MaxFuel(best).ToString("F0") + ")");
 		Enter(Step.FuelFetch);
 		return true;
 	}
@@ -934,15 +971,59 @@ public partial class UpkeepController : MonoBehaviour
 		return e == null || e.Value;
 	}
 
-	private static float Fuel(Fireplace f)
+	// a fire and a Smelter-type hot tub keep their fuel in the same place (ZDOVars.s_fuel)
+	private static float Fuel(Component f)
 	{
 		ZNetView nv = f.GetComponent<ZNetView>();
 		return nv != null && nv.IsValid() ? nv.GetZDO().GetFloat(ZDOVars.s_fuel) : 0f;
 	}
 
-	private static int Need(Fireplace f)
+	private static float MaxFuel(Component f)
 	{
-		return Mathf.Max(0, Mathf.FloorToInt(f.m_maxFuel - Fuel(f)));
+		Fireplace fp = f as Fireplace;
+		if (fp != null)
+		{
+			return fp.m_maxFuel;
+		}
+		Smelter sm = f as Smelter;
+		return sm != null ? sm.m_maxFuel : 0f;
+	}
+
+	private static string FuelName(Component f)
+	{
+		Fireplace fp = f as Fireplace;
+		if (fp != null)
+		{
+			return fp.m_fuelItem.m_itemData.m_shared.m_name;
+		}
+		return ((Smelter)f).m_fuelItem.m_itemData.m_shared.m_name;
+	}
+
+	// full: a fire as before; a Smelter-type hot tub the way the game refuses more (Smelter.OnAddFuel: fuel > max - 1)
+	private static bool Full(Component f)
+	{
+		if (f is Smelter)
+		{
+			return Fuel(f) > MaxFuel(f) - 1f;
+		}
+		return Mathf.CeilToInt(Fuel(f)) >= MaxFuel(f);
+	}
+
+	// where it adds the fuel: a fire just above its middle; a hot tub at its add-wood switch, where a player uses it
+	// (as the smelt job does, SmeltController.SlotPosition)
+	private static Vector3 FuelPoint(Component f)
+	{
+		Smelter sm = f as Smelter;
+		if (sm != null)
+		{
+			return sm.m_addWoodSwitch != null ? sm.m_addWoodSwitch.transform.position : sm.transform.position;
+		}
+		return f.transform.position + Vector3.up * 0.3f;
+	}
+
+	private static int Need(Component f)
+	{
+		return Mathf.Max(0, Mathf.FloorToInt(MaxFuel(f) - Fuel(f)));
 	}
 
 	private void UpdateFuel()
@@ -953,8 +1034,8 @@ public partial class UpkeepController : MonoBehaviour
 			return;
 		}
 		Inventory bag = _humanoid.GetInventory();
-		string fuel = _fire.m_fuelItem.m_itemData.m_shared.m_name;
-		if (Mathf.CeilToInt(Fuel(_fire)) >= _fire.m_maxFuel)
+		string fuel = FuelName(_fire);
+		if (Full(_fire))
 		{
 			if (CompanionsPlugin.LogNormal) Log(PieceName(_fire) + " is full");
 			Say("hc_speech_homestead_stoked");
@@ -967,7 +1048,7 @@ public partial class UpkeepController : MonoBehaviour
 			return;
 		}
 		Vector3 me = base.transform.position;
-		Vector3 point = _fire.transform.position + Vector3.up * 0.3f;
+		Vector3 point = FuelPoint(_fire);
 		if (!PointInReach(me, point, _fire))
 		{
 			if (Time.time - _stepStart > GiveUp)
@@ -975,7 +1056,7 @@ public partial class UpkeepController : MonoBehaviour
 				Skip(_fire, 300f, "Couldn't get within reach of " + PieceName(_fire) + " - leaving it for now");
 				return;
 			}
-			if (!Approach(_fire.transform.position, _fire))
+			if (!Approach(_fire is Smelter ? point : _fire.transform.position, _fire))
 			{
 				Skip(_fire, 300f, "No way to get to " + PieceName(_fire) + " - leaving it for now");
 				return;
@@ -1380,7 +1461,7 @@ public partial class UpkeepController : MonoBehaviour
 				return;
 			}
 			if (CompanionsPlugin.LogNormal) Log("Took " + got + " " + MHR_List.Local(_key) + " from the chest");
-			Fireplace f = _fire;
+			Component f = _fire;
 			Done(null);
 			if (f != null)
 			{
@@ -1597,7 +1678,7 @@ public partial class UpkeepController : MonoBehaviour
 		{
 			return true;
 		}
-		foreach (RaycastHit hit in Physics.RaycastAll(eye, d / len, Mathf.Max(0f, len - 0.05f), s_mask))
+		foreach (RaycastHit hit in MHR_Phys.Ray(ref MHR_Phys.UpkeepController1600, eye, d / len, Mathf.Max(0f, len - 0.05f), s_mask))
 		{
 			Collider col = hit.collider;
 			if (col == null || (own != null && col.GetComponentInParent<Piece>() == own) || col.GetComponentInParent<Character>() != null)
